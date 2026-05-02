@@ -1,0 +1,103 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+      target: development
+    container_name: emprenddi_app
+    restart: unless-stopped
+    working_dir: /var/www
+    volumes:
+      - .:/var/www
+    environment:
+      - APP_ENV=local
+      - XDEBUG_MODE=develop,debug
+      - PHP_IDE_CONFIG=serverName=emprenddi
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - emprenddi
+
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: emprenddi_nginx
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - .:/var/www
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - app
+    networks:
+      - emprenddi
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: emprenddi_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: emprenddi
+      POSTGRES_USER: emprenddi
+      POSTGRES_PASSWORD: secret
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U emprenddi -d emprenddi"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - emprenddi
+
+  redis:
+    image: redis:7-alpine
+    container_name: emprenddi_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - emprenddi
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: emprenddi_mail
+    restart: unless-stopped
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+    networks:
+      - emprenddi
+
+  vite:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+      target: development
+    container_name: emprenddi_vite
+    restart: unless-stopped
+    working_dir: /var/www
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    volumes:
+      - .:/var/www
+    ports:
+      - "5173:5173"
+    depends_on:
+      - app
+    networks:
+      - emprenddi
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  emprenddi:
+    driver: bridge
