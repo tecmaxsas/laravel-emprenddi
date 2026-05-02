@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Emprenddi — Deploy a producción (en la VM)
+# Pull último código, instala deps, build assets, migra, restart.
+# Usado por GitHub Actions y para deploys manuales.
+# Idempotente.
+# =============================================================================
+
+set -euo pipefail
+
+PROJECT_DIR="${PROJECT_DIR:-/opt/emprenddi}"
+COMPOSE="docker compose -f docker-compose.prod.yml"
+
+cd "$PROJECT_DIR"
+
+echo "==> Pull últimos cambios desde origin/main..."
+git fetch origin main
+git reset --hard origin/main
+
+echo "==> Construyendo imagen app si hay cambios en Dockerfile/composer..."
+$COMPOSE build app worker scheduler
+
+echo "==> Levantando stack (postgres, redis, app, worker, scheduler, nginx)..."
+$COMPOSE up -d
+
+echo "==> Esperando a que postgres esté healthy..."
+until $COMPOSE exec -T postgres pg_isready -U "${DB_USERNAME:-emprenddi}" >/dev/null 2>&1; do
+    sleep 2
+done
+
+echo "==> Instalando dependencias PHP (composer install)..."
+$COMPOSE exec -T -e COMPOSER_ALLOW_SUPERUSER=1 app composer install --no-dev --optimize-autoloader --no-interaction
+
+echo "==> Permisos en storage/ y bootstrap/cache..."
+$COMPOSE exec -T app chmod -R 775 storage bootstrap/cache
+$COMPOSE exec -T app chown -R www-data:www-data storage bootstrap/cache || true
+
+echo "==> Instalando dependencias JS y compilando assets..."
+$COMPOSE exec -T app npm ci --no-audit --no-fund
+$COMPOSE exec -T app npm run build
+
+echo "==> Migraciones (force, sin prompts)..."
+$COMPOSE exec -T app php artisan migrate --force
+
+echo "==> Limpiando caches viejos y re-cacheando para producción..."
+$COMPOSE exec -T app php artisan optimize:clear
+$COMPOSE exec -T app php artisan config:cache
+$COMPOSE exec -T app php artisan route:cache
+$COMPOSE exec -T app php artisan view:cache
+$COMPOSE exec -T app php artisan event:cache
+$COMPOSE exec -T app php artisan filament:optimize
+
+echo "==> Restart workers para que tomen el nuevo código..."
+$COMPOSE exec -T app php artisan queue:restart
+$COMPOSE restart worker scheduler
+
+echo "==> Reload nginx (no downtime)..."
+$COMPOSE exec -T nginx nginx -s reload
+
+echo ""
+echo "✅ Deploy completado: $(date -Is)"
+echo "   Commit desplegado: $(git rev-parse --short HEAD) — $(git log -1 --pretty=%s)"
