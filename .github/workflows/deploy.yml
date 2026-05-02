@@ -14,12 +14,35 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - name: Decode SSH key from base64 secret
+        env:
+          KEY_B64: ${{ secrets.GCP_SSH_PRIVATE_KEY }}
+        run: |
+          if [ -z "$KEY_B64" ]; then
+            echo "::error::Secret GCP_SSH_PRIVATE_KEY está vacío."
+            exit 1
+          fi
+
+          KEY_FILE="$RUNNER_TEMP/deploy_key"
+          echo "$KEY_B64" | base64 -d > "$KEY_FILE" 2>/dev/null || {
+            echo "::error::Secret no es base64 válido. Genera con 'base64 -w 0 ~/.ssh/emprenddi_ci' y pega esa salida."
+            exit 1
+          }
+          chmod 600 "$KEY_FILE"
+
+          if ! ssh-keygen -y -f "$KEY_FILE" > /dev/null 2>&1; then
+            echo "::error::Llave decodificada NO es una SSH private key válida."
+            exit 1
+          fi
+          echo "✓ Llave SSH válida"
+          echo "KEY_FILE=$KEY_FILE" >> $GITHUB_ENV
+
       - name: Deploy via SSH to VM
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.GCP_VM_IP }}
           username: ${{ secrets.GCP_VM_USER }}
-          key: ${{ secrets.GCP_SSH_PRIVATE_KEY }}
+          key_path: ${{ env.KEY_FILE }}
           port: 22
           script_stop: true
           script: |
