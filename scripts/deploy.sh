@@ -9,7 +9,7 @@
 set -euo pipefail
 
 PROJECT_DIR="${PROJECT_DIR:-/opt/emprenddi}"
-COMPOSE="docker compose -f docker-compose.prod.yml"
+COMPOSE="docker compose --env-file .env.production -f docker-compose.prod.yml"
 
 cd "$PROJECT_DIR"
 

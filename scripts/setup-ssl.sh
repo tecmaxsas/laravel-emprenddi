@@ -38,7 +38,7 @@ fi
 echo "==> Si nginx (Docker) está corriendo, lo detenemos temporalmente..."
 if docker ps --format '{{.Names}}' | grep -q '^emprenddi_nginx$'; then
     cd "$PROJECT_DIR"
-    docker compose -f docker-compose.prod.yml stop nginx
+    docker compose --env-file .env.production -f docker-compose.prod.yml stop nginx
     NGINX_WAS_UP=1
 else
     NGINX_WAS_UP=0
@@ -60,7 +60,7 @@ RENEW_HOOK="/etc/letsencrypt/renewal-hooks/deploy/reload-emprenddi-nginx.sh"
 mkdir -p "$(dirname "$RENEW_HOOK")"
 cat > "$RENEW_HOOK" <<'EOF'
 #!/usr/bin/env bash
-cd /opt/emprenddi && docker compose -f docker-compose.prod.yml restart nginx || true
+cd /opt/emprenddi && docker compose --env-file .env.production -f docker-compose.prod.yml restart nginx || true
 EOF
 chmod +x "$RENEW_HOOK"
 
@@ -70,7 +70,7 @@ certbot renew --dry-run
 if [ "$NGINX_WAS_UP" = "1" ]; then
     echo "==> Re-iniciando nginx..."
     cd "$PROJECT_DIR"
-    docker compose -f docker-compose.prod.yml start nginx
+    docker compose --env-file .env.production -f docker-compose.prod.yml start nginx
 fi
 
 echo ""
