@@ -8,6 +8,12 @@
 
 set -euo pipefail
 
+# Re-exec con sudo si no somos root. El container chown'a archivos a www-data
+# (uid del container) que el usuario host no puede manipular después.
+if [ "$EUID" -ne 0 ]; then
+    exec sudo --preserve-env=PROJECT_DIR bash "$0" "$@"
+fi
+
 PROJECT_DIR="${PROJECT_DIR:-/opt/emprenddi}"
 COMPOSE="docker compose --env-file .env.production -f docker-compose.prod.yml"
 
