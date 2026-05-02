@@ -53,13 +53,28 @@ class GeneralLedgerPage extends Page implements HasForms, HasTable
                     ->schema([
                         Forms\Components\Select::make('account_id')
                             ->label('Cuenta')
-                            ->relationship('account', 'name', fn (Builder $query) => $query
-                                ->where('accepts_movements', true)->orderBy('code'))
-                            ->getOptionLabelFromRecordUsing(fn (Account $record) => "{$record->code} — {$record->name}")
-                            ->searchable(['code', 'name'])
-                            ->preload()
+                            ->searchable()
                             ->required()
                             ->live()
+                            ->getSearchResultsUsing(fn (string $search) => Account::query()
+                                ->where('accepts_movements', true)
+                                ->where('active', true)
+                                ->where(function ($q) use ($search) {
+                                    $q->where('code', 'like', "%{$search}%")
+                                      ->orWhere('name', 'ilike', "%{$search}%");
+                                })
+                                ->orderBy('code')
+                                ->limit(50)
+                                ->get()
+                                ->mapWithKeys(fn (Account $account) => [
+                                    $account->id => "{$account->code} — {$account->name}",
+                                ])
+                                ->all())
+                            ->getOptionLabelUsing(function ($value) {
+                                $account = Account::find($value);
+
+                                return $account ? "{$account->code} — {$account->name}" : null;
+                            })
                             ->columnSpan(2),
 
                         Forms\Components\DatePicker::make('from')
