@@ -60,8 +60,8 @@ echo "==> Restart workers para que tomen el nuevo código..."
 $COMPOSE exec -T app php artisan queue:restart
 $COMPOSE restart worker scheduler
 
-echo "==> Reload nginx (no downtime)..."
-$COMPOSE exec -T nginx nginx -s reload
+echo "==> Recreando nginx (re-bindea volume mount de prod.conf si cambió)..."
+$COMPOSE up -d --no-deps --force-recreate nginx
 
 echo ""
 echo "✅ Deploy completado: $(date -Is)"
