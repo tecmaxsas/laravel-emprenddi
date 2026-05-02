@@ -56,6 +56,17 @@ class Company extends Model
         return $this->hasMany(User::class);
     }
 
+    public function locations(): HasMany
+    {
+        return $this->hasMany(Location::class);
+    }
+
+    public function mainLocation(): ?Location
+    {
+        return $this->locations()->where('is_main', true)->first()
+            ?? $this->locations()->orderBy('id')->first();
+    }
+
     public function subscriptions(): HasMany
     {
         return $this->hasMany(Subscription::class);
