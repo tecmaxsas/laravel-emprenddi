@@ -163,7 +163,7 @@ class PlanResource extends Resource
 
                 Tables\Columns\TextColumn::make('features')
                     ->label('Módulos')
-                    ->formatStateUsing(fn (?array $state) => count($state ?? []))
+                    ->formatStateUsing(fn (Plan $record) => count($record->features ?? []))
                     ->alignCenter()
                     ->tooltip(fn (Plan $record) => collect($record->features ?? [])
                         ->map(fn ($k) => Plan::FEATURE_KEYS[$k] ?? $k)
