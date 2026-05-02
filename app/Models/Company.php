@@ -14,6 +14,8 @@ class Company extends Model
     protected $fillable = [
         'name',
         'legal_name',
+        'document_type',
+        'organization_type',
         'nit',
         'dv',
         'regime_type',
@@ -24,6 +26,7 @@ class Company extends Model
         'department',
         'country',
         'phone',
+        'phone_country_code',
         'email',
         'website',
         'logo_path',

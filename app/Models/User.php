@@ -19,10 +19,13 @@ class User extends Authenticatable implements FilamentUser
     protected $fillable = [
         'company_id',
         'name',
+        'last_name',
         'email',
         'password',
         'is_super_admin',
         'active',
+        'accepted_terms_at',
+        'marketing_opt_in',
     ];
 
     protected $hidden = [
@@ -38,7 +41,14 @@ class User extends Authenticatable implements FilamentUser
             'is_super_admin' => 'boolean',
             'active' => 'boolean',
             'last_login_at' => 'datetime',
+            'accepted_terms_at' => 'datetime',
+            'marketing_opt_in' => 'boolean',
         ];
+    }
+
+    public function fullName(): string
+    {
+        return trim($this->name.' '.$this->last_name);
     }
 
     public function company(): BelongsTo
