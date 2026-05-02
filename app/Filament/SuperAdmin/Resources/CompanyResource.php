@@ -4,9 +4,12 @@ namespace App\Filament\SuperAdmin\Resources;
 
 use App\Filament\SuperAdmin\Resources\CompanyResource\Pages;
 use App\Filament\SuperAdmin\Resources\CompanyResource\RelationManagers;
+use App\Models\Account;
 use App\Models\Company;
+use App\Services\Accounting\PucProvisioner;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -182,6 +185,28 @@ class CompanyResource extends Resource
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
+
+                Tables\Actions\Action::make('provisionPuc')
+                    ->label('Provisionar PUC')
+                    ->icon('heroicon-o-list-bullet')
+                    ->color('info')
+                    ->requiresConfirmation()
+                    ->modalHeading('Provisionar Plan Único de Cuentas')
+                    ->modalDescription(fn (Company $record) => sprintf(
+                        'La empresa "%s" tiene actualmente %d cuentas. Esto añadirá el PUC estándar Colombia (~280 cuentas) sin duplicar las que ya existan.',
+                        $record->name,
+                        Account::withoutGlobalScopes()->where('company_id', $record->id)->count()
+                    ))
+                    ->modalSubmitActionLabel('Provisionar')
+                    ->action(function (Company $record) {
+                        $created = app(PucProvisioner::class)->provision($record);
+
+                        Notification::make()
+                            ->success()
+                            ->title('PUC provisionado')
+                            ->body("Se crearon {$created} cuentas nuevas en {$record->name}.")
+                            ->send();
+                    }),
             ]);
     }
 

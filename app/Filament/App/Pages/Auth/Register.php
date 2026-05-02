@@ -6,6 +6,7 @@ use App\Models\Company;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\User;
+use App\Services\Accounting\PucProvisioner;
 use App\Support\DianDvCalculator;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\Group;
@@ -373,6 +374,8 @@ class Register extends BaseRegister
                     'notes' => 'Auto-creada al registrar la empresa.',
                 ]);
             }
+
+            app(PucProvisioner::class)->provision($company);
 
             Notification::make()
                 ->success()
