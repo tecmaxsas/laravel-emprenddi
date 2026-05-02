@@ -144,7 +144,7 @@ class SubscriptionResource extends Resource
                     ]),
                 Tables\Filters\Filter::make('expiring_soon')
                     ->label('Expira en 7 días')
-                    ->query(fn (Builder $q) => $q->whereBetween('ends_at', [now(), now()->addDays(7)])
+                    ->query(fn (Builder $query) => $query->whereBetween('ends_at', [now(), now()->addDays(7)])
                         ->whereIn('status', Subscription::ACTIVE_STATUSES)),
             ])
             ->actions([

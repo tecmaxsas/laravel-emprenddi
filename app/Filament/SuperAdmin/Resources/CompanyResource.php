@@ -135,7 +135,7 @@ class CompanyResource extends Resource
                     ->searchable()
                     ->sortable()
                     ->weight('semibold')
-                    ->description(fn (Company $r) => strtoupper($r->document_type).' '.$r->fullNit()),
+                    ->description(fn (Company $record) => strtoupper($record->document_type).' '.$record->fullNit()),
 
                 Tables\Columns\TextColumn::make('city')
                     ->label('Ciudad')

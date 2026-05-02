@@ -186,7 +186,7 @@ class ThirdPartyResource extends Resource
                                         ->where('accepts_movements', true)
                                         ->orderBy('code'),
                                 )
-                                ->getOptionLabelFromRecordUsing(fn (Account $r) => "{$r->code} — {$r->name}")
+                                ->getOptionLabelFromRecordUsing(fn (Account $record) => "{$record->code} — {$record->name}")
                                 ->searchable(['code', 'name'])
                                 ->preload()
                                 ->placeholder('— sin cuenta default —'),
@@ -201,14 +201,14 @@ class ThirdPartyResource extends Resource
                                         ->where('accepts_movements', true)
                                         ->orderBy('code'),
                                 )
-                                ->getOptionLabelFromRecordUsing(fn (Account $r) => "{$r->code} — {$r->name}")
+                                ->getOptionLabelFromRecordUsing(fn (Account $record) => "{$record->code} — {$record->name}")
                                 ->searchable(['code', 'name'])
                                 ->preload()
                                 ->placeholder('— sin cuenta default —'),
 
                             Forms\Components\Select::make('default_seller_user_id')
                                 ->label('Vendedor asignado')
-                                ->relationship('defaultSeller', 'name', fn (Builder $q) => $q
+                                ->relationship('defaultSeller', 'name', fn (Builder $query) => $query
                                     ->where('company_id', auth()->user()->company_id))
                                 ->placeholder('—'),
 
