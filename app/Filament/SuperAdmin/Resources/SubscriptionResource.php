@@ -120,9 +120,12 @@ class SubscriptionResource extends Resource
                 Tables\Columns\TextColumn::make('starts_at')->label('Inicia')->date('Y-m-d')->sortable(),
                 Tables\Columns\TextColumn::make('ends_at')->label('Termina')->date('Y-m-d')->sortable(),
 
-                Tables\Columns\TextColumn::make('ends_at')
+                Tables\Columns\TextColumn::make('days_remaining')
                     ->label('Días rest.')
-                    ->formatStateUsing(fn ($state) => $state ? max(0, (int) now()->diffInDays($state, false)) : '—')
+                    ->state(fn ($record) => $record->ends_at
+                        ? max(0, (int) now()->diffInDays($record->ends_at, false))
+                        : null)
+                    ->placeholder('—')
                     ->alignCenter(),
 
                 Tables\Columns\TextColumn::make('price_paid')->label('Precio')->money(fn ($r) => $r->currency),
