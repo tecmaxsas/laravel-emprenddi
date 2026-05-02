@@ -3,6 +3,8 @@
 namespace App\Filament\App\Pages\Auth;
 
 use App\Models\Company;
+use App\Models\Plan;
+use App\Models\Subscription;
 use App\Models\User;
 use App\Support\DianDvCalculator;
 use Filament\Forms\Components\Checkbox;
@@ -351,6 +353,26 @@ class Register extends BaseRegister
             ]);
 
             $user->assignRole('admin');
+
+            $trialPlan = Plan::where('slug', 'free-trial')->first()
+                ?? Plan::where('is_active', true)->orderBy('sort_order')->first();
+
+            if ($trialPlan) {
+                $trialDays = $trialPlan->trial_days > 0 ? $trialPlan->trial_days : 30;
+
+                Subscription::create([
+                    'company_id' => $company->id,
+                    'plan_id' => $trialPlan->id,
+                    'status' => Subscription::STATUS_TRIAL,
+                    'starts_at' => now(),
+                    'ends_at' => now()->addDays($trialDays),
+                    'price_paid' => 0,
+                    'currency' => $trialPlan->currency,
+                    'billing_cycle' => $trialPlan->billing_cycle,
+                    'created_by_user_id' => $user->id,
+                    'notes' => 'Auto-creada al registrar la empresa.',
+                ]);
+            }
 
             Notification::make()
                 ->success()

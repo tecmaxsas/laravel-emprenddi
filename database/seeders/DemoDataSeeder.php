@@ -11,17 +11,7 @@ class DemoDataSeeder extends Seeder
 {
     public function run(): void
     {
-        // Superadmin (no pertenece a ninguna empresa)
-        User::firstOrCreate(
-            ['email' => env('FILAMENT_SUPERADMIN_EMAIL', 'superadmin@emprenddi.com')],
-            [
-                'name' => 'Super Admin',
-                'password' => Hash::make('password'),
-                'is_super_admin' => true,
-                'active' => true,
-                'email_verified_at' => now(),
-            ],
-        );
+        // El superadmin ahora se crea en SuperAdminUserSeeder desde env vars.
 
         // Empresa demo
         $company = Company::firstOrCreate(

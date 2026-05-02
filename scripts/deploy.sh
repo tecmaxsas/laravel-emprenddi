@@ -20,8 +20,17 @@ COMPOSE="docker compose --env-file .env.production -f docker-compose.prod.yml"
 cd "$PROJECT_DIR"
 
 echo "==> Pull últimos cambios desde origin/main..."
+SCRIPT_FILE="$(realpath "$0")"
+SCRIPT_HASH_BEFORE=$(md5sum "$SCRIPT_FILE" | awk '{print $1}')
 git fetch origin main
 git reset --hard origin/main
+SCRIPT_HASH_AFTER=$(md5sum "$SCRIPT_FILE" | awk '{print $1}')
+
+if [ "$SCRIPT_HASH_BEFORE" != "$SCRIPT_HASH_AFTER" ] && [ "${EMPRENDDI_DEPLOY_REEXEC:-0}" != "1" ]; then
+    echo "==> deploy.sh cambió en este pull — re-ejecutando con la versión nueva..."
+    export EMPRENDDI_DEPLOY_REEXEC=1
+    exec bash "$SCRIPT_FILE" "$@"
+fi
 
 echo "==> Construyendo imagen app si hay cambios en Dockerfile/composer..."
 $COMPOSE build app worker scheduler
@@ -51,8 +60,10 @@ $COMPOSE exec -T app npm run build
 echo "==> Migraciones (force, sin prompts)..."
 $COMPOSE exec -T app php artisan migrate --force
 
-echo "==> Seed de roles base (idempotente)..."
+echo "==> Seed de infraestructura (roles + planes + superadmin desde env)..."
 $COMPOSE exec -T app php artisan db:seed --class=RolesSeeder --force
+$COMPOSE exec -T app php artisan db:seed --class=PlansSeeder --force
+$COMPOSE exec -T app php artisan db:seed --class=SuperAdminUserSeeder --force
 
 echo "==> Limpiando caches viejos y re-cacheando para producción..."
 $COMPOSE exec -T app php artisan optimize:clear

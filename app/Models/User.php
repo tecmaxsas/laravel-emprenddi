@@ -64,7 +64,10 @@ class User extends Authenticatable implements FilamentUser
 
         return match ($panel->getId()) {
             'super-admin' => $this->is_super_admin,
-            'app' => ! $this->is_super_admin && $this->company_id !== null && (bool) $this->company?->active,
+            'app' => ! $this->is_super_admin
+                && $this->company_id !== null
+                && (bool) $this->company?->active
+                && $this->company->hasActiveSubscription(),
             default => false,
         };
     }
