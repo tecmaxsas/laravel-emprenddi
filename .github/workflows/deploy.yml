@@ -14,7 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Decode SSH key from base64 secret
+      - name: Decode and validate SSH key
+        id: ssh
         env:
           KEY_B64: ${{ secrets.GCP_SSH_PRIVATE_KEY }}
         run: |
@@ -23,26 +24,41 @@ jobs:
             exit 1
           fi
 
-          KEY_FILE="$RUNNER_TEMP/deploy_key"
-          echo "$KEY_B64" | base64 -d > "$KEY_FILE" 2>/dev/null || {
-            echo "::error::Secret no es base64 válido. Genera con 'base64 -w 0 ~/.ssh/emprenddi_ci' y pega esa salida."
+          DECODED=$(printf '%s' "$KEY_B64" | base64 -d 2>/dev/null) || {
+            echo "::error::Secret no es base64 válido. Genera con 'base64 -w 0 ~/.ssh/emprenddi_ci'."
             exit 1
           }
-          chmod 600 "$KEY_FILE"
 
-          if ! ssh-keygen -y -f "$KEY_FILE" > /dev/null 2>&1; then
-            echo "::error::Llave decodificada NO es una SSH private key válida."
+          # Validar que es una SSH private key parseable
+          TMP=$(mktemp)
+          printf '%s\n' "$DECODED" > "$TMP"
+          chmod 600 "$TMP"
+          if ! ssh-keygen -y -f "$TMP" > /dev/null 2>&1; then
+            rm -f "$TMP"
+            echo "::error::La cadena decodificada no es una SSH private key válida."
             exit 1
           fi
-          echo "✓ Llave SSH válida"
-          echo "KEY_FILE=$KEY_FILE" >> $GITHUB_ENV
+          rm -f "$TMP"
+          echo "✓ SSH key válida y decodificada"
+
+          # Enmascarar cada línea no vacía (defensa extra; GitHub ya enmascara el secret crudo)
+          while IFS= read -r line; do
+            [ -n "$line" ] && echo "::add-mask::$line"
+          done <<< "$DECODED"
+
+          # Exponer como multi-line output para el siguiente step
+          {
+            echo "key<<KEYEOF"
+            printf '%s\n' "$DECODED"
+            echo "KEYEOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Deploy via SSH to VM
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.GCP_VM_IP }}
           username: ${{ secrets.GCP_VM_USER }}
-          key_path: ${{ env.KEY_FILE }}
+          key: ${{ steps.ssh.outputs.key }}
           port: 22
           script_stop: true
           script: |
