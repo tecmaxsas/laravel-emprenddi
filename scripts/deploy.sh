@@ -41,7 +41,10 @@ echo "==> Permisos en storage/ y bootstrap/cache..."
 $COMPOSE exec -T app chmod -R 775 storage bootstrap/cache
 $COMPOSE exec -T app chown -R www-data:www-data storage bootstrap/cache || true
 
-echo "==> Instalando dependencias JS y compilando assets..."
+echo "==> Publicando assets de Filament a public/css/filament y public/js/filament..."
+$COMPOSE exec -T app php artisan filament:assets
+
+echo "==> Instalando dependencias JS y compilando assets Vite..."
 $COMPOSE exec -T app npm ci --no-audit --no-fund
 $COMPOSE exec -T app npm run build
 
