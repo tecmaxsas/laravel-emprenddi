@@ -51,6 +51,9 @@ $COMPOSE exec -T app npm run build
 echo "==> Migraciones (force, sin prompts)..."
 $COMPOSE exec -T app php artisan migrate --force
 
+echo "==> Seed de roles base (idempotente)..."
+$COMPOSE exec -T app php artisan db:seed --class=RolesSeeder --force
+
 echo "==> Limpiando caches viejos y re-cacheando para producción..."
 $COMPOSE exec -T app php artisan optimize:clear
 $COMPOSE exec -T app php artisan config:cache
