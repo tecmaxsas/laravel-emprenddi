@@ -6,7 +6,9 @@ use App\Filament\SuperAdmin\Resources\CompanyResource\Pages;
 use App\Filament\SuperAdmin\Resources\CompanyResource\RelationManagers;
 use App\Models\Account;
 use App\Models\Company;
+use App\Models\Tax;
 use App\Services\Accounting\PucProvisioner;
+use App\Services\Accounting\TaxesProvisioner;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -205,6 +207,28 @@ class CompanyResource extends Resource
                             ->success()
                             ->title('PUC provisionado')
                             ->body("Se crearon {$created} cuentas nuevas en {$record->name}.")
+                            ->send();
+                    }),
+
+                Tables\Actions\Action::make('provisionTaxes')
+                    ->label('Provisionar Impuestos')
+                    ->icon('heroicon-o-receipt-percent')
+                    ->color('info')
+                    ->requiresConfirmation()
+                    ->modalHeading('Provisionar Impuestos Colombia')
+                    ->modalDescription(fn (Company $record) => sprintf(
+                        'La empresa "%s" tiene actualmente %d impuestos. Esto añadirá el catálogo estándar (IVA 19/5/0, INC, Retefuente, ReteIVA, ReteICA — ~13 impuestos) sin duplicar.',
+                        $record->name,
+                        Tax::withoutGlobalScopes()->where('company_id', $record->id)->count()
+                    ))
+                    ->modalSubmitActionLabel('Provisionar')
+                    ->action(function (Company $record) {
+                        $created = app(TaxesProvisioner::class)->provision($record);
+
+                        Notification::make()
+                            ->success()
+                            ->title('Impuestos provisionados')
+                            ->body("Se crearon {$created} impuestos nuevos en {$record->name}.")
                             ->send();
                     }),
             ]);

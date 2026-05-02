@@ -7,6 +7,7 @@ use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\User;
 use App\Services\Accounting\PucProvisioner;
+use App\Services\Accounting\TaxesProvisioner;
 use App\Support\DianDvCalculator;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\Group;
@@ -376,6 +377,7 @@ class Register extends BaseRegister
             }
 
             app(PucProvisioner::class)->provision($company);
+            app(TaxesProvisioner::class)->provision($company);
 
             Notification::make()
                 ->success()
