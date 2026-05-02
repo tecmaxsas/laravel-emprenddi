@@ -133,7 +133,7 @@ class SubscriptionsRelationManager extends RelationManager
                     }),
                 Tables\Columns\TextColumn::make('starts_at')->label('Inicia')->date('Y-m-d'),
                 Tables\Columns\TextColumn::make('ends_at')->label('Termina')->date('Y-m-d'),
-                Tables\Columns\TextColumn::make('price_paid')->label('Precio')->money(fn ($r) => $r->currency),
+                Tables\Columns\TextColumn::make('price_paid')->label('Precio')->money(fn (\App\Models\Subscription $record) => $record->currency),
                 Tables\Columns\TextColumn::make('createdBy.email')->label('Asignó')->toggleable(),
             ])
             ->headerActions([

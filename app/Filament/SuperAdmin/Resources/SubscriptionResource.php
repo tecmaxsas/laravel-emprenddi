@@ -128,7 +128,7 @@ class SubscriptionResource extends Resource
                     ->placeholder('—')
                     ->alignCenter(),
 
-                Tables\Columns\TextColumn::make('price_paid')->label('Precio')->money(fn ($r) => $r->currency),
+                Tables\Columns\TextColumn::make('price_paid')->label('Precio')->money(fn (Subscription $record) => $record->currency),
                 Tables\Columns\TextColumn::make('createdBy.email')->label('Asignó')->toggleable(),
             ])
             ->filters([
