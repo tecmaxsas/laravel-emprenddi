@@ -23,7 +23,8 @@ sudo apt install -y \
     git \
     make \
     ufw \
-    certbot
+    certbot \
+    dnsutils
 
 echo "==> 3. Instalando Docker (si no está)..."
 if ! command -v docker &> /dev/null; then

@@ -21,7 +21,10 @@ fi
 
 echo "==> Verificando que DNS de $DOMAIN resuelve a la IP de esta VM..."
 EXPECTED_IP=$(curl -s ifconfig.me)
-DNS_IP=$(dig +short "$DOMAIN" | tail -n1)
+DNS_IP=$(getent ahosts "$DOMAIN" 2>/dev/null | awk '/STREAM/ {print $1; exit}')
+if [ -z "$DNS_IP" ]; then
+    DNS_IP="(no se pudo resolver)"
+fi
 
 if [ "$EXPECTED_IP" != "$DNS_IP" ]; then
     echo "  ⚠️  ADVERTENCIA: DNS no apunta correctamente."
