@@ -83,3 +83,4 @@ $COMPOSE up -d --no-deps --force-recreate nginx
 echo ""
 echo "✅ Deploy completado: $(date -Is)"
 echo "   Commit desplegado: $(git rev-parse --short HEAD) — $(git log -1 --pretty=%s)"
+echo "   Ver: https://github.com/tecmaxsas/laravel-emprenddi/commit/$(git rev-parse HEAD)"
