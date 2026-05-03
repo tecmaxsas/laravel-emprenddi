@@ -3,6 +3,7 @@
 namespace App\Filament\App\Resources;
 
 use App\Filament\App\Resources\UserResource\Pages;
+use App\Filament\Concerns\ChecksPermission;
 use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -15,6 +16,11 @@ use Spatie\Permission\Models\Role;
 
 class UserResource extends Resource
 {
+    use ChecksPermission;
+
+    protected static function viewPermission(): string { return 'users.view'; }
+    protected static function managePermission(): string { return 'users.manage'; }
+
     protected static ?string $model = User::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-users';

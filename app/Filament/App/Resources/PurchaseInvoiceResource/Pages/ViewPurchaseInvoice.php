@@ -30,7 +30,8 @@ class ViewPurchaseInvoice extends ViewRecord
                 ->label('Contabilizar')
                 ->icon('heroicon-o-check-circle')
                 ->color('success')
-                ->visible(fn (PurchaseInvoice $record) => $record->status === 'draft')
+                ->visible(fn (PurchaseInvoice $record) => $record->status === 'draft'
+                    && auth()->user()?->can('purchases.post'))
                 ->requiresConfirmation()
                 ->modalHeading('Contabilizar factura de compra')
                 ->modalDescription(fn (PurchaseInvoice $record) => sprintf(

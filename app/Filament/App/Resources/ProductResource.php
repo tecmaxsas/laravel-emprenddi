@@ -3,6 +3,7 @@
 namespace App\Filament\App\Resources;
 
 use App\Filament\App\Resources\ProductResource\Pages;
+use App\Filament\Concerns\ChecksPermission;
 use App\Models\Account;
 use App\Models\Category;
 use App\Models\Location;
@@ -17,6 +18,11 @@ use Illuminate\Database\Eloquent\Builder;
 
 class ProductResource extends Resource
 {
+    use ChecksPermission;
+
+    protected static function viewPermission(): string { return 'products.view'; }
+    protected static function managePermission(): string { return 'products.manage'; }
+
     protected static ?string $model = Product::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-cube';

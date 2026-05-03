@@ -3,6 +3,7 @@
 namespace App\Filament\App\Resources;
 
 use App\Filament\App\Resources\LocationResource\Pages;
+use App\Filament\Concerns\ChecksPermission;
 use App\Models\Location;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -13,6 +14,11 @@ use Illuminate\Database\Eloquent\Builder;
 
 class LocationResource extends Resource
 {
+    use ChecksPermission;
+
+    protected static function viewPermission(): string { return 'locations.view'; }
+    protected static function managePermission(): string { return 'locations.manage'; }
+
     protected static ?string $model = Location::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-building-storefront';

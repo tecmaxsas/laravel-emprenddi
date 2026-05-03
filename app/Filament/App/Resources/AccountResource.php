@@ -3,6 +3,7 @@
 namespace App\Filament\App\Resources;
 
 use App\Filament\App\Resources\AccountResource\Pages;
+use App\Filament\Concerns\ChecksPermission;
 use App\Models\Account;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -13,6 +14,11 @@ use Illuminate\Database\Eloquent\Builder;
 
 class AccountResource extends Resource
 {
+    use ChecksPermission;
+
+    protected static function viewPermission(): string { return 'accounts.view'; }
+    protected static function managePermission(): string { return 'accounts.manage'; }
+
     protected static ?string $model = Account::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-list-bullet';

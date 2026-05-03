@@ -3,6 +3,7 @@
 namespace App\Filament\App\Resources;
 
 use App\Filament\App\Resources\ThirdPartyResource\Pages;
+use App\Filament\Concerns\ChecksPermission;
 use App\Models\Account;
 use App\Models\ThirdParty;
 use App\Support\DianDvCalculator;
@@ -15,6 +16,11 @@ use Illuminate\Database\Eloquent\Builder;
 
 class ThirdPartyResource extends Resource
 {
+    use ChecksPermission;
+
+    protected static function viewPermission(): string { return 'third_parties.view'; }
+    protected static function managePermission(): string { return 'third_parties.manage'; }
+
     protected static ?string $model = ThirdParty::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-user-group';

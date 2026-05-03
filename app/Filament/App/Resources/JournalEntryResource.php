@@ -3,6 +3,7 @@
 namespace App\Filament\App\Resources;
 
 use App\Filament\App\Resources\JournalEntryResource\Pages;
+use App\Filament\Concerns\ChecksPermission;
 use App\Models\Account;
 use App\Models\JournalEntry;
 use App\Models\ThirdParty;
@@ -15,6 +16,11 @@ use Illuminate\Database\Eloquent\Builder;
 
 class JournalEntryResource extends Resource
 {
+    use ChecksPermission;
+
+    protected static function viewPermission(): string { return 'journal_entries.view'; }
+    protected static function managePermission(): string { return 'journal_entries.create'; }
+
     protected static ?string $model = JournalEntry::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-book-open';
@@ -290,7 +296,8 @@ class JournalEntryResource extends Resource
                     ->label('Contabilizar')
                     ->icon('heroicon-o-check-circle')
                     ->color('success')
-                    ->visible(fn (JournalEntry $record) => $record->status === 'draft')
+                    ->visible(fn (JournalEntry $record) => $record->status === 'draft'
+                        && auth()->user()?->can('journal_entries.post'))
                     ->requiresConfirmation()
                     ->modalDescription(fn (JournalEntry $record) => $record->isBalanced()
                         ? "Vas a contabilizar el asiento {$record->fullNumber()}. Después de contabilizado no se podrá editar."

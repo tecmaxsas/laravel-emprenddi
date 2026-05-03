@@ -32,6 +32,11 @@ class GeneralLedgerPage extends Page implements HasForms, HasTable
 
     protected static string $view = 'filament.app.pages.reports.report-page';
 
+    public static function canAccess(): bool
+    {
+        return (bool) auth()->user()?->can('reports.general_ledger');
+    }
+
     public ?array $filters = [];
 
     public function mount(): void

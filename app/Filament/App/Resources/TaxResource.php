@@ -3,6 +3,7 @@
 namespace App\Filament\App\Resources;
 
 use App\Filament\App\Resources\TaxResource\Pages;
+use App\Filament\Concerns\ChecksPermission;
 use App\Models\Account;
 use App\Models\Tax;
 use Filament\Forms;
@@ -14,6 +15,11 @@ use Illuminate\Database\Eloquent\Builder;
 
 class TaxResource extends Resource
 {
+    use ChecksPermission;
+
+    protected static function viewPermission(): string { return 'taxes.view'; }
+    protected static function managePermission(): string { return 'taxes.manage'; }
+
     protected static ?string $model = Tax::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-receipt-percent';

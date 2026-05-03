@@ -3,6 +3,7 @@
 namespace App\Filament\App\Resources;
 
 use App\Filament\App\Resources\RoleResource\Pages;
+use App\Filament\Concerns\ChecksPermission;
 use App\Services\Auth\PermissionsCatalog;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -13,6 +14,11 @@ use Spatie\Permission\Models\Role;
 
 class RoleResource extends Resource
 {
+    use ChecksPermission;
+
+    protected static function viewPermission(): string { return 'roles.view'; }
+    protected static function managePermission(): string { return 'roles.manage'; }
+
     protected static ?string $model = Role::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-shield-check';

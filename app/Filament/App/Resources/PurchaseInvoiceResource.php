@@ -4,6 +4,7 @@ namespace App\Filament\App\Resources;
 
 use App\Filament\App\Resources\PurchaseInvoiceResource\Pages;
 use App\Filament\App\Resources\PurchaseInvoiceResource\RelationManagers;
+use App\Filament\Concerns\ChecksPermission;
 use App\Models\Account;
 use App\Models\Location;
 use App\Models\Product;
@@ -19,6 +20,11 @@ use Illuminate\Database\Eloquent\Builder;
 
 class PurchaseInvoiceResource extends Resource
 {
+    use ChecksPermission;
+
+    protected static function viewPermission(): string { return 'purchases.view'; }
+    protected static function managePermission(): string { return 'purchases.create'; }
+
     protected static ?string $model = PurchaseInvoice::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-shopping-bag';

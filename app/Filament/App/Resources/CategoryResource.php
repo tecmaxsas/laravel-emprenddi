@@ -3,6 +3,7 @@
 namespace App\Filament\App\Resources;
 
 use App\Filament\App\Resources\CategoryResource\Pages;
+use App\Filament\Concerns\ChecksPermission;
 use App\Models\Category;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -13,6 +14,11 @@ use Illuminate\Database\Eloquent\Builder;
 
 class CategoryResource extends Resource
 {
+    use ChecksPermission;
+
+    protected static function viewPermission(): string { return 'categories.view'; }
+    protected static function managePermission(): string { return 'categories.manage'; }
+
     protected static ?string $model = Category::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-tag';
