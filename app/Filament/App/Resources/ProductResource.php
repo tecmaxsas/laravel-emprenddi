@@ -88,8 +88,21 @@ class ProductResource extends Resource
                                 ->required()
                                 ->live()
                                 ->native(false)
+                                ->helperText(fn ($state) => match ($state) {
+                                    'good' => 'Bien físico que se compra y se vende. Controla stock por sede.',
+                                    'service' => 'Servicio intangible. No controla inventario.',
+                                    'kit' => 'Combo de productos. Al venderse desglosa componentes.',
+                                    'consumable' => 'Insumo de uso interno (no se vende a clientes).',
+                                    'variable' => 'Padre con N variantes (talla/color). Las variantes son las que se venden.',
+                                    default => null,
+                                })
                                 ->afterStateUpdated(function ($state, Forms\Set $set) {
                                     if ($state === 'service') {
+                                        $set('track_inventory', false);
+                                    }
+                                    if ($state === 'variable') {
+                                        $set('is_sellable', false);
+                                        $set('is_purchasable', false);
                                         $set('track_inventory', false);
                                     }
                                 }),
@@ -127,6 +140,7 @@ class ProductResource extends Resource
 
                 Forms\Components\Tabs\Tab::make('Precios e impuestos')
                     ->icon('heroicon-o-currency-dollar')
+                    ->visible(fn (Forms\Get $get) => $get('type') !== 'variable')
                     ->schema([
                         Forms\Components\Group::make()->columns(3)->schema([
                             Forms\Components\TextInput::make('default_purchase_price')
@@ -192,6 +206,7 @@ class ProductResource extends Resource
 
                 Forms\Components\Tabs\Tab::make('Cuentas contables')
                     ->icon('heroicon-o-banknotes')
+                    ->visible(fn (Forms\Get $get) => $get('type') !== 'variable')
                     ->schema([
                         Forms\Components\Group::make()->columns(1)->schema([
                             self::accountSelect(
@@ -214,6 +229,7 @@ class ProductResource extends Resource
 
                 Forms\Components\Tabs\Tab::make('Sedes / Inventario')
                     ->icon('heroicon-o-building-storefront')
+                    ->visible(fn (Forms\Get $get) => $get('type') !== 'variable')
                     ->schema([
                         Forms\Components\Repeater::make('productLocations')
                             ->relationship()
@@ -370,7 +386,20 @@ class ProductResource extends Resource
                     ->searchable()
                     ->sortable()
                     ->wrap()
-                    ->description(fn (Product $record) => $record->barcode ? "Barcode: {$record->barcode}" : null),
+                    ->description(function (Product $record) {
+                        $parts = [];
+                        if ($record->barcode) {
+                            $parts[] = "Barcode: {$record->barcode}";
+                        }
+                        if ($record->isVariant() && $record->attributesLabel()) {
+                            $parts[] = $record->attributesLabel();
+                        }
+                        if ($record->isVariable()) {
+                            $parts[] = $record->variants()->count().' variantes';
+                        }
+
+                        return $parts ? implode(' · ', $parts) : null;
+                    }),
 
                 Tables\Columns\TextColumn::make('category.name')
                     ->label('Categoría')
@@ -408,6 +437,10 @@ class ProductResource extends Resource
                 Tables\Columns\IconColumn::make('active')->label('Activo')->boolean(),
             ])
             ->filters([
+                Tables\Filters\Filter::make('hide_variants')
+                    ->label('Ocultar variantes (ver solo padres y simples)')
+                    ->default()
+                    ->query(fn (Builder $query) => $query->whereNull('parent_product_id')),
                 Tables\Filters\SelectFilter::make('category_id')
                     ->label('Categoría')
                     ->relationship('category', 'name')
@@ -422,6 +455,13 @@ class ProductResource extends Resource
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
             ]);
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            ProductResource\RelationManagers\VariantsRelationManager::class,
+        ];
     }
 
     public static function getPages(): array

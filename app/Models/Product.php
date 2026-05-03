@@ -19,6 +19,7 @@ class Product extends Model
         'service' => 'Servicio',
         'kit' => 'Kit / Combo',
         'consumable' => 'Insumo / Consumible',
+        'variable' => 'Variable (con variantes)',
     ];
 
     public const COMMON_UNITS = [
@@ -40,6 +41,8 @@ class Product extends Model
 
     protected $fillable = [
         'company_id',
+        'parent_product_id',
+        'attributes',
         'code',
         'barcode',
         'name',
@@ -66,6 +69,7 @@ class Product extends Model
     protected function casts(): array
     {
         return [
+            'attributes' => 'array',
             'track_inventory' => 'boolean',
             'is_purchasable' => 'boolean',
             'is_sellable' => 'boolean',
@@ -79,6 +83,37 @@ class Product extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
+    }
+
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_product_id');
+    }
+
+    public function variants(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_product_id')->orderBy('code');
+    }
+
+    public function isVariable(): bool
+    {
+        return $this->type === 'variable';
+    }
+
+    public function isVariant(): bool
+    {
+        return $this->parent_product_id !== null;
+    }
+
+    public function attributesLabel(): string
+    {
+        if (empty($this->attributes)) {
+            return '';
+        }
+
+        return collect($this->attributes)
+            ->map(fn ($value, $key) => ucfirst($key).': '.$value)
+            ->join(' · ');
     }
 
     public function defaultPurchaseTax(): BelongsTo
