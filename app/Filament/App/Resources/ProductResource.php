@@ -140,8 +140,11 @@ class ProductResource extends Resource
 
                 Forms\Components\Tabs\Tab::make('Precios e impuestos')
                     ->icon('heroicon-o-currency-dollar')
-                    ->visible(fn (Forms\Get $get) => $get('type') !== 'variable')
                     ->schema([
+                        Forms\Components\Placeholder::make('variable_hint_prices')
+                            ->label('')
+                            ->content('💡 Para productos variables, estos valores son DEFAULTS que las variantes heredan al crearse. Cada variante puede tener su propio override.')
+                            ->visible(fn (Forms\Get $get) => $get('type') === 'variable'),
                         Forms\Components\Group::make()->columns(3)->schema([
                             Forms\Components\TextInput::make('default_purchase_price')
                                 ->label('Precio compra (default)')
@@ -206,8 +209,11 @@ class ProductResource extends Resource
 
                 Forms\Components\Tabs\Tab::make('Cuentas contables')
                     ->icon('heroicon-o-banknotes')
-                    ->visible(fn (Forms\Get $get) => $get('type') !== 'variable')
                     ->schema([
+                        Forms\Components\Placeholder::make('variable_hint_accounts')
+                            ->label('')
+                            ->content('💡 Para productos variables, estas cuentas son DEFAULTS que las variantes heredan automáticamente al crearse.')
+                            ->visible(fn (Forms\Get $get) => $get('type') === 'variable'),
                         Forms\Components\Group::make()->columns(1)->schema([
                             self::accountSelect(
                                 'inventory_account_id',
@@ -229,8 +235,11 @@ class ProductResource extends Resource
 
                 Forms\Components\Tabs\Tab::make('Sedes / Inventario')
                     ->icon('heroicon-o-building-storefront')
-                    ->visible(fn (Forms\Get $get) => $get('type') !== 'variable')
                     ->schema([
+                        Forms\Components\Placeholder::make('variable_hint_locations')
+                            ->label('')
+                            ->content('💡 Para productos variables, las sedes definidas aquí son DEFAULTS para las variantes. Cada variante maneja su propio inventario por sede de forma independiente.')
+                            ->visible(fn (Forms\Get $get) => $get('type') === 'variable'),
                         Forms\Components\Repeater::make('productLocations')
                             ->relationship()
                             ->label('Disponibilidad por sede')
