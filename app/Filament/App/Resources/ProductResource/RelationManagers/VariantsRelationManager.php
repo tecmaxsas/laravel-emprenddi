@@ -55,7 +55,7 @@ class VariantsRelationManager extends RelationManager
                 ->description('Talla, color, material, sabor, etc. — define la variación.')
                 ->columnSpanFull()
                 ->schema([
-                    Forms\Components\KeyValue::make('attributes')
+                    Forms\Components\KeyValue::make('variant_attributes')
                         ->label('')
                         ->keyLabel('Atributo')
                         ->valueLabel('Valor')

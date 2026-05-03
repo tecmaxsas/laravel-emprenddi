@@ -42,7 +42,7 @@ class Product extends Model
     protected $fillable = [
         'company_id',
         'parent_product_id',
-        'attributes',
+        'variant_attributes',
         'code',
         'barcode',
         'name',
@@ -69,7 +69,7 @@ class Product extends Model
     protected function casts(): array
     {
         return [
-            'attributes' => 'array',
+            'variant_attributes' => 'array',
             'track_inventory' => 'boolean',
             'is_purchasable' => 'boolean',
             'is_sellable' => 'boolean',
@@ -107,11 +107,11 @@ class Product extends Model
 
     public function attributesLabel(): string
     {
-        if (empty($this->attributes)) {
+        if (empty($this->variant_attributes)) {
             return '';
         }
 
-        return collect($this->attributes)
+        return collect($this->variant_attributes)
             ->map(fn ($value, $key) => ucfirst($key).': '.$value)
             ->join(' · ');
     }
