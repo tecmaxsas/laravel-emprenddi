@@ -276,6 +276,48 @@ class ProductResource extends Resource
                                     ->maxLength(50)
                                     ->placeholder('A-12-3')
                                     ->columnSpan(3),
+
+                                Forms\Components\TextInput::make('initial_quantity')
+                                    ->label('Cantidad inicial')
+                                    ->numeric()
+                                    ->minValue(0)
+                                    ->default(0)
+                                    ->dehydrated(false)
+                                    ->visibleOn('create')
+                                    ->helperText('Stock con el que arranca esta sede.')
+                                    ->columnSpan(6),
+
+                                Forms\Components\TextInput::make('initial_unit_cost')
+                                    ->label('Costo unitario inicial')
+                                    ->numeric()
+                                    ->minValue(0)
+                                    ->prefix('$')
+                                    ->dehydrated(false)
+                                    ->visibleOn('create')
+                                    ->helperText('Si se deja vacío usa el precio de compra default.')
+                                    ->columnSpan(6),
+
+                                Forms\Components\Placeholder::make('current_stock_display')
+                                    ->label('Stock actual')
+                                    ->visibleOn('edit')
+                                    ->content(function (Forms\Get $get) {
+                                        $locationId = $get('location_id');
+                                        $productId = $this->record?->id;
+                                        if (! $locationId || ! $productId) {
+                                            return '—';
+                                        }
+                                        $stock = app(\App\Services\Inventory\InventoryEngine::class)
+                                            ->currentStock($productId, $locationId);
+                                        $cost = app(\App\Services\Inventory\InventoryEngine::class)
+                                            ->currentAvgCost($productId, $locationId);
+
+                                        return sprintf(
+                                            '%s unidades · costo prom. $%s',
+                                            number_format($stock, 2),
+                                            number_format($cost, 2),
+                                        );
+                                    })
+                                    ->columnSpan(12),
                             ])
                             ->columns(12)
                             ->addActionLabel('+ Añadir sede')
