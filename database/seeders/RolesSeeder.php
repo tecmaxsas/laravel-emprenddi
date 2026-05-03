@@ -2,7 +2,9 @@
 
 namespace Database\Seeders;
 
+use App\Services\Auth\PermissionsCatalog;
 use Illuminate\Database\Seeder;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 
@@ -12,18 +14,20 @@ class RolesSeeder extends Seeder
     {
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
-        $roles = [
-            'admin' => 'Administrador de la empresa',
-            'manager' => 'Gerente / Supervisor',
-            'accountant' => 'Contador',
-            'cashier' => 'Cajero',
-            'seller' => 'Vendedor',
-        ];
+        // 1. Permisos canónicos del catálogo
+        foreach (PermissionsCatalog::all() as $name) {
+            Permission::firstOrCreate(['name' => $name, 'guard_name' => 'web']);
+        }
 
-        foreach ($roles as $name => $description) {
-            Role::firstOrCreate(
-                ['name' => $name, 'guard_name' => 'web'],
-            );
+        // 2. Roles base + asignación de permisos default
+        $roles = ['admin', 'manager', 'accountant', 'cashier', 'seller'];
+
+        foreach ($roles as $name) {
+            $role = Role::firstOrCreate(['name' => $name, 'guard_name' => 'web']);
+
+            $permissions = PermissionsCatalog::defaultForRole($name);
+            // syncPermissions reemplaza el set actual — idempotente.
+            $role->syncPermissions($permissions);
         }
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
