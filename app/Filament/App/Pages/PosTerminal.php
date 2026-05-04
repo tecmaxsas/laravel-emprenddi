@@ -20,6 +20,7 @@ use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Livewire\Attributes\On;
 
 /**
  * Terminal POS — full-screen kiosko.
@@ -212,6 +213,49 @@ class PosTerminal extends Page
     public function selectCategory(?int $id): void
     {
         $this->selectedCategoryId = $id;
+        $this->productSearch = '';
+    }
+
+    /**
+     * Auto-add por escaneo de código de barras.
+     * El cajero escanea (la pistola simula tecleo + Enter) → este método
+     * busca match exacto por barcode O code, agrega al cart, y limpia.
+     * Si no hay match exacto, no hace nada — el usuario sigue viendo
+     * la lista de búsqueda por similitud que ya tiene.
+     */
+    /**
+     * Listener para hotkey F9 — abre el modal de cliente desde JS.
+     */
+    #[On('open-customer-modal')]
+    public function handleOpenCustomerModal(): void
+    {
+        $this->showCustomerModal = true;
+    }
+
+    public function addByBarcode(string $code): void
+    {
+        $code = trim($code);
+        if ($code === '') return;
+
+        $product = Product::query()
+            ->where('active', true)
+            ->where('is_sellable', true)
+            ->where('type', '!=', 'variable')
+            ->where(function ($q) use ($code) {
+                $q->where('barcode', $code)->orWhere('code', $code);
+            })
+            ->first();
+
+        if (! $product) {
+            Notification::make()
+                ->title('Producto no encontrado')
+                ->body("Código '{$code}' no coincide con ningún producto activo.")
+                ->warning()
+                ->send();
+            return;
+        }
+
+        $this->addProductToCart($product->id);
         $this->productSearch = '';
     }
 

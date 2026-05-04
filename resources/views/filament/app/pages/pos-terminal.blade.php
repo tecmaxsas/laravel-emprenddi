@@ -297,14 +297,27 @@
 
             {{-- =========== GRID DE PRODUCTOS =========== --}}
             <main class="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
-                {{-- Búsqueda --}}
+                {{-- Búsqueda + auto-add por escaneo --}}
                 <div class="shrink-0 px-4 py-3 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
                     <div class="relative max-w-2xl">
                         <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"/></svg>
                         <input type="text"
+                               id="pos-search-input"
                                wire:model.live.debounce.250ms="productSearch"
-                               placeholder="Buscar por código, nombre o escanear código de barras…"
+                               wire:keydown.enter.prevent="addByBarcode($event.target.value)"
+                               placeholder="Buscar por código, nombre o escanear código de barras (Enter para agregar)…"
+                               autocomplete="off"
                                class="w-full pl-9 pr-4 py-2.5 text-sm rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/60 focus:bg-white dark:focus:bg-gray-900 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition" />
+                    </div>
+                    <div class="hidden md:flex flex-wrap gap-2 mt-2 text-[10px] text-gray-500 dark:text-gray-400">
+                        <span><kbd class="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">F2</kbd> Tarjeta</span>
+                        <span><kbd class="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">F3</kbd> Transfer</span>
+                        <span><kbd class="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">F4</kbd> Multi-pago</span>
+                        <span><kbd class="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">F5</kbd> Crédito</span>
+                        <span><kbd class="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">F8</kbd> Suspender</span>
+                        <span><kbd class="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">F9</kbd> Cliente</span>
+                        <span><kbd class="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">Esc</kbd> Cerrar modal</span>
+                        <span><kbd class="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">F1</kbd> Efectivo</span>
                     </div>
                 </div>
 
@@ -780,6 +793,53 @@
                 window.open(url, 'pos-print-' + id, 'width=420,height=720');
             });
         });
+
+        // Hotkeys del POS — F1-F9 + Esc.
+        // Se ignoran si el cajero está escribiendo en un input/select que no
+        // sea el buscador de productos (para no interferir con qty/precio).
+        (function () {
+            const hotkeyMap = {
+                'F1':  () => clickButton("openPayment('cash')"),
+                'F2':  () => clickButton("openPayment('card')"),
+                'F3':  () => clickButton("openPayment('transfer')"),
+                'F4':  () => clickButton("openPayment('multi')"),
+                'F5':  () => clickButton("openPayment('credit')"),
+                'F8':  () => clickButton('openSuspendModal'),
+                'F9':  () => Livewire.dispatch('open-customer-modal'),
+            };
+
+            function clickButton(action) {
+                const btn = document.querySelector(`[wire\\:click="${action}"]`);
+                if (btn && ! btn.disabled) btn.click();
+            }
+
+            document.addEventListener('keydown', (e) => {
+                // Esc cierra modales
+                if (e.key === 'Escape') {
+                    const closeBtns = document.querySelectorAll('.pos-modal-content button[wire\\:click^="$set"]');
+                    if (closeBtns.length) {
+                        closeBtns[closeBtns.length - 1].click();
+                        e.preventDefault();
+                    }
+                    return;
+                }
+
+                // F1-F9
+                if (! /^F[1-9]$/.test(e.key)) return;
+
+                // Si está en un input que no sea el buscador, no interferir
+                const active = document.activeElement;
+                if (active && active.tagName === 'INPUT' && active.id !== 'pos-search-input') {
+                    return;
+                }
+
+                const fn = hotkeyMap[e.key];
+                if (fn) {
+                    e.preventDefault();
+                    fn();
+                }
+            });
+        })();
     </script>
 
     {{-- ================================================================ --}}
