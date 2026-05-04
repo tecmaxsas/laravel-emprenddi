@@ -286,7 +286,7 @@ class InvoiceTemplateResource extends Resource
                 Tables\Filters\SelectFilter::make('paper_size')
                     ->label('Papel')
                     ->options(InvoiceTemplate::PAPER_SIZES),
-                Tables\Filters\TernaryFilter::make('active')->label('Activa')->default(true)->live(),
+                Tables\Filters\TernaryFilter::make('active')->label('Activa')->default(true),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
