@@ -32,8 +32,8 @@
            ancho disponible. */
         .pos-products-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-            gap: 12px;
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            gap: 10px;
         }
         .pos-product-card {
             display: flex;
@@ -73,14 +73,14 @@
         .pos-product-image img { width: 100%; height: 100%; object-fit: cover; transition: transform 300ms ease; }
         .pos-product-card:hover .pos-product-image img { transform: scale(1.05); }
 
-        .pos-product-info { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 2px; flex: 1; }
-        .pos-product-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; color: #9ca3af; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .pos-product-info { padding: 6px 8px 8px; display: flex; flex-direction: column; gap: 1px; flex: 1; }
+        .pos-product-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9px; color: #9ca3af; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         :is(.dark) .pos-product-code { color: #6b7280; }
-        .pos-product-name { font-size: 12px; font-weight: 500; line-height: 1.25; color: #111827; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 30px; }
+        .pos-product-name { font-size: 11px; font-weight: 500; line-height: 1.2; color: #111827; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-clamp: 2; overflow: hidden; min-height: 26px; }
         :is(.dark) .pos-product-name { color: #f3f4f6; }
         .pos-product-card:hover .pos-product-name { color: rgb(79, 70, 229); }
         :is(.dark) .pos-product-card:hover .pos-product-name { color: rgb(165, 180, 252); }
-        .pos-product-price { margin-top: auto; padding-top: 4px; font-size: 14px; font-weight: 700; color: #111827; }
+        .pos-product-price { margin-top: auto; padding-top: 3px; font-size: 13px; font-weight: 700; color: #111827; }
         :is(.dark) .pos-product-price { color: #ffffff; }
     </style>
 
@@ -294,9 +294,9 @@
             </aside>
 
             {{-- =========== GRID DE PRODUCTOS =========== --}}
-            <main class="flex-1 min-w-0 flex flex-col overflow-hidden">
+            <main class="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
                 {{-- Búsqueda --}}
-                <div class="px-4 py-3 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
+                <div class="shrink-0 px-4 py-3 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
                     <div class="relative max-w-2xl">
                         <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"/></svg>
                         <input type="text"
@@ -347,9 +347,9 @@
             </main>
 
             {{-- =========== CARRITO =========== --}}
-            <aside class="w-[26rem] shrink-0 bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-800 flex flex-col">
-                {{-- Cliente --}}
-                <div class="p-3 border-b border-gray-200 dark:border-gray-800 flex items-center gap-2">
+            <aside class="w-[30rem] shrink-0 min-h-0 bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-800 flex flex-col">
+                {{-- Cliente — shrink-0 para que NO ceda espacio al carrito --}}
+                <div class="shrink-0 p-3 border-b border-gray-200 dark:border-gray-800 flex items-center gap-2">
                     <div class="w-9 h-9 rounded-lg bg-primary-500/15 text-primary-600 dark:text-primary-400 flex items-center justify-center shrink-0">
                         <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
                     </div>
@@ -389,31 +389,39 @@
                                             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                                         </button>
                                     </div>
-                                    <div class="grid grid-cols-12 gap-2 items-center">
-                                        <div class="col-span-5 flex items-center gap-1">
-                                            <button type="button" wire:click="decLine({{ $i }})"
-                                                    class="w-7 h-7 rounded-md bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-sm font-bold transition active:scale-90">−</button>
-                                            <input type="number" step="0.01" min="0"
-                                                   wire:model.live.blur="cart.{{ $i }}.quantity"
-                                                   class="w-12 text-center text-sm font-semibold rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-1 py-1 outline-none focus:ring-2 focus:ring-primary-500" />
-                                            <button type="button" wire:click="incLine({{ $i }})"
-                                                    class="w-7 h-7 rounded-md bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-sm font-bold transition active:scale-90">+</button>
+                                    <div class="grid grid-cols-12 gap-2 items-end">
+                                        {{-- Cantidad: 5 cols, controles más grandes para touch --}}
+                                        <div class="col-span-5">
+                                            <div class="text-[10px] text-gray-400 mb-1 font-semibold uppercase tracking-wide">Cantidad</div>
+                                            <div class="flex items-center gap-1">
+                                                <button type="button" wire:click="decLine({{ $i }})"
+                                                        class="w-8 h-8 shrink-0 rounded-md bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-base font-bold transition active:scale-90">−</button>
+                                                <input type="number" step="0.01" min="0"
+                                                       wire:model.live.blur="cart.{{ $i }}.quantity"
+                                                       class="flex-1 min-w-0 text-center text-sm font-semibold rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-1 py-1.5 outline-none focus:ring-2 focus:ring-primary-500" />
+                                                <button type="button" wire:click="incLine({{ $i }})"
+                                                        class="w-8 h-8 shrink-0 rounded-md bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-base font-bold transition active:scale-90">+</button>
+                                            </div>
                                         </div>
-                                        <div class="col-span-4">
-                                            <div class="text-[10px] text-gray-400 mb-0.5">Precio</div>
+
+                                        {{-- Precio: 3 cols --}}
+                                        <div class="col-span-3">
+                                            <div class="text-[10px] text-gray-400 mb-1 font-semibold uppercase tracking-wide">Precio</div>
                                             @if ($posSettings['allow_price_modification'])
                                                 <input type="number" step="0.01" min="0"
                                                        wire:model.live.blur="cart.{{ $i }}.unit_price"
-                                                       class="w-full text-right text-xs rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 outline-none focus:ring-2 focus:ring-primary-500" />
+                                                       class="w-full text-right text-xs rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1.5 outline-none focus:ring-2 focus:ring-primary-500" />
                                             @else
-                                                <div class="w-full text-right text-xs px-2 py-1 text-gray-700 dark:text-gray-300 font-medium">
+                                                <div class="w-full text-right text-xs px-2 py-1.5 text-gray-700 dark:text-gray-300 font-medium">
                                                     ${{ number_format($line['unit_price'], 0, ',', '.') }}
                                                 </div>
                                             @endif
                                         </div>
-                                        <div class="col-span-3 text-right">
-                                            <div class="text-[10px] text-gray-400 mb-0.5">Subtotal</div>
-                                            <div class="text-sm font-bold text-primary-600 dark:text-primary-400 whitespace-nowrap">
+
+                                        {{-- Subtotal: 4 cols, prominente --}}
+                                        <div class="col-span-4 text-right">
+                                            <div class="text-[10px] text-gray-400 mb-1 font-semibold uppercase tracking-wide">Subtotal</div>
+                                            <div class="text-base font-bold text-primary-600 dark:text-primary-400 whitespace-nowrap py-1">
                                                 ${{ number_format($line['total'], 0, ',', '.') }}
                                             </div>
                                         </div>
@@ -424,8 +432,8 @@
                     @endif
                 </div>
 
-                {{-- Totales --}}
-                <div class="border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950">
+                {{-- Totales — shrink-0 para que SIEMPRE se vean al fondo del cart --}}
+                <div class="shrink-0 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950">
                     <div class="px-4 pt-3 pb-2 space-y-1.5 text-sm">
                         <div class="flex justify-between text-gray-600 dark:text-gray-400">
                             <span>Artículos</span>
