@@ -53,11 +53,21 @@ class SaleInvoiceEngine
             //    en el inventory_movement use el número final.
             $this->reserveDianNumberIfApplicable($invoice);
 
-            // 2. Salida de inventario + acumulación del costo total para COGS
+            // 2. Salida de inventario + acumulación del costo total para COGS.
+            // Si la factura viene de una remisión (from_delivery_note_id != null),
+            // el inventario YA salió en el dispatch — no generamos movimientos
+            // nuevos, solo sumamos los costos heredados para el COGS.
             $totalCogs = 0;
+            $cameFromDelivery = $invoice->from_delivery_note_id !== null;
 
             foreach ($invoice->lines as $line) {
                 if (! $line->product_id || ! $line->product?->track_inventory) {
+                    continue;
+                }
+
+                if ($cameFromDelivery && $line->inventory_movement_id) {
+                    // Heredó el movimiento del despacho — usamos su costo para COGS.
+                    $totalCogs += abs((float) $line->quantity) * (float) ($line->cost_at_sale ?? 0);
                     continue;
                 }
 

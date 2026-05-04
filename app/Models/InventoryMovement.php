@@ -16,6 +16,7 @@ class InventoryMovement extends Model
         'opening' => 'Saldo inicial',
         'purchase' => 'Compra',
         'sale' => 'Venta',
+        'delivery_out' => 'Despacho remisión',
         'adjustment_in' => 'Ajuste entrada',
         'adjustment_out' => 'Ajuste salida',
         'transfer_in' => 'Traslado entrada',
@@ -25,7 +26,7 @@ class InventoryMovement extends Model
     ];
 
     public const ENTRY_TYPES = ['opening', 'purchase', 'adjustment_in', 'transfer_in', 'return_from_customer'];
-    public const EXIT_TYPES = ['sale', 'adjustment_out', 'transfer_out', 'return_to_supplier'];
+    public const EXIT_TYPES = ['sale', 'delivery_out', 'adjustment_out', 'transfer_out', 'return_to_supplier'];
 
     protected $fillable = [
         'company_id',
