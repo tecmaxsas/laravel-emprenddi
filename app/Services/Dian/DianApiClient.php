@@ -92,6 +92,22 @@ class DianApiClient
     }
 
     /**
+     * Envía una Nota Crédito a DIAN. Endpoint distinto al de invoice.
+     */
+    public function sendCreditNote(array $payload): array
+    {
+        return $this->request('post', '/api/ubl2.1/credit-note', $payload);
+    }
+
+    /**
+     * Envía una Nota Débito a DIAN.
+     */
+    public function sendDebitNote(array $payload): array
+    {
+        return $this->request('post', '/api/ubl2.1/debit-note', $payload);
+    }
+
+    /**
      * Tab 5 — Cambiar entre Pruebas (2) y Producción (1).
      * El API requiere los 3 IDs de ambiente (factura, nómina, equivalentes).
      */

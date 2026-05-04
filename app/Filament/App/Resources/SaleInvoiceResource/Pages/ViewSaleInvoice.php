@@ -2,9 +2,13 @@
 
 namespace App\Filament\App\Resources\SaleInvoiceResource\Pages;
 
+use App\Filament\App\Resources\CreditDebitNoteResource;
 use App\Filament\App\Resources\SaleInvoiceResource;
+use App\Models\Company;
+use App\Models\CreditDebitNote;
 use App\Models\SaleInvoice;
 use App\Services\Dian\DianInvoiceSender;
+use App\Services\Sales\CreditDebitNoteNumberer;
 use App\Services\Sales\SaleInvoiceEngine;
 use Filament\Actions;
 use Filament\Infolists;
@@ -103,7 +107,90 @@ class ViewSaleInvoice extends ViewRecord
                             ->send();
                     }
                 }),
+
+            Actions\Action::make('createCreditNote')
+                ->label('Crear Nota Crédito')
+                ->icon('heroicon-o-arrow-uturn-left')
+                ->color('warning')
+                ->visible(fn (SaleInvoice $r) => $r->isPosted()
+                    && auth()->user()?->can('credit_debit_notes.create'))
+                ->action(fn (SaleInvoice $r) => $this->createNoteFromInvoice($r, 'credit')),
+
+            Actions\Action::make('createDebitNote')
+                ->label('Crear Nota Débito')
+                ->icon('heroicon-o-arrow-uturn-right')
+                ->color('info')
+                ->visible(fn (SaleInvoice $r) => $r->isPosted()
+                    && auth()->user()?->can('credit_debit_notes.create'))
+                ->action(fn (SaleInvoice $r) => $this->createNoteFromInvoice($r, 'debit')),
         ];
+    }
+
+    /**
+     * Crea una NC/ND draft con datos copiados de la factura — el usuario
+     * después ajusta cantidades/líneas si la nota es parcial, define motivo,
+     * y postea por el flujo normal.
+     */
+    protected function createNoteFromInvoice(SaleInvoice $invoice, string $type): void
+    {
+        $invoice->loadMissing('lines');
+
+        $company = Company::find($invoice->company_id);
+        $prefix = $type === 'credit' ? 'NC' : 'ND';
+        $defaultReason = $type === 'credit' ? 1 : 1;
+
+        $note = CreditDebitNote::create([
+            'company_id' => $invoice->company_id,
+            'location_id' => $invoice->location_id,
+            'third_party_id' => $invoice->third_party_id,
+            'sale_invoice_id' => $invoice->id,
+            'type' => $type,
+            'prefix' => $prefix,
+            'number' => app(CreditDebitNoteNumberer::class)->next($company, $type, $prefix),
+            'date' => now()->toDateString(),
+            'reason_code' => $defaultReason,
+            'currency' => $invoice->currency,
+            'exchange_rate' => $invoice->exchange_rate,
+            'subtotal' => $invoice->subtotal,
+            'discount_total' => $invoice->discount_total,
+            'tax_total' => $invoice->tax_total,
+            'total' => $invoice->total,
+            'status' => 'draft',
+            'created_by_user_id' => auth()->id(),
+            'description' => sprintf(
+                '%s sobre factura %s',
+                $type === 'credit' ? 'Nota Crédito' : 'Nota Débito',
+                $invoice->fullNumber(),
+            ),
+        ]);
+
+        // Copiar líneas de la factura
+        $lineNum = 1;
+        foreach ($invoice->lines as $line) {
+            $note->lines()->create([
+                'line_number' => $lineNum++,
+                'product_id' => $line->product_id,
+                'description' => $line->description,
+                'quantity' => $line->quantity,
+                'unit_price' => $line->unit_price,
+                'cost_at_return' => $line->cost_at_sale ?? 0,
+                'discount_percentage' => $line->discount_percentage,
+                'discount_amount' => $line->discount_amount,
+                'tax_id' => $line->tax_id,
+                'tax_rate' => $line->tax_rate,
+                'tax_amount' => $line->tax_amount,
+                'subtotal' => $line->subtotal,
+                'total' => $line->total,
+            ]);
+        }
+
+        Notification::make()
+            ->title(($type === 'credit' ? 'Nota Crédito' : 'Nota Débito').' creada — '.$note->fullNumber())
+            ->body('Ajusta cantidades y motivo, luego contabiliza.')
+            ->success()
+            ->send();
+
+        $this->redirect(CreditDebitNoteResource::getUrl('edit', ['record' => $note]));
     }
 
     public function infolist(Infolist $infolist): Infolist
