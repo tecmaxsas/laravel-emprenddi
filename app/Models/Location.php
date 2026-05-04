@@ -74,6 +74,23 @@ class Location extends Model
     }
 
     /**
+     * LocationResolution activa para un tipo de documento DIAN
+     * (1=Factura Electrónica por defecto). Si existe, sus consecutivos
+     * son los que deben usarse al postear ventas desde esta sede.
+     */
+    public function activeResolution(int $documentTypeId = 1): ?\App\Models\Dian\LocationResolution
+    {
+        return \App\Models\Dian\LocationResolution::query()
+            ->where('location_id', $this->id)
+            ->where('active', true)
+            ->whereHas('resolution', fn ($q) => $q
+                ->where('company_id', $this->company_id)
+                ->where('document_type_id', $documentTypeId)
+                ->where('active', true))
+            ->first();
+    }
+
+    /**
      * Resuelve el template a usar para esta sede.
      * Orden: el asignado explícitamente → el default de la empresa → primero activo.
      */

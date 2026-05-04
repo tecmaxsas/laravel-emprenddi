@@ -4,9 +4,11 @@ namespace App\Filament\App\Resources\SaleInvoiceResource\Pages;
 
 use App\Filament\App\Resources\SaleInvoiceResource;
 use App\Models\SaleInvoice;
+use App\Services\Sales\SaleInvoiceEngine;
 use Filament\Actions;
 use Filament\Infolists;
 use Filament\Infolists\Infolist;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 
 class ViewSaleInvoice extends ViewRecord
@@ -24,9 +26,38 @@ class ViewSaleInvoice extends ViewRecord
             Actions\EditAction::make()
                 ->visible(fn (SaleInvoice $record) => $record->status === 'draft'),
 
-            // En Iter 2 se agrega aquí Actions\Action::make('post') con
-            // SaleInvoiceEngine::post() para generar asiento + salida de
-            // inventario + reservar consecutivo DIAN.
+            Actions\Action::make('post')
+                ->label('Contabilizar')
+                ->icon('heroicon-o-check-circle')
+                ->color('success')
+                ->visible(fn (SaleInvoice $record) => $record->status === 'draft'
+                    && auth()->user()?->can('sales.post'))
+                ->requiresConfirmation()
+                ->modalHeading('Contabilizar factura de venta')
+                ->modalDescription(fn (SaleInvoice $record) => sprintf(
+                    'Vas a contabilizar la factura %s por $%s. Se generará el asiento contable, salida de inventario y se reservará el consecutivo DIAN si la sede tiene resolución asignada. No podrás editarla después.',
+                    $record->fullNumber(),
+                    number_format((float) $record->total, 2),
+                ))
+                ->modalSubmitActionLabel('Contabilizar')
+                ->action(function (SaleInvoice $record) {
+                    try {
+                        $invoice = app(SaleInvoiceEngine::class)->post($record);
+                        Notification::make()
+                            ->success()
+                            ->title('Factura contabilizada')
+                            ->body("Asiento {$invoice->journalEntry?->fullNumber()} creado. Número final: {$invoice->fullNumber()}.")
+                            ->send();
+                        $this->refreshFormData(['status', 'payment_status', 'journal_entry_id', 'prefix', 'number']);
+                    } catch (\Throwable $e) {
+                        Notification::make()
+                            ->danger()
+                            ->title('Error al contabilizar')
+                            ->body($e->getMessage())
+                            ->persistent()
+                            ->send();
+                    }
+                }),
         ];
     }
 

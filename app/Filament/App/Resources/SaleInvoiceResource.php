@@ -3,6 +3,7 @@
 namespace App\Filament\App\Resources;
 
 use App\Filament\App\Resources\SaleInvoiceResource\Pages;
+use App\Filament\App\Resources\SaleInvoiceResource\RelationManagers;
 use App\Filament\Concerns\ChecksPermission;
 use App\Models\Location;
 use App\Models\Product;
@@ -396,6 +397,13 @@ class SaleInvoiceResource extends Resource
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make()->visible(fn (SaleInvoice $record) => $record->status === 'draft'),
             ]);
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            RelationManagers\PaymentsRelationManager::class,
+        ];
     }
 
     public static function getPages(): array
