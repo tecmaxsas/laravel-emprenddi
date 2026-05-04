@@ -35,4 +35,14 @@ return [
         ],
     ],
 
+    'dian' => [
+        // URL del API UBL 2.1 (apidian.emprenddi.com de Tecmax).
+        'api_url' => env('DIAN_API_URL', 'https://apidian.emprenddi.com'),
+
+        // Token "master" usado SOLO para el primer registerCompany (Tab 1).
+        // El API responde con un token per-company que se persiste en
+        // dian_company_configs.api_token y se usa para todo lo demás.
+        'master_token' => env('DIAN_MASTER_TOKEN'),
+    ],
+
 ];

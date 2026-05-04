@@ -30,6 +30,10 @@ class DianApiClient
      * Tab 1 — Datos de la empresa.
      * Registra/actualiza la empresa contra el API. La URL incluye NIT y DV en path.
      *
+     * IMPORTANTE: este endpoint usa el master token de Tecmax (DIAN_MASTER_TOKEN
+     * en .env) — el token per-company aún no existe, lo retorna esta misma
+     * llamada en data.token y se persiste para usarlo en todos los demás endpoints.
+     *
      * @param  string  $document  NIT sin DV ni separadores
      * @param  string|int  $dv  Dígito de verificación
      */
@@ -39,6 +43,7 @@ class DianApiClient
             'post',
             "/api/ubl2.1/config/{$document}/{$dv}",
             $payload,
+            useMasterToken: true,
         );
     }
 
@@ -92,20 +97,26 @@ class DianApiClient
         return $this->request('post', "/api/ubl2.1/invoice/{$testSetId}", $payload);
     }
 
-    protected function client(): PendingRequest
+    protected function client(bool $useMasterToken = false): PendingRequest
     {
-        return Http::baseUrl(rtrim($this->config->api_url, '/'))
-            ->withToken($this->config->api_token ?? '')
+        $token = $useMasterToken
+            ? (string) config('services.dian.master_token')
+            : (string) ($this->config->api_token ?? '');
+
+        $baseUrl = $this->config->api_url ?: config('services.dian.api_url');
+
+        return Http::baseUrl(rtrim($baseUrl, '/'))
+            ->withToken($token)
             ->acceptJson()
             ->timeout(60)
             ->connectTimeout(15);
     }
 
-    protected function request(string $method, string $endpoint, array $payload): array
+    protected function request(string $method, string $endpoint, array $payload, bool $useMasterToken = false): array
     {
         try {
             /** @var Response $response */
-            $response = $this->client()->{$method}($endpoint, $payload);
+            $response = $this->client($useMasterToken)->{$method}($endpoint, $payload);
 
             $data = $response->json() ?? [];
 

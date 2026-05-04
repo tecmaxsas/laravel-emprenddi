@@ -2,7 +2,6 @@
 
 namespace App\Filament\App\Pages;
 
-use App\Models\Company;
 use App\Models\Dian\CompanyConfig;
 use App\Models\Dian\DocumentType;
 use App\Models\Dian\Municipality;
@@ -46,9 +45,6 @@ class DianSettings extends Page implements HasForms
         $config = $this->config();
 
         $this->data = [
-            'api_token' => $config->api_token,
-            'api_url' => $config->api_url ?: 'https://apidian.emprenddi.com',
-            'environment' => $config->environment ?: CompanyConfig::ENV_TEST,
             'dian_document_type_id' => $config->dian_document_type_id,
             'dian_organization_type_id' => $config->dian_organization_type_id,
             'dian_regime_type_id' => $config->dian_regime_type_id,
@@ -110,29 +106,6 @@ class DianSettings extends Page implements HasForms
     protected function companyTabSchema(): array
     {
         return [
-            Forms\Components\Section::make('Conexión con apidian.emprenddi.com')
-                ->description('Token y URL del servicio. El token lo entrega Tecmax al activar la empresa.')
-                ->columns(3)
-                ->schema([
-                    Forms\Components\TextInput::make('api_token')
-                        ->label('API Token')
-                        ->password()
-                        ->revealable()
-                        ->maxLength(500)
-                        ->columnSpan(2)
-                        ->required(),
-                    Forms\Components\TextInput::make('api_url')
-                        ->label('API URL')
-                        ->default('https://apidian.emprenddi.com')
-                        ->required(),
-                    Forms\Components\Select::make('environment')
-                        ->label('Ambiente')
-                        ->options(CompanyConfig::ENVIRONMENTS)
-                        ->default(CompanyConfig::ENV_TEST)
-                        ->required()
-                        ->native(false),
-                ]),
-
             Forms\Components\Section::make('Identificación tributaria')
                 ->description('Datos que se envían a DIAN al registrar la empresa.')
                 ->columns(3)
@@ -234,9 +207,6 @@ class DianSettings extends Page implements HasForms
             CompanyConfig::updateOrCreate(
                 ['company_id' => $company->id],
                 [
-                    'api_token' => $state['api_token'],
-                    'api_url' => $state['api_url'],
-                    'environment' => (int) $state['environment'],
                     'dian_document_type_id' => $state['dian_document_type_id'],
                     'dian_organization_type_id' => $state['dian_organization_type_id'],
                     'dian_regime_type_id' => $state['dian_regime_type_id'],
@@ -270,7 +240,15 @@ class DianSettings extends Page implements HasForms
         );
 
         if ($result['ok']) {
-            $config->update(['company_registered' => true]);
+            // El API entrega el token per-company que se usa para todos los
+            // demás endpoints. El payload exacto puede venir en distintas
+            // formas — buscamos en los lugares más comunes.
+            $token = $this->extractToken($result['data']);
+
+            $config->update([
+                'company_registered' => true,
+                'api_token' => $token ?: $config->api_token,
+            ]);
 
             Notification::make()
                 ->title('Empresa registrada en DIAN')
@@ -285,6 +263,31 @@ class DianSettings extends Page implements HasForms
                 ->persistent()
                 ->send();
         }
+    }
+
+    /**
+     * El response de registerCompany trae el token per-company. Distintas
+     * versiones del API lo retornan en distintas keys — probamos las más
+     * comunes en orden.
+     */
+    protected function extractToken(array $data): ?string
+    {
+        $candidates = [
+            $data['token'] ?? null,
+            $data['api_token'] ?? null,
+            $data['data']['token'] ?? null,
+            $data['data']['api_token'] ?? null,
+            $data['company']['token'] ?? null,
+            $data['user']['api_token'] ?? null,
+        ];
+
+        foreach ($candidates as $value) {
+            if (is_string($value) && $value !== '') {
+                return $value;
+            }
+        }
+
+        return null;
     }
 
     protected function config(): CompanyConfig
