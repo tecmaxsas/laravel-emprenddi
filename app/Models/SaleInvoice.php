@@ -52,7 +52,9 @@ class SaleInvoice extends Model
         'subtotal',
         'discount_total',
         'tax_total',
+        'retention_total',
         'total',
+        'net_payable',
         'paid_amount',
         'payment_status',
         'status',
@@ -74,7 +76,9 @@ class SaleInvoice extends Model
             'subtotal' => 'decimal:2',
             'discount_total' => 'decimal:2',
             'tax_total' => 'decimal:2',
+            'retention_total' => 'decimal:2',
             'total' => 'decimal:2',
+            'net_payable' => 'decimal:2',
             'paid_amount' => 'decimal:2',
             'exchange_rate' => 'decimal:6',
             'payment_terms_days' => 'integer',
@@ -95,6 +99,11 @@ class SaleInvoice extends Model
     public function lines(): HasMany
     {
         return $this->hasMany(SaleInvoiceLine::class)->orderBy('line_number');
+    }
+
+    public function retentions(): HasMany
+    {
+        return $this->hasMany(SaleInvoiceRetention::class);
     }
 
     public function payments(): MorphMany
@@ -127,9 +136,16 @@ class SaleInvoice extends Model
         return $this->prefix.'-'.str_pad((string) $this->number, 6, '0', STR_PAD_LEFT);
     }
 
+    /**
+     * El saldo pendiente se calcula contra net_payable (total - retenciones),
+     * no contra total: las retenciones son anticipos de impuesto, no quedan
+     * pendientes de cobro al cliente.
+     */
     public function getBalanceAttribute(): float
     {
-        return (float) $this->total - (float) $this->paid_amount;
+        $netPayable = (float) ($this->net_payable ?: $this->total);
+
+        return $netPayable - (float) $this->paid_amount;
     }
 
     public function isDraft(): bool

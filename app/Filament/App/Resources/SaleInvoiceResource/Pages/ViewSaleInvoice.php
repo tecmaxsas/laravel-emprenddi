@@ -102,13 +102,41 @@ class ViewSaleInvoice extends ViewRecord
                         ->columns(12),
                 ]),
 
+            Infolists\Components\Section::make('Retenciones')
+                ->visible(fn (SaleInvoice $r) => (float) $r->retention_total > 0)
+                ->schema([
+                    Infolists\Components\RepeatableEntry::make('retentions')
+                        ->label('')
+                        ->schema([
+                            Infolists\Components\TextEntry::make('tax_code')->label('Código')->fontFamily('mono')->columnSpan(2),
+                            Infolists\Components\TextEntry::make('tax_name')->label('Concepto')->columnSpan(5),
+                            Infolists\Components\TextEntry::make('base_amount')->label('Base')->money('COP')->columnSpan(2),
+                            Infolists\Components\TextEntry::make('rate')->label('%')->formatStateUsing(fn ($s) => number_format((float) $s, 4).' %')->columnSpan(1),
+                            Infolists\Components\TextEntry::make('amount')->label('Retenido')->money('COP')->weight('semibold')->columnSpan(2),
+                        ])
+                        ->columns(12),
+                ]),
+
             Infolists\Components\Section::make('Totales')
-                ->columns(5)
+                ->columns(6)
                 ->schema([
                     Infolists\Components\TextEntry::make('subtotal')->label('Subtotal')->money('COP'),
                     Infolists\Components\TextEntry::make('discount_total')->label('Descuento')->money('COP'),
                     Infolists\Components\TextEntry::make('tax_total')->label('IVA')->money('COP'),
-                    Infolists\Components\TextEntry::make('total')->label('TOTAL')->money('COP')->weight('bold'),
+                    Infolists\Components\TextEntry::make('total')->label('Total')->money('COP'),
+                    Infolists\Components\TextEntry::make('retention_total')->label('Retenciones')->money('COP'),
+                    Infolists\Components\TextEntry::make('net_payable')->label('NETO A PAGAR')->money('COP')->weight('bold'),
+                ]),
+
+            Infolists\Components\Section::make('Pagado / Saldo')
+                ->columns(3)
+                ->schema([
+                    Infolists\Components\TextEntry::make('paid_amount')->label('Pagado')->money('COP')->weight('semibold'),
+                    Infolists\Components\TextEntry::make('balance')
+                        ->label('Saldo pendiente')
+                        ->state(fn (SaleInvoice $r) => $r->balance)
+                        ->money('COP')
+                        ->weight('semibold'),
                     Infolists\Components\TextEntry::make('payment_status')
                         ->label('Estado pago')
                         ->formatStateUsing(fn (string $s) => SaleInvoice::PAYMENT_STATUSES[$s] ?? $s)
@@ -117,17 +145,6 @@ class ViewSaleInvoice extends ViewRecord
                             'pendiente' => 'warning', 'parcial' => 'info', 'pagado' => 'success',
                             'vencido' => 'danger', 'cancelada' => 'gray', default => 'gray',
                         }),
-                ]),
-
-            Infolists\Components\Section::make('Pagado / Saldo')
-                ->columns(2)
-                ->schema([
-                    Infolists\Components\TextEntry::make('paid_amount')->label('Pagado')->money('COP')->weight('semibold'),
-                    Infolists\Components\TextEntry::make('balance')
-                        ->label('Saldo pendiente')
-                        ->state(fn (SaleInvoice $r) => $r->balance)
-                        ->money('COP')
-                        ->weight('semibold'),
                 ]),
 
             Infolists\Components\Section::make('Asiento contable')

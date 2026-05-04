@@ -258,8 +258,93 @@ class SaleInvoiceResource extends Resource
                         ->reorderableWithButtons(),
                 ]),
 
+            Forms\Components\Section::make('Retenciones')
+                ->description('Solo si el cliente es agente retenedor (Gran Contribuyente, Estado, etc.). Vacío para clientes finales.')
+                ->collapsed(fn (?\App\Models\SaleInvoice $record) => ! $record || $record->retentions()->doesntExist())
+                ->schema([
+                    Forms\Components\Repeater::make('retentions')
+                        ->relationship('retentions')
+                        ->label('')
+                        ->schema([
+                            Forms\Components\Select::make('tax_id')
+                                ->label('Tipo de retención')
+                                ->required()
+                                ->live()
+                                ->searchable()
+                                ->getSearchResultsUsing(fn (string $search) => Tax::query()
+                                    ->where('is_active', true)
+                                    ->whereIn('type', ['income_withholding', 'vat_withholding', 'ica_withholding'])
+                                    ->whereIn('applies_to', ['sale', 'both'])
+                                    ->where(function ($q) use ($search) {
+                                        $q->where('code', 'ilike', "%{$search}%")
+                                          ->orWhere('name', 'ilike', "%{$search}%");
+                                    })
+                                    ->limit(20)
+                                    ->get()
+                                    ->mapWithKeys(fn (Tax $t) => [
+                                        $t->id => "{$t->code} — {$t->name} ({$t->rate}%)",
+                                    ])
+                                    ->all())
+                                ->getOptionLabelUsing(fn ($value) => Tax::find($value)
+                                    ? Tax::find($value)->code.' — '.Tax::find($value)->name
+                                    : null)
+                                ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
+                                    if (! $state) return;
+                                    $tax = Tax::find($state);
+                                    if (! $tax) return;
+                                    $set('tax_code', $tax->code);
+                                    $set('tax_name', $tax->name);
+                                    $set('tax_type', $tax->type);
+                                    $set('rate', (float) $tax->rate);
+                                    self::recomputeRetention($set, $get);
+                                })
+                                ->columnSpan(5),
+
+                            Forms\Components\TextInput::make('base_amount')
+                                ->label('Base (gravable)')
+                                ->numeric()
+                                ->minValue(0)
+                                ->prefix('$')
+                                ->default(0)
+                                ->required()
+                                ->live(onBlur: true)
+                                ->afterStateUpdated(fn (Forms\Set $set, Forms\Get $get) => self::recomputeRetention($set, $get))
+                                ->helperText('Típicamente subtotal − descuento. Ajusta si la base es distinta.')
+                                ->columnSpan(4),
+
+                            Forms\Components\TextInput::make('rate')
+                                ->label('%')
+                                ->numeric()
+                                ->minValue(0)
+                                ->maxValue(100)
+                                ->step(0.0001)
+                                ->suffix('%')
+                                ->disabled()
+                                ->dehydrated()
+                                ->columnSpan(2),
+
+                            Forms\Components\TextInput::make('amount')
+                                ->label('Monto retenido')
+                                ->numeric()
+                                ->prefix('$')
+                                ->disabled()
+                                ->dehydrated()
+                                ->default(0)
+                                ->columnSpan(3),
+
+                            Forms\Components\Hidden::make('tax_code')->default(''),
+                            Forms\Components\Hidden::make('tax_name')->default(''),
+                            Forms\Components\Hidden::make('tax_type')->default(''),
+                        ])
+                        ->columns(14)
+                        ->defaultItems(0)
+                        ->live()
+                        ->addActionLabel('+ Añadir retención')
+                        ->reorderableWithButtons(),
+                ]),
+
             Forms\Components\Section::make('Totales')
-                ->columns(4)
+                ->columns(6)
                 ->schema([
                     Forms\Components\Placeholder::make('subtotal_display')
                         ->label('Subtotal')
@@ -274,9 +359,20 @@ class SaleInvoiceResource extends Resource
                         ->content(fn (Forms\Get $get) => '$ '.number_format(
                             collect($get('lines') ?? [])->sum(fn ($l) => (float) ($l['tax_amount'] ?? 0)), 2)),
                     Forms\Components\Placeholder::make('total_display')
-                        ->label('TOTAL')
+                        ->label('Total')
                         ->content(fn (Forms\Get $get) => '$ '.number_format(
                             collect($get('lines') ?? [])->sum(fn ($l) => (float) ($l['total'] ?? 0)), 2)),
+                    Forms\Components\Placeholder::make('retention_display')
+                        ->label('Retenciones')
+                        ->content(fn (Forms\Get $get) => '− $ '.number_format(
+                            collect($get('retentions') ?? [])->sum(fn ($r) => (float) ($r['amount'] ?? 0)), 2)),
+                    Forms\Components\Placeholder::make('net_payable_display')
+                        ->label('NETO A PAGAR')
+                        ->content(fn (Forms\Get $get) => '$ '.number_format(
+                            collect($get('lines') ?? [])->sum(fn ($l) => (float) ($l['total'] ?? 0))
+                            - collect($get('retentions') ?? [])->sum(fn ($r) => (float) ($r['amount'] ?? 0)),
+                            2,
+                        )),
                 ]),
 
             Forms\Components\Textarea::make('notes')
@@ -284,6 +380,16 @@ class SaleInvoiceResource extends Resource
                 ->rows(2)
                 ->columnSpanFull(),
         ]);
+    }
+
+    /**
+     * Recalcula el monto retenido = base × rate / 100.
+     */
+    protected static function recomputeRetention(Forms\Set $set, Forms\Get $get): void
+    {
+        $base = (float) ($get('base_amount') ?? 0);
+        $rate = (float) ($get('rate') ?? 0);
+        $set('amount', round($base * ($rate / 100), 2));
     }
 
     /**
@@ -345,7 +451,17 @@ class SaleInvoiceResource extends Resource
                     ->placeholder('—')
                     ->toggleable(),
 
-                Tables\Columns\TextColumn::make('total')->label('Total')->money('COP')->alignEnd(),
+                Tables\Columns\TextColumn::make('total')->label('Total')->money('COP')->alignEnd()->toggleable(),
+                Tables\Columns\TextColumn::make('retention_total')
+                    ->label('Retención')
+                    ->money('COP')
+                    ->alignEnd()
+                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('net_payable')
+                    ->label('Neto')
+                    ->money('COP')
+                    ->alignEnd()
+                    ->weight('semibold'),
                 Tables\Columns\TextColumn::make('paid_amount')->label('Pagado')->money('COP')->alignEnd()->toggleable(),
                 Tables\Columns\TextColumn::make('balance')
                     ->label('Saldo')

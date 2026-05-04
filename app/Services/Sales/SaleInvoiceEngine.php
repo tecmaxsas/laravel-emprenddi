@@ -38,7 +38,7 @@ class SaleInvoiceEngine
             throw new RuntimeException('Solo se puede contabilizar una factura en estado borrador.');
         }
 
-        $invoice->load(['lines.product', 'lines.tax', 'customer', 'location']);
+        $invoice->load(['lines.product', 'lines.tax', 'retentions.tax', 'customer', 'location']);
 
         if ($invoice->lines->isEmpty()) {
             throw new RuntimeException('La factura no tiene líneas.');
@@ -121,10 +121,13 @@ class SaleInvoiceEngine
             throw new RuntimeException('El monto del pago debe ser mayor a 0.');
         }
 
+        // balance ya considera net_payable (no total), porque getBalanceAttribute
+        // del modelo descuenta retenciones. Las retenciones nunca son saldo
+        // pendiente del cliente.
         $balance = (float) $invoice->balance;
         if ($amount > $balance + 0.01) {
             throw new RuntimeException(sprintf(
-                'El pago de $%s excede el saldo pendiente de $%s.',
+                'El pago de $%s excede el saldo pendiente de $%s (neto a pagar después de retenciones).',
                 number_format($amount, 2),
                 number_format($balance, 2),
             ));
@@ -190,22 +193,29 @@ class SaleInvoiceEngine
             $total += (float) $line->total;
         }
 
+        $retentionTotal = (float) $invoice->retentions->sum('amount');
+
         $invoice->update([
             'subtotal' => $subtotal,
             'discount_total' => $discount,
             'tax_total' => $tax,
+            'retention_total' => $retentionTotal,
             'total' => $total,
+            'net_payable' => $total - $retentionTotal,
         ]);
     }
 
     public function recomputePaymentStatus(SaleInvoice $invoice): void
     {
         $paid = (float) $invoice->payments()->sum('amount');
-        $total = (float) $invoice->total;
+        // El status de pago se compara contra net_payable (ya descontadas las
+        // retenciones), no contra total. Las retenciones son anticipos de
+        // impuestos y no son un saldo pendiente del cliente.
+        $netPayable = (float) ($invoice->net_payable ?: $invoice->total);
 
         if ($paid <= 0.0) {
             $status = SaleInvoice::PAYMENT_PENDIENTE;
-        } elseif ($paid + 0.01 < $total) {
+        } elseif ($paid + 0.01 < $netPayable) {
             $status = SaleInvoice::PAYMENT_PARCIAL;
         } else {
             $status = SaleInvoice::PAYMENT_PAGADO;
@@ -310,18 +320,41 @@ class SaleInvoiceEngine
             'total_credit' => $invoice->total,
         ]);
 
+        $netPayable = (float) ($invoice->net_payable ?: $invoice->total);
         $line = 1;
 
-        // DR CxC por el total
+        // DR CxC por el NETO a pagar (total − retenciones).
+        // Las retenciones se debitan aparte a sus cuentas (1355xx) — el
+        // resultado es: total = CxC + sum(retenciones).
         JournalEntryLine::create([
             'journal_entry_id' => $entry->id,
             'line_number' => $line++,
             'account_id' => $receivableAccountId,
             'third_party_id' => $invoice->third_party_id,
             'description' => "CxC {$invoice->customer->name}",
-            'debit' => $invoice->total,
+            'debit' => $netPayable,
             'credit' => 0,
         ]);
+
+        // DR por cada retención que el cliente nos hizo (anticipo de impuesto).
+        foreach ($invoice->retentions as $ret) {
+            $accountId = $ret->tax?->sale_account_id;
+            if (! $accountId) {
+                throw new RuntimeException(sprintf(
+                    'La retención "%s" no tiene cuenta de venta configurada (Tax::sale_account_id). Configúrala en Contabilidad → Impuestos.',
+                    $ret->tax_name,
+                ));
+            }
+            JournalEntryLine::create([
+                'journal_entry_id' => $entry->id,
+                'line_number' => $line++,
+                'account_id' => $accountId,
+                'third_party_id' => $invoice->third_party_id,
+                'description' => "Anticipo {$ret->tax_name}",
+                'debit' => $ret->amount,
+                'credit' => 0,
+            ]);
+        }
 
         // CR ingresos por cada línea (subtotal - descuento, sin IVA)
         foreach ($invoice->lines as $invLine) {

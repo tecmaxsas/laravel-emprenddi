@@ -44,10 +44,15 @@ class EditSaleInvoice extends EditRecord
             return $line;
         })->all();
 
+        $retentionTotal = collect($data['retentions'] ?? [])
+            ->sum(fn ($r) => (float) ($r['amount'] ?? 0));
+
         $data['subtotal'] = $subtotal;
         $data['discount_total'] = $discount;
         $data['tax_total'] = $tax;
         $data['total'] = $total;
+        $data['retention_total'] = $retentionTotal;
+        $data['net_payable'] = $total - $retentionTotal;
 
         return $data;
     }
