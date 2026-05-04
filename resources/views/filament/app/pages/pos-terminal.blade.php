@@ -14,8 +14,139 @@
         @keyframes pos-pulse-once { 0% { box-shadow: 0 0 0 0 rgba(99,102,241,0.6); } 100% { box-shadow: 0 0 0 14px rgba(99,102,241,0); } }
         @keyframes pos-shake { 0%,100% { transform: translateX(0); } 20%,60% { transform: translateX(-3px); } 40%,80% { transform: translateX(3px); } }
 
-        .pos-modal-overlay { animation: pos-fade-in 180ms ease; }
-        .pos-modal-content { animation: pos-slide-up 240ms cubic-bezier(0.16, 1, 0.3, 1); }
+        .pos-modal-overlay {
+            animation: pos-fade-in 180ms ease;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+        }
+        .pos-modal-content {
+            animation: pos-slide-up 240ms cubic-bezier(0.16, 1, 0.3, 1);
+            background: #ffffff;
+            color: #111827;
+            border-radius: 16px;
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            width: 100%;
+            max-width: 32rem;
+        }
+        :is(.dark) .pos-modal-content { background: #111827; color: #f3f4f6; }
+
+        .pos-modal-header {
+            flex-shrink: 0;
+            padding: 16px 20px;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        :is(.dark) .pos-modal-header { border-bottom-color: #1f2937; }
+
+        .pos-modal-body {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .pos-modal-footer {
+            flex-shrink: 0;
+            padding: 16px 20px;
+            border-top: 1px solid #e5e7eb;
+            background: #f9fafb;
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+        :is(.dark) .pos-modal-footer { background: #030712; border-top-color: #1f2937; }
+
+        /* Botones del footer — siempre legibles */
+        .pos-btn {
+            padding: 10px 20px;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 8px;
+            transition: all 150ms ease;
+            cursor: pointer;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .pos-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .pos-btn-secondary { background: #f3f4f6; color: #111827; }
+        .pos-btn-secondary:hover:not(:disabled) { background: #e5e7eb; }
+        :is(.dark) .pos-btn-secondary { background: #1f2937; color: #f3f4f6; }
+        :is(.dark) .pos-btn-secondary:hover:not(:disabled) { background: #374151; }
+        .pos-btn-primary { background: rgb(99,102,241); color: #ffffff; }
+        .pos-btn-primary:hover:not(:disabled) { background: rgb(79,70,229); }
+        .pos-btn-success { background: rgb(16,185,129); color: #ffffff; }
+        .pos-btn-success:hover:not(:disabled) { background: rgb(5,150,105); }
+        .pos-btn-danger { background: rgb(239,68,68); color: #ffffff; }
+        .pos-btn-danger:hover:not(:disabled) { background: rgb(220,38,38); }
+        .pos-btn-warning { background: rgb(245,158,11); color: #ffffff; }
+        .pos-btn-warning:hover:not(:disabled) { background: rgb(217,119,6); }
+        .pos-btn-purple { background: rgb(147,51,234); color: #ffffff; }
+        .pos-btn-purple:hover:not(:disabled) { background: rgb(126,34,206); }
+        .pos-btn-rose { background: rgb(225,29,72); color: #ffffff; }
+        .pos-btn-rose:hover:not(:disabled) { background: rgb(190,18,60); }
+
+        /* Botón cerrar (X) del header */
+        .pos-modal-close {
+            width: 32px; height: 32px; border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            color: #9ca3af; font-size: 20px; line-height: 1;
+            background: transparent; border: none; cursor: pointer;
+            transition: all 150ms;
+        }
+        .pos-modal-close:hover { background: #f3f4f6; color: #4b5563; }
+        :is(.dark) .pos-modal-close:hover { background: #1f2937; color: #d1d5db; }
+
+        /* Cards/badges del modal */
+        .pos-modal-card {
+            background: #f9fafb; border-radius: 12px; padding: 12px;
+            border: 1px solid #e5e7eb;
+        }
+        :is(.dark) .pos-modal-card { background: rgba(31,41,55,0.5); border-color: #1f2937; }
+
+        .pos-stat-label { font-size: 10px; text-transform: uppercase; font-weight: 600; color: #6b7280; letter-spacing: 0.05em; }
+        :is(.dark) .pos-stat-label { color: #9ca3af; }
+        .pos-stat-value { font-size: 18px; font-weight: 700; color: #111827; margin-top: 2px; }
+        :is(.dark) .pos-stat-value { color: #f3f4f6; }
+
+        /* Inputs y selects dentro de modales */
+        .pos-input, .pos-select, .pos-textarea {
+            width: 100%; padding: 8px 12px; font-size: 14px;
+            border-radius: 8px; border: 1px solid #d1d5db;
+            background: #ffffff; color: #111827; outline: none;
+            transition: border-color 150ms, box-shadow 150ms;
+        }
+        :is(.dark) .pos-input, :is(.dark) .pos-select, :is(.dark) .pos-textarea {
+            background: #111827; color: #f3f4f6; border-color: #374151;
+        }
+        .pos-input:focus, .pos-select:focus, .pos-textarea:focus {
+            border-color: rgb(99,102,241); box-shadow: 0 0 0 3px rgba(99,102,241,0.2);
+        }
+        .pos-label {
+            font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase;
+            letter-spacing: 0.05em; margin-bottom: 4px; display: block;
+        }
+        :is(.dark) .pos-label { color: #9ca3af; }
+
+        /* Banner destacado (total a cobrar, etc.) */
+        .pos-banner {
+            border-radius: 12px; padding: 16px; text-align: center;
+            background: linear-gradient(135deg, rgb(99,102,241), rgb(79,70,229));
+            color: #ffffff;
+        }
+        .pos-banner-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; opacity: 0.9; }
+        .pos-banner-value { font-size: 32px; font-weight: 800; letter-spacing: -0.025em; margin-top: 2px; }
+
         .pos-cart-item { animation: pos-slide-up 220ms cubic-bezier(0.16, 1, 0.3, 1); }
         .pos-product-card:active { transform: scale(0.96); }
         .pos-product-card { transition: transform 120ms ease, box-shadow 200ms ease, border-color 150ms ease; }
@@ -535,73 +666,49 @@
     {{-- MODAL DE COBRO                                                    --}}
     {{-- ================================================================ --}}
     @if ($showPaymentModal)
-        <div class="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pos-modal-overlay"
+        <div class="fixed inset-0 flex items-center justify-center p-4 pos-modal-overlay"
              style="z-index: 100;"
              wire:click.self="closePaymentModal">
-            <div class="pos-modal-content bg-white dark:bg-gray-900 rounded-2xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden">
+            <div class="pos-modal-content">
                 {{-- Header --}}
-                <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
-                    <div class="flex items-center gap-3">
-                        @php
-                            // Map estático: Tailwind JIT no resuelve clases dinámicas con interpolación.
-                            $modeBadge = match($paymentMode) {
-                                'cash' => 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
-                                'card' => 'bg-blue-500/15 text-blue-600 dark:text-blue-400',
-                                'transfer' => 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-400',
-                                'multi' => 'bg-purple-500/15 text-purple-600 dark:text-purple-400',
-                                'credit' => 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
-                                default => 'bg-gray-500/15 text-gray-600 dark:text-gray-400',
-                            };
-                        @endphp
-                        <div class="w-10 h-10 rounded-xl {{ $modeBadge }} flex items-center justify-center">
-                            @switch($paymentMode)
-                                @case('cash') <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> @break
-                                @case('card') <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg> @break
-                                @case('transfer') <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg> @break
-                                @case('multi') <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg> @break
-                                @case('credit') <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> @break
-                            @endswitch
-                        </div>
-                        <h2 class="text-base font-semibold">
-                            @switch($paymentMode)
-                                @case('cash') Cobro en efectivo @break
-                                @case('card') Cobro con tarjeta @break
-                                @case('transfer') Cobro por transferencia @break
-                                @case('multi') Pago múltiple @break
-                                @case('credit') Venta a crédito @break
-                            @endswitch
-                        </h2>
-                    </div>
-                    <button type="button" wire:click="closePaymentModal"
-                            class="w-8 h-8 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-center text-xl leading-none transition">×</button>
+                <div class="pos-modal-header">
+                    <h2 class="text-base font-semibold flex-1">
+                        @switch($paymentMode)
+                            @case('cash') Cobro en efectivo @break
+                            @case('card') Cobro con tarjeta @break
+                            @case('transfer') Cobro por transferencia @break
+                            @case('multi') Pago múltiple @break
+                            @case('credit') Venta a crédito @break
+                        @endswitch
+                    </h2>
+                    <button type="button" wire:click="closePaymentModal" class="pos-modal-close">×</button>
                 </div>
 
-                <div class="p-5 space-y-4 overflow-y-auto pos-scroll">
+                <div class="pos-modal-body">
                     {{-- Total grande — net_payable cuando hay retenciones --}}
-                    <div class="bg-gradient-to-br from-primary-500 to-primary-700 rounded-2xl p-5 text-center text-white shadow-lg">
-                        <div class="text-xs uppercase tracking-widest opacity-90 font-semibold">
-                            {{ $totals['retentions'] > 0 ? 'Neto a cobrar (con retenciones aplicadas)' : 'Total a cobrar' }}
+                    <div class="pos-banner">
+                        <div class="pos-banner-label">
+                            {{ $totals['retentions'] > 0 ? 'Neto a cobrar (con retenciones)' : 'Total a cobrar' }}
                         </div>
-                        <div class="text-4xl font-bold tracking-tight mt-1">${{ number_format($totals['net_payable'], 0, ',', '.') }}</div>
+                        <div class="pos-banner-value">${{ number_format($totals['net_payable'], 0, ',', '.') }}</div>
                         @if ($totals['retentions'] > 0)
-                            <div class="text-xs opacity-90 mt-1">
+                            <div style="font-size:11px; opacity:0.9; margin-top:4px;">
                                 Total factura ${{ number_format($totals['total'], 0, ',', '.') }} − retenciones ${{ number_format($totals['retentions'], 0, ',', '.') }}
                             </div>
                         @endif
                     </div>
 
                     @if ($paymentMode === 'credit')
-                        <div class="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl p-4 text-sm text-amber-900 dark:text-amber-200 flex gap-3">
-                            <svg class="w-5 h-5 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                            <div>La factura quedará pendiente de pago. El cliente puede pagar después desde la vista detallada.</div>
+                        <div style="border-radius:12px; padding:16px; background:#fef3c7; border:1px solid #fde68a; color:#78350f; font-size:14px;"
+                             class="dark:!bg-amber-950 dark:!text-amber-200">
+                            La factura quedará pendiente de pago. El cliente puede pagar después desde la vista detallada de la factura.
                         </div>
                     @else
-                        <div class="space-y-2">
+                        <div style="display:flex; flex-direction:column; gap:8px;">
                             @foreach ($payments as $i => $p)
-                                <div class="bg-gray-50 dark:bg-gray-800/40 rounded-xl p-3 space-y-2 ring-1 ring-gray-100 dark:ring-gray-800">
-                                    <div class="grid grid-cols-12 gap-2 items-center">
-                                        <select wire:model.live="payments.{{ $i }}.payment_method"
-                                                class="col-span-5 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 outline-none focus:ring-2 focus:ring-primary-500">
+                                <div class="pos-modal-card" style="display:flex; flex-direction:column; gap:8px;">
+                                    <div style="display:grid; grid-template-columns: 5fr 6fr 1fr; gap:8px; align-items:center;">
+                                        <select wire:model.live="payments.{{ $i }}.payment_method" class="pos-select">
                                             @foreach ($this->paymentMethods as $code => $label)
                                                 <option value="{{ $code }}">{{ $label }}</option>
                                             @endforeach
@@ -609,16 +716,14 @@
                                         <input type="number" step="0.01" min="0"
                                                wire:model.live.blur="payments.{{ $i }}.amount"
                                                placeholder="0"
-                                               class="col-span-6 text-right text-base font-semibold rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 outline-none focus:ring-2 focus:ring-primary-500" />
-                                        <button type="button" wire:click="removePayment({{ $i }})"
-                                                class="col-span-1 w-8 h-8 mx-auto rounded-lg text-gray-400 hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-950 transition flex items-center justify-center">
-                                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-                                        </button>
+                                               class="pos-input"
+                                               style="text-align:right; font-weight:600; font-size:15px;" />
+                                        <button type="button" wire:click="removePayment({{ $i }})" class="pos-modal-close" title="Quitar">×</button>
                                     </div>
                                     @if (in_array($p['payment_method'] ?? '', ['bank_transfer', 'check', 'electronic'], true))
                                         <input type="text" placeholder="Referencia / Voucher / Comprobante"
                                                wire:model.blur="payments.{{ $i }}.reference"
-                                               class="w-full text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-1.5 outline-none focus:ring-2 focus:ring-primary-500" />
+                                               class="pos-input" style="font-size:12px;" />
                                     @endif
                                 </div>
                             @endforeach
@@ -626,29 +731,30 @@
 
                         @if ($paymentMode === 'multi')
                             <button type="button" wire:click="addPaymentLine"
-                                    class="w-full px-3 py-2.5 text-sm font-medium rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700 hover:border-primary-500 hover:bg-primary-50 dark:hover:bg-primary-950/30 hover:text-primary-600 transition flex items-center justify-center gap-1">
-                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
-                                Añadir método de pago
+                                    style="width:100%; padding:10px; font-size:14px; font-weight:500; border-radius:12px; border:2px dashed #d1d5db; background:transparent; cursor:pointer; color:#6b7280; transition:all 150ms;"
+                                    onmouseover="this.style.borderColor='rgb(99,102,241)'; this.style.color='rgb(99,102,241)';"
+                                    onmouseout="this.style.borderColor='#d1d5db'; this.style.color='#6b7280';">
+                                + Añadir método de pago
                             </button>
                         @endif
 
                         {{-- Resumen --}}
-                        <div class="grid grid-cols-3 gap-2 pt-2 border-t border-gray-100 dark:border-gray-800">
-                            <div class="rounded-lg bg-gray-50 dark:bg-gray-800/40 p-2.5 text-center">
-                                <div class="text-[10px] text-gray-500 uppercase font-semibold">Pagado</div>
-                                <div class="text-base font-bold mt-0.5">${{ number_format($totals['paid'], 0, ',', '.') }}</div>
+                        <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:8px;">
+                            <div class="pos-modal-card" style="text-align:center;">
+                                <div class="pos-stat-label">Pagado</div>
+                                <div class="pos-stat-value">${{ number_format($totals['paid'], 0, ',', '.') }}</div>
                             </div>
-                            <div class="rounded-lg p-2.5 text-center {{ $totals['remaining'] > 0 ? 'bg-amber-50 dark:bg-amber-950/40' : 'bg-emerald-50 dark:bg-emerald-950/40' }}">
-                                <div class="text-[10px] uppercase font-semibold {{ $totals['remaining'] > 0 ? 'text-amber-600' : 'text-emerald-600' }}">
+                            <div class="pos-modal-card" style="text-align:center; {{ $totals['remaining'] > 0 ? 'background:#fef3c7; border-color:#fde68a;' : 'background:#d1fae5; border-color:#a7f3d0;' }}">
+                                <div class="pos-stat-label" style="{{ $totals['remaining'] > 0 ? 'color:#a16207;' : 'color:#047857;' }}">
                                     {{ $totals['remaining'] > 0 ? 'Falta' : 'Cubierto' }}
                                 </div>
-                                <div class="text-base font-bold mt-0.5 {{ $totals['remaining'] > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300' }}">
+                                <div class="pos-stat-value" style="{{ $totals['remaining'] > 0 ? 'color:#854d0e;' : 'color:#065f46;' }}">
                                     ${{ number_format($totals['remaining'], 0, ',', '.') }}
                                 </div>
                             </div>
-                            <div class="rounded-lg bg-gray-50 dark:bg-gray-800/40 p-2.5 text-center">
-                                <div class="text-[10px] text-gray-500 uppercase font-semibold">Vuelto</div>
-                                <div class="text-base font-bold mt-0.5 {{ $totals['change'] > 0 ? 'text-emerald-600' : '' }}">
+                            <div class="pos-modal-card" style="text-align:center;">
+                                <div class="pos-stat-label">Vuelto</div>
+                                <div class="pos-stat-value" style="{{ $totals['change'] > 0 ? 'color:#059669;' : '' }}">
                                     ${{ number_format($totals['change'], 0, ',', '.') }}
                                 </div>
                             </div>
@@ -656,17 +762,10 @@
                     @endif
                 </div>
 
-                <div class="px-5 py-4 border-t border-gray-100 dark:border-gray-800 flex justify-end gap-2 bg-gray-50 dark:bg-gray-950/50">
-                    <button type="button" wire:click="closePaymentModal"
-                            class="px-5 py-2.5 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition">
-                        Cancelar
-                    </button>
-                    <button type="button" wire:click="processSale"
-                            wire:loading.attr="disabled"
-                            class="px-6 py-2.5 text-sm font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-md hover:shadow-lg transition disabled:opacity-70 disabled:cursor-wait flex items-center gap-2">
-                        <svg wire:loading.remove wire:target="processSale" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
-                        <svg wire:loading wire:target="processSale" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg>
-                        <span wire:loading.remove wire:target="processSale">Confirmar venta</span>
+                <div class="pos-modal-footer">
+                    <button type="button" wire:click="closePaymentModal" class="pos-btn pos-btn-secondary">Cancelar</button>
+                    <button type="button" wire:click="processSale" wire:loading.attr="disabled" class="pos-btn pos-btn-success">
+                        <span wire:loading.remove wire:target="processSale">✓ Confirmar venta</span>
                         <span wire:loading wire:target="processSale">Procesando…</span>
                     </button>
                 </div>
@@ -678,39 +777,30 @@
     {{-- MODAL — SUSPENDER VENTA                                           --}}
     {{-- ================================================================ --}}
     @if ($showSuspendModal)
-        <div class="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pos-modal-overlay"
+        <div class="fixed inset-0 flex items-center justify-center p-4 pos-modal-overlay"
              style="z-index: 100;"
              wire:click.self="$set('showSuspendModal', false)">
-            <div class="pos-modal-content bg-white dark:bg-gray-900 rounded-2xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 max-w-md w-full overflow-hidden">
-                <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-xl bg-purple-500/15 text-purple-600 dark:text-purple-400 flex items-center justify-center">
-                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                    </div>
+            <div class="pos-modal-content" style="max-width: 28rem;">
+                <div class="pos-modal-header">
                     <h2 class="text-base font-semibold flex-1">Suspender venta</h2>
-                    <button type="button" wire:click="$set('showSuspendModal', false)"
-                            class="w-8 h-8 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-center text-xl leading-none transition">×</button>
+                    <button type="button" wire:click="$set('showSuspendModal', false)" class="pos-modal-close">×</button>
                 </div>
-                <div class="p-5 space-y-3">
-                    <p class="text-sm text-gray-600 dark:text-gray-400">
+                <div class="pos-modal-body">
+                    <p style="font-size:14px; color:#6b7280;" class="dark:!text-gray-400">
                         El carrito actual se guardará como venta suspendida y se vaciará. Podrás recuperarla cuando quieras.
                     </p>
                     <div>
-                        <label class="text-xs font-medium text-gray-700 dark:text-gray-300">Etiqueta (opcional)</label>
-                        <input type="text" wire:model="suspendName" placeholder="Mesa 5, María Pérez, etc."
-                               class="w-full mt-1 px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 outline-none focus:ring-2 focus:ring-primary-500" />
+                        <label class="pos-label">Etiqueta (opcional)</label>
+                        <input type="text" wire:model="suspendName" placeholder="Mesa 5, María Pérez, etc." class="pos-input" />
                     </div>
-                    <div class="bg-gray-50 dark:bg-gray-800/40 rounded-lg p-3 text-sm flex justify-between">
-                        <span class="text-gray-500">Items: <strong>{{ $totals['items'] }}</strong></span>
-                        <span class="text-gray-500">Total: <strong>${{ number_format($totals['total'], 0, ',', '.') }}</strong></span>
+                    <div class="pos-modal-card" style="display:flex; justify-content:space-between; font-size:14px;">
+                        <span style="color:#6b7280;">Items: <strong style="color:#111827;" class="dark:!text-gray-100">{{ $totals['items'] }}</strong></span>
+                        <span style="color:#6b7280;">Total: <strong style="color:#111827;" class="dark:!text-gray-100">${{ number_format($totals['total'], 0, ',', '.') }}</strong></span>
                     </div>
                 </div>
-                <div class="px-5 py-4 border-t border-gray-100 dark:border-gray-800 flex justify-end gap-2 bg-gray-50 dark:bg-gray-950/50">
-                    <button type="button" wire:click="$set('showSuspendModal', false)"
-                            class="px-5 py-2.5 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition">Cancelar</button>
-                    <button type="button" wire:click="suspendSale"
-                            class="px-5 py-2.5 text-sm font-bold rounded-lg bg-purple-600 hover:bg-purple-700 text-white shadow-md transition">
-                        Suspender
-                    </button>
+                <div class="pos-modal-footer">
+                    <button type="button" wire:click="$set('showSuspendModal', false)" class="pos-btn pos-btn-secondary">Cancelar</button>
+                    <button type="button" wire:click="suspendSale" class="pos-btn pos-btn-purple">Suspender</button>
                 </div>
             </div>
         </div>
@@ -720,50 +810,37 @@
     {{-- MODAL — RECUPERAR VENTA                                           --}}
     {{-- ================================================================ --}}
     @if ($showRecoverModal)
-        <div class="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pos-modal-overlay"
+        <div class="fixed inset-0 flex items-center justify-center p-4 pos-modal-overlay"
              style="z-index: 100;"
              wire:click.self="$set('showRecoverModal', false)">
-            <div class="pos-modal-content bg-white dark:bg-gray-900 rounded-2xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 max-w-2xl w-full max-h-[80vh] flex flex-col overflow-hidden">
-                <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center">
-                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10v6a2 2 0 002 2h14a2 2 0 002-2v-6M3 10l9-7 9 7M3 10h18"/></svg>
-                    </div>
+            <div class="pos-modal-content" style="max-width: 42rem;">
+                <div class="pos-modal-header">
                     <h2 class="text-base font-semibold flex-1">Ventas suspendidas</h2>
-                    <button type="button" wire:click="$set('showRecoverModal', false)"
-                            class="w-8 h-8 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-center text-xl leading-none transition">×</button>
+                    <button type="button" wire:click="$set('showRecoverModal', false)" class="pos-modal-close">×</button>
                 </div>
-                <div class="flex-1 overflow-y-auto pos-scroll p-3">
+                <div class="pos-modal-body">
                     @if ($this->suspendedSales->isEmpty())
-                        <div class="py-12 text-center text-sm text-gray-400">
+                        <div style="padding:48px; text-align:center; font-size:14px; color:#9ca3af;">
                             No hay ventas suspendidas en esta sede.
                         </div>
                     @else
-                        <div class="space-y-2">
+                        <div style="display:flex; flex-direction:column; gap:8px;">
                             @foreach ($this->suspendedSales as $s)
-                                <div class="flex items-center gap-3 p-3 rounded-xl border border-gray-200 dark:border-gray-800 hover:border-primary-500 hover:bg-primary-50/40 dark:hover:bg-primary-950/20 transition">
-                                    <div class="w-10 h-10 rounded-lg bg-purple-500/15 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
-                                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                                    </div>
-                                    <div class="flex-1 min-w-0">
-                                        <div class="text-sm font-semibold truncate">{{ $s->name }}</div>
-                                        <div class="text-xs text-gray-500 dark:text-gray-400 truncate">
-                                            {{ $s->customer?->name ?? '—' }} ·
-                                            {{ $s->seller?->name ?? $s->seller?->email ?? '?' }} ·
-                                            {{ $s->created_at->format('Y-m-d H:i') }}
+                                <div class="pos-modal-card" style="display:flex; align-items:center; gap:12px;">
+                                    <div style="flex:1; min-width:0;">
+                                        <div style="font-size:14px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ $s->name }}</div>
+                                        <div style="font-size:12px; color:#6b7280; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                                            {{ $s->customer?->name ?? '—' }} · {{ $s->seller?->name ?? $s->seller?->email ?? '?' }} · {{ $s->created_at->format('Y-m-d H:i') }}
                                         </div>
                                     </div>
-                                    <div class="text-right shrink-0">
-                                        <div class="text-[10px] uppercase text-gray-400 font-semibold">{{ $s->items_count }} items</div>
-                                        <div class="text-sm font-bold">${{ number_format((float) $s->total, 0, ',', '.') }}</div>
+                                    <div style="text-align:right; flex-shrink:0;">
+                                        <div class="pos-stat-label">{{ $s->items_count }} items</div>
+                                        <div class="pos-stat-value" style="font-size:15px;">${{ number_format((float) $s->total, 0, ',', '.') }}</div>
                                     </div>
-                                    <div class="flex flex-col gap-1 shrink-0">
-                                        <button type="button" wire:click="recoverSale({{ $s->id }})"
-                                                class="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition">
-                                            Recuperar
-                                        </button>
-                                        <button type="button" wire:click="deleteSuspendedSale({{ $s->id }})"
-                                                wire:confirm="¿Eliminar esta venta suspendida?"
-                                                class="px-3 py-1 text-[11px] rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition">
+                                    <div style="display:flex; flex-direction:column; gap:4px; flex-shrink:0;">
+                                        <button type="button" wire:click="recoverSale({{ $s->id }})" class="pos-btn pos-btn-success" style="padding:6px 12px; font-size:12px;">Recuperar</button>
+                                        <button type="button" wire:click="deleteSuspendedSale({{ $s->id }})" wire:confirm="¿Eliminar esta venta suspendida?"
+                                                style="padding:4px 12px; font-size:11px; border-radius:6px; color:rgb(239,68,68); background:transparent; border:none; cursor:pointer;">
                                             Eliminar
                                         </button>
                                     </div>
@@ -794,32 +871,28 @@
     {{-- MODAL — RETENCIONES                                               --}}
     {{-- ================================================================ --}}
     @if ($showRetentionsModal)
-        <div class="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pos-modal-overlay"
+        <div class="fixed inset-0 flex items-center justify-center p-4 pos-modal-overlay"
              style="z-index: 100;"
              wire:click.self="$set('showRetentionsModal', false)">
-            <div class="pos-modal-content bg-white dark:bg-gray-900 rounded-2xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden">
-                <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-xl bg-rose-500/15 text-rose-600 dark:text-rose-400 flex items-center justify-center">
-                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                    </div>
-                    <div class="flex-1">
+            <div class="pos-modal-content" style="max-width: 42rem;">
+                <div class="pos-modal-header">
+                    <div style="flex:1;">
                         <h2 class="text-base font-semibold">Retenciones aplicables</h2>
-                        <p class="text-xs text-gray-500">Aplican cuando el cliente es agente retenedor (Gran Contribuyente, Estado, etc.). Para venta a consumidor final, deja la lista vacía.</p>
+                        <p style="font-size:11px; color:#6b7280; margin-top:2px;">Aplican cuando el cliente es agente retenedor (Gran Contribuyente, Estado). Para venta a consumidor final, deja la lista vacía.</p>
                     </div>
-                    <button type="button" wire:click="$set('showRetentionsModal', false)"
-                            class="w-8 h-8 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-center text-xl leading-none transition">×</button>
+                    <button type="button" wire:click="$set('showRetentionsModal', false)" class="pos-modal-close">×</button>
                 </div>
 
-                <div class="p-5 space-y-4 overflow-y-auto pos-scroll">
-                    {{-- Catálogo: Tax con type=*_withholding --}}
+                <div class="pos-modal-body">
+                    {{-- Catálogo --}}
                     <div>
-                        <div class="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2">Disponibles</div>
+                        <div class="pos-stat-label" style="margin-bottom:8px;">Disponibles</div>
                         @if ($this->availableRetentionTaxes->isEmpty())
-                            <div class="text-sm text-gray-400 italic px-3 py-4 bg-gray-50 dark:bg-gray-800/40 rounded-lg">
-                                No hay impuestos de retención configurados. Configúralos en Contabilidad → Impuestos con type ReteFuente / ReteIVA / ReteICA.
+                            <div class="pos-modal-card" style="font-size:13px; color:#9ca3af; font-style:italic;">
+                                No hay impuestos de retención configurados. Configúralos en Contabilidad → Impuestos.
                             </div>
                         @else
-                            <div class="grid grid-cols-2 gap-2">
+                            <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:8px;">
                                 @foreach ($this->availableRetentionTaxes as $rt)
                                     @php
                                         $alreadyApplied = collect($retentions)->contains(fn ($r) => (int) $r['tax_id'] === (int) $rt->id);
@@ -827,10 +900,13 @@
                                     <button type="button"
                                             wire:click="addRetention({{ $rt->id }})"
                                             @disabled($alreadyApplied)
-                                            class="text-left px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 disabled:opacity-40 disabled:cursor-not-allowed transition">
-                                        <div class="text-xs font-mono text-gray-500">{{ $rt->code }}</div>
-                                        <div class="text-sm font-semibold">{{ $rt->name }}</div>
-                                        <div class="text-xs text-gray-500">{{ number_format((float) $rt->rate, 4) }} %</div>
+                                            class="pos-modal-card"
+                                            style="text-align:left; cursor:pointer; transition:all 150ms; {{ $alreadyApplied ? 'opacity:0.4; cursor:not-allowed;' : '' }}"
+                                            onmouseover="if(!this.disabled){this.style.borderColor='rgb(225,29,72)'}"
+                                            onmouseout="this.style.borderColor=''">
+                                        <div style="font-family:monospace; font-size:11px; color:#6b7280;">{{ $rt->code }}</div>
+                                        <div style="font-size:14px; font-weight:600;">{{ $rt->name }}</div>
+                                        <div style="font-size:11px; color:#6b7280;">{{ number_format((float) $rt->rate, 4) }} %</div>
                                     </button>
                                 @endforeach
                             </div>
@@ -840,30 +916,29 @@
                     {{-- Aplicadas --}}
                     @if (! empty($retentions))
                         <div>
-                            <div class="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2">Aplicadas a esta venta</div>
-                            <div class="space-y-2">
+                            <div class="pos-stat-label" style="margin-bottom:8px;">Aplicadas a esta venta</div>
+                            <div style="display:flex; flex-direction:column; gap:8px;">
                                 @foreach ($retentions as $i => $r)
-                                    <div class="bg-rose-50/50 dark:bg-rose-950/20 ring-1 ring-rose-200 dark:ring-rose-900 rounded-xl p-3 grid grid-cols-12 gap-2 items-center">
-                                        <div class="col-span-5 min-w-0">
-                                            <div class="text-xs font-mono text-gray-500">{{ $r['tax_code'] ?? '' }}</div>
-                                            <div class="text-sm font-semibold truncate">{{ $r['tax_name'] ?? '' }}</div>
-                                            <div class="text-xs text-gray-500">{{ number_format((float) $r['rate'], 4) }} %</div>
+                                    <div class="pos-modal-card" style="display:grid; grid-template-columns: 5fr 3fr 3fr 1fr; gap:8px; align-items:center; background:#fef2f2; border-color:#fecaca;">
+                                        <div style="min-width:0;">
+                                            <div style="font-family:monospace; font-size:11px; color:#6b7280;">{{ $r['tax_code'] ?? '' }}</div>
+                                            <div style="font-size:13px; font-weight:600; overflow:hidden; text-overflow:ellipsis;">{{ $r['tax_name'] ?? '' }}</div>
+                                            <div style="font-size:11px; color:#6b7280;">{{ number_format((float) $r['rate'], 4) }} %</div>
                                         </div>
-                                        <div class="col-span-3">
-                                            <div class="text-[10px] text-gray-500 mb-0.5">Base</div>
+                                        <div>
+                                            <div class="pos-stat-label" style="margin-bottom:4px;">Base</div>
                                             <input type="number" step="0.01" min="0"
                                                    wire:model.live.blur="retentions.{{ $i }}.base_amount"
-                                                   class="w-full text-right text-xs rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 outline-none focus:ring-2 focus:ring-rose-500" />
+                                                   class="pos-input" style="font-size:12px; padding:4px 8px; text-align:right;" />
                                         </div>
-                                        <div class="col-span-3 text-right">
-                                            <div class="text-[10px] text-gray-500 mb-0.5">Retenido</div>
-                                            <div class="text-sm font-bold text-rose-600 dark:text-rose-400">
+                                        <div style="text-align:right;">
+                                            <div class="pos-stat-label" style="margin-bottom:4px;">Retenido</div>
+                                            <div style="font-size:14px; font-weight:700; color:rgb(225,29,72); white-space:nowrap;">
                                                 ${{ number_format((float) ($r['amount'] ?? 0), 0, ',', '.') }}
                                             </div>
                                         </div>
-                                        <div class="col-span-1 text-right">
-                                            <button type="button" wire:click="removeRetention({{ $i }})"
-                                                    class="text-gray-400 hover:text-red-500 text-lg" title="Quitar">×</button>
+                                        <div style="text-align:right;">
+                                            <button type="button" wire:click="removeRetention({{ $i }})" class="pos-modal-close" title="Quitar">×</button>
                                         </div>
                                     </div>
                                 @endforeach
@@ -872,27 +947,24 @@
                     @endif
 
                     {{-- Resumen --}}
-                    <div class="grid grid-cols-3 gap-2 pt-2 border-t border-gray-100 dark:border-gray-800">
-                        <div class="rounded-lg bg-gray-50 dark:bg-gray-800/40 p-2.5 text-center">
-                            <div class="text-[10px] text-gray-500 uppercase font-semibold">Total factura</div>
-                            <div class="text-base font-bold mt-0.5">${{ number_format($totals['total'], 0, ',', '.') }}</div>
+                    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:8px;">
+                        <div class="pos-modal-card" style="text-align:center;">
+                            <div class="pos-stat-label">Total factura</div>
+                            <div class="pos-stat-value">${{ number_format($totals['total'], 0, ',', '.') }}</div>
                         </div>
-                        <div class="rounded-lg p-2.5 text-center bg-rose-50 dark:bg-rose-950/40">
-                            <div class="text-[10px] text-rose-600 uppercase font-semibold">Retenciones</div>
-                            <div class="text-base font-bold mt-0.5 text-rose-700 dark:text-rose-300">−${{ number_format($totals['retentions'], 0, ',', '.') }}</div>
+                        <div class="pos-modal-card" style="text-align:center; background:#fef2f2; border-color:#fecaca;">
+                            <div class="pos-stat-label" style="color:#be123c;">Retenciones</div>
+                            <div class="pos-stat-value" style="color:#9f1239;">−${{ number_format($totals['retentions'], 0, ',', '.') }}</div>
                         </div>
-                        <div class="rounded-lg p-2.5 text-center bg-emerald-50 dark:bg-emerald-950/40">
-                            <div class="text-[10px] text-emerald-600 uppercase font-semibold">Neto a pagar</div>
-                            <div class="text-base font-bold mt-0.5 text-emerald-700 dark:text-emerald-300">${{ number_format($totals['net_payable'], 0, ',', '.') }}</div>
+                        <div class="pos-modal-card" style="text-align:center; background:#d1fae5; border-color:#a7f3d0;">
+                            <div class="pos-stat-label" style="color:#047857;">Neto a pagar</div>
+                            <div class="pos-stat-value" style="color:#065f46;">${{ number_format($totals['net_payable'], 0, ',', '.') }}</div>
                         </div>
                     </div>
                 </div>
 
-                <div class="px-5 py-4 border-t border-gray-100 dark:border-gray-800 flex justify-end gap-2 bg-gray-50 dark:bg-gray-950/50">
-                    <button type="button" wire:click="$set('showRetentionsModal', false)"
-                            class="px-5 py-2.5 text-sm font-bold rounded-lg bg-rose-600 hover:bg-rose-700 text-white shadow-md transition">
-                        Listo
-                    </button>
+                <div class="pos-modal-footer">
+                    <button type="button" wire:click="$set('showRetentionsModal', false)" class="pos-btn pos-btn-rose">Listo</button>
                 </div>
             </div>
         </div>
@@ -902,74 +974,64 @@
     {{-- MODAL — DETALLES DE CAJA                                          --}}
     {{-- ================================================================ --}}
     @if ($showSessionDetailsModal && $session && $sessionTotals)
-        <div class="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pos-modal-overlay"
+        <div class="fixed inset-0 flex items-center justify-center p-4 pos-modal-overlay"
              style="z-index: 100;"
              wire:click.self="$set('showSessionDetailsModal', false)">
-            <div class="pos-modal-content bg-white dark:bg-gray-900 rounded-2xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 max-w-md w-full overflow-hidden">
-                <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-xl bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 flex items-center justify-center">
-                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                    </div>
-                    <div class="flex-1">
+            <div class="pos-modal-content" style="max-width: 28rem;">
+                <div class="pos-modal-header">
+                    <div style="flex:1;">
                         <h2 class="text-base font-semibold">Caja en curso</h2>
-                        <p class="text-xs text-gray-500">Abierta {{ $session->opened_at->diffForHumans() }} · {{ $session->location?->name }}</p>
+                        <p style="font-size:11px; color:#6b7280; margin-top:2px;">Abierta {{ $session->opened_at->diffForHumans() }} · {{ $session->location?->name }}</p>
                     </div>
-                    <button type="button" wire:click="$set('showSessionDetailsModal', false)"
-                            class="w-8 h-8 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-center text-xl leading-none transition">×</button>
+                    <button type="button" wire:click="$set('showSessionDetailsModal', false)" class="pos-modal-close">×</button>
                 </div>
 
-                <div class="p-5 space-y-4">
-                    {{-- Resumen --}}
-                    <div class="grid grid-cols-2 gap-3">
-                        <div class="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-3">
-                            <div class="text-[10px] uppercase font-bold text-gray-500">Apertura</div>
-                            <div class="text-lg font-bold mt-0.5">${{ number_format((float) $session->opening_amount, 0, ',', '.') }}</div>
+                <div class="pos-modal-body">
+                    <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:12px;">
+                        <div class="pos-modal-card">
+                            <div class="pos-stat-label">Apertura</div>
+                            <div class="pos-stat-value">${{ number_format((float) $session->opening_amount, 0, ',', '.') }}</div>
                         </div>
-                        <div class="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-3">
-                            <div class="text-[10px] uppercase font-bold text-gray-500">Facturas emitidas</div>
-                            <div class="text-lg font-bold mt-0.5">{{ $sessionTotals['invoice_count'] }}</div>
+                        <div class="pos-modal-card">
+                            <div class="pos-stat-label">Facturas emitidas</div>
+                            <div class="pos-stat-value">{{ $sessionTotals['invoice_count'] }}</div>
                         </div>
                     </div>
 
-                    {{-- Pagos por método --}}
                     <div>
-                        <div class="text-[10px] uppercase font-bold text-gray-500 mb-2">Cobros por método</div>
+                        <div class="pos-stat-label" style="margin-bottom:8px;">Cobros por método</div>
                         @if (empty($sessionTotals['payment_breakdown']))
-                            <div class="text-sm text-gray-400 italic px-3 py-2">Sin cobros aún.</div>
+                            <div style="font-size:13px; color:#9ca3af; font-style:italic; padding:8px 12px;">Sin cobros aún.</div>
                         @else
-                            <div class="space-y-1">
+                            <div style="display:flex; flex-direction:column; gap:4px;">
                                 @foreach ($sessionTotals['payment_breakdown'] as $method => $amount)
-                                    <div class="flex justify-between text-sm py-1 px-3 rounded-lg bg-gray-50 dark:bg-gray-800/40">
-                                        <span>{{ \App\Models\Payment::PAYMENT_METHODS[$method] ?? $method }}</span>
-                                        <span class="font-semibold">${{ number_format($amount, 0, ',', '.') }}</span>
+                                    <div class="pos-modal-card" style="display:flex; justify-content:space-between; padding:8px 12px;">
+                                        <span style="font-size:14px;">{{ \App\Models\Payment::PAYMENT_METHODS[$method] ?? $method }}</span>
+                                        <span style="font-size:14px; font-weight:600;">${{ number_format($amount, 0, ',', '.') }}</span>
                                     </div>
                                 @endforeach
                             </div>
                         @endif
                     </div>
 
-                    {{-- Total ventas + esperado en caja --}}
-                    <div class="space-y-2 pt-2 border-t border-gray-100 dark:border-gray-800">
-                        <div class="flex justify-between text-sm">
-                            <span class="text-gray-600 dark:text-gray-400">Total ventas</span>
-                            <span class="font-semibold">${{ number_format($sessionTotals['total_sales'], 0, ',', '.') }}</span>
+                    <div style="display:flex; flex-direction:column; gap:8px; padding-top:12px; border-top:1px solid #e5e7eb;" class="dark:!border-gray-800">
+                        <div style="display:flex; justify-content:space-between; font-size:14px;">
+                            <span style="color:#6b7280;">Total ventas</span>
+                            <span style="font-weight:600;">${{ number_format($sessionTotals['total_sales'], 0, ',', '.') }}</span>
                         </div>
-                        <div class="flex justify-between text-sm">
-                            <span class="text-gray-600 dark:text-gray-400">Recibido en efectivo</span>
-                            <span class="font-semibold">${{ number_format($sessionTotals['cash_received'], 0, ',', '.') }}</span>
+                        <div style="display:flex; justify-content:space-between; font-size:14px;">
+                            <span style="color:#6b7280;">Recibido en efectivo</span>
+                            <span style="font-weight:600;">${{ number_format($sessionTotals['cash_received'], 0, ',', '.') }}</span>
                         </div>
-                        <div class="flex justify-between text-base font-bold pt-2 border-t border-gray-200 dark:border-gray-700">
+                        <div style="display:flex; justify-content:space-between; font-size:16px; font-weight:700; padding-top:8px; border-top:1px solid #e5e7eb;" class="dark:!border-gray-700">
                             <span>Esperado en caja</span>
-                            <span class="text-emerald-600 dark:text-emerald-400">${{ number_format($sessionTotals['closing_expected'], 0, ',', '.') }}</span>
+                            <span style="color:rgb(5,150,105);">${{ number_format($sessionTotals['closing_expected'], 0, ',', '.') }}</span>
                         </div>
                     </div>
                 </div>
 
-                <div class="px-5 py-4 border-t border-gray-100 dark:border-gray-800 flex justify-end bg-gray-50 dark:bg-gray-950/50">
-                    <button type="button" wire:click="$set('showSessionDetailsModal', false)"
-                            class="px-5 py-2.5 text-sm font-bold rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white shadow-md transition">
-                        Cerrar
-                    </button>
+                <div class="pos-modal-footer">
+                    <button type="button" wire:click="$set('showSessionDetailsModal', false)" class="pos-btn pos-btn-primary">Cerrar</button>
                 </div>
             </div>
         </div>
@@ -980,54 +1042,48 @@
     {{-- ================================================================ --}}
     @if ($showCloseSessionModal && $session && $sessionTotals)
         @php $blindClose = (bool) ($posSettings['blind_cash_close'] ?? false); @endphp
-        <div class="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pos-modal-overlay"
+        <div class="fixed inset-0 flex items-center justify-center p-4 pos-modal-overlay"
              style="z-index: 100;"
              wire:click.self="$set('showCloseSessionModal', false)">
-            <div class="pos-modal-content bg-white dark:bg-gray-900 rounded-2xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 max-w-md w-full overflow-hidden">
-                <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
-                    </div>
-                    <div class="flex-1">
+            <div class="pos-modal-content" style="max-width: 28rem;">
+                <div class="pos-modal-header">
+                    <div style="flex:1;">
                         <h2 class="text-base font-semibold">Cierre de caja</h2>
-                        <p class="text-xs text-gray-500">{{ $session->location?->name }} · turno desde {{ $session->opened_at->format('Y-m-d H:i') }}</p>
+                        <p style="font-size:11px; color:#6b7280; margin-top:2px;">{{ $session->location?->name }} · turno desde {{ $session->opened_at->format('Y-m-d H:i') }}</p>
                     </div>
-                    <button type="button" wire:click="$set('showCloseSessionModal', false)"
-                            class="w-8 h-8 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-center text-xl leading-none transition">×</button>
+                    <button type="button" wire:click="$set('showCloseSessionModal', false)" class="pos-modal-close">×</button>
                 </div>
 
-                <div class="p-5 space-y-4">
+                <div class="pos-modal-body">
                     @if ($blindClose)
-                        <div class="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl p-3 text-sm text-amber-900 dark:text-amber-200 flex gap-3">
-                            <svg class="w-5 h-5 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"/></svg>
-                            <div>Cierre oculto — solo digita el efectivo que físicamente cuentas en la caja. La diferencia se registrará para auditoría.</div>
+                        <div style="border-radius:12px; padding:12px; background:#fef3c7; border:1px solid #fde68a; color:#78350f; font-size:13px;">
+                            <strong>Cierre oculto:</strong> solo digita el efectivo que físicamente cuentas en la caja. La diferencia se registrará para auditoría.
                         </div>
                     @else
-                        <div class="space-y-2 bg-gray-50 dark:bg-gray-800/40 rounded-xl p-4">
-                            <div class="flex justify-between text-sm">
-                                <span class="text-gray-600 dark:text-gray-400">Apertura</span>
-                                <span class="font-medium">${{ number_format((float) $session->opening_amount, 0, ',', '.') }}</span>
+                        <div class="pos-modal-card" style="display:flex; flex-direction:column; gap:8px;">
+                            <div style="display:flex; justify-content:space-between; font-size:14px;">
+                                <span style="color:#6b7280;">Apertura</span>
+                                <span style="font-weight:500;">${{ number_format((float) $session->opening_amount, 0, ',', '.') }}</span>
                             </div>
-                            <div class="flex justify-between text-sm">
-                                <span class="text-gray-600 dark:text-gray-400">+ Recibido en efectivo</span>
-                                <span class="font-medium">${{ number_format($sessionTotals['cash_received'], 0, ',', '.') }}</span>
+                            <div style="display:flex; justify-content:space-between; font-size:14px;">
+                                <span style="color:#6b7280;">+ Recibido en efectivo</span>
+                                <span style="font-weight:500;">${{ number_format($sessionTotals['cash_received'], 0, ',', '.') }}</span>
                             </div>
-                            <div class="flex justify-between text-base font-bold pt-2 border-t border-gray-200 dark:border-gray-700">
+                            <div style="display:flex; justify-content:space-between; font-size:16px; font-weight:700; padding-top:8px; border-top:1px solid #e5e7eb;">
                                 <span>Esperado en caja</span>
-                                <span class="text-emerald-600 dark:text-emerald-400">${{ number_format($sessionTotals['closing_expected'], 0, ',', '.') }}</span>
+                                <span style="color:rgb(5,150,105);">${{ number_format($sessionTotals['closing_expected'], 0, ',', '.') }}</span>
                             </div>
                         </div>
                     @endif
 
                     <div>
-                        <label class="text-xs font-semibold uppercase tracking-wider text-gray-500">
-                            {{ $blindClose ? 'Efectivo contado' : 'Monto contado físicamente' }}
-                        </label>
-                        <div class="relative mt-1">
-                            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
+                        <label class="pos-label">{{ $blindClose ? 'Efectivo contado' : 'Monto contado físicamente' }}</label>
+                        <div style="position:relative;">
+                            <span style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#9ca3af;">$</span>
                             <input type="number" step="0.01" min="0"
                                    wire:model.live="closingCounted" placeholder="0"
-                                   class="w-full pl-7 pr-3 py-2.5 text-base font-semibold rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 outline-none focus:ring-2 focus:ring-emerald-500" />
+                                   class="pos-input"
+                                   style="padding-left:28px; font-size:18px; font-weight:600;" />
                         </div>
                     </div>
 
@@ -1035,33 +1091,32 @@
                     @if (! $blindClose)
                         @php
                             $diff = (float) ($closingCounted ?? 0) - (float) $sessionTotals['closing_expected'];
+                            $isExact = abs($diff) < 0.01;
+                            $isSobrante = $diff > 0;
+                            $bg = $isExact ? '#d1fae5' : ($isSobrante ? '#cffafe' : '#fee2e2');
+                            $bdr = $isExact ? '#a7f3d0' : ($isSobrante ? '#a5f3fc' : '#fecaca');
+                            $tcolor = $isExact ? '#047857' : ($isSobrante ? '#0e7490' : '#b91c1c');
+                            $tcolorDark = $isExact ? '#065f46' : ($isSobrante ? '#155e75' : '#991b1b');
                         @endphp
-                        <div class="rounded-xl p-3 text-center {{ abs($diff) < 0.01 ? 'bg-emerald-50 dark:bg-emerald-950/40' : ($diff > 0 ? 'bg-cyan-50 dark:bg-cyan-950/40' : 'bg-rose-50 dark:bg-rose-950/40') }}">
-                            <div class="text-[10px] uppercase font-semibold {{ abs($diff) < 0.01 ? 'text-emerald-600' : ($diff > 0 ? 'text-cyan-600' : 'text-rose-600') }}">
-                                {{ abs($diff) < 0.01 ? 'Cuadre exacto' : ($diff > 0 ? 'Sobrante' : 'Faltante') }}
+                        <div style="border-radius:12px; padding:12px; text-align:center; background:{{ $bg }}; border:1px solid {{ $bdr }};">
+                            <div style="font-size:11px; text-transform:uppercase; font-weight:600; color:{{ $tcolor }};">
+                                {{ $isExact ? 'Cuadre exacto' : ($isSobrante ? 'Sobrante' : 'Faltante') }}
                             </div>
-                            <div class="text-xl font-bold mt-0.5 {{ abs($diff) < 0.01 ? 'text-emerald-700 dark:text-emerald-300' : ($diff > 0 ? 'text-cyan-700 dark:text-cyan-300' : 'text-rose-700 dark:text-rose-300') }}">
+                            <div style="font-size:22px; font-weight:700; margin-top:2px; color:{{ $tcolorDark }};">
                                 {{ $diff >= 0 ? '+' : '' }}${{ number_format($diff, 0, ',', '.') }}
                             </div>
                         </div>
                     @endif
 
                     <div>
-                        <label class="text-xs font-semibold uppercase tracking-wider text-gray-500">Notas (opcional)</label>
-                        <textarea wire:model="closingNotes" rows="2" placeholder="Observaciones del turno..."
-                                  class="w-full mt-1 px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 outline-none focus:ring-2 focus:ring-emerald-500"></textarea>
+                        <label class="pos-label">Notas (opcional)</label>
+                        <textarea wire:model="closingNotes" rows="2" placeholder="Observaciones del turno..." class="pos-textarea"></textarea>
                     </div>
                 </div>
 
-                <div class="px-5 py-4 border-t border-gray-100 dark:border-gray-800 flex justify-end gap-2 bg-gray-50 dark:bg-gray-950/50">
-                    <button type="button" wire:click="$set('showCloseSessionModal', false)"
-                            class="px-5 py-2.5 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition">
-                        Cancelar
-                    </button>
-                    <button type="button" wire:click="closeCashSession"
-                            class="px-6 py-2.5 text-sm font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-md transition">
-                        Confirmar cierre
-                    </button>
+                <div class="pos-modal-footer">
+                    <button type="button" wire:click="$set('showCloseSessionModal', false)" class="pos-btn pos-btn-secondary">Cancelar</button>
+                    <button type="button" wire:click="closeCashSession" class="pos-btn pos-btn-success">Confirmar cierre</button>
                 </div>
             </div>
         </div>
@@ -1071,32 +1126,27 @@
     {{-- MODAL CLIENTE                                                     --}}
     {{-- ================================================================ --}}
     @if ($showCustomerModal)
-        <div class="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pos-modal-overlay"
+        <div class="fixed inset-0 flex items-center justify-center p-4 pos-modal-overlay"
              style="z-index: 100;"
              wire:click.self="$set('showCustomerModal', false)">
-            <div class="pos-modal-content bg-white dark:bg-gray-900 rounded-2xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 max-w-md w-full overflow-hidden">
-                <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
-                    <h2 class="text-base font-semibold">Cliente de la venta</h2>
-                    <button type="button" wire:click="$set('showCustomerModal', false)"
-                            class="w-8 h-8 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-center text-xl leading-none transition">×</button>
+            <div class="pos-modal-content" style="max-width: 28rem;">
+                <div class="pos-modal-header">
+                    <h2 class="text-base font-semibold flex-1">Cliente de la venta</h2>
+                    <button type="button" wire:click="$set('showCustomerModal', false)" class="pos-modal-close">×</button>
                 </div>
-                <div class="p-5 space-y-3">
+                <div class="pos-modal-body">
                     <div>
-                        <label class="text-xs font-medium text-gray-700 dark:text-gray-300">Nombre / razón social</label>
-                        <input type="text" wire:model="newCustomerName" placeholder="Juan Pérez Gómez"
-                               class="w-full mt-1 px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 outline-none focus:ring-2 focus:ring-primary-500" />
+                        <label class="pos-label">Nombre / razón social</label>
+                        <input type="text" wire:model="newCustomerName" placeholder="Juan Pérez Gómez" class="pos-input" />
                     </div>
                     <div>
-                        <label class="text-xs font-medium text-gray-700 dark:text-gray-300">Documento (CC / NIT)</label>
-                        <input type="text" wire:model="newCustomerDocument" placeholder="1234567890"
-                               class="w-full mt-1 px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 outline-none focus:ring-2 focus:ring-primary-500" />
+                        <label class="pos-label">Documento (CC / NIT)</label>
+                        <input type="text" wire:model="newCustomerDocument" placeholder="1234567890" class="pos-input" />
                     </div>
                 </div>
-                <div class="px-5 py-4 border-t border-gray-100 dark:border-gray-800 flex justify-end gap-2 bg-gray-50 dark:bg-gray-950/50">
-                    <button type="button" wire:click="$set('showCustomerModal', false)"
-                            class="px-5 py-2.5 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition">Cancelar</button>
-                    <button type="button" wire:click="createQuickCustomer"
-                            class="px-5 py-2.5 text-sm font-bold rounded-lg bg-primary-600 hover:bg-primary-700 text-white shadow-md transition">Crear y usar</button>
+                <div class="pos-modal-footer">
+                    <button type="button" wire:click="$set('showCustomerModal', false)" class="pos-btn pos-btn-secondary">Cancelar</button>
+                    <button type="button" wire:click="createQuickCustomer" class="pos-btn pos-btn-primary">Crear y usar</button>
                 </div>
             </div>
         </div>
