@@ -81,11 +81,14 @@ class DianApiClient
 
     /**
      * Tab 5 — Cambiar entre Pruebas (2) y Producción (1).
+     * El API requiere los 3 IDs de ambiente (factura, nómina, equivalentes).
      */
     public function changeEnvironment(int $environment): array
     {
         return $this->request('put', '/api/ubl2.1/config/environment', [
             'type_environment_id' => $environment,
+            'payroll_type_environment_id' => $environment,
+            'eqdocs_type_environment_id' => $environment,
         ]);
     }
 
