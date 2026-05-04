@@ -223,6 +223,7 @@
                         class="px-3 py-1.5 text-xs font-medium rounded-lg bg-purple-500/10 text-purple-700 dark:text-purple-300 hover:bg-purple-500/20 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5">
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                     Suspender
+                    <kbd class="hidden lg:inline-block text-[9px] px-1 py-px rounded bg-purple-200 dark:bg-purple-900 text-purple-700 dark:text-purple-300 font-mono leading-none">F8</kbd>
                 </button>
                 <button type="button" wire:click="resetCart" wire:confirm="¿Vaciar carrito?"
                         class="px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition">
@@ -309,16 +310,6 @@
                                autocomplete="off"
                                class="w-full pl-9 pr-4 py-2.5 text-sm rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/60 focus:bg-white dark:focus:bg-gray-900 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition" />
                     </div>
-                    <div class="hidden md:flex flex-wrap gap-2 mt-2 text-[10px] text-gray-500 dark:text-gray-400">
-                        <span><kbd class="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">F2</kbd> Tarjeta</span>
-                        <span><kbd class="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">F3</kbd> Transfer</span>
-                        <span><kbd class="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">F4</kbd> Multi-pago</span>
-                        <span><kbd class="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">F5</kbd> Crédito</span>
-                        <span><kbd class="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">F8</kbd> Suspender</span>
-                        <span><kbd class="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">F9</kbd> Cliente</span>
-                        <span><kbd class="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">Esc</kbd> Cerrar modal</span>
-                        <span><kbd class="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">F1</kbd> Efectivo</span>
-                    </div>
                 </div>
 
                 {{-- Grid --}}
@@ -376,9 +367,10 @@
                         </div>
                     </button>
                     <button type="button" wire:click="$set('showCustomerModal', true)"
-                            class="w-8 h-8 rounded-lg bg-primary-500 hover:bg-primary-600 text-white flex items-center justify-center shadow-sm transition"
-                            title="Cambiar cliente">
+                            class="h-8 px-2 rounded-lg bg-primary-500 hover:bg-primary-600 text-white flex items-center gap-1 shadow-sm transition"
+                            title="Cambiar cliente (F9)">
                         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+                        <kbd class="hidden lg:inline-block text-[9px] px-1 py-px rounded bg-white/30 text-white font-mono leading-none">F9</kbd>
                     </button>
                 </div>
 
@@ -508,31 +500,31 @@
                         @disabled(empty($cart))
                         class="flex-1 flex flex-col items-center justify-center gap-0.5 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 disabled:opacity-30 disabled:cursor-not-allowed transition relative">
                     <svg class="w-5 h-5 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                    <span class="text-xs font-semibold">Efectivo</span>
+                    <span class="text-xs font-semibold flex items-center gap-1">Efectivo <kbd class="hidden md:inline-block text-[9px] px-1 py-px rounded bg-gray-100 dark:bg-gray-800 text-gray-500 font-mono leading-none">F1</kbd></span>
                 </button>
                 <button type="button" wire:click="openPayment('card')"
                         @disabled(empty($cart))
                         class="flex-1 flex flex-col items-center justify-center gap-0.5 hover:bg-blue-50 dark:hover:bg-blue-950/40 disabled:opacity-30 disabled:cursor-not-allowed transition border-l border-gray-200 dark:border-gray-800">
                     <svg class="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>
-                    <span class="text-xs font-semibold">Tarjeta</span>
+                    <span class="text-xs font-semibold flex items-center gap-1">Tarjeta <kbd class="hidden md:inline-block text-[9px] px-1 py-px rounded bg-gray-100 dark:bg-gray-800 text-gray-500 font-mono leading-none">F2</kbd></span>
                 </button>
                 <button type="button" wire:click="openPayment('transfer')"
                         @disabled(empty($cart))
                         class="flex-1 flex flex-col items-center justify-center gap-0.5 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 disabled:opacity-30 disabled:cursor-not-allowed transition border-l border-gray-200 dark:border-gray-800">
                     <svg class="w-5 h-5 text-indigo-600 dark:text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>
-                    <span class="text-xs font-semibold">Transferencia</span>
+                    <span class="text-xs font-semibold flex items-center gap-1">Transferencia <kbd class="hidden md:inline-block text-[9px] px-1 py-px rounded bg-gray-100 dark:bg-gray-800 text-gray-500 font-mono leading-none">F3</kbd></span>
                 </button>
                 <button type="button" wire:click="openPayment('multi')"
                         @disabled(empty($cart))
                         class="flex-1 flex flex-col items-center justify-center gap-0.5 hover:bg-purple-50 dark:hover:bg-purple-950/40 disabled:opacity-30 disabled:cursor-not-allowed transition border-l border-gray-200 dark:border-gray-800">
                     <svg class="w-5 h-5 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
-                    <span class="text-xs font-semibold">Multi-pago</span>
+                    <span class="text-xs font-semibold flex items-center gap-1">Multi-pago <kbd class="hidden md:inline-block text-[9px] px-1 py-px rounded bg-gray-100 dark:bg-gray-800 text-gray-500 font-mono leading-none">F4</kbd></span>
                 </button>
                 <button type="button" wire:click="openPayment('credit')"
                         @disabled(empty($cart))
                         class="flex-1 flex flex-col items-center justify-center gap-0.5 hover:bg-amber-50 dark:hover:bg-amber-950/40 disabled:opacity-30 disabled:cursor-not-allowed transition border-l border-gray-200 dark:border-gray-800">
                     <svg class="w-5 h-5 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                    <span class="text-xs font-semibold">A crédito</span>
+                    <span class="text-xs font-semibold flex items-center gap-1">A crédito <kbd class="hidden md:inline-block text-[9px] px-1 py-px rounded bg-gray-100 dark:bg-gray-800 text-gray-500 font-mono leading-none">F5</kbd></span>
                 </button>
             </div>
         </footer>
@@ -793,53 +785,6 @@
                 window.open(url, 'pos-print-' + id, 'width=420,height=720');
             });
         });
-
-        // Hotkeys del POS — F1-F9 + Esc.
-        // Se ignoran si el cajero está escribiendo en un input/select que no
-        // sea el buscador de productos (para no interferir con qty/precio).
-        (function () {
-            const hotkeyMap = {
-                'F1':  () => clickButton("openPayment('cash')"),
-                'F2':  () => clickButton("openPayment('card')"),
-                'F3':  () => clickButton("openPayment('transfer')"),
-                'F4':  () => clickButton("openPayment('multi')"),
-                'F5':  () => clickButton("openPayment('credit')"),
-                'F8':  () => clickButton('openSuspendModal'),
-                'F9':  () => Livewire.dispatch('open-customer-modal'),
-            };
-
-            function clickButton(action) {
-                const btn = document.querySelector(`[wire\\:click="${action}"]`);
-                if (btn && ! btn.disabled) btn.click();
-            }
-
-            document.addEventListener('keydown', (e) => {
-                // Esc cierra modales
-                if (e.key === 'Escape') {
-                    const closeBtns = document.querySelectorAll('.pos-modal-content button[wire\\:click^="$set"]');
-                    if (closeBtns.length) {
-                        closeBtns[closeBtns.length - 1].click();
-                        e.preventDefault();
-                    }
-                    return;
-                }
-
-                // F1-F9
-                if (! /^F[1-9]$/.test(e.key)) return;
-
-                // Si está en un input que no sea el buscador, no interferir
-                const active = document.activeElement;
-                if (active && active.tagName === 'INPUT' && active.id !== 'pos-search-input') {
-                    return;
-                }
-
-                const fn = hotkeyMap[e.key];
-                if (fn) {
-                    e.preventDefault();
-                    fn();
-                }
-            });
-        })();
     </script>
 
     {{-- ================================================================ --}}
