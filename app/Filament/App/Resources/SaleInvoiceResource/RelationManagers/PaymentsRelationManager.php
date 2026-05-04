@@ -4,6 +4,7 @@ namespace App\Filament\App\Resources\SaleInvoiceResource\RelationManagers;
 
 use App\Models\Account;
 use App\Models\Payment;
+use App\Models\PaymentMethod;
 use App\Services\Sales\SaleInvoiceEngine;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -51,10 +52,26 @@ class PaymentsRelationManager extends RelationManager
 
             Forms\Components\Select::make('payment_method')
                 ->label('Método de pago')
-                ->options(Payment::PAYMENT_METHODS)
+                ->options(fn () => PaymentMethod::query()
+                    ->where('active', true)
+                    ->orderBy('sort_order')
+                    ->orderBy('name')
+                    ->pluck('name', 'code')
+                    ->all() ?: Payment::PAYMENT_METHODS)
                 ->default('cash')
                 ->required()
-                ->native(false),
+                ->native(false)
+                ->live()
+                ->afterStateUpdated(function ($state, Forms\Set $set) {
+                    // Pre-llena la cuenta default del método al cambiar
+                    $accountId = PaymentMethod::query()
+                        ->where('code', $state)
+                        ->where('active', true)
+                        ->value('account_id');
+                    if ($accountId) {
+                        $set('account_id', $accountId);
+                    }
+                }),
 
             Forms\Components\Select::make('account_id')
                 ->label('Cuenta de caja/banco')

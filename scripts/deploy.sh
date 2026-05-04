@@ -60,11 +60,12 @@ $COMPOSE exec -T app npm run build
 echo "==> Migraciones (force, sin prompts)..."
 $COMPOSE exec -T app php artisan migrate --force
 
-echo "==> Seed de infraestructura (roles + planes + superadmin desde env + catálogos DIAN)..."
+echo "==> Seed de infraestructura (roles + planes + superadmin desde env + catálogos DIAN + métodos de pago)..."
 $COMPOSE exec -T app php artisan db:seed --class=RolesSeeder --force
 $COMPOSE exec -T app php artisan db:seed --class=PlansSeeder --force
 $COMPOSE exec -T app php artisan db:seed --class=SuperAdminUserSeeder --force
 $COMPOSE exec -T app php artisan db:seed --class=DianCatalogsSeeder --force
+$COMPOSE exec -T app php artisan db:seed --class=DefaultPaymentMethodsSeeder --force
 
 echo "==> Limpiando caches viejos y re-cacheando para producción..."
 $COMPOSE exec -T app php artisan optimize:clear

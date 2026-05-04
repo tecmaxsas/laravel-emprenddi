@@ -34,6 +34,8 @@ class PermissionsCatalog
                 'accounts.manage' => 'Crear / editar cuentas customizadas',
                 'taxes.view' => 'Ver impuestos',
                 'taxes.manage' => 'Crear / editar impuestos',
+                'payment_methods.view' => 'Ver métodos de pago',
+                'payment_methods.manage' => 'Crear / editar métodos de pago',
                 'third_parties.view' => 'Ver terceros (clientes/proveedores)',
                 'third_parties.manage' => 'Crear / editar terceros',
                 'journal_entries.view' => 'Ver asientos contables',
@@ -106,10 +108,11 @@ class PermissionsCatalog
             'admin' => $all,
             'manager' => array_diff($all, [
                 'users.manage', 'roles.manage', 'roles.view', 'company.settings',
-                'accounts.manage', 'taxes.manage', 'dian.manage',
+                'accounts.manage', 'taxes.manage', 'dian.manage', 'payment_methods.manage',
             ]),
             'accountant' => [
                 'accounts.view', 'accounts.manage', 'taxes.view', 'taxes.manage',
+                'payment_methods.view', 'payment_methods.manage',
                 'third_parties.view', 'third_parties.manage',
                 'journal_entries.view', 'journal_entries.create', 'journal_entries.post',
                 'purchases.view', 'purchases.post', 'purchases.pay',

@@ -7,6 +7,7 @@ use App\Models\Category;
 use App\Models\Company;
 use App\Models\Location;
 use App\Models\Payment;
+use App\Models\PaymentMethod;
 use App\Models\Product;
 use App\Models\SaleInvoice;
 use App\Models\SuspendedSale;
@@ -301,6 +302,17 @@ class PosTerminal extends Page
 
     protected function defaultAccountForMethod(string $method): ?int
     {
+        // 1. PaymentMethod configurado por la empresa (si existe)
+        $configured = PaymentMethod::query()
+            ->where('code', $method)
+            ->where('active', true)
+            ->value('account_id');
+
+        if ($configured) {
+            return $configured;
+        }
+
+        // 2. Fallback heurístico: caja para efectivo, banco para todo lo demás
         $code = $method === 'cash' ? '110505' : '1110';
 
         return Account::query()
@@ -696,8 +708,20 @@ class PosTerminal extends Page
             : '—';
     }
 
+    /**
+     * Métodos de pago activos de la empresa, en orden de sort_order.
+     * Cae al constante hardcoded si la empresa aún no tiene métodos sembrados.
+     */
     public function getPaymentMethodsProperty(): array
     {
-        return Payment::PAYMENT_METHODS;
+        $methods = PaymentMethod::query()
+            ->where('active', true)
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->pluck('name', 'code')
+            ->all();
+
+        return $methods ?: Payment::PAYMENT_METHODS;
     }
+
 }
