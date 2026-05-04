@@ -203,11 +203,24 @@
                 <div class="small">Atendido por: {{ $seller->name ?: $seller->email }}</div>
             @endif
             @if ($get($f, 'show_qr_dian'))
-                <div class="qr-placeholder">[ QR DIAN ]</div>
-                <div class="small">Pendiente envío DIAN</div>
+                @if ($invoice->cufe && $invoice->qr_url)
+                    {{-- QR generado vía servicio externo (sin dependencias en backend). En producción podríamos generar localmente con phpqrcode o similar. --}}
+                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=140x140&data={{ urlencode($invoice->qr_url) }}"
+                         alt="QR DIAN" style="width: 90px; height: 90px; margin: 4px auto;" />
+                    <div class="small" style="word-break: break-all;">CUFE: {{ substr($invoice->cufe, 0, 32) }}…</div>
+                @else
+                    <div class="qr-placeholder">[ QR DIAN ]</div>
+                    <div class="small">Pendiente envío DIAN</div>
+                @endif
             @endif
             @if ($get($f, 'show_resolution_info'))
-                <div class="small">Documento autorizado por la DIAN.</div>
+                <div class="small">
+                    @if ($invoice->isDianAccepted())
+                        Documento autorizado por la DIAN.
+                    @else
+                        Documento POS — pendiente validación DIAN.
+                    @endif
+                </div>
             @endif
             @if ($get($f, 'show_thanks'))
                 <div class="bold" style="margin-top: 4px;">¡Gracias por tu compra!</div>

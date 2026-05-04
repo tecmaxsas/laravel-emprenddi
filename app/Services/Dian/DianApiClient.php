@@ -80,6 +80,18 @@ class DianApiClient
     }
 
     /**
+     * Envía una factura electrónica real (no de prueba) a DIAN vía apidian.
+     * Endpoint /api/ubl2.1/invoice — devuelve CUFE + ResponseDian con el
+     * resultado de la validación de DIAN.
+     *
+     * @param  array  $payload  construido por SaleInvoiceUblBuilder
+     */
+    public function sendInvoice(array $payload): array
+    {
+        return $this->request('post', '/api/ubl2.1/invoice', $payload);
+    }
+
+    /**
      * Tab 5 — Cambiar entre Pruebas (2) y Producción (1).
      * El API requiere los 3 IDs de ambiente (factura, nómina, equivalentes).
      */

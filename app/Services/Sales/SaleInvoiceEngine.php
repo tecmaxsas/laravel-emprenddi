@@ -93,13 +93,16 @@ class SaleInvoiceEngine
                 $this->createCogsJournalEntry($invoice, $totalCogs);
             }
 
-            // 5. Marcar posted
+            // 5. Marcar posted. dian_status='pending' indica "lista para envío"
+            // (independiente de si tiene resolución asignada — el envío manual
+            // verificará y rechazará si falta config).
             $invoice->update([
                 'status' => SaleInvoice::STATUS_POSTED,
                 'posted_at' => now(),
                 'posted_by_user_id' => auth()->id(),
                 'journal_entry_id' => $journalEntry->id,
                 'payment_status' => SaleInvoice::PAYMENT_PENDIENTE,
+                'dian_status' => $invoice->dian_status ?: SaleInvoice::DIAN_PENDING,
             ]);
 
             return $invoice->fresh();
@@ -262,11 +265,13 @@ class SaleInvoiceEngine
         $invoice->update([
             'prefix' => $resolution->prefix ?: $invoice->prefix,
             'number' => $next,
+            'dian_resolution_id' => $resolution->id,
+            'dian_status' => SaleInvoice::DIAN_PENDING,
         ]);
 
         // refresh in-memory para que createSaleJournalEntry use el número nuevo
         $invoice->refresh();
-        $invoice->load(['lines.product', 'lines.tax', 'customer', 'location']);
+        $invoice->load(['lines.product', 'lines.tax', 'retentions.tax', 'customer', 'location']);
     }
 
     /**

@@ -491,10 +491,24 @@ class SaleInvoiceResource extends Resource
                         'posted' => 'success',
                         'cancelled' => 'danger',
                     }),
+
+                Tables\Columns\TextColumn::make('dian_status')
+                    ->label('DIAN')
+                    ->formatStateUsing(fn (?string $s) => $s ? (SaleInvoice::DIAN_STATUSES[$s] ?? $s) : '—')
+                    ->badge()
+                    ->color(fn (?string $s) => match ($s) {
+                        'accepted' => 'success',
+                        'sent' => 'info',
+                        'pending' => 'gray',
+                        'rejected' => 'danger',
+                        default => 'gray',
+                    })
+                    ->toggleable(),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')->label('Estado')->options(SaleInvoice::STATUSES),
                 Tables\Filters\SelectFilter::make('payment_status')->label('Pago')->options(SaleInvoice::PAYMENT_STATUSES),
+                Tables\Filters\SelectFilter::make('dian_status')->label('DIAN')->options(SaleInvoice::DIAN_STATUSES),
                 Tables\Filters\SelectFilter::make('location_id')
                     ->label('Sede')
                     ->relationship('location', 'name'),

@@ -4,6 +4,7 @@ namespace App\Filament\App\Resources\SaleInvoiceResource\Pages;
 
 use App\Filament\App\Resources\SaleInvoiceResource;
 use App\Models\SaleInvoice;
+use App\Services\Dian\DianInvoiceSender;
 use App\Services\Sales\SaleInvoiceEngine;
 use Filament\Actions;
 use Filament\Infolists;
@@ -53,6 +54,50 @@ class ViewSaleInvoice extends ViewRecord
                         Notification::make()
                             ->danger()
                             ->title('Error al contabilizar')
+                            ->body($e->getMessage())
+                            ->persistent()
+                            ->send();
+                    }
+                }),
+
+            Actions\Action::make('sendDian')
+                ->label(fn (SaleInvoice $record) => $record->dian_status === SaleInvoice::DIAN_REJECTED ? 'Reenviar a DIAN' : 'Enviar a DIAN')
+                ->icon('heroicon-o-paper-airplane')
+                ->color(fn (SaleInvoice $record) => $record->dian_status === SaleInvoice::DIAN_REJECTED ? 'warning' : 'primary')
+                ->visible(fn (SaleInvoice $record) => $record->canResendToDian()
+                    && auth()->user()?->can('sales.send_dian'))
+                ->requiresConfirmation()
+                ->modalHeading('Enviar factura electrónica a DIAN')
+                ->modalDescription(fn (SaleInvoice $record) => sprintf(
+                    'Se enviará la factura %s al servicio apidian.emprenddi.com. Si DIAN la acepta, recibiremos el CUFE y el QR oficial. %s',
+                    $record->fullNumber(),
+                    $record->dian_status === SaleInvoice::DIAN_REJECTED
+                        ? 'Esta factura fue rechazada antes — corrige los datos del cliente/empresa antes de reintentar.'
+                        : '',
+                ))
+                ->modalSubmitActionLabel('Enviar')
+                ->action(function (SaleInvoice $record) {
+                    try {
+                        $result = app(DianInvoiceSender::class)->send($record);
+                        if ($result['ok']) {
+                            Notification::make()
+                                ->success()
+                                ->title('Factura aceptada por DIAN')
+                                ->body('CUFE: '.substr((string) $result['cufe'], 0, 32).'…')
+                                ->send();
+                        } else {
+                            Notification::make()
+                                ->danger()
+                                ->title('DIAN rechazó la factura')
+                                ->body($result['message'])
+                                ->persistent()
+                                ->send();
+                        }
+                        $this->refreshFormData(['dian_status', 'dian_status_code', 'cufe', 'qr_url', 'dian_error_message', 'dian_sent_at']);
+                    } catch (\Throwable $e) {
+                        Notification::make()
+                            ->danger()
+                            ->title('Error al enviar a DIAN')
                             ->body($e->getMessage())
                             ->persistent()
                             ->send();
@@ -156,6 +201,43 @@ class ViewSaleInvoice extends ViewRecord
                         ->url(fn (SaleInvoice $r) => $r->journalEntry
                             ? route('filament.app.resources.journal-entries.view', $r->journalEntry)
                             : null),
+                ]),
+
+            Infolists\Components\Section::make('Facturación electrónica DIAN')
+                ->visible(fn (SaleInvoice $r) => $r->dian_status !== null)
+                ->columns(3)
+                ->schema([
+                    Infolists\Components\TextEntry::make('dian_status')
+                        ->label('Estado')
+                        ->formatStateUsing(fn (?string $s) => $s ? (SaleInvoice::DIAN_STATUSES[$s] ?? $s) : '—')
+                        ->badge()
+                        ->color(fn (?string $s) => match ($s) {
+                            'accepted' => 'success',
+                            'sent' => 'info',
+                            'pending' => 'gray',
+                            'rejected' => 'danger',
+                            default => 'gray',
+                        }),
+                    Infolists\Components\TextEntry::make('dian_status_code')->label('Código DIAN')->placeholder('—'),
+                    Infolists\Components\TextEntry::make('dian_sent_at')->label('Último envío')->dateTime('Y-m-d H:i:s')->placeholder('—'),
+                    Infolists\Components\TextEntry::make('cufe')
+                        ->label('CUFE')
+                        ->columnSpan(3)
+                        ->fontFamily('mono')
+                        ->placeholder('—')
+                        ->copyable()
+                        ->copyMessage('CUFE copiado'),
+                    Infolists\Components\TextEntry::make('qr_url')
+                        ->label('QR DIAN')
+                        ->columnSpan(3)
+                        ->placeholder('—')
+                        ->url(fn (SaleInvoice $r) => $r->qr_url, true)
+                        ->openUrlInNewTab(),
+                    Infolists\Components\TextEntry::make('dian_error_message')
+                        ->label('Mensaje de error')
+                        ->columnSpan(3)
+                        ->visible(fn (SaleInvoice $r) => ! empty($r->dian_error_message))
+                        ->color('danger'),
                 ]),
 
             Infolists\Components\Section::make('Notas')

@@ -62,6 +62,7 @@ class ThirdParty extends Model
         'trade_name',
         'address',
         'city',
+        'dian_municipality_id',
         'department',
         'country',
         'postal_code',

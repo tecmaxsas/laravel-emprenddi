@@ -38,6 +38,18 @@ class SaleInvoice extends Model
         self::PAYMENT_CANCELADA => 'Cancelada',
     ];
 
+    public const DIAN_PENDING = 'pending';
+    public const DIAN_SENT = 'sent';
+    public const DIAN_ACCEPTED = 'accepted';
+    public const DIAN_REJECTED = 'rejected';
+
+    public const DIAN_STATUSES = [
+        self::DIAN_PENDING => 'Pendiente DIAN',
+        self::DIAN_SENT => 'Enviado',
+        self::DIAN_ACCEPTED => 'Aceptado DIAN',
+        self::DIAN_REJECTED => 'Rechazado DIAN',
+    ];
+
     protected $fillable = [
         'company_id',
         'location_id',
@@ -65,6 +77,15 @@ class SaleInvoice extends Model
         'posted_at',
         'description',
         'notes',
+        // DIAN
+        'dian_resolution_id',
+        'dian_status',
+        'dian_status_code',
+        'cufe',
+        'qr_url',
+        'dian_response',
+        'dian_error_message',
+        'dian_sent_at',
     ];
 
     protected function casts(): array
@@ -83,7 +104,24 @@ class SaleInvoice extends Model
             'exchange_rate' => 'decimal:6',
             'payment_terms_days' => 'integer',
             'number' => 'integer',
+            'dian_response' => 'array',
+            'dian_sent_at' => 'datetime',
         ];
+    }
+
+    public function dianResolution(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\Dian\Resolution::class, 'dian_resolution_id');
+    }
+
+    public function isDianAccepted(): bool
+    {
+        return $this->dian_status === self::DIAN_ACCEPTED;
+    }
+
+    public function canResendToDian(): bool
+    {
+        return $this->isPosted() && $this->dian_status !== self::DIAN_ACCEPTED;
     }
 
     public function location(): BelongsTo
