@@ -88,6 +88,7 @@
         $totals = $this->totals();
         $cats = $this->categories;
         $products = $this->products;
+        $posSettings = $this->posSettings;
 
         // Paleta de gradientes para el badge de la categoría — distribuida por id
         $catGradients = [
@@ -311,9 +312,15 @@
                                         </div>
                                         <div class="col-span-4">
                                             <div class="text-[10px] text-gray-400 mb-0.5">Precio</div>
-                                            <input type="number" step="0.01" min="0"
-                                                   wire:model.live.blur="cart.{{ $i }}.unit_price"
-                                                   class="w-full text-right text-xs rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 outline-none focus:ring-2 focus:ring-primary-500" />
+                                            @if ($posSettings['allow_price_modification'])
+                                                <input type="number" step="0.01" min="0"
+                                                       wire:model.live.blur="cart.{{ $i }}.unit_price"
+                                                       class="w-full text-right text-xs rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 outline-none focus:ring-2 focus:ring-primary-500" />
+                                            @else
+                                                <div class="w-full text-right text-xs px-2 py-1 text-gray-700 dark:text-gray-300 font-medium">
+                                                    ${{ number_format($line['unit_price'], 0, ',', '.') }}
+                                                </div>
+                                            @endif
                                         </div>
                                         <div class="col-span-3 text-right">
                                             <div class="text-[10px] text-gray-400 mb-0.5">Subtotal</div>

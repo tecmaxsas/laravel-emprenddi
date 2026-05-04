@@ -90,6 +90,24 @@ class PosTerminal extends Page
         $this->customer_id = $this->ensureDefaultCustomer()->id;
     }
 
+    /**
+     * Settings POS de la empresa (settings.pos.*). Defaults sensatos si no
+     * está configurado todavía.
+     */
+    public function getPosSettingsProperty(): array
+    {
+        $settings = \App\Models\Company::find(Auth::user()->company_id)?->settings ?? [];
+        return array_merge([
+            'allow_price_modification' => true,
+            'allow_discount' => true,
+            'require_customer' => false,
+            'print_after_sale' => true,
+            'blind_cash_close' => false,
+            'allow_negative_stock' => false,
+            'default_tip_percent' => 0,
+        ], $settings['pos'] ?? []);
+    }
+
     protected function ensureDefaultCustomer(): ThirdParty
     {
         return ThirdParty::firstOrCreate(
@@ -498,6 +516,19 @@ class PosTerminal extends Page
             return;
         }
 
+        // Setting "Cliente obligatorio": rechaza venta a Consumidor Final.
+        if ($this->posSettings['require_customer'] ?? false) {
+            $customer = ThirdParty::find($this->customer_id);
+            if ($customer && $customer->document_number === '222222222') {
+                Notification::make()
+                    ->title('Cliente obligatorio')
+                    ->body('La empresa requiere identificar al cliente — no se permite "Consumidor Final".')
+                    ->danger()
+                    ->send();
+                return;
+            }
+        }
+
         $totals = $this->totals();
 
         // En venta a crédito (paymentMode='credit'), no exigimos pagos.
@@ -598,9 +629,12 @@ class PosTerminal extends Page
                 ->success()
                 ->send();
 
-            // Disparo de impresión: el JS del front escucha este evento y
-            // abre el ticket en una ventana nueva con auto-print.
-            $this->dispatch('pos-print-ticket', invoiceId: $invoice->id);
+            // Disparo de impresión: gobernado por settings.pos.print_after_sale.
+            // Si está desactivado, el cajero abre el ticket manualmente desde
+            // la vista de la factura.
+            if ($this->posSettings['print_after_sale'] ?? true) {
+                $this->dispatch('pos-print-ticket', invoiceId: $invoice->id);
+            }
 
             $this->resetCart();
             $this->showPaymentModal = false;

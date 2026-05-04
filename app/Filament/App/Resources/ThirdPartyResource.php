@@ -137,6 +137,19 @@ class ThirdPartyResource extends Resource
                             Forms\Components\TextInput::make('address')->label('Dirección')->columnSpan(2),
                             Forms\Components\TextInput::make('city')->label('Ciudad'),
                             Forms\Components\TextInput::make('department')->label('Departamento'),
+                            Forms\Components\Select::make('dian_municipality_id')
+                                ->label('Municipio DIAN')
+                                ->helperText('Necesario para facturación electrónica.')
+                                ->searchable()
+                                ->getSearchResultsUsing(fn (string $search) => \App\Models\Dian\Municipality::query()
+                                    ->where('name', 'ilike', "%{$search}%")
+                                    ->orderBy('name')
+                                    ->limit(50)
+                                    ->get()
+                                    ->mapWithKeys(fn (\App\Models\Dian\Municipality $m) => [$m->id => $m->fullName()])
+                                    ->all())
+                                ->getOptionLabelUsing(fn ($value) => \App\Models\Dian\Municipality::find($value)?->fullName())
+                                ->columnSpan(2),
                             Forms\Components\TextInput::make('country')->label('País')->default('CO')->maxLength(2),
                             Forms\Components\TextInput::make('postal_code')->label('Código postal'),
                             Forms\Components\TextInput::make('phone')->label('Teléfono fijo')->tel(),
