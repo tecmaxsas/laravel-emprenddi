@@ -136,6 +136,16 @@
                         <span class="ml-1 px-1.5 py-0.5 rounded-md bg-amber-500 text-white text-[10px] font-bold leading-none">{{ $this->suspendedSales->count() }}</span>
                     @endif
                 </button>
+                <button type="button" wire:click="openRetentionsModal"
+                        @disabled(empty($cart))
+                        class="relative px-3 py-1.5 text-xs font-medium rounded-lg bg-rose-500/10 text-rose-700 dark:text-rose-300 hover:bg-rose-500/20 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                        title="Aplicar retenciones (B2B con cliente agente retenedor)">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                    Retenciones
+                    @if (! empty($retentions))
+                        <span class="ml-1 px-1.5 py-0.5 rounded-md bg-rose-500 text-white text-[10px] font-bold leading-none">{{ count($retentions) }}</span>
+                    @endif
+                </button>
                 <button type="button" wire:click="openSuspendModal"
                         @disabled(empty($cart))
                         class="px-3 py-1.5 text-xs font-medium rounded-lg bg-purple-500/10 text-purple-700 dark:text-purple-300 hover:bg-purple-500/20 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5">
@@ -339,10 +349,22 @@
                             <span>IVA</span>
                             <span class="font-medium">${{ number_format($totals['tax'], 0, ',', '.') }}</span>
                         </div>
+                        @if ($totals['retentions'] > 0)
+                            <div class="flex justify-between text-rose-600 dark:text-rose-400">
+                                <span>Retenciones</span>
+                                <span class="font-medium">−${{ number_format($totals['retentions'], 0, ',', '.') }}</span>
+                            </div>
+                            <div class="flex justify-between pt-1 border-t border-dashed border-gray-300 dark:border-gray-700">
+                                <span class="text-gray-500">Total factura</span>
+                                <span class="font-medium">${{ number_format($totals['total'], 0, ',', '.') }}</span>
+                            </div>
+                        @endif
                     </div>
                     <div class="px-4 py-3 bg-primary-500 text-white flex items-baseline justify-between">
-                        <span class="text-xs uppercase tracking-widest font-semibold opacity-90">Total</span>
-                        <span class="text-3xl font-bold tracking-tight">${{ number_format($totals['total'], 0, ',', '.') }}</span>
+                        <span class="text-xs uppercase tracking-widest font-semibold opacity-90">
+                            {{ $totals['retentions'] > 0 ? 'Neto a pagar' : 'Total' }}
+                        </span>
+                        <span class="text-3xl font-bold tracking-tight">${{ number_format($totals['net_payable'], 0, ',', '.') }}</span>
                     </div>
                 </div>
             </aside>
@@ -441,10 +463,17 @@
                 </div>
 
                 <div class="p-5 space-y-4 overflow-y-auto pos-scroll">
-                    {{-- Total grande --}}
+                    {{-- Total grande — net_payable cuando hay retenciones --}}
                     <div class="bg-gradient-to-br from-primary-500 to-primary-700 rounded-2xl p-5 text-center text-white shadow-lg">
-                        <div class="text-xs uppercase tracking-widest opacity-90 font-semibold">Total a cobrar</div>
-                        <div class="text-4xl font-bold tracking-tight mt-1">${{ number_format($totals['total'], 0, ',', '.') }}</div>
+                        <div class="text-xs uppercase tracking-widest opacity-90 font-semibold">
+                            {{ $totals['retentions'] > 0 ? 'Neto a cobrar (con retenciones aplicadas)' : 'Total a cobrar' }}
+                        </div>
+                        <div class="text-4xl font-bold tracking-tight mt-1">${{ number_format($totals['net_payable'], 0, ',', '.') }}</div>
+                        @if ($totals['retentions'] > 0)
+                            <div class="text-xs opacity-90 mt-1">
+                                Total factura ${{ number_format($totals['total'], 0, ',', '.') }} − retenciones ${{ number_format($totals['retentions'], 0, ',', '.') }}
+                            </div>
+                        @endif
                     </div>
 
                     @if ($paymentMode === 'credit')
@@ -644,6 +673,113 @@
             });
         });
     </script>
+
+    {{-- ================================================================ --}}
+    {{-- MODAL — RETENCIONES                                               --}}
+    {{-- ================================================================ --}}
+    @if ($showRetentionsModal)
+        <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pos-modal-overlay"
+             wire:click.self="$set('showRetentionsModal', false)">
+            <div class="pos-modal-content bg-white dark:bg-gray-900 rounded-2xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+                <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-rose-500/15 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                    </div>
+                    <div class="flex-1">
+                        <h2 class="text-base font-semibold">Retenciones aplicables</h2>
+                        <p class="text-xs text-gray-500">Aplican cuando el cliente es agente retenedor (Gran Contribuyente, Estado, etc.). Para venta a consumidor final, deja la lista vacía.</p>
+                    </div>
+                    <button type="button" wire:click="$set('showRetentionsModal', false)"
+                            class="w-8 h-8 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-center text-xl leading-none transition">×</button>
+                </div>
+
+                <div class="p-5 space-y-4 overflow-y-auto pos-scroll">
+                    {{-- Catálogo: Tax con type=*_withholding --}}
+                    <div>
+                        <div class="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2">Disponibles</div>
+                        @if ($this->availableRetentionTaxes->isEmpty())
+                            <div class="text-sm text-gray-400 italic px-3 py-4 bg-gray-50 dark:bg-gray-800/40 rounded-lg">
+                                No hay impuestos de retención configurados. Configúralos en Contabilidad → Impuestos con type ReteFuente / ReteIVA / ReteICA.
+                            </div>
+                        @else
+                            <div class="grid grid-cols-2 gap-2">
+                                @foreach ($this->availableRetentionTaxes as $rt)
+                                    @php
+                                        $alreadyApplied = collect($retentions)->contains(fn ($r) => (int) $r['tax_id'] === (int) $rt->id);
+                                    @endphp
+                                    <button type="button"
+                                            wire:click="addRetention({{ $rt->id }})"
+                                            @disabled($alreadyApplied)
+                                            class="text-left px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 disabled:opacity-40 disabled:cursor-not-allowed transition">
+                                        <div class="text-xs font-mono text-gray-500">{{ $rt->code }}</div>
+                                        <div class="text-sm font-semibold">{{ $rt->name }}</div>
+                                        <div class="text-xs text-gray-500">{{ number_format((float) $rt->rate, 4) }} %</div>
+                                    </button>
+                                @endforeach
+                            </div>
+                        @endif
+                    </div>
+
+                    {{-- Aplicadas --}}
+                    @if (! empty($retentions))
+                        <div>
+                            <div class="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2">Aplicadas a esta venta</div>
+                            <div class="space-y-2">
+                                @foreach ($retentions as $i => $r)
+                                    <div class="bg-rose-50/50 dark:bg-rose-950/20 ring-1 ring-rose-200 dark:ring-rose-900 rounded-xl p-3 grid grid-cols-12 gap-2 items-center">
+                                        <div class="col-span-5 min-w-0">
+                                            <div class="text-xs font-mono text-gray-500">{{ $r['tax_code'] ?? '' }}</div>
+                                            <div class="text-sm font-semibold truncate">{{ $r['tax_name'] ?? '' }}</div>
+                                            <div class="text-xs text-gray-500">{{ number_format((float) $r['rate'], 4) }} %</div>
+                                        </div>
+                                        <div class="col-span-3">
+                                            <div class="text-[10px] text-gray-500 mb-0.5">Base</div>
+                                            <input type="number" step="0.01" min="0"
+                                                   wire:model.live.blur="retentions.{{ $i }}.base_amount"
+                                                   class="w-full text-right text-xs rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 outline-none focus:ring-2 focus:ring-rose-500" />
+                                        </div>
+                                        <div class="col-span-3 text-right">
+                                            <div class="text-[10px] text-gray-500 mb-0.5">Retenido</div>
+                                            <div class="text-sm font-bold text-rose-600 dark:text-rose-400">
+                                                ${{ number_format((float) ($r['amount'] ?? 0), 0, ',', '.') }}
+                                            </div>
+                                        </div>
+                                        <div class="col-span-1 text-right">
+                                            <button type="button" wire:click="removeRetention({{ $i }})"
+                                                    class="text-gray-400 hover:text-red-500 text-lg" title="Quitar">×</button>
+                                        </div>
+                                    </div>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endif
+
+                    {{-- Resumen --}}
+                    <div class="grid grid-cols-3 gap-2 pt-2 border-t border-gray-100 dark:border-gray-800">
+                        <div class="rounded-lg bg-gray-50 dark:bg-gray-800/40 p-2.5 text-center">
+                            <div class="text-[10px] text-gray-500 uppercase font-semibold">Total factura</div>
+                            <div class="text-base font-bold mt-0.5">${{ number_format($totals['total'], 0, ',', '.') }}</div>
+                        </div>
+                        <div class="rounded-lg p-2.5 text-center bg-rose-50 dark:bg-rose-950/40">
+                            <div class="text-[10px] text-rose-600 uppercase font-semibold">Retenciones</div>
+                            <div class="text-base font-bold mt-0.5 text-rose-700 dark:text-rose-300">−${{ number_format($totals['retentions'], 0, ',', '.') }}</div>
+                        </div>
+                        <div class="rounded-lg p-2.5 text-center bg-emerald-50 dark:bg-emerald-950/40">
+                            <div class="text-[10px] text-emerald-600 uppercase font-semibold">Neto a pagar</div>
+                            <div class="text-base font-bold mt-0.5 text-emerald-700 dark:text-emerald-300">${{ number_format($totals['net_payable'], 0, ',', '.') }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="px-5 py-4 border-t border-gray-100 dark:border-gray-800 flex justify-end gap-2 bg-gray-50 dark:bg-gray-950/50">
+                    <button type="button" wire:click="$set('showRetentionsModal', false)"
+                            class="px-5 py-2.5 text-sm font-bold rounded-lg bg-rose-600 hover:bg-rose-700 text-white shadow-md transition">
+                        Listo
+                    </button>
+                </div>
+            </div>
+        </div>
+    @endif
 
     {{-- ================================================================ --}}
     {{-- MODAL CLIENTE                                                     --}}

@@ -58,11 +58,16 @@ class PosTerminal extends Page
     // Pagos
     public array $payments = [];
 
+    // Retenciones (opt-in, B2B con Gran Contribuyente / Estado)
+    // Cada item: ['tax_id', 'tax_code', 'tax_name', 'tax_type', 'base_amount', 'rate', 'amount']
+    public array $retentions = [];
+
     // UI state
     public bool $showCustomerModal = false;
     public bool $showPaymentModal = false;
     public bool $showSuspendModal = false;
     public bool $showRecoverModal = false;
+    public bool $showRetentionsModal = false;
     public string $paymentMode = 'multi'; // multi | cash | card | transfer | credit
     public string $newCustomerName = '';
     public string $newCustomerDocument = '';
@@ -257,7 +262,8 @@ class PosTerminal extends Page
         $this->paymentMode = $mode;
         $totals = $this->totals();
 
-        // Pre-llena pagos según el modo
+        // Pre-llena pagos según el modo. Monto = net_payable (lo que el
+        // cliente realmente paga, ya descontadas retenciones si aplica).
         $this->payments = [];
         if ($mode !== 'multi') {
             $methodMap = [
@@ -271,7 +277,7 @@ class PosTerminal extends Page
                 $this->payments[] = [
                     'payment_method' => $method,
                     'account_id' => $this->defaultAccountForMethod($method),
-                    'amount' => $totals['total'],
+                    'amount' => $totals['net_payable'],
                     'reference' => '',
                 ];
             }
@@ -283,7 +289,7 @@ class PosTerminal extends Page
     public function addPaymentLine(): void
     {
         $totals = $this->totals();
-        $remaining = max(0, $totals['total'] - $totals['paid']);
+        $remaining = max(0, $totals['net_payable'] - $totals['paid']);
 
         $this->payments[] = [
             'payment_method' => 'cash',
@@ -298,6 +304,83 @@ class PosTerminal extends Page
         if (! isset($this->payments[$i])) return;
         unset($this->payments[$i]);
         $this->payments = array_values($this->payments);
+    }
+
+    // ================================================================
+    // RETENCIONES (opt-in, B2B con cliente agente retenedor)
+    // ================================================================
+
+    public function openRetentionsModal(): void
+    {
+        if (empty($this->cart)) {
+            Notification::make()->title('Carrito vacío')->warning()->send();
+            return;
+        }
+        $this->showRetentionsModal = true;
+    }
+
+    public function addRetention(int $taxId): void
+    {
+        $tax = Tax::query()
+            ->where('id', $taxId)
+            ->where('is_active', true)
+            ->whereIn('type', ['income_withholding', 'vat_withholding', 'ica_withholding'])
+            ->whereIn('applies_to', ['sale', 'both'])
+            ->first();
+
+        if (! $tax) return;
+
+        // Si ya existe esa retención, no duplicar
+        foreach ($this->retentions as $r) {
+            if ((int) ($r['tax_id'] ?? 0) === (int) $tax->id) {
+                Notification::make()->title('Esa retención ya está aplicada')->warning()->send();
+                return;
+            }
+        }
+
+        $totals = $this->totals();
+        // Base default: subtotal - descuento (base gravable estándar)
+        $base = max(0, $totals['subtotal'] - $totals['discount']);
+        $rate = (float) $tax->rate;
+        $amount = round($base * ($rate / 100), 2);
+
+        $this->retentions[] = [
+            'tax_id' => $tax->id,
+            'tax_code' => $tax->code,
+            'tax_name' => $tax->name,
+            'tax_type' => $tax->type,
+            'base_amount' => $base,
+            'rate' => $rate,
+            'amount' => $amount,
+        ];
+    }
+
+    public function removeRetention(int $i): void
+    {
+        if (! isset($this->retentions[$i])) return;
+        unset($this->retentions[$i]);
+        $this->retentions = array_values($this->retentions);
+    }
+
+    public function updatedRetentions(): void
+    {
+        // Recompute amount cuando el cajero edita la base
+        foreach ($this->retentions as $i => $_) {
+            $base = (float) ($this->retentions[$i]['base_amount'] ?? 0);
+            $rate = (float) ($this->retentions[$i]['rate'] ?? 0);
+            $this->retentions[$i]['amount'] = round($base * ($rate / 100), 2);
+        }
+    }
+
+    public function getAvailableRetentionTaxesProperty()
+    {
+        return Tax::query()
+            ->where('is_active', true)
+            ->whereIn('type', ['income_withholding', 'vat_withholding', 'ica_withholding'])
+            ->whereIn('applies_to', ['sale', 'both'])
+            ->orderBy('type')
+            ->orderBy('code')
+            ->get(['id', 'code', 'name', 'type', 'rate']);
     }
 
     protected function defaultAccountForMethod(string $method): ?int
@@ -341,17 +424,24 @@ class PosTerminal extends Page
             $total += (float) ($line['total'] ?? 0);
         }
 
+        $retentionTotal = collect($this->retentions)->sum(fn ($r) => (float) ($r['amount'] ?? 0));
+        // net_payable = lo que el cliente realmente paga (total - retenciones).
+        // Las retenciones NO son saldo pendiente — son anticipos de impuesto.
+        $netPayable = max(0, $total - $retentionTotal);
+
         $paid = collect($this->payments)->sum(fn ($p) => (float) ($p['amount'] ?? 0));
-        $change = max(0, $paid - $total);
+        $change = max(0, $paid - $netPayable);
 
         return [
             'subtotal' => $subtotal,
             'discount' => $discount,
             'tax' => $tax,
             'total' => $total,
+            'retentions' => $retentionTotal,
+            'net_payable' => $netPayable,
             'paid' => $paid,
             'change' => $change,
-            'remaining' => max(0, $total - $paid),
+            'remaining' => max(0, $netPayable - $paid),
             'items' => collect($this->cart)->sum(fn ($l) => (float) ($l['quantity'] ?? 0)),
         ];
     }
@@ -411,7 +501,8 @@ class PosTerminal extends Page
         $totals = $this->totals();
 
         // En venta a crédito (paymentMode='credit'), no exigimos pagos.
-        if ($this->paymentMode !== 'credit' && $totals['paid'] + 0.01 < $totals['total']) {
+        // Comparamos contra net_payable (descontadas retenciones), no contra total.
+        if ($this->paymentMode !== 'credit' && $totals['paid'] + 0.01 < $totals['net_payable']) {
             Notification::make()
                 ->title('Pagos insuficientes')
                 ->body('Falta cubrir $'.number_format($totals['remaining'], 2).'.')
@@ -457,8 +548,22 @@ class PosTerminal extends Page
                     ]);
                 }
 
+                // Retenciones (si las hay) — antes del posting para que
+                // SaleInvoiceEngine.recalculateTotals las incluya en net_payable.
+                foreach ($this->retentions as $ret) {
+                    $invoice->retentions()->create([
+                        'tax_id' => $ret['tax_id'],
+                        'tax_code' => $ret['tax_code'],
+                        'tax_name' => $ret['tax_name'],
+                        'tax_type' => $ret['tax_type'],
+                        'base_amount' => $ret['base_amount'],
+                        'rate' => $ret['rate'],
+                        'amount' => $ret['amount'],
+                    ]);
+                }
+
                 $engine = app(SaleInvoiceEngine::class);
-                $invoice = $engine->post($invoice->fresh('lines'));
+                $invoice = $engine->post($invoice->fresh(['lines', 'retentions']));
 
                 foreach ($this->payments as $payment) {
                     $amount = (float) ($payment['amount'] ?? 0);
@@ -574,6 +679,7 @@ class PosTerminal extends Page
     {
         $this->cart = [];
         $this->payments = [];
+        $this->retentions = [];
         $this->productSearch = '';
         $this->selectedCategoryId = null;
         $this->paymentMode = 'multi';
