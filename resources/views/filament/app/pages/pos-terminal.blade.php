@@ -535,7 +535,8 @@
     {{-- MODAL DE COBRO                                                    --}}
     {{-- ================================================================ --}}
     @if ($showPaymentModal)
-        <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pos-modal-overlay"
+        <div class="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pos-modal-overlay"
+             style="z-index: 100;"
              wire:click.self="closePaymentModal">
             <div class="pos-modal-content bg-white dark:bg-gray-900 rounded-2xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden">
                 {{-- Header --}}
@@ -677,7 +678,8 @@
     {{-- MODAL — SUSPENDER VENTA                                           --}}
     {{-- ================================================================ --}}
     @if ($showSuspendModal)
-        <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pos-modal-overlay"
+        <div class="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pos-modal-overlay"
+             style="z-index: 100;"
              wire:click.self="$set('showSuspendModal', false)">
             <div class="pos-modal-content bg-white dark:bg-gray-900 rounded-2xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 max-w-md w-full overflow-hidden">
                 <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
@@ -718,7 +720,8 @@
     {{-- MODAL — RECUPERAR VENTA                                           --}}
     {{-- ================================================================ --}}
     @if ($showRecoverModal)
-        <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pos-modal-overlay"
+        <div class="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pos-modal-overlay"
+             style="z-index: 100;"
              wire:click.self="$set('showRecoverModal', false)">
             <div class="pos-modal-content bg-white dark:bg-gray-900 rounded-2xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 max-w-2xl w-full max-h-[80vh] flex flex-col overflow-hidden">
                 <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
@@ -791,7 +794,8 @@
     {{-- MODAL — RETENCIONES                                               --}}
     {{-- ================================================================ --}}
     @if ($showRetentionsModal)
-        <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pos-modal-overlay"
+        <div class="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pos-modal-overlay"
+             style="z-index: 100;"
              wire:click.self="$set('showRetentionsModal', false)">
             <div class="pos-modal-content bg-white dark:bg-gray-900 rounded-2xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden">
                 <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
@@ -898,7 +902,8 @@
     {{-- MODAL — DETALLES DE CAJA                                          --}}
     {{-- ================================================================ --}}
     @if ($showSessionDetailsModal && $session && $sessionTotals)
-        <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pos-modal-overlay"
+        <div class="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pos-modal-overlay"
+             style="z-index: 100;"
              wire:click.self="$set('showSessionDetailsModal', false)">
             <div class="pos-modal-content bg-white dark:bg-gray-900 rounded-2xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 max-w-md w-full overflow-hidden">
                 <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
@@ -975,7 +980,8 @@
     {{-- ================================================================ --}}
     @if ($showCloseSessionModal && $session && $sessionTotals)
         @php $blindClose = (bool) ($posSettings['blind_cash_close'] ?? false); @endphp
-        <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pos-modal-overlay"
+        <div class="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pos-modal-overlay"
+             style="z-index: 100;"
              wire:click.self="$set('showCloseSessionModal', false)">
             <div class="pos-modal-content bg-white dark:bg-gray-900 rounded-2xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 max-w-md w-full overflow-hidden">
                 <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
@@ -1065,7 +1071,8 @@
     {{-- MODAL CLIENTE                                                     --}}
     {{-- ================================================================ --}}
     @if ($showCustomerModal)
-        <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pos-modal-overlay"
+        <div class="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pos-modal-overlay"
+             style="z-index: 100;"
              wire:click.self="$set('showCustomerModal', false)">
             <div class="pos-modal-content bg-white dark:bg-gray-900 rounded-2xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 max-w-md w-full overflow-hidden">
                 <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
