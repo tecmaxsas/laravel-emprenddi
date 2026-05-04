@@ -25,6 +25,63 @@
         .pos-scroll::-webkit-scrollbar-track { background: transparent; }
         .pos-scroll::-webkit-scrollbar-thumb { background: rgba(120,120,140,0.25); border-radius: 4px; }
         .pos-scroll::-webkit-scrollbar-thumb:hover { background: rgba(120,120,140,0.45); }
+
+        /* ====== GRID DE PRODUCTOS ======
+           Independiente del bundle de Filament: usar CSS Grid puro con auto-fill +
+           minmax garantiza tarjetas ~160-180px touch-friendly que se acomodan al
+           ancho disponible. */
+        .pos-products-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 12px;
+        }
+        .pos-product-card {
+            display: flex;
+            flex-direction: column;
+            text-align: left;
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: transform 120ms ease, box-shadow 200ms ease, border-color 150ms ease;
+            font: inherit;
+            color: inherit;
+            padding: 0;
+        }
+        :is(.dark) .pos-product-card { background: #111827; border-color: #1f2937; }
+        .pos-product-card:hover {
+            border-color: rgb(99, 102, 241);
+            box-shadow: 0 8px 16px -4px rgba(0,0,0,0.10), 0 4px 6px -2px rgba(0,0,0,0.05);
+        }
+        :is(.dark) .pos-product-card:hover {
+            box-shadow: 0 8px 16px -4px rgba(99,102,241,0.15);
+        }
+        .pos-product-card:active { transform: scale(0.96); }
+
+        .pos-product-image {
+            aspect-ratio: 1 / 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #f9fafb, #f3f4f6);
+            color: #d1d5db;
+            overflow: hidden;
+            position: relative;
+        }
+        :is(.dark) .pos-product-image { background: linear-gradient(135deg, #1f2937, #111827); color: #374151; }
+        .pos-product-image img { width: 100%; height: 100%; object-fit: cover; transition: transform 300ms ease; }
+        .pos-product-card:hover .pos-product-image img { transform: scale(1.05); }
+
+        .pos-product-info { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 2px; flex: 1; }
+        .pos-product-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; color: #9ca3af; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        :is(.dark) .pos-product-code { color: #6b7280; }
+        .pos-product-name { font-size: 12px; font-weight: 500; line-height: 1.25; color: #111827; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 30px; }
+        :is(.dark) .pos-product-name { color: #f3f4f6; }
+        .pos-product-card:hover .pos-product-name { color: rgb(79, 70, 229); }
+        :is(.dark) .pos-product-card:hover .pos-product-name { color: rgb(165, 180, 252); }
+        .pos-product-price { margin-top: auto; padding-top: 4px; font-size: 14px; font-weight: 700; color: #111827; }
+        :is(.dark) .pos-product-price { color: #ffffff; }
     </style>
 
     @php
@@ -162,27 +219,25 @@
                             </div>
                         </div>
                     @else
-                        <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 gap-3">
+                        {{-- Inline grid: independiente del bundle de Filament. Pensado para touch:
+                             tarjetas mínimo 150px que se acomodan automáticamente al ancho. --}}
+                        <div class="pos-products-grid">
                             @foreach ($products as $p)
                                 <button type="button"
                                         wire:click="addProductToCart({{ $p->id }})"
-                                        class="pos-product-card group bg-white dark:bg-gray-900 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800 hover:border-primary-500 hover:shadow-lg dark:hover:shadow-primary-500/10 flex flex-col text-left">
-                                    <div class="aspect-square bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 flex items-center justify-center text-gray-300 dark:text-gray-700 overflow-hidden relative">
+                                        class="pos-product-card">
+                                    <div class="pos-product-image">
                                         @if ($p->image_path)
                                             <img src="{{ \Illuminate\Support\Facades\Storage::url($p->image_path) }}"
-                                                 alt="{{ $p->name }}"
-                                                 class="object-cover w-full h-full group-hover:scale-105 transition-transform duration-300" />
+                                                 alt="{{ $p->name }}" />
                                         @else
-                                            <svg class="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+                                            <svg width="36" height="36" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
                                         @endif
-                                        <div class="absolute inset-0 bg-primary-500/0 group-hover:bg-primary-500/5 transition"></div>
                                     </div>
-                                    <div class="px-2 py-2 flex-1 flex flex-col gap-0.5">
-                                        <div class="text-[10px] font-mono text-gray-400 dark:text-gray-500 truncate">{{ $p->code }}</div>
-                                        <div class="text-xs font-medium leading-tight line-clamp-2 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition">{{ $p->name }}</div>
-                                        <div class="mt-auto pt-1 text-sm font-bold text-gray-900 dark:text-white">
-                                            ${{ number_format($p->default_sale_price, 0, ',', '.') }}
-                                        </div>
+                                    <div class="pos-product-info">
+                                        <div class="pos-product-code">{{ $p->code }}</div>
+                                        <div class="pos-product-name">{{ $p->name }}</div>
+                                        <div class="pos-product-price">${{ number_format($p->default_sale_price, 0, ',', '.') }}</div>
                                     </div>
                                 </button>
                             @endforeach
