@@ -1,16 +1,12 @@
 <x-filament-panels::page>
     <style>
-        /* Garantizar viewport limpio para que position:fixed funcione bien.
-           Filament puede aplicar transform/filter a ancestros que rompen el
-           contexto de containing block del fixed; los neutralizamos. */
-        html, body { overflow: hidden !important; height: 100vh !important; margin: 0 !important; padding: 0 !important; }
+        body { overflow: hidden; }
         .fi-sidebar, .fi-topbar { display: none !important; }
-        .fi-main-ctn, .fi-main { padding: 0 !important; max-width: 100vw !important; width: 100vw !important; margin: 0 !important; height: 100vh !important; transform: none !important; filter: none !important; }
-        .fi-page { padding: 0 !important; height: 100vh !important; transform: none !important; }
+        .fi-main-ctn { padding: 0 !important; max-width: 100vw !important; width: 100vw !important; margin: 0 !important; }
+        .fi-page { padding: 0 !important; }
         .fi-page-header, .fi-page > nav, .fi-breadcrumbs, .fi-header-heading { display: none !important; }
-        main.fi-main { width: 100vw !important; height: 100vh !important; max-width: 100vw !important; overflow: hidden !important; }
-        /* Wrapper Livewire de Filament — neutralizar transform por si acaso */
-        [wire\:id] { transform: none !important; }
+        .fi-main { padding: 0 !important; }
+        main.fi-main { width: 100vw !important; height: 100vh !important; max-width: 100vw !important; }
 
         /* Animaciones */
         @keyframes pos-fade-in { from { opacity: 0; } to { opacity: 1; } }
