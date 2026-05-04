@@ -26,6 +26,7 @@ class Location extends Model
         'type',
         'is_main',
         'manager_user_id',
+        'invoice_template_id',
         'address',
         'city',
         'department',
@@ -65,6 +66,29 @@ class Location extends Model
     public function manager(): BelongsTo
     {
         return $this->belongsTo(User::class, 'manager_user_id');
+    }
+
+    public function invoiceTemplate(): BelongsTo
+    {
+        return $this->belongsTo(InvoiceTemplate::class);
+    }
+
+    /**
+     * Resuelve el template a usar para esta sede.
+     * Orden: el asignado explícitamente → el default de la empresa → primero activo.
+     */
+    public function resolveInvoiceTemplate(): ?InvoiceTemplate
+    {
+        if ($this->invoice_template_id) {
+            return $this->invoiceTemplate;
+        }
+
+        return InvoiceTemplate::query()
+            ->where('company_id', $this->company_id)
+            ->where('active', true)
+            ->orderByDesc('is_default')
+            ->orderBy('id')
+            ->first();
     }
 
     public function fullName(): string

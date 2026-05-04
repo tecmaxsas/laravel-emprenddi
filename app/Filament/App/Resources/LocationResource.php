@@ -4,6 +4,7 @@ namespace App\Filament\App\Resources;
 
 use App\Filament\App\Resources\LocationResource\Pages;
 use App\Filament\Concerns\ChecksPermission;
+use App\Models\InvoiceTemplate;
 use App\Models\Location;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -110,6 +111,25 @@ class LocationResource extends Resource
                         ->default('America/Bogota'),
                 ]),
 
+            Forms\Components\Section::make('Impresión')
+                ->description('Plantilla que se usa al imprimir tickets/facturas desde esta sede.')
+                ->schema([
+                    Forms\Components\Select::make('invoice_template_id')
+                        ->label('Plantilla de impresión')
+                        ->options(fn () => InvoiceTemplate::query()
+                            ->where('active', true)
+                            ->orderByDesc('is_default')
+                            ->orderBy('name')
+                            ->get()
+                            ->mapWithKeys(fn (InvoiceTemplate $t) => [
+                                $t->id => $t->name.' ('.$t->paperSizeLabel().')'.($t->is_default ? ' — default' : ''),
+                            ]))
+                        ->placeholder('— usar plantilla default de la empresa —')
+                        ->native(false)
+                        ->searchable()
+                        ->helperText('Si no eliges, se usa la plantilla marcada como default. Puedes crearlas en Operación → Plantillas de impresión.'),
+                ]),
+
             Forms\Components\Textarea::make('notes')
                 ->label('Notas')
                 ->rows(2)
@@ -161,6 +181,11 @@ class LocationResource extends Resource
                 Tables\Columns\TextColumn::make('manager.email')
                     ->label('Encargado')
                     ->placeholder('—')
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('invoiceTemplate.name')
+                    ->label('Plantilla')
+                    ->placeholder('default')
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('phone')

@@ -26,6 +26,8 @@ class PermissionsCatalog
             'Operación' => [
                 'locations.view' => 'Ver sedes',
                 'locations.manage' => 'Crear / editar / borrar sedes',
+                'invoice_templates.view' => 'Ver plantillas de impresión',
+                'invoice_templates.manage' => 'Crear / editar / borrar plantillas de impresión',
             ],
             'Contabilidad' => [
                 'accounts.view' => 'Ver Plan de Cuentas',
