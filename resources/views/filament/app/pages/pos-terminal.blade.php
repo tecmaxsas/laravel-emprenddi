@@ -1,12 +1,16 @@
 <x-filament-panels::page>
     <style>
-        body { overflow: hidden; }
+        /* Garantizar viewport limpio para que position:fixed funcione bien.
+           Filament puede aplicar transform/filter a ancestros que rompen el
+           contexto de containing block del fixed; los neutralizamos. */
+        html, body { overflow: hidden !important; height: 100vh !important; margin: 0 !important; padding: 0 !important; }
         .fi-sidebar, .fi-topbar { display: none !important; }
-        .fi-main-ctn { padding: 0 !important; max-width: 100vw !important; width: 100vw !important; margin: 0 !important; }
-        .fi-page { padding: 0 !important; }
+        .fi-main-ctn, .fi-main { padding: 0 !important; max-width: 100vw !important; width: 100vw !important; margin: 0 !important; height: 100vh !important; transform: none !important; filter: none !important; }
+        .fi-page { padding: 0 !important; height: 100vh !important; transform: none !important; }
         .fi-page-header, .fi-page > nav, .fi-breadcrumbs, .fi-header-heading { display: none !important; }
-        .fi-main { padding: 0 !important; }
-        main.fi-main { width: 100vw !important; height: 100vh !important; max-width: 100vw !important; }
+        main.fi-main { width: 100vw !important; height: 100vh !important; max-width: 100vw !important; overflow: hidden !important; }
+        /* Wrapper Livewire de Filament — neutralizar transform por si acaso */
+        [wire\:id] { transform: none !important; }
 
         /* Animaciones */
         @keyframes pos-fade-in { from { opacity: 0; } to { opacity: 1; } }
@@ -174,12 +178,13 @@
     @endphp
 
     <div class="fixed inset-0 flex flex-col bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100"
-         style="width:100vw; height:100vh;">
+         style="width:100vw; height:100vh; top:0; left:0; right:0; bottom:0; z-index:50;">
 
         {{-- ============================================================ --}}
         {{-- TOP BAR — theme-aware                                        --}}
         {{-- ============================================================ --}}
-        <header class="h-14 flex items-center justify-between px-5 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 shrink-0 shadow-sm">
+        <header class="flex items-center justify-between px-5 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 shadow-sm"
+                style="height:56px; min-height:56px; flex: 0 0 56px;">
             <div class="flex items-center gap-3">
                 <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center text-white text-sm font-bold shadow-sm">
                     E
@@ -254,9 +259,10 @@
         </header>
 
         {{-- ============================================================ --}}
-        {{-- BODY: 3 columnas                                              --}}
+        {{-- BODY: 3 columnas — overflow-hidden para evitar que crezca y    --}}
+        {{-- empuje el footer fuera del viewport                           --}}
         {{-- ============================================================ --}}
-        <div class="flex-1 flex min-h-0">
+        <div class="flex-1 flex min-h-0 overflow-hidden">
 
             {{-- =========== CATEGORÍAS =========== --}}
             <aside class="w-56 shrink-0 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 overflow-y-auto pos-scroll">
@@ -475,9 +481,10 @@
         </div>
 
         {{-- ============================================================ --}}
-        {{-- BARRA INFERIOR — Acciones                                    --}}
+        {{-- BARRA INFERIOR — siempre visible al fondo del viewport        --}}
         {{-- ============================================================ --}}
-        <footer class="h-16 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 shrink-0 flex items-stretch shadow-[0_-1px_3px_rgba(0,0,0,0.04)]">
+        <footer class="bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 flex items-stretch shadow-[0_-1px_3px_rgba(0,0,0,0.04)]"
+                style="height:64px; min-height:64px; flex: 0 0 64px;">
             {{-- Borrador --}}
             <button type="button" wire:click="saveDraft"
                     @disabled(empty($cart))
