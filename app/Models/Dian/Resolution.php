@@ -58,7 +58,7 @@ class Resolution extends Model
 
     public function locationAssignments(): HasMany
     {
-        return $this->hasMany(LocationResolution::class);
+        return $this->hasMany(LocationResolution::class, 'dian_resolution_id');
     }
 
     public function rangeLabel(): string
