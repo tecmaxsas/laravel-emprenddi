@@ -74,6 +74,7 @@ class SaleInvoice extends Model
         'created_by_user_id',
         'posted_by_user_id',
         'seller_user_id',
+        'cash_register_session_id',
         'posted_at',
         'description',
         'notes',
@@ -167,6 +168,11 @@ class SaleInvoice extends Model
     public function seller(): BelongsTo
     {
         return $this->belongsTo(User::class, 'seller_user_id');
+    }
+
+    public function cashRegisterSession(): BelongsTo
+    {
+        return $this->belongsTo(CashRegisterSession::class);
     }
 
     public function fullNumber(): string

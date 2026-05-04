@@ -89,6 +89,78 @@
         $cats = $this->categories;
         $products = $this->products;
         $posSettings = $this->posSettings;
+        $hasSession = $this->hasOpenSession;
+        $session = $this->currentSession;
+        $sessionTotals = $this->sessionTotals;
+    @endphp
+
+    {{-- ============================================================ --}}
+    {{-- APERTURA DE CAJA — bloquea POS si no hay sesión abierta       --}}
+    {{-- ============================================================ --}}
+    @if (! $hasSession)
+        <div class="fixed inset-0 flex items-center justify-center bg-gray-50 dark:bg-gray-950 p-6"
+             style="width:100vw; height:100vh;">
+            <div class="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 max-w-md w-full overflow-hidden">
+                <div class="px-6 py-5 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
+                    <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-700 text-white flex items-center justify-center shadow-lg">
+                        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>
+                    </div>
+                    <div>
+                        <h2 class="text-lg font-bold">Apertura de caja</h2>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">Abre tu turno antes de empezar a vender.</p>
+                    </div>
+                </div>
+
+                <form wire:submit.prevent="openCashSession" class="p-6 space-y-4">
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wider text-gray-500">Sede</label>
+                        <select wire:model.live="openingLocationId" required
+                                class="w-full mt-1 px-3 py-2.5 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 outline-none focus:ring-2 focus:ring-emerald-500">
+                            <option value="">— Selecciona —</option>
+                            @foreach (\App\Models\Location::query()->where('active', true)->orderByDesc('is_main')->orderBy('name')->get() as $loc)
+                                <option value="{{ $loc->id }}">{{ $loc->fullName() }}</option>
+                            @endforeach
+                        </select>
+                        <p class="text-[11px] text-gray-500 mt-1">La sede determina el inventario y catálogo de productos disponibles en este turno.</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wider text-gray-500">Valor de apertura</label>
+                        <div class="relative mt-1">
+                            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
+                            <input type="number" step="0.01" min="0"
+                                   wire:model="openingAmount" placeholder="0"
+                                   class="w-full pl-7 pr-3 py-2.5 text-base font-semibold rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 outline-none focus:ring-2 focus:ring-emerald-500" />
+                        </div>
+                        <p class="text-[11px] text-gray-500 mt-1">Efectivo que ya está en la caja al iniciar el turno.</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wider text-gray-500">Notas (opcional)</label>
+                        <textarea wire:model="openingNotes" rows="2" placeholder="Cambio recibido, observaciones..."
+                                  class="w-full mt-1 px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 outline-none focus:ring-2 focus:ring-emerald-500"></textarea>
+                    </div>
+
+                    <div class="flex justify-end gap-2 pt-2">
+                        <a href="{{ url('/app') }}"
+                           class="px-5 py-2.5 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition">
+                            Cancelar
+                        </a>
+                        <button type="submit"
+                                class="px-6 py-2.5 text-sm font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-md transition">
+                            Abrir caja
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    @else
+    {{-- ============================================================ --}}
+    {{-- POS NORMAL — solo si hay sesión abierta                       --}}
+    {{-- ============================================================ --}}
+    @php
+        $sessionId = $session?->id;
+    @endphp
 
         // Paleta de gradientes para el badge de la categoría — distribuida por id
         $catGradients = [
@@ -157,6 +229,25 @@
                         class="px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition">
                     Limpiar
                 </button>
+
+                {{-- Detalles caja: oculto si blind_cash_close, salvo admin/manager --}}
+                @if (! ($posSettings['blind_cash_close'] ?? false) || auth()->user()->hasAnyRole(['admin', 'manager']))
+                    <button type="button" wire:click="openSessionDetailsModal"
+                            class="px-3 py-1.5 text-xs font-medium rounded-lg bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 hover:bg-cyan-500/20 transition flex items-center gap-1.5"
+                            title="Ver detalles de la caja en curso">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                        Detalles caja
+                    </button>
+                @endif
+
+                @if (auth()->user()->can('pos.cash_close'))
+                    <button type="button" wire:click="openCloseSessionModal"
+                            class="px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 transition flex items-center gap-1.5">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
+                        Cerrar caja
+                    </button>
+                @endif
+
                 <a href="{{ url('/app') }}"
                    class="px-3 py-1.5 text-xs font-medium rounded-lg bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 transition">
                     Salir
@@ -424,6 +515,7 @@
             </div>
         </footer>
     </div>
+    @endif {{-- end @else hasSession --}}
 
     {{-- ================================================================ --}}
     {{-- MODAL DE COBRO                                                    --}}
@@ -782,6 +874,173 @@
                     <button type="button" wire:click="$set('showRetentionsModal', false)"
                             class="px-5 py-2.5 text-sm font-bold rounded-lg bg-rose-600 hover:bg-rose-700 text-white shadow-md transition">
                         Listo
+                    </button>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    {{-- ================================================================ --}}
+    {{-- MODAL — DETALLES DE CAJA                                          --}}
+    {{-- ================================================================ --}}
+    @if ($showSessionDetailsModal && $session && $sessionTotals)
+        <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pos-modal-overlay"
+             wire:click.self="$set('showSessionDetailsModal', false)">
+            <div class="pos-modal-content bg-white dark:bg-gray-900 rounded-2xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 max-w-md w-full overflow-hidden">
+                <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 flex items-center justify-center">
+                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                    </div>
+                    <div class="flex-1">
+                        <h2 class="text-base font-semibold">Caja en curso</h2>
+                        <p class="text-xs text-gray-500">Abierta {{ $session->opened_at->diffForHumans() }} · {{ $session->location?->name }}</p>
+                    </div>
+                    <button type="button" wire:click="$set('showSessionDetailsModal', false)"
+                            class="w-8 h-8 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-center text-xl leading-none transition">×</button>
+                </div>
+
+                <div class="p-5 space-y-4">
+                    {{-- Resumen --}}
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-3">
+                            <div class="text-[10px] uppercase font-bold text-gray-500">Apertura</div>
+                            <div class="text-lg font-bold mt-0.5">${{ number_format((float) $session->opening_amount, 0, ',', '.') }}</div>
+                        </div>
+                        <div class="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-3">
+                            <div class="text-[10px] uppercase font-bold text-gray-500">Facturas emitidas</div>
+                            <div class="text-lg font-bold mt-0.5">{{ $sessionTotals['invoice_count'] }}</div>
+                        </div>
+                    </div>
+
+                    {{-- Pagos por método --}}
+                    <div>
+                        <div class="text-[10px] uppercase font-bold text-gray-500 mb-2">Cobros por método</div>
+                        @if (empty($sessionTotals['payment_breakdown']))
+                            <div class="text-sm text-gray-400 italic px-3 py-2">Sin cobros aún.</div>
+                        @else
+                            <div class="space-y-1">
+                                @foreach ($sessionTotals['payment_breakdown'] as $method => $amount)
+                                    <div class="flex justify-between text-sm py-1 px-3 rounded-lg bg-gray-50 dark:bg-gray-800/40">
+                                        <span>{{ \App\Models\Payment::PAYMENT_METHODS[$method] ?? $method }}</span>
+                                        <span class="font-semibold">${{ number_format($amount, 0, ',', '.') }}</span>
+                                    </div>
+                                @endforeach
+                            </div>
+                        @endif
+                    </div>
+
+                    {{-- Total ventas + esperado en caja --}}
+                    <div class="space-y-2 pt-2 border-t border-gray-100 dark:border-gray-800">
+                        <div class="flex justify-between text-sm">
+                            <span class="text-gray-600 dark:text-gray-400">Total ventas</span>
+                            <span class="font-semibold">${{ number_format($sessionTotals['total_sales'], 0, ',', '.') }}</span>
+                        </div>
+                        <div class="flex justify-between text-sm">
+                            <span class="text-gray-600 dark:text-gray-400">Recibido en efectivo</span>
+                            <span class="font-semibold">${{ number_format($sessionTotals['cash_received'], 0, ',', '.') }}</span>
+                        </div>
+                        <div class="flex justify-between text-base font-bold pt-2 border-t border-gray-200 dark:border-gray-700">
+                            <span>Esperado en caja</span>
+                            <span class="text-emerald-600 dark:text-emerald-400">${{ number_format($sessionTotals['closing_expected'], 0, ',', '.') }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="px-5 py-4 border-t border-gray-100 dark:border-gray-800 flex justify-end bg-gray-50 dark:bg-gray-950/50">
+                    <button type="button" wire:click="$set('showSessionDetailsModal', false)"
+                            class="px-5 py-2.5 text-sm font-bold rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white shadow-md transition">
+                        Cerrar
+                    </button>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    {{-- ================================================================ --}}
+    {{-- MODAL — CIERRE DE CAJA (respeta blind_cash_close)                 --}}
+    {{-- ================================================================ --}}
+    @if ($showCloseSessionModal && $session && $sessionTotals)
+        @php $blindClose = (bool) ($posSettings['blind_cash_close'] ?? false); @endphp
+        <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pos-modal-overlay"
+             wire:click.self="$set('showCloseSessionModal', false)">
+            <div class="pos-modal-content bg-white dark:bg-gray-900 rounded-2xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 max-w-md w-full overflow-hidden">
+                <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
+                    </div>
+                    <div class="flex-1">
+                        <h2 class="text-base font-semibold">Cierre de caja</h2>
+                        <p class="text-xs text-gray-500">{{ $session->location?->name }} · turno desde {{ $session->opened_at->format('Y-m-d H:i') }}</p>
+                    </div>
+                    <button type="button" wire:click="$set('showCloseSessionModal', false)"
+                            class="w-8 h-8 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-center text-xl leading-none transition">×</button>
+                </div>
+
+                <div class="p-5 space-y-4">
+                    @if ($blindClose)
+                        <div class="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl p-3 text-sm text-amber-900 dark:text-amber-200 flex gap-3">
+                            <svg class="w-5 h-5 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"/></svg>
+                            <div>Cierre oculto — solo digita el efectivo que físicamente cuentas en la caja. La diferencia se registrará para auditoría.</div>
+                        </div>
+                    @else
+                        <div class="space-y-2 bg-gray-50 dark:bg-gray-800/40 rounded-xl p-4">
+                            <div class="flex justify-between text-sm">
+                                <span class="text-gray-600 dark:text-gray-400">Apertura</span>
+                                <span class="font-medium">${{ number_format((float) $session->opening_amount, 0, ',', '.') }}</span>
+                            </div>
+                            <div class="flex justify-between text-sm">
+                                <span class="text-gray-600 dark:text-gray-400">+ Recibido en efectivo</span>
+                                <span class="font-medium">${{ number_format($sessionTotals['cash_received'], 0, ',', '.') }}</span>
+                            </div>
+                            <div class="flex justify-between text-base font-bold pt-2 border-t border-gray-200 dark:border-gray-700">
+                                <span>Esperado en caja</span>
+                                <span class="text-emerald-600 dark:text-emerald-400">${{ number_format($sessionTotals['closing_expected'], 0, ',', '.') }}</span>
+                            </div>
+                        </div>
+                    @endif
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                            {{ $blindClose ? 'Efectivo contado' : 'Monto contado físicamente' }}
+                        </label>
+                        <div class="relative mt-1">
+                            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
+                            <input type="number" step="0.01" min="0"
+                                   wire:model.live="closingCounted" placeholder="0"
+                                   class="w-full pl-7 pr-3 py-2.5 text-base font-semibold rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 outline-none focus:ring-2 focus:ring-emerald-500" />
+                        </div>
+                    </div>
+
+                    {{-- Diferencia visible solo si NO es blind --}}
+                    @if (! $blindClose)
+                        @php
+                            $diff = (float) ($closingCounted ?? 0) - (float) $sessionTotals['closing_expected'];
+                        @endphp
+                        <div class="rounded-xl p-3 text-center {{ abs($diff) < 0.01 ? 'bg-emerald-50 dark:bg-emerald-950/40' : ($diff > 0 ? 'bg-cyan-50 dark:bg-cyan-950/40' : 'bg-rose-50 dark:bg-rose-950/40') }}">
+                            <div class="text-[10px] uppercase font-semibold {{ abs($diff) < 0.01 ? 'text-emerald-600' : ($diff > 0 ? 'text-cyan-600' : 'text-rose-600') }}">
+                                {{ abs($diff) < 0.01 ? 'Cuadre exacto' : ($diff > 0 ? 'Sobrante' : 'Faltante') }}
+                            </div>
+                            <div class="text-xl font-bold mt-0.5 {{ abs($diff) < 0.01 ? 'text-emerald-700 dark:text-emerald-300' : ($diff > 0 ? 'text-cyan-700 dark:text-cyan-300' : 'text-rose-700 dark:text-rose-300') }}">
+                                {{ $diff >= 0 ? '+' : '' }}${{ number_format($diff, 0, ',', '.') }}
+                            </div>
+                        </div>
+                    @endif
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wider text-gray-500">Notas (opcional)</label>
+                        <textarea wire:model="closingNotes" rows="2" placeholder="Observaciones del turno..."
+                                  class="w-full mt-1 px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 outline-none focus:ring-2 focus:ring-emerald-500"></textarea>
+                    </div>
+                </div>
+
+                <div class="px-5 py-4 border-t border-gray-100 dark:border-gray-800 flex justify-end gap-2 bg-gray-50 dark:bg-gray-950/50">
+                    <button type="button" wire:click="$set('showCloseSessionModal', false)"
+                            class="px-5 py-2.5 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition">
+                        Cancelar
+                    </button>
+                    <button type="button" wire:click="closeCashSession"
+                            class="px-6 py-2.5 text-sm font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-md transition">
+                        Confirmar cierre
                     </button>
                 </div>
             </div>

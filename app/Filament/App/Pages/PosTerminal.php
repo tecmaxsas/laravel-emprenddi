@@ -3,6 +3,7 @@
 namespace App\Filament\App\Pages;
 
 use App\Models\Account;
+use App\Models\CashRegisterSession;
 use App\Models\Category;
 use App\Models\Company;
 use App\Models\Location;
@@ -47,6 +48,18 @@ class PosTerminal extends Page
     public ?int $location_id = null;
     public ?int $customer_id = null;
     public ?int $seller_user_id = null;
+    public ?int $session_id = null;
+
+    // Apertura de caja
+    public ?int $openingLocationId = null;
+    public ?float $openingAmount = 0.0;
+    public string $openingNotes = '';
+
+    // Cierre de caja
+    public ?float $closingCounted = 0.0;
+    public string $closingNotes = '';
+    public bool $showSessionDetailsModal = false;
+    public bool $showCloseSessionModal = false;
 
     // Filtro de productos
     public ?int $selectedCategoryId = null;
@@ -81,13 +94,43 @@ class PosTerminal extends Page
     public function mount(): void
     {
         $this->seller_user_id = Auth::id();
-        $this->location_id = Location::query()
-            ->where('active', true)
-            ->orderByDesc('is_main')
-            ->orderBy('id')
-            ->value('id');
+
+        $session = $this->openSession();
+        if ($session) {
+            $this->session_id = $session->id;
+            $this->location_id = $session->location_id;
+        } else {
+            // Sin sesión abierta: pre-llena la sede principal en el form de apertura
+            $this->openingLocationId = Location::query()
+                ->where('active', true)
+                ->orderByDesc('is_main')
+                ->orderBy('id')
+                ->value('id');
+        }
 
         $this->customer_id = $this->ensureDefaultCustomer()->id;
+    }
+
+    /**
+     * Sesión abierta del cajero actual, si existe.
+     */
+    public function openSession(): ?CashRegisterSession
+    {
+        return CashRegisterSession::query()
+            ->where('cashier_user_id', Auth::id())
+            ->where('status', CashRegisterSession::STATUS_OPEN)
+            ->latest('opened_at')
+            ->first();
+    }
+
+    public function getCurrentSessionProperty(): ?CashRegisterSession
+    {
+        return $this->session_id ? CashRegisterSession::find($this->session_id) : null;
+    }
+
+    public function getHasOpenSessionProperty(): bool
+    {
+        return $this->session_id !== null;
     }
 
     /**
@@ -559,6 +602,7 @@ class PosTerminal extends Page
                     'payment_status' => 'pendiente',
                     'created_by_user_id' => Auth::id(),
                     'seller_user_id' => $this->seller_user_id ?: Auth::id(),
+                    'cash_register_session_id' => $this->session_id,
                 ]);
 
                 $lineNum = 1;
@@ -706,6 +750,145 @@ class PosTerminal extends Page
             $this->resetCart();
         } catch (\Throwable $e) {
             Notification::make()->title('Error al guardar borrador')->body($e->getMessage())->danger()->send();
+        }
+    }
+
+    // ================================================================
+    // SESIONES DE CAJA
+    // ================================================================
+
+    public function openCashSession(): void
+    {
+        if ($this->openSession()) {
+            Notification::make()->title('Ya tienes una sesión abierta')->warning()->send();
+            return;
+        }
+
+        if (! $this->openingLocationId) {
+            Notification::make()->title('Selecciona la sede')->danger()->send();
+            return;
+        }
+
+        $opening = max(0, (float) ($this->openingAmount ?? 0));
+
+        $session = CashRegisterSession::create([
+            'company_id' => Auth::user()->company_id,
+            'location_id' => $this->openingLocationId,
+            'cashier_user_id' => Auth::id(),
+            'status' => CashRegisterSession::STATUS_OPEN,
+            'opened_at' => now(),
+            'opening_amount' => $opening,
+            'opening_notes' => trim($this->openingNotes) ?: null,
+        ]);
+
+        $this->session_id = $session->id;
+        $this->location_id = $session->location_id;
+        $this->openingLocationId = null;
+        $this->openingAmount = 0.0;
+        $this->openingNotes = '';
+
+        Notification::make()
+            ->title('Caja abierta')
+            ->body('Sede '.$session->location->name.'. Apertura: $'.number_format($opening, 2))
+            ->success()
+            ->send();
+    }
+
+    public function openSessionDetailsModal(): void
+    {
+        if (($this->posSettings['blind_cash_close'] ?? false)
+            && ! auth()->user()->hasAnyRole(['admin', 'manager'])) {
+            Notification::make()
+                ->title('Detalles ocultos')
+                ->body('La empresa configuró "cierre de caja oculto" — solo verás el resumen al cerrar.')
+                ->warning()
+                ->send();
+            return;
+        }
+
+        $this->showSessionDetailsModal = true;
+    }
+
+    public function getSessionTotalsProperty(): ?array
+    {
+        $session = $this->currentSession;
+        if (! $session) return null;
+        return $session->computeRunningTotals();
+    }
+
+    public function openCloseSessionModal(): void
+    {
+        if (! $this->currentSession) {
+            Notification::make()->title('No hay sesión abierta')->danger()->send();
+            return;
+        }
+
+        $this->closingCounted = 0.0;
+        $this->closingNotes = '';
+        $this->showCloseSessionModal = true;
+    }
+
+    public function closeCashSession(): void
+    {
+        $session = $this->currentSession;
+        if (! $session) {
+            Notification::make()->title('No hay sesión abierta')->danger()->send();
+            return;
+        }
+
+        if (! auth()->user()->can('pos.cash_close')) {
+            Notification::make()->title('Sin permiso para cerrar caja')->danger()->send();
+            return;
+        }
+
+        if (! empty($this->cart)) {
+            Notification::make()
+                ->title('Carrito no vacío')
+                ->body('Termina o suspende la venta actual antes de cerrar caja.')
+                ->danger()
+                ->send();
+            return;
+        }
+
+        $totals = $session->computeRunningTotals();
+        $counted = (float) ($this->closingCounted ?? 0);
+        $expected = $totals['closing_expected'];
+        $difference = round($counted - $expected, 2);
+
+        $session->update([
+            'status' => CashRegisterSession::STATUS_CLOSED,
+            'closed_at' => now(),
+            'closed_by_user_id' => Auth::id(),
+            'closing_expected' => $expected,
+            'closing_counted' => $counted,
+            'closing_difference' => $difference,
+            'total_sales' => $totals['total_sales'],
+            'invoice_count' => $totals['invoice_count'],
+            'payment_breakdown' => $totals['payment_breakdown'],
+            'closing_notes' => trim($this->closingNotes) ?: null,
+        ]);
+
+        // Reset POS state — fuerza re-login a la caja
+        $this->session_id = null;
+        $this->location_id = null;
+        $this->showCloseSessionModal = false;
+        $this->resetCart();
+
+        $blindClose = (bool) ($this->posSettings['blind_cash_close'] ?? false);
+
+        if ($blindClose) {
+            Notification::make()->title('Caja cerrada')->success()->send();
+        } else {
+            Notification::make()
+                ->title('Caja cerrada')
+                ->body(sprintf(
+                    'Esperado $%s · Contado $%s · Diferencia $%s',
+                    number_format($expected, 2),
+                    number_format($counted, 2),
+                    number_format($difference, 2),
+                ))
+                ->{$difference === 0.0 ? 'success' : 'warning'}()
+                ->send();
         }
     }
 
