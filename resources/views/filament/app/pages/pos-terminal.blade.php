@@ -160,8 +160,6 @@
     {{-- ============================================================ --}}
     @php
         $sessionId = $session?->id;
-    @endphp
-
         // Paleta de gradientes para el badge de la categoría — distribuida por id
         $catGradients = [
             ['from-blue-400','to-blue-600'],
