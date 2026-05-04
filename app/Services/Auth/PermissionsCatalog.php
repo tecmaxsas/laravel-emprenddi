@@ -69,6 +69,7 @@ class PermissionsCatalog
                 'roles.view' => 'Ver roles y permisos',
                 'roles.manage' => 'Editar roles y permisos',
                 'company.settings' => 'Editar configuración de la empresa',
+                'dian.manage' => 'Configurar facturación electrónica DIAN',
             ],
         ];
     }
@@ -103,7 +104,7 @@ class PermissionsCatalog
             'admin' => $all,
             'manager' => array_diff($all, [
                 'users.manage', 'roles.manage', 'roles.view', 'company.settings',
-                'accounts.manage', 'taxes.manage',
+                'accounts.manage', 'taxes.manage', 'dian.manage',
             ]),
             'accountant' => [
                 'accounts.view', 'accounts.manage', 'taxes.view', 'taxes.manage',
