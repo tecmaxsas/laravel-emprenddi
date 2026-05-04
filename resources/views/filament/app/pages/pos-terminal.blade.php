@@ -71,6 +71,20 @@
                     <div class="text-xs text-gray-500 dark:text-gray-400">{{ now()->format('Y-m-d') }}</div>
                     <div class="text-xs font-medium font-mono">{{ now()->format('H:i') }}</div>
                 </div>
+                <button type="button" wire:click="$set('showRecoverModal', true)"
+                        class="relative px-3 py-1.5 text-xs font-medium rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition flex items-center gap-1.5">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10v6a2 2 0 002 2h14a2 2 0 002-2v-6M3 10l9-7 9 7M3 10h18"/></svg>
+                    Recuperar
+                    @if ($this->suspendedSales->isNotEmpty())
+                        <span class="ml-1 px-1.5 py-0.5 rounded-md bg-amber-500 text-white text-[10px] font-bold leading-none">{{ $this->suspendedSales->count() }}</span>
+                    @endif
+                </button>
+                <button type="button" wire:click="openSuspendModal"
+                        @disabled(empty($cart))
+                        class="px-3 py-1.5 text-xs font-medium rounded-lg bg-purple-500/10 text-purple-700 dark:text-purple-300 hover:bg-purple-500/20 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Suspender
+                </button>
                 <button type="button" wire:click="resetCart" wire:confirm="¿Vaciar carrito?"
                         class="px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition">
                     Limpiar
@@ -461,6 +475,120 @@
             </div>
         </div>
     @endif
+
+    {{-- ================================================================ --}}
+    {{-- MODAL — SUSPENDER VENTA                                           --}}
+    {{-- ================================================================ --}}
+    @if ($showSuspendModal)
+        <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pos-modal-overlay"
+             wire:click.self="$set('showSuspendModal', false)">
+            <div class="pos-modal-content bg-white dark:bg-gray-900 rounded-2xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 max-w-md w-full overflow-hidden">
+                <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-purple-500/15 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    </div>
+                    <h2 class="text-base font-semibold flex-1">Suspender venta</h2>
+                    <button type="button" wire:click="$set('showSuspendModal', false)"
+                            class="w-8 h-8 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-center text-xl leading-none transition">×</button>
+                </div>
+                <div class="p-5 space-y-3">
+                    <p class="text-sm text-gray-600 dark:text-gray-400">
+                        El carrito actual se guardará como venta suspendida y se vaciará. Podrás recuperarla cuando quieras.
+                    </p>
+                    <div>
+                        <label class="text-xs font-medium text-gray-700 dark:text-gray-300">Etiqueta (opcional)</label>
+                        <input type="text" wire:model="suspendName" placeholder="Mesa 5, María Pérez, etc."
+                               class="w-full mt-1 px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 outline-none focus:ring-2 focus:ring-primary-500" />
+                    </div>
+                    <div class="bg-gray-50 dark:bg-gray-800/40 rounded-lg p-3 text-sm flex justify-between">
+                        <span class="text-gray-500">Items: <strong>{{ $totals['items'] }}</strong></span>
+                        <span class="text-gray-500">Total: <strong>${{ number_format($totals['total'], 0, ',', '.') }}</strong></span>
+                    </div>
+                </div>
+                <div class="px-5 py-4 border-t border-gray-100 dark:border-gray-800 flex justify-end gap-2 bg-gray-50 dark:bg-gray-950/50">
+                    <button type="button" wire:click="$set('showSuspendModal', false)"
+                            class="px-5 py-2.5 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition">Cancelar</button>
+                    <button type="button" wire:click="suspendSale"
+                            class="px-5 py-2.5 text-sm font-bold rounded-lg bg-purple-600 hover:bg-purple-700 text-white shadow-md transition">
+                        Suspender
+                    </button>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    {{-- ================================================================ --}}
+    {{-- MODAL — RECUPERAR VENTA                                           --}}
+    {{-- ================================================================ --}}
+    @if ($showRecoverModal)
+        <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pos-modal-overlay"
+             wire:click.self="$set('showRecoverModal', false)">
+            <div class="pos-modal-content bg-white dark:bg-gray-900 rounded-2xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 max-w-2xl w-full max-h-[80vh] flex flex-col overflow-hidden">
+                <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10v6a2 2 0 002 2h14a2 2 0 002-2v-6M3 10l9-7 9 7M3 10h18"/></svg>
+                    </div>
+                    <h2 class="text-base font-semibold flex-1">Ventas suspendidas</h2>
+                    <button type="button" wire:click="$set('showRecoverModal', false)"
+                            class="w-8 h-8 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-center text-xl leading-none transition">×</button>
+                </div>
+                <div class="flex-1 overflow-y-auto pos-scroll p-3">
+                    @if ($this->suspendedSales->isEmpty())
+                        <div class="py-12 text-center text-sm text-gray-400">
+                            No hay ventas suspendidas en esta sede.
+                        </div>
+                    @else
+                        <div class="space-y-2">
+                            @foreach ($this->suspendedSales as $s)
+                                <div class="flex items-center gap-3 p-3 rounded-xl border border-gray-200 dark:border-gray-800 hover:border-primary-500 hover:bg-primary-50/40 dark:hover:bg-primary-950/20 transition">
+                                    <div class="w-10 h-10 rounded-lg bg-purple-500/15 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+                                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <div class="text-sm font-semibold truncate">{{ $s->name }}</div>
+                                        <div class="text-xs text-gray-500 dark:text-gray-400 truncate">
+                                            {{ $s->customer?->name ?? '—' }} ·
+                                            {{ $s->seller?->name ?? $s->seller?->email ?? '?' }} ·
+                                            {{ $s->created_at->format('Y-m-d H:i') }}
+                                        </div>
+                                    </div>
+                                    <div class="text-right shrink-0">
+                                        <div class="text-[10px] uppercase text-gray-400 font-semibold">{{ $s->items_count }} items</div>
+                                        <div class="text-sm font-bold">${{ number_format((float) $s->total, 0, ',', '.') }}</div>
+                                    </div>
+                                    <div class="flex flex-col gap-1 shrink-0">
+                                        <button type="button" wire:click="recoverSale({{ $s->id }})"
+                                                class="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition">
+                                            Recuperar
+                                        </button>
+                                        <button type="button" wire:click="deleteSuspendedSale({{ $s->id }})"
+                                                wire:confirm="¿Eliminar esta venta suspendida?"
+                                                class="px-3 py-1 text-[11px] rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition">
+                                            Eliminar
+                                        </button>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    @endif
+                </div>
+            </div>
+        </div>
+    @endif
+
+    {{-- ================================================================ --}}
+    {{-- LISTENER de impresión: dispara una ventana nueva con el ticket    --}}
+    {{-- ================================================================ --}}
+    <script>
+        document.addEventListener('livewire:init', () => {
+            Livewire.on('pos-print-ticket', (event) => {
+                const id = Array.isArray(event) ? event[0]?.invoiceId : event?.invoiceId;
+                if (! id) return;
+                const url = '{{ url('/app/pos/print') }}/' + id;
+                window.open(url, 'pos-print-' + id, 'width=420,height=720');
+            });
+        });
+    </script>
 
     {{-- ================================================================ --}}
     {{-- MODAL CLIENTE                                                     --}}

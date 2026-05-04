@@ -9,6 +9,7 @@ use App\Models\Location;
 use App\Models\Payment;
 use App\Models\Product;
 use App\Models\SaleInvoice;
+use App\Models\SuspendedSale;
 use App\Models\Tax;
 use App\Models\ThirdParty;
 use App\Services\Sales\SaleInvoiceEngine;
@@ -59,9 +60,12 @@ class PosTerminal extends Page
     // UI state
     public bool $showCustomerModal = false;
     public bool $showPaymentModal = false;
+    public bool $showSuspendModal = false;
+    public bool $showRecoverModal = false;
     public string $paymentMode = 'multi'; // multi | cash | card | transfer | credit
     public string $newCustomerName = '';
     public string $newCustomerDocument = '';
+    public string $suspendName = '';
 
     public static function canAccess(): bool
     {
@@ -477,6 +481,10 @@ class PosTerminal extends Page
                 ->success()
                 ->send();
 
+            // Disparo de impresión: el JS del front escucha este evento y
+            // abre el ticket en una ventana nueva con auto-print.
+            $this->dispatch('pos-print-ticket', invoiceId: $invoice->id);
+
             $this->resetCart();
             $this->showPaymentModal = false;
         } catch (\Throwable $e) {
@@ -564,6 +572,110 @@ class PosTerminal extends Page
     {
         $this->showPaymentModal = false;
         $this->payments = [];
+    }
+
+    // ================================================================
+    // VENTAS SUSPENDIDAS (parking)
+    // ================================================================
+
+    public function openSuspendModal(): void
+    {
+        if (empty($this->cart)) {
+            Notification::make()->title('Carrito vacío')->warning()->send();
+            return;
+        }
+
+        $this->suspendName = $this->customerName !== 'Consumidor Final'
+            ? $this->customerName
+            : 'Venta '.now()->format('H:i');
+
+        $this->showSuspendModal = true;
+    }
+
+    public function suspendSale(): void
+    {
+        if (empty($this->cart)) {
+            $this->showSuspendModal = false;
+            return;
+        }
+
+        $totals = $this->totals();
+
+        SuspendedSale::create([
+            'company_id' => Auth::user()->company_id,
+            'location_id' => $this->location_id,
+            'seller_user_id' => $this->seller_user_id ?: Auth::id(),
+            'third_party_id' => $this->customer_id,
+            'name' => trim($this->suspendName) ?: 'Venta '.now()->format('Y-m-d H:i'),
+            'cart_snapshot' => $this->cart,
+            'payments_snapshot' => $this->payments,
+            'total' => $totals['total'],
+            'items_count' => (int) $totals['items'],
+        ]);
+
+        Notification::make()
+            ->title('Venta suspendida')
+            ->body('Puedes recuperarla cuando quieras.')
+            ->success()
+            ->send();
+
+        $this->showSuspendModal = false;
+        $this->suspendName = '';
+        $this->resetCart();
+    }
+
+    public function recoverSale(int $id): void
+    {
+        $suspended = SuspendedSale::query()
+            ->where('id', $id)
+            ->where('location_id', $this->location_id)
+            ->first();
+
+        if (! $suspended) {
+            Notification::make()->title('Venta no encontrada')->danger()->send();
+            return;
+        }
+
+        // Si ya hay carrito, advertir
+        if (! empty($this->cart)) {
+            Notification::make()
+                ->title('Carrito actual no vacío')
+                ->body('Vacía o suspende el carrito actual antes de recuperar otra venta.')
+                ->warning()
+                ->send();
+            return;
+        }
+
+        $this->cart = $suspended->cart_snapshot ?? [];
+        $this->payments = $suspended->payments_snapshot ?? [];
+        if ($suspended->third_party_id) {
+            $this->customer_id = $suspended->third_party_id;
+        }
+
+        $suspended->delete();
+
+        $this->showRecoverModal = false;
+        Notification::make()->title('Venta recuperada')->success()->send();
+    }
+
+    public function deleteSuspendedSale(int $id): void
+    {
+        SuspendedSale::query()
+            ->where('id', $id)
+            ->where('location_id', $this->location_id)
+            ->delete();
+
+        Notification::make()->title('Venta suspendida eliminada')->success()->send();
+    }
+
+    public function getSuspendedSalesProperty()
+    {
+        return SuspendedSale::query()
+            ->where('location_id', $this->location_id)
+            ->with('customer:id,name', 'seller:id,name,email')
+            ->orderByDesc('created_at')
+            ->limit(50)
+            ->get();
     }
 
     // ================================================================
