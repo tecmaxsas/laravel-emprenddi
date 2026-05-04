@@ -37,32 +37,46 @@ class InvoiceTemplateResource extends Resource
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\Tabs::make('template')
-                ->columnSpanFull()
-                ->tabs([
-                    Forms\Components\Tabs\Tab::make('General')
-                        ->icon('heroicon-o-identification')
-                        ->schema(self::generalSchema()),
+            Forms\Components\Grid::make(3)
+                ->schema([
+                    Forms\Components\Tabs::make('template')
+                        ->columnSpan(2)
+                        ->tabs([
+                            Forms\Components\Tabs\Tab::make('General')
+                                ->icon('heroicon-o-identification')
+                                ->schema(self::generalSchema()),
 
-                    Forms\Components\Tabs\Tab::make('Encabezado')
-                        ->icon('heroicon-o-document-text')
-                        ->schema(self::headerSchema()),
+                            Forms\Components\Tabs\Tab::make('Encabezado')
+                                ->icon('heroicon-o-document-text')
+                                ->schema(self::headerSchema()),
 
-                    Forms\Components\Tabs\Tab::make('Cliente')
-                        ->icon('heroicon-o-user')
-                        ->schema(self::customerSchema()),
+                            Forms\Components\Tabs\Tab::make('Cliente')
+                                ->icon('heroicon-o-user')
+                                ->schema(self::customerSchema()),
 
-                    Forms\Components\Tabs\Tab::make('Líneas (productos)')
-                        ->icon('heroicon-o-list-bullet')
-                        ->schema(self::linesSchema()),
+                            Forms\Components\Tabs\Tab::make('Líneas (productos)')
+                                ->icon('heroicon-o-list-bullet')
+                                ->schema(self::linesSchema()),
 
-                    Forms\Components\Tabs\Tab::make('Totales')
-                        ->icon('heroicon-o-calculator')
-                        ->schema(self::totalsSchema()),
+                            Forms\Components\Tabs\Tab::make('Totales')
+                                ->icon('heroicon-o-calculator')
+                                ->schema(self::totalsSchema()),
 
-                    Forms\Components\Tabs\Tab::make('Pie de página')
-                        ->icon('heroicon-o-chevron-down')
-                        ->schema(self::footerSchema()),
+                            Forms\Components\Tabs\Tab::make('Pie de página')
+                                ->icon('heroicon-o-chevron-down')
+                                ->schema(self::footerSchema()),
+                        ]),
+
+                    Forms\Components\Section::make('Vista previa')
+                        ->columnSpan(1)
+                        ->schema([
+                            Forms\Components\View::make('filament.invoice-template-preview')
+                                ->viewData(fn (Forms\Get $get) => [
+                                    'paper_size' => $get('paper_size'),
+                                    'settings' => $get('settings') ?? [],
+                                    'footer_text' => $get('footer_text'),
+                                ]),
+                        ]),
                 ]),
         ]);
     }
@@ -84,7 +98,8 @@ class InvoiceTemplateResource extends Resource
                         ->options(InvoiceTemplate::PAPER_SIZES)
                         ->required()
                         ->native(false)
-                        ->default('pos_80'),
+                        ->default('pos_80')
+                        ->live(),
 
                     Forms\Components\TextInput::make('description')
                         ->label('Descripción')
@@ -97,7 +112,7 @@ class InvoiceTemplateResource extends Resource
 
                     Forms\Components\Toggle::make('active')
                         ->label('Activa')
-                        ->default(true),
+                        ->default(true)->live(),
                 ]),
         ];
     }
@@ -109,15 +124,15 @@ class InvoiceTemplateResource extends Resource
                 ->description('Información de la empresa que aparece arriba en el ticket.')
                 ->columns(2)
                 ->schema([
-                    Forms\Components\Toggle::make('settings.header.show_logo')->label('Logo')->default(true),
-                    Forms\Components\Toggle::make('settings.header.show_business_name')->label('Nombre comercial')->default(true),
-                    Forms\Components\Toggle::make('settings.header.show_legal_name')->label('Razón social')->default(true),
-                    Forms\Components\Toggle::make('settings.header.show_nit')->label('NIT con DV')->default(true),
-                    Forms\Components\Toggle::make('settings.header.show_address')->label('Dirección')->default(true),
-                    Forms\Components\Toggle::make('settings.header.show_phone')->label('Teléfono')->default(true),
-                    Forms\Components\Toggle::make('settings.header.show_email')->label('Email')->default(false),
-                    Forms\Components\Toggle::make('settings.header.show_location_name')->label('Nombre de la sede')->default(true),
-                    Forms\Components\Toggle::make('settings.header.show_dian_resolution')->label('Datos de la resolución DIAN')->default(true),
+                    Forms\Components\Toggle::make('settings.header.show_logo')->label('Logo')->default(true)->live(),
+                    Forms\Components\Toggle::make('settings.header.show_business_name')->label('Nombre comercial')->default(true)->live(),
+                    Forms\Components\Toggle::make('settings.header.show_legal_name')->label('Razón social')->default(true)->live(),
+                    Forms\Components\Toggle::make('settings.header.show_nit')->label('NIT con DV')->default(true)->live(),
+                    Forms\Components\Toggle::make('settings.header.show_address')->label('Dirección')->default(true)->live(),
+                    Forms\Components\Toggle::make('settings.header.show_phone')->label('Teléfono')->default(true)->live(),
+                    Forms\Components\Toggle::make('settings.header.show_email')->label('Email')->default(false)->live(),
+                    Forms\Components\Toggle::make('settings.header.show_location_name')->label('Nombre de la sede')->default(true)->live(),
+                    Forms\Components\Toggle::make('settings.header.show_dian_resolution')->label('Datos de la resolución DIAN')->default(true)->live(),
                 ]),
         ];
     }
@@ -138,22 +153,27 @@ class InvoiceTemplateResource extends Resource
                     Forms\Components\Toggle::make('settings.customer.show_name')
                         ->label('Nombre / razón social')
                         ->default(true)
+                        ->live()
                         ->disabled(fn (Forms\Get $get) => ! $get('settings.customer.show')),
                     Forms\Components\Toggle::make('settings.customer.show_document')
                         ->label('Documento (CC/NIT)')
                         ->default(true)
+                        ->live()
                         ->disabled(fn (Forms\Get $get) => ! $get('settings.customer.show')),
                     Forms\Components\Toggle::make('settings.customer.show_address')
                         ->label('Dirección')
                         ->default(false)
+                        ->live()
                         ->disabled(fn (Forms\Get $get) => ! $get('settings.customer.show')),
                     Forms\Components\Toggle::make('settings.customer.show_phone')
                         ->label('Teléfono')
                         ->default(false)
+                        ->live()
                         ->disabled(fn (Forms\Get $get) => ! $get('settings.customer.show')),
                     Forms\Components\Toggle::make('settings.customer.show_email')
                         ->label('Email')
                         ->default(false)
+                        ->live()
                         ->disabled(fn (Forms\Get $get) => ! $get('settings.customer.show')),
                 ]),
         ];
@@ -166,14 +186,14 @@ class InvoiceTemplateResource extends Resource
                 ->description('Qué información aparece en cada línea de la factura.')
                 ->columns(2)
                 ->schema([
-                    Forms\Components\Toggle::make('settings.lines.show_code')->label('Código')->default(true),
-                    Forms\Components\Toggle::make('settings.lines.show_barcode')->label('Código de barras')->default(false),
-                    Forms\Components\Toggle::make('settings.lines.show_description')->label('Descripción')->default(true),
-                    Forms\Components\Toggle::make('settings.lines.show_quantity')->label('Cantidad')->default(true),
-                    Forms\Components\Toggle::make('settings.lines.show_unit_price')->label('Precio unitario')->default(true),
-                    Forms\Components\Toggle::make('settings.lines.show_discount')->label('Descuento')->default(true),
-                    Forms\Components\Toggle::make('settings.lines.show_tax')->label('Impuesto por línea')->default(false),
-                    Forms\Components\Toggle::make('settings.lines.show_total')->label('Total línea')->default(true),
+                    Forms\Components\Toggle::make('settings.lines.show_code')->label('Código')->default(true)->live(),
+                    Forms\Components\Toggle::make('settings.lines.show_barcode')->label('Código de barras')->default(false)->live(),
+                    Forms\Components\Toggle::make('settings.lines.show_description')->label('Descripción')->default(true)->live(),
+                    Forms\Components\Toggle::make('settings.lines.show_quantity')->label('Cantidad')->default(true)->live(),
+                    Forms\Components\Toggle::make('settings.lines.show_unit_price')->label('Precio unitario')->default(true)->live(),
+                    Forms\Components\Toggle::make('settings.lines.show_discount')->label('Descuento')->default(true)->live(),
+                    Forms\Components\Toggle::make('settings.lines.show_tax')->label('Impuesto por línea')->default(false)->live(),
+                    Forms\Components\Toggle::make('settings.lines.show_total')->label('Total línea')->default(true)->live(),
                 ]),
         ];
     }
@@ -184,12 +204,12 @@ class InvoiceTemplateResource extends Resource
             Forms\Components\Section::make('Totales y pagos')
                 ->columns(2)
                 ->schema([
-                    Forms\Components\Toggle::make('settings.totals.show_subtotal')->label('Subtotal')->default(true),
-                    Forms\Components\Toggle::make('settings.totals.show_discount')->label('Descuento total')->default(true),
-                    Forms\Components\Toggle::make('settings.totals.show_tax_breakdown')->label('Desglose de impuestos')->default(true),
-                    Forms\Components\Toggle::make('settings.totals.show_total')->label('Total a pagar')->default(true),
-                    Forms\Components\Toggle::make('settings.totals.show_paid')->label('Pagado')->default(true),
-                    Forms\Components\Toggle::make('settings.totals.show_change')->label('Vuelto')->default(true),
+                    Forms\Components\Toggle::make('settings.totals.show_subtotal')->label('Subtotal')->default(true)->live(),
+                    Forms\Components\Toggle::make('settings.totals.show_discount')->label('Descuento total')->default(true)->live(),
+                    Forms\Components\Toggle::make('settings.totals.show_tax_breakdown')->label('Desglose de impuestos')->default(true)->live(),
+                    Forms\Components\Toggle::make('settings.totals.show_total')->label('Total a pagar')->default(true)->live(),
+                    Forms\Components\Toggle::make('settings.totals.show_paid')->label('Pagado')->default(true)->live(),
+                    Forms\Components\Toggle::make('settings.totals.show_change')->label('Vuelto')->default(true)->live(),
                 ]),
         ];
     }
@@ -200,11 +220,11 @@ class InvoiceTemplateResource extends Resource
             Forms\Components\Section::make('Información de pie de página')
                 ->columns(2)
                 ->schema([
-                    Forms\Components\Toggle::make('settings.footer.show_qr_dian')->label('QR DIAN')->default(true),
-                    Forms\Components\Toggle::make('settings.footer.show_cufe')->label('CUFE')->default(true),
-                    Forms\Components\Toggle::make('settings.footer.show_resolution_info')->label('Datos de la resolución')->default(true),
-                    Forms\Components\Toggle::make('settings.footer.show_seller')->label('Nombre del vendedor / cajero')->default(true),
-                    Forms\Components\Toggle::make('settings.footer.show_thanks')->label('Mensaje de agradecimiento')->default(true),
+                    Forms\Components\Toggle::make('settings.footer.show_qr_dian')->label('QR DIAN')->default(true)->live(),
+                    Forms\Components\Toggle::make('settings.footer.show_cufe')->label('CUFE')->default(true)->live(),
+                    Forms\Components\Toggle::make('settings.footer.show_resolution_info')->label('Datos de la resolución')->default(true)->live(),
+                    Forms\Components\Toggle::make('settings.footer.show_seller')->label('Nombre del vendedor / cajero')->default(true)->live(),
+                    Forms\Components\Toggle::make('settings.footer.show_thanks')->label('Mensaje de agradecimiento')->default(true)->live(),
                 ]),
 
             Forms\Components\Section::make('Texto libre de pie')
@@ -214,7 +234,8 @@ class InvoiceTemplateResource extends Resource
                         ->label('Texto')
                         ->rows(4)
                         ->maxLength(500)
-                        ->placeholder('Gracias por tu compra. Cambios y devoluciones dentro de los 8 días con factura.'),
+                        ->placeholder('Gracias por tu compra. Cambios y devoluciones dentro de los 8 días con factura.')
+                        ->live(onBlur: true),
                 ]),
         ];
     }
@@ -265,7 +286,7 @@ class InvoiceTemplateResource extends Resource
                 Tables\Filters\SelectFilter::make('paper_size')
                     ->label('Papel')
                     ->options(InvoiceTemplate::PAPER_SIZES),
-                Tables\Filters\TernaryFilter::make('active')->label('Activa')->default(true),
+                Tables\Filters\TernaryFilter::make('active')->label('Activa')->default(true)->live(),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
