@@ -218,7 +218,6 @@ class DianSettings extends Page implements HasForms
         });
 
         $config = $this->config()->refresh();
-        $municipality = Municipality::find($config->dian_municipality_id);
 
         $payload = [
             'type_document_identification_id' => $config->dian_document_type_id,
@@ -227,9 +226,9 @@ class DianSettings extends Page implements HasForms
             'type_liability_id' => $config->dian_tax_liability_id,
             'business_name' => $company->legal_name ?: $company->name,
             'merchant_registration' => $config->merchant_registration ?: '0000000-00',
-            'municipality_id' => $municipality?->codefacturador,
+            'municipality_id' => $config->dian_municipality_id,
             'address' => $company->address ?: 'Sin dirección',
-            'phone' => $company->phone ?: '0000000',
+            'phone' => (int) preg_replace('/\D/', '', (string) ($company->phone ?: '0')),
             'email' => $company->email ?: 'sin@email.com',
         ];
 

@@ -30,9 +30,9 @@ class DianApiClient
      * Tab 1 — Datos de la empresa.
      * Registra/actualiza la empresa contra el API. La URL incluye NIT y DV en path.
      *
-     * IMPORTANTE: este endpoint usa el master token de Tecmax (DIAN_MASTER_TOKEN
-     * en .env) — el token per-company aún no existe, lo retorna esta misma
-     * llamada en data.token y se persiste para usarlo en todos los demás endpoints.
+     * IMPORTANTE: este endpoint NO requiere auth. El API retorna el token
+     * per-company en la respuesta y se persiste para usarlo en todos los demás
+     * endpoints (Software, Certificado, Resoluciones, Pruebas).
      *
      * @param  string  $document  NIT sin DV ni separadores
      * @param  string|int  $dv  Dígito de verificación
@@ -43,7 +43,7 @@ class DianApiClient
             'post',
             "/api/ubl2.1/config/{$document}/{$dv}",
             $payload,
-            useMasterToken: true,
+            authenticated: false,
         );
     }
 
@@ -97,26 +97,27 @@ class DianApiClient
         return $this->request('post', "/api/ubl2.1/invoice/{$testSetId}", $payload);
     }
 
-    protected function client(bool $useMasterToken = false): PendingRequest
+    protected function client(bool $authenticated = true): PendingRequest
     {
-        $token = $useMasterToken
-            ? (string) config('services.dian.master_token')
-            : (string) ($this->config->api_token ?? '');
-
         $baseUrl = $this->config->api_url ?: config('services.dian.api_url');
 
-        return Http::baseUrl(rtrim($baseUrl, '/'))
-            ->withToken($token)
+        $client = Http::baseUrl(rtrim($baseUrl, '/'))
             ->acceptJson()
             ->timeout(60)
             ->connectTimeout(15);
+
+        if ($authenticated && $this->config->api_token) {
+            $client = $client->withToken($this->config->api_token);
+        }
+
+        return $client;
     }
 
-    protected function request(string $method, string $endpoint, array $payload, bool $useMasterToken = false): array
+    protected function request(string $method, string $endpoint, array $payload, bool $authenticated = true): array
     {
         try {
             /** @var Response $response */
-            $response = $this->client($useMasterToken)->{$method}($endpoint, $payload);
+            $response = $this->client($authenticated)->{$method}($endpoint, $payload);
 
             $data = $response->json() ?? [];
 
