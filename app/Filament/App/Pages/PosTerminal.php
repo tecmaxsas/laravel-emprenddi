@@ -79,6 +79,7 @@ class PosTerminal extends Page
     // UI state
     public bool $showCustomerModal = false;
     public bool $showPaymentModal = false;
+    public ?string $paymentError = null;
     public bool $showSuspendModal = false;
     public bool $showRecoverModal = false;
     public bool $showRetentionsModal = false;
@@ -388,6 +389,7 @@ class PosTerminal extends Page
             }
         }
 
+        $this->paymentError = null;
         $this->showPaymentModal = true;
     }
 
@@ -594,12 +596,14 @@ class PosTerminal extends Page
 
     public function processSale(): void
     {
+        $this->paymentError = null;
+
         if (empty($this->cart)) {
-            Notification::make()->title('Carrito vacío')->danger()->send();
+            $this->paymentError = 'Carrito vacío.';
             return;
         }
         if (! $this->location_id || ! $this->customer_id) {
-            Notification::make()->title('Faltan sede o cliente')->danger()->send();
+            $this->paymentError = 'Faltan sede o cliente.';
             return;
         }
 
@@ -607,11 +611,7 @@ class PosTerminal extends Page
         if ($this->posSettings['require_customer'] ?? false) {
             $customer = ThirdParty::find($this->customer_id);
             if ($customer && $customer->document_number === '222222222') {
-                Notification::make()
-                    ->title('Cliente obligatorio')
-                    ->body('La empresa requiere identificar al cliente — no se permite "Consumidor Final".')
-                    ->danger()
-                    ->send();
+                $this->paymentError = 'Cliente obligatorio: la empresa no permite vender a "Consumidor Final".';
                 return;
             }
         }
@@ -621,11 +621,7 @@ class PosTerminal extends Page
         // En venta a crédito (paymentMode='credit'), no exigimos pagos.
         // Comparamos contra net_payable (descontadas retenciones), no contra total.
         if ($this->paymentMode !== 'credit' && $totals['paid'] + 0.01 < $totals['net_payable']) {
-            Notification::make()
-                ->title('Pagos insuficientes')
-                ->body('Falta cubrir $'.number_format($totals['remaining'], 2).'.')
-                ->danger()
-                ->send();
+            $this->paymentError = 'Pagos insuficientes. Falta cubrir $'.number_format($totals['remaining'], 2).'.';
             return;
         }
 
@@ -727,6 +723,10 @@ class PosTerminal extends Page
             $this->resetCart();
             $this->showPaymentModal = false;
         } catch (\Throwable $e) {
+            // Mostramos el error DENTRO del modal de cobro para que el
+            // cajero lo vea inmediatamente sin tener que cerrar el modal.
+            // El toast queda como redundancia por si el modal ya se cerró.
+            $this->paymentError = $e->getMessage();
             Notification::make()
                 ->title('Error al procesar la venta')
                 ->body($e->getMessage())
@@ -951,6 +951,7 @@ class PosTerminal extends Page
     {
         $this->showPaymentModal = false;
         $this->payments = [];
+        $this->paymentError = null;
     }
 
     // ================================================================

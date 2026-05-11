@@ -147,6 +147,16 @@
         .pos-banner-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; opacity: 0.9; }
         .pos-banner-value { font-size: 32px; font-weight: 800; letter-spacing: -0.025em; margin-top: 2px; }
 
+        /* Banner inline de error dentro de modales — alto contraste en ambos temas. */
+        .pos-error-banner {
+            border-radius: 12px; padding: 12px 14px;
+            background: #fef2f2; border: 1px solid #fecaca; color: #991b1b;
+            animation: pos-slide-up 200ms cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        :is(.dark) .pos-error-banner {
+            background: #450a0a; border-color: #7f1d1d; color: #fecaca;
+        }
+
         .pos-cart-item { animation: pos-slide-up 220ms cubic-bezier(0.16, 1, 0.3, 1); }
         .pos-product-card:active { transform: scale(0.96); }
         .pos-product-card { transition: transform 120ms ease, box-shadow 200ms ease, border-color 150ms ease; }
@@ -685,6 +695,20 @@
                 </div>
 
                 <div class="pos-modal-body">
+                    @if ($paymentError)
+                        <div class="pos-error-banner" role="alert">
+                            <div style="display:flex; gap:10px; align-items:flex-start;">
+                                <span style="font-size:18px; line-height:1;">⚠️</span>
+                                <div style="flex:1; min-width:0;">
+                                    <div style="font-weight:600; font-size:13px; margin-bottom:2px;">No se pudo procesar la venta</div>
+                                    <div style="font-size:12px; line-height:1.45; word-break:break-word;">{{ $paymentError }}</div>
+                                </div>
+                                <button type="button" wire:click="$set('paymentError', null)"
+                                        style="background:transparent; border:0; cursor:pointer; font-size:18px; line-height:1; padding:0 4px; color:inherit; opacity:0.7;">×</button>
+                            </div>
+                        </div>
+                    @endif
+
                     {{-- Total grande — net_payable cuando hay retenciones --}}
                     <div class="pos-banner">
                         <div class="pos-banner-label">
