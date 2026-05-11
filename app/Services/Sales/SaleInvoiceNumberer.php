@@ -20,10 +20,17 @@ class SaleInvoiceNumberer
     public function next(Company $company, string $prefix = 'FV'): int
     {
         return DB::transaction(function () use ($company, $prefix) {
+            // Postgres no permite FOR UPDATE sobre aggregates; usamos
+            // advisory lock por (company, prefix) — se libera con la tx.
+            $isPg = DB::connection()->getDriverName() === 'pgsql';
+            if ($isPg) {
+                DB::statement('SELECT pg_advisory_xact_lock(?)', [crc32('si:'.$company->id.':'.$prefix)]);
+            }
+
             $last = SaleInvoice::withoutGlobalScopes()
                 ->where('company_id', $company->id)
                 ->where('prefix', $prefix)
-                ->lockForUpdate()
+                ->when(! $isPg, fn ($q) => $q->lockForUpdate())
                 ->max('number');
 
             return ((int) $last) + 1;

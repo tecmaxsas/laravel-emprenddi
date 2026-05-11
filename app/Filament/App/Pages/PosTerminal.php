@@ -20,6 +20,7 @@ use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\On;
 
 /**
@@ -723,17 +724,79 @@ class PosTerminal extends Page
             $this->resetCart();
             $this->showPaymentModal = false;
         } catch (\Throwable $e) {
-            // Mostramos el error DENTRO del modal de cobro para que el
-            // cajero lo vea inmediatamente sin tener que cerrar el modal.
-            // El toast queda como redundancia por si el modal ya se cerró.
-            $this->paymentError = $e->getMessage();
+            // Loggeamos el detalle técnico (para soporte) y mostramos al
+            // cajero un mensaje legible dentro del modal — los SQLSTATE,
+            // stack traces y nombres de columna NO deben llegar al usuario.
+            Log::error('POS processSale failed', [
+                'company_id' => Auth::user()?->company_id,
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+                'cart_lines' => count($this->cart),
+                'payments' => count($this->payments),
+            ]);
+
+            $this->paymentError = $this->friendlyError($e);
             Notification::make()
                 ->title('Error al procesar la venta')
-                ->body($e->getMessage())
+                ->body($this->paymentError)
                 ->danger()
                 ->persistent()
                 ->send();
         }
+    }
+
+    /**
+     * Traduce excepciones técnicas a mensajes que el cajero pueda entender.
+     * Los detalles (SQLSTATE, stack, query) van al log, no al usuario.
+     */
+    protected function friendlyError(\Throwable $e): string
+    {
+        $msg = $e->getMessage();
+
+        if ($e instanceof \Illuminate\Database\QueryException) {
+            // Por código SQLSTATE estándar
+            if (str_contains($msg, '23505') || str_contains($msg, 'Duplicate entry') || str_contains($msg, 'unique')) {
+                return 'Ese número de factura ya existe. Vuelve a intentarlo — el sistema asignará uno nuevo.';
+            }
+            if (str_contains($msg, '23503') || str_contains($msg, 'foreign key')) {
+                return 'Faltan datos relacionados (cliente, producto o impuesto no válido). Revisa los ítems del carrito.';
+            }
+            if (str_contains($msg, '23502') || str_contains($msg, 'not-null')) {
+                return 'Hay campos obligatorios sin completar. Revisa cliente, sede y productos del carrito.';
+            }
+            if (str_contains($msg, 'deadlock') || str_contains($msg, '40P01')) {
+                return 'Conflicto con otra venta en proceso. Espera un momento y vuelve a intentar.';
+            }
+            if (str_contains($msg, 'Connection') || str_contains($msg, 'could not find driver') || str_contains($msg, 'server has gone away')) {
+                return 'Se perdió la conexión con la base de datos. Reintenta en unos segundos.';
+            }
+            return 'Error de base de datos al guardar la venta. Reintenta — si persiste, contacta soporte.';
+        }
+
+        if ($e instanceof \Illuminate\Validation\ValidationException) {
+            $errors = collect($e->errors())->flatten()->take(3)->all();
+            return implode(' · ', $errors);
+        }
+
+        if ($e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException) {
+            return 'Un recurso necesario para la venta ya no existe (cliente, producto o sede eliminada). Recarga el POS.';
+        }
+
+        // RuntimeException / DomainException / etc. — los mensajes que lanzamos
+        // nosotros desde services suelen ser ya legibles.
+        if ($e instanceof \RuntimeException || $e instanceof \DomainException || $e instanceof \InvalidArgumentException) {
+            return $msg ?: 'No se pudo completar la operación.';
+        }
+
+        // Fallback: limpiar prefijos técnicos comunes y truncar.
+        $clean = preg_replace('/SQLSTATE\[[^\]]+\][:\s]*/i', '', $msg);
+        $clean = preg_replace('/\s*\(Connection:[^)]*\)\s*$/i', '', (string) $clean);
+        $clean = preg_replace('/\s*\(SQL:.*$/s', '', (string) $clean);
+        $clean = trim((string) $clean);
+        if ($clean === '') {
+            return 'Error inesperado al procesar la venta. Reintenta o contacta soporte.';
+        }
+        return mb_strlen($clean) > 220 ? mb_substr($clean, 0, 220).'…' : $clean;
     }
 
     public function saveDraft(): void

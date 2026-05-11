@@ -11,10 +11,15 @@ class QuotationNumberer
     public function next(Company $company, string $prefix = 'COT'): int
     {
         return DB::transaction(function () use ($company, $prefix) {
+            $isPg = DB::connection()->getDriverName() === 'pgsql';
+            if ($isPg) {
+                DB::statement('SELECT pg_advisory_xact_lock(?)', [crc32('qt:'.$company->id.':'.$prefix)]);
+            }
+
             $last = Quotation::withoutGlobalScopes()
                 ->where('company_id', $company->id)
                 ->where('prefix', $prefix)
-                ->lockForUpdate()
+                ->when(! $isPg, fn ($q) => $q->lockForUpdate())
                 ->max('number');
 
             return ((int) $last) + 1;
