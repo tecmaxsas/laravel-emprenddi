@@ -25,9 +25,28 @@ class RolesSeeder extends Seeder
         foreach ($roles as $name) {
             $role = Role::firstOrCreate(['name' => $name, 'guard_name' => 'web']);
 
-            $permissions = PermissionsCatalog::defaultForRole($name);
-            // syncPermissions reemplaza el set actual — idempotente.
-            $role->syncPermissions($permissions);
+            $defaultPermissions = PermissionsCatalog::defaultForRole($name);
+
+            if ($role->wasRecentlyCreated) {
+                // Rol recien creado: asignar todo el set default.
+                $role->syncPermissions($defaultPermissions);
+            } else {
+                // Rol ya existia: NO pisar permisos custom del admin.
+                // Solo agregar los permisos default que el rol todavia no tiene.
+                // Esto resuelve el problema de que un deploy nuevo (con permisos
+                // nuevos en el catalog) revierta personalizaciones manuales.
+                $existing = $role->permissions->pluck('name')->all();
+                $toAdd = array_diff($defaultPermissions, $existing);
+                if (! empty($toAdd)) {
+                    $role->givePermissionTo($toAdd);
+                }
+                // Para 'admin' especificamente: garantizar que tenga TODO,
+                // porque admin debe siempre tener acceso completo aunque
+                // alguien lo haya restringido por error.
+                if ($name === 'admin') {
+                    $role->syncPermissions(PermissionsCatalog::all());
+                }
+            }
         }
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
