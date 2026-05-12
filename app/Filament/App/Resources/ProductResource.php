@@ -476,6 +476,7 @@ class ProductResource extends Resource
     {
         return [
             ProductResource\RelationManagers\VariantsRelationManager::class,
+            ProductResource\RelationManagers\LocationsRelationManager::class,
         ];
     }
 
