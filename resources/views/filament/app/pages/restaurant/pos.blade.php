@@ -107,8 +107,8 @@
                         </div>
                     </div>
                     <button type="button" wire:click="closeOrderPanel"
-                            style="width:32px; height:32px; border-radius:8px; background:#f3f4f6; border:0; cursor:pointer; font-size:18px;"
-                            class="dark:!bg-gray-800 dark:!text-gray-200">×</button>
+                            title="Cerrar panel (la orden queda guardada)"
+                            style="width:36px; height:36px; border-radius:8px; background:#ef4444; color:#ffffff; border:0; cursor:pointer; font-size:20px; font-weight:700; line-height:1; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 2px 4px rgba(0,0,0,0.15);">×</button>
                 </div>
 
                 {{-- Lista de items --}}
@@ -185,19 +185,66 @@
                 </div>
 
                 {{-- Acciones --}}
-                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
-                    <button type="button" wire:click="sendToKitchen"
-                            @disabled($order->items->where('kitchen_status', 'pending')->isEmpty())
-                            style="padding:10px; border-radius:8px; background:#3b82f6; color:white; border:0; font-weight:700; cursor:pointer; font-size:13px;"
-                            wire:loading.attr="disabled"
-                            wire:target="sendToKitchen">
-                        <span wire:loading.remove wire:target="sendToKitchen">📨 Enviar a cocina</span>
-                        <span wire:loading wire:target="sendToKitchen">Enviando...</span>
-                    </button>
-                    <button type="button" wire:click="cancelOrder" wire:confirm="¿Cancelar la orden completa? Esta acción libera la mesa."
-                            style="padding:10px; border-radius:8px; background:#fee2e2; color:#991b1b; border:0; font-weight:600; cursor:pointer; font-size:13px;">
-                        Cancelar orden
-                    </button>
+                <div x-data="{ confirmCancel: false }">
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+                        <button type="button" wire:click="sendToKitchen"
+                                @disabled($order->items->where('kitchen_status', 'pending')->isEmpty())
+                                style="padding:10px; border-radius:8px; background:#3b82f6; color:white; border:0; font-weight:700; cursor:pointer; font-size:13px;"
+                                wire:loading.attr="disabled"
+                                wire:target="sendToKitchen">
+                            <span wire:loading.remove wire:target="sendToKitchen">📨 Enviar a cocina</span>
+                            <span wire:loading wire:target="sendToKitchen">Enviando...</span>
+                        </button>
+                        <button type="button" @click="confirmCancel = true"
+                                style="padding:10px; border-radius:8px; background:#fee2e2; color:#991b1b; border:0; font-weight:600; cursor:pointer; font-size:13px;">
+                            Cancelar orden
+                        </button>
+                    </div>
+
+                    {{-- Modal de confirmación estilo Filament/SweetAlert --}}
+                    <div x-show="confirmCancel"
+                         x-cloak
+                         x-transition.opacity
+                         @click.self="confirmCancel = false"
+                         @keydown.escape.window="confirmCancel = false"
+                         style="position:fixed; inset:0; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; padding:20px; z-index:100;">
+                        <div @click.stop
+                             style="background:#ffffff; border-radius:14px; padding:24px; max-width:420px; width:100%; box-shadow:0 20px 50px rgba(0,0,0,0.3); animation: rposModal 200ms ease-out;"
+                             class="dark:!bg-gray-900">
+                            <style>
+                                @keyframes rposModal {
+                                    from { opacity:0; transform: translateY(-10px) scale(0.95); }
+                                    to { opacity:1; transform: translateY(0) scale(1); }
+                                }
+                            </style>
+                            <div style="display:flex; gap:14px; align-items:flex-start;">
+                                <div style="flex-shrink:0; width:48px; height:48px; border-radius:50%; background:#fee2e2; display:flex; align-items:center; justify-content:center;">
+                                    <svg style="width:26px; height:26px; color:#dc2626;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"/>
+                                    </svg>
+                                </div>
+                                <div style="flex:1;">
+                                    <h3 style="font-size:18px; font-weight:700; margin:0; color:#111827;" class="dark:!text-gray-100">
+                                        ¿Cancelar la orden?
+                                    </h3>
+                                    <p style="font-size:14px; color:#6b7280; margin:8px 0 0; line-height:1.5;" class="dark:!text-gray-400">
+                                        Esta acción libera la mesa <strong>{{ $order->table?->code ?? '—' }}</strong> y marca la orden como anulada. No se podrá deshacer.
+                                    </p>
+                                </div>
+                            </div>
+                            <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:20px;">
+                                <button type="button" @click="confirmCancel = false"
+                                        style="padding:10px 16px; border-radius:8px; background:#f3f4f6; color:#374151; border:0; font-weight:600; cursor:pointer; font-size:13px;"
+                                        class="dark:!bg-gray-800 dark:!text-gray-200">
+                                    Mantener orden
+                                </button>
+                                <button type="button" @click="confirmCancel = false; $wire.cancelOrder()"
+                                        style="padding:10px 16px; border-radius:8px; background:#dc2626; color:white; border:0; font-weight:600; cursor:pointer; font-size:13px;">
+                                    Sí, cancelar orden
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 {{-- Catálogo de productos --}}
@@ -231,7 +278,7 @@
                             <button type="button" wire:click="addProduct({{ $p->id }})" class="rpos-catalog-btn">
                                 <div style="font-weight:600; font-size:12px; line-height:1.3;">{{ $p->name }}</div>
                                 <div style="font-size:11px; color:#10b981; font-weight:700; margin-top:2px;">
-                                    ${{ number_format((float) $p->sale_price, 0, ',', '.') }}
+                                    ${{ number_format((float) $p->default_sale_price, 0, ',', '.') }}
                                 </div>
                             </button>
                         @empty

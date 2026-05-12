@@ -96,7 +96,9 @@ class RestaurantOrderEngine
             : null;
         $taxRate = $tax ? (float) $tax->rate : 0.0;
 
-        $unitPrice = (float) ($product->sale_price ?? 0);
+        // priceForLocation() respeta override por sede; cae a default_sale_price.
+        $location = $order->location_id ? \App\Models\Location::find($order->location_id) : null;
+        $unitPrice = (float) $product->priceForLocation($location);
         $subtotal = round($quantity * $unitPrice, 2);
         $taxAmount = round($subtotal * $taxRate / 100, 2);
         $total = round($subtotal + $taxAmount, 2);
