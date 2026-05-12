@@ -120,25 +120,36 @@
     {{-- ============================================================ --}}
     {{-- LEYENDA                                                       --}}
     {{-- ============================================================ --}}
-    <div style="margin-top:16px; padding:14px 16px; border-radius:8px; background:#f3f4f6; font-size:13px; display:flex; flex-wrap:wrap; gap:16px; align-items:center;"
-         class="dark:!bg-gray-900">
-        <strong style="color:#111827;" class="dark:!text-gray-100">Estados:</strong>
-        <span style="display:inline-flex; align-items:center; gap:6px;">
-            <span style="display:inline-block; width:14px; height:14px; background:#10b981; border-radius:3px;"></span> Libre
+    <div style="margin-top:16px; padding:14px 16px; border-radius:8px; background:#f3f4f6; border:1px solid #e5e7eb; font-size:13px; display:flex; flex-wrap:wrap; gap:18px; align-items:center; color:#111827;"
+         class="dark:!bg-gray-900 dark:!border-gray-800 dark:!text-gray-100">
+        <strong style="font-size:13px;">Estados:</strong>
+
+        <span style="display:inline-flex; align-items:center; gap:8px; font-weight:500;">
+            <span style="display:inline-block; width:16px; height:16px; background:#10b981; border-radius:4px; box-shadow:0 1px 2px rgba(0,0,0,0.15);"></span>
+            Libre
         </span>
-        <span style="display:inline-flex; align-items:center; gap:6px;">
-            <span style="display:inline-block; width:14px; height:14px; background:#f59e0b; border-radius:3px;"></span> Ocupada
+
+        <span style="display:inline-flex; align-items:center; gap:8px; font-weight:500;">
+            <span style="display:inline-block; width:16px; height:16px; background:#f59e0b; border-radius:4px; box-shadow:0 1px 2px rgba(0,0,0,0.15);"></span>
+            Ocupada
         </span>
-        <span style="display:inline-flex; align-items:center; gap:6px;">
-            <span style="display:inline-block; width:14px; height:14px; background:#3b82f6; border-radius:3px;"></span> Cuenta
+
+        <span style="display:inline-flex; align-items:center; gap:8px; font-weight:500;">
+            <span style="display:inline-block; width:16px; height:16px; background:#3b82f6; border-radius:4px; box-shadow:0 1px 2px rgba(0,0,0,0.15);"></span>
+            Cuenta
         </span>
-        <span style="display:inline-flex; align-items:center; gap:6px;">
-            <span style="display:inline-block; width:14px; height:14px; background:#a855f7; border-radius:3px;"></span> Reservada
+
+        <span style="display:inline-flex; align-items:center; gap:8px; font-weight:500;">
+            <span style="display:inline-block; width:16px; height:16px; background:#a855f7; border-radius:4px; box-shadow:0 1px 2px rgba(0,0,0,0.15);"></span>
+            Reservada
         </span>
-        <span style="display:inline-flex; align-items:center; gap:6px;">
-            <span style="display:inline-block; width:14px; height:14px; background:#6b7280; border-radius:3px;"></span> Limpieza
+
+        <span style="display:inline-flex; align-items:center; gap:8px; font-weight:500;">
+            <span style="display:inline-block; width:16px; height:16px; background:#6b7280; border-radius:4px; box-shadow:0 1px 2px rgba(0,0,0,0.15);"></span>
+            Limpieza
         </span>
-        <span style="margin-left:auto; color:#6b7280; font-size:12px;" class="dark:!text-gray-400">
+
+        <span style="margin-left:auto; font-size:12px; opacity:0.7; font-style:italic;">
             Borde = color de la zona
         </span>
     </div>
