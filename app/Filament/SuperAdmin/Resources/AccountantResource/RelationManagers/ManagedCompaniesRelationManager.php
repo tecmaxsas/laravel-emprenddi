@@ -8,6 +8,7 @@ use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Facades\Auth;
 
 class ManagedCompaniesRelationManager extends RelationManager
@@ -67,10 +68,22 @@ class ManagedCompaniesRelationManager extends RelationManager
                         Forms\Components\Toggle::make('active')->label('Activa')->default(true),
                         Forms\Components\Textarea::make('notes')->label('Notas')->rows(2),
                     ])
-                    ->mutateFormDataUsing(function (array $data) {
-                        $data['granted_at'] = now();
-                        $data['granted_by_user_id'] = Auth::id();
-                        return $data;
+                    // using() nos da control total sobre el insert al pivot —
+                    // evitamos problemas de orden/serialización de fechas y
+                    // garantizamos que granted_at y granted_by_user_id queden
+                    // siempre rellenados con valores válidos.
+                    ->using(function (BelongsToMany $relationship, array $data) {
+                        $recordId = $data['recordId'] ?? null;
+                        if (! $recordId) return;
+
+                        $relationship->syncWithoutDetaching([
+                            $recordId => [
+                                'active' => (bool) ($data['active'] ?? true),
+                                'notes' => $data['notes'] ?? null,
+                                'granted_at' => now(),
+                                'granted_by_user_id' => Auth::id(),
+                            ],
+                        ]);
                     }),
             ])
             ->actions([
