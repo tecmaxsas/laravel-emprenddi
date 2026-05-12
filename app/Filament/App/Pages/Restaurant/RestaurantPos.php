@@ -179,11 +179,18 @@ class RestaurantPos extends Page
             $this->modifierSelections = [];
             $this->modifierItemNote = '';
 
-            // Pre-seleccionar opciones default si solo hay una en el grupo
-            // (UX: si el grupo tiene una sola opción, marcarla)
+            // Inicializar el slot de cada grupo segun su tipo. Livewire necesita
+            // saber que checkbox-group es array para hacer push/pop; si queda
+            // como null o escalar trata a todos los inputs como un toggle compartido.
             foreach ($product->modifierGroups()->with(['modifiers' => fn ($q) => $q->where('active', true)])->get() as $group) {
-                if ($group->modifiers->count() === 1 && $group->isSingleSelect()) {
-                    $this->modifierSelections[$group->id] = (int) $group->modifiers->first()->id;
+                if ($group->isSingleSelect()) {
+                    // Radio: pre-seleccionar si solo hay una opcion; sino null.
+                    $this->modifierSelections[$group->id] = $group->modifiers->count() === 1
+                        ? (int) $group->modifiers->first()->id
+                        : null;
+                } else {
+                    // Checkbox: array vacio. Livewire ira anadiendo IDs al marcar.
+                    $this->modifierSelections[$group->id] = [];
                 }
             }
             return;
