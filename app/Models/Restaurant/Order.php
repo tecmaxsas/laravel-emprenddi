@@ -67,6 +67,7 @@ class Order extends Model
         'third_party_id',
         'prefix',
         'number',
+        'tracking_token',
         'guests',
         'status',
         'opened_at',

@@ -162,6 +162,7 @@ class RestaurantOrderEngine
                 'server_user_id' => Auth::id(),
                 'prefix' => 'ORD',
                 'number' => $this->numberer->next($company, 'ORD'),
+                'tracking_token' => \Illuminate\Support\Str::random(32),
                 'guests' => max(1, $guests),
                 'status' => Order::STATUS_OPEN,
                 'opened_at' => now(),

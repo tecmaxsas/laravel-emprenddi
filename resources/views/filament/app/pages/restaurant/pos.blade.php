@@ -281,6 +281,32 @@
                                 @if ((float) $order->delivery_fee > 0)
                                     <div style="margin-top:4px;">Costo envío: <strong>${{ number_format((float) $order->delivery_fee, 0, ',', '.') }}</strong></div>
                                 @endif
+
+                                {{-- URL de tracking público --}}
+                                @if ($order->tracking_token)
+                                    @php $trackUrl = route('delivery.track', ['token' => $order->tracking_token]); @endphp
+                                    <div style="margin-top:6px; padding-top:6px; border-top:1px dashed #c4b5fd;">
+                                        <div style="font-size:10px; color:#5b21b6; font-weight:700; text-transform:uppercase; margin-bottom:4px;">📲 Link de seguimiento</div>
+                                        <div style="display:flex; gap:6px; align-items:center;">
+                                            <input type="text" readonly value="{{ $trackUrl }}"
+                                                   onclick="this.select()"
+                                                   style="flex:1; padding:5px 8px; border-radius:4px; border:1px solid #c4b5fd; font-size:10px; font-family:monospace; background:#ffffff; color:#374151;" />
+                                            <button type="button"
+                                                    onclick="navigator.clipboard.writeText('{{ $trackUrl }}'); this.textContent='✓'; setTimeout(()=>this.textContent='Copiar',1500)"
+                                                    style="padding:5px 8px; background:#7c3aed; color:white; border:0; border-radius:4px; font-size:10px; font-weight:700; cursor:pointer; white-space:nowrap;">
+                                                Copiar
+                                            </button>
+                                            <a href="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={{ urlencode($trackUrl) }}"
+                                               target="_blank"
+                                               style="padding:5px 8px; background:#ffffff; color:#5b21b6; border:1px solid #c4b5fd; border-radius:4px; font-size:10px; font-weight:700; text-decoration:none;">
+                                                QR
+                                            </a>
+                                        </div>
+                                        <div style="font-size:10px; color:#6b7280; margin-top:3px; line-height:1.4;">
+                                            Envialo al cliente por WhatsApp para que siga su pedido en vivo.
+                                        </div>
+                                    </div>
+                                @endif
                             </div>
                         @endif
                     </div>
