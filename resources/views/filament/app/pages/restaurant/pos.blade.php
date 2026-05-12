@@ -39,7 +39,7 @@
         {{-- IZQUIERDA: MAPA / GRID DE MESAS                     --}}
         {{-- =================================================== --}}
         <div>
-            {{-- Filtro de zonas --}}
+            {{-- Filtro de zonas + boton para llevar --}}
             <div class="rpos-card" style="margin-bottom:14px;">
                 <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
                     <span style="font-size:13px; font-weight:600; color:#6b7280; margin-right:4px;" class="dark:!text-gray-400">Zona:</span>
@@ -56,8 +56,41 @@
                             {{ $z->name }}
                         </button>
                     @endforeach
+
+                    <button type="button" wire:click="openTakeawayPrompt"
+                            style="margin-left:auto; padding:8px 16px; border-radius:8px; background:#ea580c; color:white; border:0; font-weight:700; cursor:pointer; font-size:13px; box-shadow:0 2px 4px rgba(0,0,0,0.1);">
+                        🥡 Nueva para llevar
+                    </button>
                 </div>
             </div>
+
+            {{-- Ordenes "para llevar" activas (sin mesa) --}}
+            @php $takeawayList = $this->takeawayOrders; @endphp
+            @if ($takeawayList->isNotEmpty())
+                <div class="rpos-card" style="margin-bottom:14px; background:#fff7ed; border-color:#fed7aa;">
+                    <div style="font-size:11px; color:#9a3412; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">
+                        🥡 Para llevar / pickup activos ({{ $takeawayList->count() }})
+                    </div>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                        @foreach ($takeawayList as $to)
+                            @php
+                                $custName = $to->delivery_metadata['customer_name'] ?? null;
+                                $isActiveT = $order && $order->id === $to->id;
+                                $itemsCount = $to->items->reject(fn ($i) => $i->kitchen_status === 'cancelled')->count();
+                            @endphp
+                            <button type="button" wire:click="$set('activeOrderId', {{ $to->id }})"
+                                    style="padding:8px 12px; border-radius:8px; background:{{ $isActiveT ? '#ea580c' : '#ffffff' }}; color:{{ $isActiveT ? '#ffffff' : '#111827' }}; border:2px solid {{ $isActiveT ? '#ea580c' : '#fed7aa' }}; cursor:pointer; font-size:12px; text-align:left; min-width:130px;">
+                                <div style="font-weight:700; font-size:13px;">
+                                    {{ $custName ?: $to->fullNumber() }}
+                                </div>
+                                <div style="font-size:10px; opacity:0.85; margin-top:2px;">
+                                    {{ $itemsCount }} item(s) · ${{ number_format((float) $to->total, 0, ',', '.') }}
+                                </div>
+                            </button>
+                        @endforeach
+                    </div>
+                </div>
+            @endif
 
             {{-- Grid de mesas (no es drag-drop, este es el POS, no la config) --}}
             @if ($tables->isEmpty())
@@ -101,7 +134,12 @@
                 {{-- Header de la orden --}}
                 <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:12px; border-bottom:1px solid #e5e7eb;" class="dark:!border-gray-800">
                     <div>
-                        <div style="font-size:18px; font-weight:700;">{{ $order->table?->code ?? 'Delivery' }}</div>
+                        @php
+                            $headerTitle = $order->table?->code
+                                ?? ($order->delivery_metadata['customer_name'] ?? null)
+                                ?? ($order->is_takeaway ? '🥡 Para llevar' : 'Delivery');
+                        @endphp
+                        <div style="font-size:18px; font-weight:700;">{{ $headerTitle }}</div>
                         <div style="font-size:11px; color:#6b7280;" class="dark:!text-gray-400">
                             {{ $order->fullNumber() }} · {{ $order->guests }} pers · {{ $order->opened_at->diffForHumans() }}
                         </div>
@@ -109,6 +147,24 @@
                     <button type="button" wire:click="closeOrderPanel"
                             title="Cerrar panel (la orden queda guardada)"
                             style="width:36px; height:36px; border-radius:8px; background:#ef4444; color:#ffffff; border:0; cursor:pointer; font-size:20px; font-weight:700; line-height:1; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 2px 4px rgba(0,0,0,0.15);">×</button>
+                </div>
+
+                {{-- Modo de servicio --}}
+                <div style="display:flex; gap:6px; padding:6px; background:#f3f4f6; border-radius:8px;">
+                    @php
+                        $modeIsDineIn = ! $order->is_takeaway && ! $order->is_delivery;
+                        $modeIsTakeaway = (bool) $order->is_takeaway;
+                    @endphp
+                    <button type="button" wire:click="setServiceMode('dine_in')"
+                            @disabled(! $order->table_id)
+                            title="{{ $order->table_id ? 'Comer aquí' : 'No disponible: la orden no tiene mesa asignada' }}"
+                            style="flex:1; padding:8px; border-radius:6px; background:{{ $modeIsDineIn ? '#10b981' : 'transparent' }}; color:{{ $modeIsDineIn ? '#ffffff' : '#374151' }}; border:0; font-weight:700; cursor:{{ $order->table_id ? 'pointer' : 'not-allowed' }}; font-size:12px; opacity:{{ $order->table_id ? '1' : '0.5' }};">
+                        🍽️ Comer aquí
+                    </button>
+                    <button type="button" wire:click="setServiceMode('takeaway')"
+                            style="flex:1; padding:8px; border-radius:6px; background:{{ $modeIsTakeaway ? '#ea580c' : 'transparent' }}; color:{{ $modeIsTakeaway ? '#ffffff' : '#374151' }}; border:0; font-weight:700; cursor:pointer; font-size:12px;">
+                        🥡 Para llevar
+                    </button>
                 </div>
 
                 {{-- Ops de mesa: transferir / juntar --}}
@@ -794,6 +850,53 @@
                             @disabled(! $mergeTargetOrderId)
                             style="padding:10px 22px; background:{{ $mergeTargetOrderId ? '#3b82f6' : '#93c5fd' }}; color:white; border:0; border-radius:8px; font-weight:700; cursor:pointer;">
                         ✓ Juntar
+                    </button>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    {{-- ============ MODAL NUEVA PARA LLEVAR ============ --}}
+    @if ($takeawayModalOpen)
+        <div
+            style="position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:9999; padding:20px;"
+            wire:click.self="closeTakeawayPrompt"
+            wire:keydown.escape.window="closeTakeawayPrompt"
+        >
+            <div style="background:#ffffff; border-radius:14px; max-width:440px; width:100%; box-shadow:0 25px 50px rgba(0,0,0,0.4);">
+                <div style="padding:18px 22px; border-bottom:1px solid #e5e7eb; background:#fff7ed; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <h2 style="margin:0; font-size:18px; font-weight:700; color:#9a3412;">🥡 Nueva orden para llevar</h2>
+                        <div style="font-size:12px; color:#6b7280; margin-top:2px;">
+                            Sin mesa asignada — para pickup o llevar
+                        </div>
+                    </div>
+                    <button type="button" wire:click="closeTakeawayPrompt"
+                            style="background:transparent; border:0; cursor:pointer; padding:6px; font-size:24px; color:#6b7280; line-height:1;">×</button>
+                </div>
+
+                <div style="padding:18px 22px; color:#111827;">
+                    <label style="display:block; font-size:13px; font-weight:700; color:#111827; margin-bottom:6px;">
+                        Nombre del cliente (opcional)
+                    </label>
+                    <input type="text" wire:model.live="takeawayCustomerName"
+                           placeholder="Ej: Juan, Pedido #43, Mesa 5 espera..."
+                           autofocus
+                           wire:keydown.enter="createTakeaway"
+                           style="width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; color:#111827; background:#ffffff;" />
+                    <div style="font-size:11px; color:#6b7280; margin-top:6px;">
+                        Se mostrará en la lista de órdenes activas. Podés dejarlo vacío.
+                    </div>
+                </div>
+
+                <div style="padding:14px 22px; border-top:1px solid #e5e7eb; background:#fafafa; display:flex; gap:10px; justify-content:flex-end;">
+                    <button type="button" wire:click="closeTakeawayPrompt"
+                            style="padding:10px 18px; background:transparent; color:#6b7280; border:1px solid #d1d5db; border-radius:8px; font-weight:600; cursor:pointer;">
+                        Cancelar
+                    </button>
+                    <button type="button" wire:click="createTakeaway"
+                            style="padding:10px 22px; background:#ea580c; color:white; border:0; border-radius:8px; font-weight:700; cursor:pointer;">
+                        ✓ Abrir orden
                     </button>
                 </div>
             </div>

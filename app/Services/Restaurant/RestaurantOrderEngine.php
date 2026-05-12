@@ -72,6 +72,66 @@ class RestaurantOrderEngine
     }
 
     /**
+     * Abre una orden "para llevar" sin mesa asignada. Util para pickup,
+     * delivery improvisado o cliente que no se va a sentar.
+     */
+    public function openTakeawayOrder(
+        \App\Models\Location $location,
+        int $guests = 1,
+        ?string $customerName = null,
+    ): Order {
+        if (! $location->active) {
+            throw new RuntimeException('La sede está inactiva.');
+        }
+
+        $session = CashSessionGate::requireOpenSession();
+        $company = Company::find($location->company_id);
+
+        return DB::transaction(function () use ($location, $guests, $session, $company, $customerName) {
+            return Order::create([
+                'company_id' => $location->company_id,
+                'location_id' => $location->id,
+                'cash_register_session_id' => $session->id,
+                'table_id' => null,
+                'zone_id' => null,
+                'is_delivery' => false,
+                'is_takeaway' => true,
+                'server_user_id' => Auth::id(),
+                'prefix' => 'ORD',
+                'number' => $this->numberer->next($company, 'ORD'),
+                'guests' => max(1, $guests),
+                'status' => Order::STATUS_OPEN,
+                'opened_at' => now(),
+                'created_by_user_id' => Auth::id(),
+                'delivery_metadata' => $customerName ? ['customer_name' => $customerName] : null,
+                'notes' => $customerName ? "Para llevar — Cliente: {$customerName}" : 'Para llevar',
+            ]);
+        });
+    }
+
+    /**
+     * Cambia el modo de servicio de una orden (comer aquí / para llevar).
+     * Solo metadata: no toca mesa ni libera nada. Afecta como se imprime
+     * la comanda y, en el futuro, qué tasa de IVA se aplica.
+     */
+    public function setServiceMode(Order $order, string $mode): Order
+    {
+        if (! $order->isOpen()) {
+            throw new RuntimeException('Solo se puede cambiar el modo en órdenes abiertas.');
+        }
+        if (! in_array($mode, ['dine_in', 'takeaway'], true)) {
+            throw new RuntimeException('Modo de servicio inválido.');
+        }
+
+        $order->update([
+            'is_takeaway' => $mode === 'takeaway',
+            'is_delivery' => false,
+        ]);
+
+        return $order->fresh();
+    }
+
+    /**
      * Agrega un item a la orden. Calcula subtotal, IVA y total.
      * Determina a qué impresora debe llegar según category_id del
      * producto (config en restaurant_printers.category_ids).

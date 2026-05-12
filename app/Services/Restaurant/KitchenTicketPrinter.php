@@ -93,12 +93,26 @@ class KitchenTicketPrinter
         // Header — gigante, centrado
         $b->alignCenter()->bold(true)->size(2, 2)
             ->line($printer->name);
+
+        // Si es para llevar, banderazo grande arriba del numero de mesa
+        if ($order->is_takeaway) {
+            $b->size(2, 3)->line('** PARA LLEVAR **');
+        } elseif ($order->is_delivery) {
+            $b->size(2, 3)->line('** DELIVERY **');
+        }
+
         $b->size(3, 3)->line("MESA {$tableLabel}");
         $b->size(1, 1)->bold(false)
             ->line($order->fullNumber())
             ->line(now()->format('Y-m-d H:i:s'))
             ->line('Mesero: '.($order->server?->name ?? '—'))
             ->line($order->guests.' comensal'.($order->guests > 1 ? 'es' : ''));
+
+        // Nombre del cliente si es takeaway/delivery con metadata
+        $custName = $order->delivery_metadata['customer_name'] ?? null;
+        if ($custName) {
+            $b->bold(true)->line('Cliente: '.$custName)->bold(false);
+        }
 
         $b->separator('=')->alignLeft();
 

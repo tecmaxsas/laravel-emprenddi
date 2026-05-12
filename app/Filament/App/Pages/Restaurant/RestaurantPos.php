@@ -71,6 +71,10 @@ class RestaurantPos extends Page
     public bool $mergeModalOpen = false;
     public ?int $mergeTargetOrderId = null;
 
+    // Modal "nueva para llevar"
+    public bool $takeawayModalOpen = false;
+    public string $takeawayCustomerName = '';
+
     public static function canAccess(): bool
     {
         if (! ModuleGate::active('restaurant')) return false;
@@ -580,6 +584,89 @@ class RestaurantPos extends Page
         } catch (\Throwable $e) {
             Notification::make()->title('Error al fusionar')->body($e->getMessage())->danger()->send();
         }
+    }
+
+    // ============ TAKEAWAY / SERVICE MODE ============
+
+    public function openTakeawayPrompt(): void
+    {
+        if (! $this->locationId) {
+            Notification::make()->title('Selecciona una sede primero')->danger()->send();
+            return;
+        }
+        $this->takeawayModalOpen = true;
+        $this->takeawayCustomerName = '';
+    }
+
+    public function closeTakeawayPrompt(): void
+    {
+        $this->takeawayModalOpen = false;
+        $this->takeawayCustomerName = '';
+    }
+
+    public function createTakeaway(): void
+    {
+        if (! $this->locationId) return;
+
+        $location = Location::find($this->locationId);
+        if (! $location) {
+            Notification::make()->title('Sede inválida')->danger()->send();
+            return;
+        }
+
+        try {
+            $name = trim($this->takeawayCustomerName);
+            $order = app(RestaurantOrderEngine::class)->openTakeawayOrder(
+                $location,
+                1,
+                $name !== '' ? $name : null,
+            );
+            $this->activeOrderId = $order->id;
+            $this->closeTakeawayPrompt();
+
+            Notification::make()
+                ->title('Orden para llevar abierta')
+                ->body($name !== '' ? "Cliente: {$name}" : 'Agrega items y envía a cocina')
+                ->success()
+                ->send();
+        } catch (\Throwable $e) {
+            Notification::make()->title('Error al abrir')->body($e->getMessage())->danger()->send();
+        }
+    }
+
+    public function setServiceMode(string $mode): void
+    {
+        $order = $this->activeOrder;
+        if (! $order) return;
+        try {
+            app(RestaurantOrderEngine::class)->setServiceMode($order, $mode);
+            Notification::make()
+                ->title($mode === 'takeaway' ? '🥡 Para llevar' : '🍽️ Comer aquí')
+                ->success()
+                ->duration(1500)
+                ->send();
+        } catch (\Throwable $e) {
+            Notification::make()->title('Error')->body($e->getMessage())->danger()->send();
+        }
+    }
+
+    /**
+     * Lista de órdenes para llevar / pickup activas (sin mesa asignada).
+     * Mostradas como cards arriba del mapa para que el cajero pueda
+     * volver a cualquiera con un click.
+     */
+    public function getTakeawayOrdersProperty()
+    {
+        if (! $this->locationId) return collect();
+
+        return Order::query()
+            ->whereIn('status', [Order::STATUS_OPEN, Order::STATUS_IN_KITCHEN, Order::STATUS_SERVED, Order::STATUS_BILLING])
+            ->where('location_id', $this->locationId)
+            ->where('is_takeaway', true)
+            ->whereNull('table_id')
+            ->with('items')
+            ->orderBy('opened_at')
+            ->get();
     }
 
     public function increaseQty(int $itemId): void
