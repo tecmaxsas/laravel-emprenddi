@@ -331,9 +331,11 @@ class ProductResource extends Resource
                                 Forms\Components\Placeholder::make('current_stock_display')
                                     ->label('Stock actual')
                                     ->visibleOn('edit')
-                                    ->content(function (Forms\Get $get) {
+                                    ->content(function (Forms\Get $get, ?\App\Models\ProductLocation $record = null) {
                                         $locationId = $get('location_id');
-                                        $productId = $this->record?->id;
+                                        // En el Repeater de productLocations, $record es la fila del pivot
+                                        // (ProductLocation) y su product_id es el del producto editado.
+                                        $productId = $record?->product_id;
                                         if (! $locationId || ! $productId) {
                                             return '—';
                                         }
