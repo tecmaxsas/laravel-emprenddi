@@ -402,42 +402,22 @@
                             @endif
 
                             <div style="display:flex; flex-direction:column; gap:6px;">
+                                @php $inputType = $group->max_select <= 1 ? 'radio' : 'checkbox'; @endphp
                                 @foreach ($group->modifiers as $modifier)
-                                    @if ($group->max_select <= 1)
-                                        {{-- Radio --}}
-                                        <label style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; cursor:pointer; font-size:14px;"
-                                               class="dark:!border-gray-700 dark:!bg-gray-800 hover:!bg-gray-50 dark:hover:!bg-gray-700">
-                                            <span style="display:flex; align-items:center; gap:10px;">
-                                                <input type="radio"
-                                                       wire:model.live="modifierSelections.{{ $group->id }}"
-                                                       value="{{ $modifier->id }}"
-                                                       style="width:18px; height:18px;" />
-                                                <span class="dark:!text-gray-200">{{ $modifier->name }}</span>
+                                    <label style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; cursor:pointer; font-size:14px; background:#ffffff; color:#111827;">
+                                        <span style="display:flex; align-items:center; gap:10px; color:#111827;">
+                                            <input type="{{ $inputType }}"
+                                                   wire:model.live="modifierSelections.{{ $group->id }}"
+                                                   value="{{ $modifier->id }}"
+                                                   style="width:18px; height:18px; accent-color:#10b981;" />
+                                            <span style="color:#111827; font-weight:500;">{{ $modifier->name }}</span>
+                                        </span>
+                                        @if ((float) $modifier->price_delta != 0)
+                                            <span style="font-size:13px; font-weight:700; color:{{ (float) $modifier->price_delta > 0 ? '#dc2626' : '#10b981' }};">
+                                                {{ (float) $modifier->price_delta > 0 ? '+' : '' }}${{ number_format((float) $modifier->price_delta, 0) }}
                                             </span>
-                                            @if ((float) $modifier->price_delta != 0)
-                                                <span style="font-size:13px; font-weight:700; color:{{ (float) $modifier->price_delta > 0 ? '#dc2626' : '#10b981' }};">
-                                                    {{ (float) $modifier->price_delta > 0 ? '+' : '' }}${{ number_format((float) $modifier->price_delta, 0) }}
-                                                </span>
-                                            @endif
-                                        </label>
-                                    @else
-                                        {{-- Checkbox --}}
-                                        <label style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; cursor:pointer; font-size:14px;"
-                                               class="dark:!border-gray-700 dark:!bg-gray-800 hover:!bg-gray-50 dark:hover:!bg-gray-700">
-                                            <span style="display:flex; align-items:center; gap:10px;">
-                                                <input type="checkbox"
-                                                       wire:model.live="modifierSelections.{{ $group->id }}"
-                                                       value="{{ $modifier->id }}"
-                                                       style="width:18px; height:18px;" />
-                                                <span class="dark:!text-gray-200">{{ $modifier->name }}</span>
-                                            </span>
-                                            @if ((float) $modifier->price_delta != 0)
-                                                <span style="font-size:13px; font-weight:700; color:{{ (float) $modifier->price_delta > 0 ? '#dc2626' : '#10b981' }};">
-                                                    {{ (float) $modifier->price_delta > 0 ? '+' : '' }}${{ number_format((float) $modifier->price_delta, 0) }}
-                                                </span>
-                                            @endif
-                                        </label>
-                                    @endif
+                                        @endif
+                                    </label>
                                 @endforeach
                             </div>
                         </div>
