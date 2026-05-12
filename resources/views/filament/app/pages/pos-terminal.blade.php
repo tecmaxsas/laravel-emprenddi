@@ -1011,45 +1011,78 @@
                 </div>
 
                 <div class="pos-modal-body">
-                    <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:12px;">
+                    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:8px;">
                         <div class="pos-modal-card">
                             <div class="pos-stat-label">Apertura</div>
                             <div class="pos-stat-value">${{ number_format((float) $session->opening_amount, 0, ',', '.') }}</div>
                         </div>
                         <div class="pos-modal-card">
-                            <div class="pos-stat-label">Facturas emitidas</div>
-                            <div class="pos-stat-value">{{ $sessionTotals['invoice_count'] }}</div>
+                            <div class="pos-stat-label">Ventas</div>
+                            <div class="pos-stat-value">{{ $sessionTotals['sales']['count'] }}</div>
+                        </div>
+                        <div class="pos-modal-card">
+                            <div class="pos-stat-label">Egresos</div>
+                            <div class="pos-stat-value">{{ $sessionTotals['purchases']['count'] + $sessionTotals['expenses']['count'] }}</div>
                         </div>
                     </div>
 
+                    {{-- INGRESOS (ventas) por método --}}
                     <div>
-                        <div class="pos-stat-label" style="margin-bottom:8px;">Cobros por método</div>
-                        @if (empty($sessionTotals['payment_breakdown']))
+                        <div class="pos-stat-label" style="margin-bottom:8px;">Ingresos por método</div>
+                        @if (empty($sessionTotals['sales']['by_method']))
                             <div style="font-size:13px; color:#9ca3af; font-style:italic; padding:8px 12px;">Sin cobros aún.</div>
                         @else
                             <div style="display:flex; flex-direction:column; gap:4px;">
-                                @foreach ($sessionTotals['payment_breakdown'] as $method => $amount)
+                                @foreach ($sessionTotals['sales']['by_method'] as $method => $amount)
                                     <div class="pos-modal-card" style="display:flex; justify-content:space-between; padding:8px 12px;">
                                         <span style="font-size:14px;">{{ \App\Models\Payment::PAYMENT_METHODS[$method] ?? $method }}</span>
-                                        <span style="font-size:14px; font-weight:600;">${{ number_format($amount, 0, ',', '.') }}</span>
+                                        <span style="font-size:14px; font-weight:600; color:rgb(5,150,105);">+${{ number_format($amount, 0, ',', '.') }}</span>
                                     </div>
                                 @endforeach
                             </div>
                         @endif
                     </div>
 
+                    {{-- EGRESOS (compras + gastos) por método --}}
+                    @php
+                        $egresosMerged = [];
+                        foreach (($sessionTotals['purchases']['by_method'] ?? []) as $m => $a) {
+                            $egresosMerged[$m] = ($egresosMerged[$m] ?? 0) + $a;
+                        }
+                        foreach (($sessionTotals['expenses']['by_method'] ?? []) as $m => $a) {
+                            $egresosMerged[$m] = ($egresosMerged[$m] ?? 0) + $a;
+                        }
+                    @endphp
+                    @if (! empty($egresosMerged))
+                        <div>
+                            <div class="pos-stat-label" style="margin-bottom:8px;">Egresos por método (compras + gastos)</div>
+                            <div style="display:flex; flex-direction:column; gap:4px;">
+                                @foreach ($egresosMerged as $method => $amount)
+                                    <div class="pos-modal-card" style="display:flex; justify-content:space-between; padding:8px 12px;">
+                                        <span style="font-size:14px;">{{ \App\Models\Payment::PAYMENT_METHODS[$method] ?? $method }}</span>
+                                        <span style="font-size:14px; font-weight:600; color:rgb(220,38,38);">−${{ number_format($amount, 0, ',', '.') }}</span>
+                                    </div>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endif
+
                     <div style="display:flex; flex-direction:column; gap:8px; padding-top:12px; border-top:1px solid #e5e7eb;" class="dark:!border-gray-800">
                         <div style="display:flex; justify-content:space-between; font-size:14px;">
                             <span style="color:#6b7280;">Total ventas</span>
-                            <span style="font-weight:600;">${{ number_format($sessionTotals['total_sales'], 0, ',', '.') }}</span>
+                            <span style="font-weight:600;">${{ number_format($sessionTotals['sales']['total'], 0, ',', '.') }}</span>
                         </div>
                         <div style="display:flex; justify-content:space-between; font-size:14px;">
-                            <span style="color:#6b7280;">Recibido en efectivo</span>
-                            <span style="font-weight:600;">${{ number_format($sessionTotals['cash_received'], 0, ',', '.') }}</span>
+                            <span style="color:#6b7280;">Total compras + gastos</span>
+                            <span style="font-weight:600; color:rgb(220,38,38);">${{ number_format($sessionTotals['purchases']['total'] + $sessionTotals['expenses']['total'], 0, ',', '.') }}</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; font-size:14px;">
+                            <span style="color:#6b7280;">Neto en efectivo del turno</span>
+                            <span style="font-weight:600;">{{ $sessionTotals['net_cash'] >= 0 ? '+' : '' }}${{ number_format($sessionTotals['net_cash'], 0, ',', '.') }}</span>
                         </div>
                         <div style="display:flex; justify-content:space-between; font-size:16px; font-weight:700; padding-top:8px; border-top:1px solid #e5e7eb;" class="dark:!border-gray-700">
                             <span>Esperado en caja</span>
-                            <span style="color:rgb(5,150,105);">${{ number_format($sessionTotals['closing_expected'], 0, ',', '.') }}</span>
+                            <span style="color:rgb(5,150,105);">${{ number_format($sessionTotals['expected_cash'], 0, ',', '.') }}</span>
                         </div>
                     </div>
                 </div>
@@ -1084,18 +1117,28 @@
                             <strong>Cierre oculto:</strong> solo digita el efectivo que físicamente cuentas en la caja. La diferencia se registrará para auditoría.
                         </div>
                     @else
+                        @php
+                            $egresosCashTotal = (float) ($sessionTotals['purchases']['cash'] ?? 0)
+                                              + (float) ($sessionTotals['expenses']['cash'] ?? 0);
+                        @endphp
                         <div class="pos-modal-card" style="display:flex; flex-direction:column; gap:8px;">
                             <div style="display:flex; justify-content:space-between; font-size:14px;">
                                 <span style="color:#6b7280;">Apertura</span>
                                 <span style="font-weight:500;">${{ number_format((float) $session->opening_amount, 0, ',', '.') }}</span>
                             </div>
                             <div style="display:flex; justify-content:space-between; font-size:14px;">
-                                <span style="color:#6b7280;">+ Recibido en efectivo</span>
-                                <span style="font-weight:500;">${{ number_format($sessionTotals['cash_received'], 0, ',', '.') }}</span>
+                                <span style="color:#6b7280;">+ Recibido en efectivo (ventas)</span>
+                                <span style="font-weight:500; color:rgb(5,150,105);">+${{ number_format($sessionTotals['sales']['cash'], 0, ',', '.') }}</span>
                             </div>
+                            @if ($egresosCashTotal > 0)
+                                <div style="display:flex; justify-content:space-between; font-size:14px;">
+                                    <span style="color:#6b7280;">− Pagado en efectivo (compras + gastos)</span>
+                                    <span style="font-weight:500; color:rgb(220,38,38);">−${{ number_format($egresosCashTotal, 0, ',', '.') }}</span>
+                                </div>
+                            @endif
                             <div style="display:flex; justify-content:space-between; font-size:16px; font-weight:700; padding-top:8px; border-top:1px solid #e5e7eb;">
                                 <span>Esperado en caja</span>
-                                <span style="color:rgb(5,150,105);">${{ number_format($sessionTotals['closing_expected'], 0, ',', '.') }}</span>
+                                <span style="color:rgb(5,150,105);">${{ number_format($sessionTotals['expected_cash'], 0, ',', '.') }}</span>
                             </div>
                         </div>
                     @endif
@@ -1114,7 +1157,7 @@
                     {{-- Diferencia visible solo si NO es blind --}}
                     @if (! $blindClose)
                         @php
-                            $diff = (float) ($closingCounted ?? 0) - (float) $sessionTotals['closing_expected'];
+                            $diff = (float) ($closingCounted ?? 0) - (float) $sessionTotals['expected_cash'];
                             $isExact = abs($diff) < 0.01;
                             $isSobrante = $diff > 0;
                             $bg = $isExact ? '#d1fae5' : ($isSobrante ? '#cffafe' : '#fee2e2');

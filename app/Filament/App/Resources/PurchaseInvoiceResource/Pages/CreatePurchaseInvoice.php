@@ -4,7 +4,9 @@ namespace App\Filament\App\Resources\PurchaseInvoiceResource\Pages;
 
 use App\Filament\App\Resources\PurchaseInvoiceResource;
 use App\Models\Company;
-use App\Services\Accounting\JournalEntryNumberer;
+use App\Services\Purchases\PurchaseInvoiceNumberer;
+use App\Support\CashSessionGate;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Support\Facades\Auth;
 
@@ -12,17 +14,42 @@ class CreatePurchaseInvoice extends CreateRecord
 {
     protected static string $resource = PurchaseInvoiceResource::class;
 
+    /**
+     * Bloquea la creación de compras si el operador no tiene caja abierta.
+     * Misma regla que ventas POS: cualquier ingreso o egreso del turno
+     * debe quedar atado a una sesión para que el cierre cuadre.
+     */
+    public function mount(): void
+    {
+        if (! CashSessionGate::hasOpenSession()) {
+            Notification::make()
+                ->title('Necesitas una caja abierta')
+                ->body('Para registrar una compra debes abrir primero la caja registradora desde el POS.')
+                ->warning()
+                ->persistent()
+                ->send();
+
+            $this->redirect(PurchaseInvoiceResource::getUrl('index'));
+            return;
+        }
+
+        parent::mount();
+    }
+
     protected function mutateFormDataBeforeCreate(array $data): array
     {
+        $session = CashSessionGate::requireOpenSession();
+
         $data['company_id'] = Auth::user()->company_id;
+        $data['cash_register_session_id'] = $session->id;
         $data['created_by_user_id'] = Auth::id();
         $data['status'] = 'draft';
         $data['payment_status'] = 'pendiente';
 
-        // Auto-numeración
+        // Auto-numeración usando el numerador de COMPRAS (no journal entries).
         $company = Company::find($data['company_id']);
         $prefix = $data['prefix'] ?? 'FC';
-        $data['number'] = app(JournalEntryNumberer::class)->next($company, $prefix);
+        $data['number'] = app(PurchaseInvoiceNumberer::class)->next($company, $prefix);
 
         // Recompute totals desde las líneas (defensa por si las hidden no se llenaron)
         $subtotal = 0;

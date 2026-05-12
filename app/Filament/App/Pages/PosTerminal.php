@@ -920,7 +920,7 @@ class PosTerminal extends Page
     {
         $session = $this->currentSession;
         if (! $session) return null;
-        return $session->computeRunningTotals();
+        return app(\App\Services\Cash\CashSessionSummary::class)->compute($session);
     }
 
     public function openCloseSessionModal(): void
@@ -957,9 +957,11 @@ class PosTerminal extends Page
             return;
         }
 
-        $totals = $session->computeRunningTotals();
+        // Summary unificado: ventas (ingresos), compras + gastos (egresos) y
+        // breakdown global por método. Solo el efectivo afecta closing_expected.
+        $summary = app(\App\Services\Cash\CashSessionSummary::class)->compute($session);
         $counted = (float) ($this->closingCounted ?? 0);
-        $expected = $totals['closing_expected'];
+        $expected = $summary['expected_cash'];
         $difference = round($counted - $expected, 2);
 
         $session->update([
@@ -969,9 +971,9 @@ class PosTerminal extends Page
             'closing_expected' => $expected,
             'closing_counted' => $counted,
             'closing_difference' => $difference,
-            'total_sales' => $totals['total_sales'],
-            'invoice_count' => $totals['invoice_count'],
-            'payment_breakdown' => $totals['payment_breakdown'],
+            'total_sales' => $summary['sales']['total'],
+            'invoice_count' => $summary['sales']['count'],
+            'payment_breakdown' => $summary['payment_breakdown'],
             'closing_notes' => trim($this->closingNotes) ?: null,
         ]);
 
