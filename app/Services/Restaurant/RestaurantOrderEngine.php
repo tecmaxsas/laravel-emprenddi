@@ -162,7 +162,16 @@ class RestaurantOrderEngine
 
         // priceForLocation() respeta override por sede; cae a default_sale_price.
         $location = $order->location_id ? \App\Models\Location::find($order->location_id) : null;
-        $unitPrice = (float) $product->priceForLocation($location);
+        $rawPrice = (float) $product->priceForLocation($location);
+
+        // Si el precio del producto incluye el impuesto, desnormalizar: el
+        // unit_price guardado siempre es BASE (antes de IVA) para mantener
+        // consistencia con el resto del modelo contable.
+        if ($product->sale_price_includes_tax && $taxRate > 0) {
+            $unitPrice = round($rawPrice / (1 + $taxRate / 100), 2);
+        } else {
+            $unitPrice = $rawPrice;
+        }
 
         // Suma de deltas de modificadores (por unidad). El POS pasa cada modifier
         // como ['group_name'=>..,'name'=>..,'price_delta'=>..]. Snapshot al jsonb.
@@ -253,8 +262,23 @@ class RestaurantOrderEngine
         }
 
         $location = $order->location_id ? \App\Models\Location::find($order->location_id) : null;
-        $priceA = (float) $a->priceForLocation($location);
-        $priceB = (float) $b->priceForLocation($location);
+
+        // Normalizar precios a "base" (sin IVA) si el flag dice que el precio
+        // ya incluia el impuesto. Tomamos la tasa de cada producto para
+        // desnormalizar correctamente cada mitad.
+        $taxARate = $a->default_sale_tax_id ? (float) (Tax::find($a->default_sale_tax_id)?->rate ?? 0) : 0;
+        $taxBRate = $b->default_sale_tax_id ? (float) (Tax::find($b->default_sale_tax_id)?->rate ?? 0) : 0;
+
+        $rawA = (float) $a->priceForLocation($location);
+        $rawB = (float) $b->priceForLocation($location);
+
+        $priceA = ($a->sale_price_includes_tax && $taxARate > 0)
+            ? round($rawA / (1 + $taxARate / 100), 2)
+            : $rawA;
+        $priceB = ($b->sale_price_includes_tax && $taxBRate > 0)
+            ? round($rawB / (1 + $taxBRate / 100), 2)
+            : $rawB;
+
         $unitPrice = max($priceA, $priceB);
 
         // Producto "principal" = el mas caro (atribucion en reportes + tax + printer)

@@ -209,7 +209,7 @@ class PosTerminal extends Page
         return $query
             ->orderBy('name')
             ->limit(60)
-            ->get(['id', 'code', 'name', 'barcode', 'image_path', 'default_sale_price', 'default_sale_tax_id']);
+            ->get(['id', 'code', 'name', 'barcode', 'image_path', 'default_sale_price', 'default_sale_tax_id', 'sale_price_includes_tax']);
     }
 
     public function selectCategory(?int $id): void
@@ -282,12 +282,19 @@ class PosTerminal extends Page
             $taxRate = (float) Tax::find($product->default_sale_tax_id)?->rate;
         }
 
+        // Si el precio del producto YA incluye el impuesto, desnormalizar a
+        // base para guardar consistente con el resto del modelo contable.
+        $rawPrice = (float) $product->default_sale_price;
+        $unitPrice = ($product->sale_price_includes_tax && $taxRate > 0)
+            ? round($rawPrice / (1 + $taxRate / 100), 2)
+            : $rawPrice;
+
         $this->cart[] = [
             'product_id' => $product->id,
             'code' => $product->code,
             'description' => $product->name,
             'quantity' => 1.0,
-            'unit_price' => (float) $product->default_sale_price,
+            'unit_price' => $unitPrice,
             'discount_percentage' => 0.0,
             'discount_amount' => 0.0,
             'tax_id' => $product->default_sale_tax_id,

@@ -55,6 +55,7 @@ class Product extends Model
         'is_sellable',
         'default_purchase_price',
         'default_sale_price',
+        'sale_price_includes_tax',
         'min_sale_price',
         'default_purchase_tax_id',
         'default_sale_tax_id',
@@ -76,6 +77,7 @@ class Product extends Model
             'active' => 'boolean',
             'default_purchase_price' => 'decimal:2',
             'default_sale_price' => 'decimal:2',
+            'sale_price_includes_tax' => 'boolean',
             'min_sale_price' => 'decimal:2',
         ];
     }

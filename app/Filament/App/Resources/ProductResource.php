@@ -164,7 +164,11 @@ class ProductResource extends Resource
                                 ->numeric()
                                 ->minValue(0)
                                 ->prefix('$')
-                                ->default(0),
+                                ->default(0)
+                                ->live()
+                                ->helperText(fn (Forms\Get $get) => $get('sale_price_includes_tax')
+                                    ? '✓ Este precio YA incluye el impuesto (precio final al cliente).'
+                                    : '⚠ Este precio es ANTES de impuestos (se agregan al cobrar).'),
 
                             Forms\Components\TextInput::make('min_sale_price')
                                 ->label('Precio mínimo de venta')
@@ -194,6 +198,7 @@ class ProductResource extends Resource
 
                             Forms\Components\Select::make('default_sale_tax_id')
                                 ->label('Impuesto venta (default)')
+                                ->live()
                                 ->searchable()
                                 ->getSearchResultsUsing(fn (string $search) => Tax::query()
                                     ->where('is_active', true)
@@ -211,6 +216,47 @@ class ProductResource extends Resource
                                     ? Tax::find($value)->code.' — '.Tax::find($value)->name
                                     : null),
                         ]),
+
+                        Forms\Components\Toggle::make('sale_price_includes_tax')
+                            ->label('El precio de venta YA incluye el impuesto')
+                            ->helperText('Si está ON, el precio que escribiste arriba es el precio FINAL al cliente. El sistema lo descompone en base + impuesto al facturar. Si está OFF, el impuesto se SUMA al precio al cobrar.')
+                            ->inline(false)
+                            ->live()
+                            ->columnSpanFull(),
+
+                        Forms\Components\Placeholder::make('price_breakdown')
+                            ->label('Vista previa del cálculo')
+                            ->visible(fn (Forms\Get $get) => (float) $get('default_sale_price') > 0 && $get('default_sale_tax_id'))
+                            ->content(function (Forms\Get $get) {
+                                $price = (float) $get('default_sale_price');
+                                $taxId = $get('default_sale_tax_id');
+                                $tax = $taxId ? Tax::find($taxId) : null;
+                                if (! $tax || $price <= 0) return '—';
+                                $rate = (float) $tax->rate;
+
+                                if ($get('sale_price_includes_tax')) {
+                                    $base = round($price / (1 + $rate / 100), 2);
+                                    $taxAmount = round($price - $base, 2);
+                                    return sprintf(
+                                        '📊 Cliente paga: $%s · Base: $%s · %s: $%s',
+                                        number_format($price, 0, ',', '.'),
+                                        number_format($base, 0, ',', '.'),
+                                        $tax->code,
+                                        number_format($taxAmount, 0, ',', '.'),
+                                    );
+                                } else {
+                                    $taxAmount = round($price * $rate / 100, 2);
+                                    $final = round($price + $taxAmount, 2);
+                                    return sprintf(
+                                        '📊 Base: $%s + %s ($%s) = Cliente paga $%s',
+                                        number_format($price, 0, ',', '.'),
+                                        $tax->code,
+                                        number_format($taxAmount, 0, ',', '.'),
+                                        number_format($final, 0, ',', '.'),
+                                    );
+                                }
+                            })
+                            ->columnSpanFull(),
                     ]),
 
                 Forms\Components\Tabs\Tab::make('Cuentas contables')
