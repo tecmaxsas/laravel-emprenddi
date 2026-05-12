@@ -170,14 +170,14 @@ class TableResource extends Resource
 
                 Tables\Columns\TextColumn::make('shape')
                     ->label('Forma')
-                    ->formatStateUsing(fn (string $s) => RTable::SHAPES[$s] ?? $s)
+                    ->formatStateUsing(fn (string $state) => RTable::SHAPES[$state] ?? $state)
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('status')
                     ->label('Estado')
-                    ->formatStateUsing(fn (string $s) => RTable::STATUSES[$s] ?? $s)
+                    ->formatStateUsing(fn (string $state) => RTable::STATUSES[$state] ?? $state)
                     ->badge()
-                    ->color(fn (string $s) => match ($s) {
+                    ->color(fn (string $state) => match ($state) {
                         'free' => 'success',
                         'occupied' => 'warning',
                         'billing' => 'info',

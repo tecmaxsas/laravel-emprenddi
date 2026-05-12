@@ -161,23 +161,23 @@ class PrinterResource extends Resource
 
                 Tables\Columns\TextColumn::make('purpose')
                     ->label('Propósito')
-                    ->formatStateUsing(fn (string $s) => Printer::PURPOSES[$s] ?? $s)
+                    ->formatStateUsing(fn (string $state) => Printer::PURPOSES[$state] ?? $state)
                     ->badge(),
 
                 Tables\Columns\TextColumn::make('connection_type')
                     ->label('Conexión')
-                    ->formatStateUsing(fn (string $s) => Printer::CONNECTION_TYPES[$s] ?? $s)
+                    ->formatStateUsing(fn (string $state) => Printer::CONNECTION_TYPES[$state] ?? $state)
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('host')
                     ->label('Host:Puerto')
-                    ->state(fn (Printer $p) => $p->connection_type === 'network' ? "{$p->host}:{$p->port}" : $p->cups_queue)
+                    ->state(fn (Printer $record) => $record->connection_type === 'network' ? "{$record->host}:{$record->port}" : $record->cups_queue)
                     ->fontFamily('mono')
                     ->placeholder('—'),
 
                 Tables\Columns\TextColumn::make('category_ids_count')
                     ->label('Categorías')
-                    ->state(fn (Printer $p) => count($p->category_ids ?? []))
+                    ->state(fn (Printer $record) => count($record->category_ids ?? []))
                     ->alignCenter()
                     ->badge(),
 

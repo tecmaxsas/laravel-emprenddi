@@ -109,7 +109,7 @@ class ServiceZoneResource extends Resource
 
                 Tables\Columns\TextColumn::make('color')
                     ->label('Color')
-                    ->formatStateUsing(fn (?string $hex) => $hex ?: '—')
+                    ->formatStateUsing(fn (?string $state) => $state ?: '—')
                     ->fontFamily('mono'),
 
                 Tables\Columns\TextColumn::make('tables_count')
