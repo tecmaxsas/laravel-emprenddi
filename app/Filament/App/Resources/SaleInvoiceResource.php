@@ -17,6 +17,7 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
 
 class SaleInvoiceResource extends Resource
 {
@@ -94,7 +95,7 @@ class SaleInvoiceResource extends Resource
                             ->mapWithKeys(fn (User $u) => [$u->id => $u->name ?: $u->email])
                             ->all())
                         ->getOptionLabelUsing(fn ($value) => User::find($value)?->name ?: User::find($value)?->email)
-                        ->default(fn () => auth()->id())
+                        ->default(fn () => Auth::id())
                         ->columnSpan(2),
 
                     Forms\Components\Select::make('location_id')

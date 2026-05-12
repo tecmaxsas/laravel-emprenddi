@@ -10,6 +10,7 @@ use App\Models\Payment;
 use App\Models\SaleInvoice;
 use App\Services\Accounting\JournalEntryNumberer;
 use App\Services\Inventory\InventoryEngine;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -109,7 +110,7 @@ class SaleInvoiceEngine
             $invoice->update([
                 'status' => SaleInvoice::STATUS_POSTED,
                 'posted_at' => now(),
-                'posted_by_user_id' => auth()->id(),
+                'posted_by_user_id' => Auth::id(),
                 'journal_entry_id' => $journalEntry->id,
                 'payment_status' => SaleInvoice::PAYMENT_PENDIENTE,
                 'dian_status' => $invoice->dian_status ?: SaleInvoice::DIAN_PENDING,
@@ -184,7 +185,7 @@ class SaleInvoiceEngine
                 'reference' => $data['reference'] ?? null,
                 'description' => $data['description'] ?? null,
                 'journal_entry_id' => $entry->id,
-                'created_by_user_id' => auth()->id(),
+                'created_by_user_id' => Auth::id(),
             ]);
 
             // 3. Recalcular paid_amount + payment_status
@@ -331,8 +332,8 @@ class SaleInvoiceEngine
             'description' => "Venta {$invoice->fullNumber()} — {$invoice->customer->name}",
             'status' => 'posted',
             'posted_at' => now(),
-            'posted_by_user_id' => auth()->id(),
-            'created_by_user_id' => auth()->id(),
+            'posted_by_user_id' => Auth::id(),
+            'created_by_user_id' => Auth::id(),
             'total_debit' => $invoice->total,
             'total_credit' => $invoice->total,
         ]);
@@ -453,8 +454,8 @@ class SaleInvoiceEngine
             'description' => "Costo de ventas {$invoice->fullNumber()}",
             'status' => 'posted',
             'posted_at' => now(),
-            'posted_by_user_id' => auth()->id(),
-            'created_by_user_id' => auth()->id(),
+            'posted_by_user_id' => Auth::id(),
+            'created_by_user_id' => Auth::id(),
             'total_debit' => $totalCogs,
             'total_credit' => $totalCogs,
         ]);
@@ -508,8 +509,8 @@ class SaleInvoiceEngine
             'description' => "Pago {$methodLabel} de {$invoice->customer->name} — Factura {$invoice->fullNumber()}",
             'status' => 'posted',
             'posted_at' => now(),
-            'posted_by_user_id' => auth()->id(),
-            'created_by_user_id' => auth()->id(),
+            'posted_by_user_id' => Auth::id(),
+            'created_by_user_id' => Auth::id(),
             'total_debit' => $amount,
             'total_credit' => $amount,
         ]);

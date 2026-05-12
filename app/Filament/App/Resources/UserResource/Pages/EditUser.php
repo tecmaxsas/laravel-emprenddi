@@ -6,6 +6,7 @@ use App\Filament\App\Resources\UserResource;
 use App\Models\User;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
+use Illuminate\Support\Facades\Auth;
 
 class EditUser extends EditRecord
 {
@@ -15,7 +16,7 @@ class EditUser extends EditRecord
     {
         return [
             Actions\DeleteAction::make()
-                ->visible(fn (User $record) => $record->id !== auth()->id()),
+                ->visible(fn (User $record) => $record->id !== Auth::id()),
         ];
     }
 }

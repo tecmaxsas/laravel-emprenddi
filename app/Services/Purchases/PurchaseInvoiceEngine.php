@@ -11,6 +11,7 @@ use App\Models\PurchaseInvoice;
 use App\Services\Accounting\JournalEntryNumberer;
 use App\Services\Inventory\InventoryEngine;
 use App\Support\CashSessionGate;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -80,7 +81,7 @@ class PurchaseInvoiceEngine
             $invoice->update([
                 'status' => PurchaseInvoice::STATUS_POSTED,
                 'posted_at' => now(),
-                'posted_by_user_id' => auth()->id(),
+                'posted_by_user_id' => Auth::id(),
                 'journal_entry_id' => $journalEntry->id,
                 'payment_status' => PurchaseInvoice::PAYMENT_PENDIENTE,
             ]);
@@ -155,7 +156,7 @@ class PurchaseInvoiceEngine
                 'reference' => $data['reference'] ?? null,
                 'description' => $data['description'] ?? null,
                 'journal_entry_id' => $entry->id,
-                'created_by_user_id' => auth()->id(),
+                'created_by_user_id' => Auth::id(),
             ]);
 
             // 3. Recalcular paid_amount + payment_status
@@ -263,8 +264,8 @@ class PurchaseInvoiceEngine
             'description' => "Compra {$invoice->fullNumber()} — {$invoice->supplier->name}",
             'status' => 'posted',
             'posted_at' => now(),
-            'posted_by_user_id' => auth()->id(),
-            'created_by_user_id' => auth()->id(),
+            'posted_by_user_id' => Auth::id(),
+            'created_by_user_id' => Auth::id(),
             'total_debit' => $invoice->total,
             'total_credit' => $invoice->total,
         ]);
@@ -355,8 +356,8 @@ class PurchaseInvoiceEngine
             'description' => "Pago {$methodLabel} a {$invoice->supplier->name} — Factura {$invoice->fullNumber()}",
             'status' => 'posted',
             'posted_at' => now(),
-            'posted_by_user_id' => auth()->id(),
-            'created_by_user_id' => auth()->id(),
+            'posted_by_user_id' => Auth::id(),
+            'created_by_user_id' => Auth::id(),
             'total_debit' => $amount,
             'total_credit' => $amount,
         ]);

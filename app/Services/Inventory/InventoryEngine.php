@@ -11,6 +11,7 @@ use App\Models\Location;
 use App\Models\Product;
 use App\Services\Accounting\JournalEntryNumberer;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -105,7 +106,7 @@ class InventoryEngine
                 'reference_number' => $opts['reference_number'] ?? null,
                 'third_party_id' => $opts['third_party_id'] ?? null,
                 'journal_entry_id' => $opts['journal_entry_id'] ?? null,
-                'created_by_user_id' => $opts['created_by_user_id'] ?? auth()->id(),
+                'created_by_user_id' => $opts['created_by_user_id'] ?? Auth::id(),
                 'description' => $opts['description'] ?? null,
             ]);
         });
@@ -204,8 +205,8 @@ class InventoryEngine
                 'description' => "Saldo inicial de inventario para producto {$product->code} — {$product->name}",
                 'status' => 'posted',
                 'posted_at' => now(),
-                'posted_by_user_id' => auth()->id(),
-                'created_by_user_id' => auth()->id(),
+                'posted_by_user_id' => Auth::id(),
+                'created_by_user_id' => Auth::id(),
                 'total_debit' => $totalValue,
                 'total_credit' => $totalValue,
             ]);

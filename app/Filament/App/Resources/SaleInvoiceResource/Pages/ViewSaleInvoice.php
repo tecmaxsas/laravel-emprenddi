@@ -15,6 +15,7 @@ use Filament\Infolists;
 use Filament\Infolists\Infolist;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
+use Illuminate\Support\Facades\Auth;
 
 class ViewSaleInvoice extends ViewRecord
 {
@@ -156,7 +157,7 @@ class ViewSaleInvoice extends ViewRecord
             'tax_total' => $invoice->tax_total,
             'total' => $invoice->total,
             'status' => 'draft',
-            'created_by_user_id' => auth()->id(),
+            'created_by_user_id' => Auth::id(),
             'description' => sprintf(
                 '%s sobre factura %s',
                 $type === 'credit' ? 'Nota Crédito' : 'Nota Débito',

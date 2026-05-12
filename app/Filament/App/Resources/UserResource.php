@@ -11,6 +11,7 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rules\Password;
 use Spatie\Permission\Models\Role;
 
@@ -181,7 +182,7 @@ class UserResource extends Resource
                     }),
 
                 Tables\Actions\DeleteAction::make()
-                    ->visible(fn (User $record) => $record->id !== auth()->id())
+                    ->visible(fn (User $record) => $record->id !== Auth::id())
                     ->modalDescription(fn (User $record) => "Vas a borrar al usuario {$record->email}. Esta acción no se puede deshacer (usa 'desactivar' si prefieres mantener el historial)."),
             ]);
     }

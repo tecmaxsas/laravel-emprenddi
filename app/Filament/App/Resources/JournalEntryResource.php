@@ -13,6 +13,7 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
 
 class JournalEntryResource extends Resource
 {
@@ -316,7 +317,7 @@ class JournalEntryResource extends Resource
                         $record->update([
                             'status' => 'posted',
                             'posted_at' => now(),
-                            'posted_by_user_id' => auth()->id(),
+                            'posted_by_user_id' => Auth::id(),
                         ]);
 
                         \Filament\Notifications\Notification::make()
