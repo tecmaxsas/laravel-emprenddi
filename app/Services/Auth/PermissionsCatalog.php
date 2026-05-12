@@ -81,6 +81,7 @@ class PermissionsCatalog
                 'restaurant.reservations.manage' => 'Crear y gestionar reservaciones',
                 'restaurant.delivery.manage' => 'Operar pedidos de delivery',
                 'restaurant.bill.split' => 'Dividir cuentas',
+                'restaurant.reports.view' => 'Ver reportes de restaurante (propinas, items, tiempos)',
             ],
             'Reportes' => [
                 'reports.journal_book' => 'Ver Libro Diario',
