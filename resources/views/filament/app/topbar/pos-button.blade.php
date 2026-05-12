@@ -1,7 +1,7 @@
 <a
     href="{{ route('filament.app.pages.pos') }}"
     class="fi-btn relative inline-grid grid-flow-col items-center justify-center font-semibold outline-none transition duration-75 focus-visible:ring-2 rounded-lg fi-color-custom fi-btn-color-pos fi-size-md fi-btn-size-md gap-1.5 px-3 py-2 text-sm shadow-sm hover:shadow"
-    style="background-color: rgb(16, 185, 129); color: #ffffff;"
+    style="background-color: rgb(16, 185, 129); color: #ffffff; order: -1;"
     onmouseover="this.style.backgroundColor='rgb(5, 150, 105)';"
     onmouseout="this.style.backgroundColor='rgb(16, 185, 129)';"
     title="Abrir terminal POS"

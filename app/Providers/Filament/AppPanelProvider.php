@@ -62,11 +62,41 @@ class AppPanelProvider extends PanelProvider
                 Authenticate::class,
                 SetActiveCompany::class,
             ])
-            // Botón "POS" en el topbar — se inyecta antes del user menu,
-            // que Filament siempre renderiza al final del TOPBAR_END.
+            // Botón "POS" en el topbar — order:-1 lo coloca a la izquierda
+            // del user menu en el flex container del TOPBAR_END.
             ->renderHook(
                 PanelsRenderHook::TOPBAR_END,
                 fn (): string => view('filament.app.topbar.pos-button')->render(),
+            )
+            // Reemplaza el chevron del botón de colapso del sidebar por
+            // un icono hamburguesa. El bundle de Filament no expone forma
+            // declarativa de cambiar ese icono — usamos CSS con mask para
+            // ocultar el SVG original y dibujar el burger.
+            ->renderHook(
+                PanelsRenderHook::HEAD_END,
+                fn (): string => <<<'HTML'
+<style>
+    /* Botón de colapso del sidebar en desktop: oculta el chevron y pinta
+       una hamburguesa via CSS mask. El selector cubre varias clases
+       posibles que Filament usa según versión. */
+    .fi-sidebar-header .fi-icon-btn > svg,
+    [aria-label*="Collapse sidebar" i] > svg,
+    [aria-label*="Expand sidebar" i] > svg {
+        display: none !important;
+    }
+    .fi-sidebar-header .fi-icon-btn::before,
+    [aria-label*="Collapse sidebar" i]::before,
+    [aria-label*="Expand sidebar" i]::before {
+        content: "";
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        background-color: currentColor;
+        -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke-width='2' stroke='currentColor'><path stroke-linecap='round' stroke-linejoin='round' d='M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5'/></svg>") no-repeat center / contain;
+                mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke-width='2' stroke='currentColor'><path stroke-linecap='round' stroke-linejoin='round' d='M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5'/></svg>") no-repeat center / contain;
+    }
+</style>
+HTML,
             );
     }
 }
