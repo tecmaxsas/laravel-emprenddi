@@ -94,6 +94,13 @@
                     <div style="font-size:18px; font-weight:700; line-height:1.2;">
                         {{ number_format((float) $item->quantity, 0) }} × {{ strtoupper($item->description) }}
                     </div>
+                    @php $cNum = (int) $item->course; @endphp
+                    @if ($cNum > 0)
+                        <div style="display:inline-block; font-size:10px; font-weight:700; padding:2px 8px; border-radius:999px; background:#eef2ff; color:#3730a3; align-self:flex-start;">
+                            {{ \App\Models\Restaurant\OrderItem::COURSE_ICONS[$cNum] ?? '' }}
+                            {{ \App\Models\Restaurant\OrderItem::COURSES[$cNum] ?? ('Curso '.$cNum) }}
+                        </div>
+                    @endif
                     @if (! empty($item->modifiers))
                         <div style="font-size:12px; color:#6b7280;" class="dark:!text-gray-400">
                             @foreach ($item->modifiers as $mod)
@@ -140,6 +147,13 @@
                     <div style="font-size:18px; font-weight:700; line-height:1.2;">
                         {{ number_format((float) $item->quantity, 0) }} × {{ strtoupper($item->description) }}
                     </div>
+                    @php $cNum = (int) $item->course; @endphp
+                    @if ($cNum > 0)
+                        <div style="display:inline-block; font-size:10px; font-weight:700; padding:2px 8px; border-radius:999px; background:#eef2ff; color:#3730a3; align-self:flex-start;">
+                            {{ \App\Models\Restaurant\OrderItem::COURSE_ICONS[$cNum] ?? '' }}
+                            {{ \App\Models\Restaurant\OrderItem::COURSES[$cNum] ?? ('Curso '.$cNum) }}
+                        </div>
+                    @endif
                     @if ($item->item_note)
                         <div style="font-size:12px; color:#92400e; background:#fef3c7; padding:6px 8px; border-radius:6px;">⚠️ {{ $item->item_note }}</div>
                     @endif
@@ -179,6 +193,13 @@
                     <div style="font-size:18px; font-weight:700; line-height:1.2;">
                         {{ number_format((float) $item->quantity, 0) }} × {{ strtoupper($item->description) }}
                     </div>
+                    @php $cNum = (int) $item->course; @endphp
+                    @if ($cNum > 0)
+                        <div style="display:inline-block; font-size:10px; font-weight:700; padding:2px 8px; border-radius:999px; background:#eef2ff; color:#3730a3; align-self:flex-start;">
+                            {{ \App\Models\Restaurant\OrderItem::COURSE_ICONS[$cNum] ?? '' }}
+                            {{ \App\Models\Restaurant\OrderItem::COURSES[$cNum] ?? ('Curso '.$cNum) }}
+                        </div>
+                    @endif
                     <div style="font-size:12px; color:#6b7280;" class="dark:!text-gray-400">
                         Mesero: {{ $item->order->server?->name ?? '—' }}
                     </div>

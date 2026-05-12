@@ -224,18 +224,27 @@ class RestaurantOrderEngine
 
     /**
      * Manda a cocina los items 'pending'. Agrupa por impresora y crea
-     * KitchenTicket (uno por impresora). En Iter 21d el ticket dispara
-     * la impresión ESC/POS real; por ahora solo registra el evento.
+     * KitchenTicket (uno por impresora). Si se pasa $courseFilter,
+     * solo envía los items de ese curso (entrada → principal → postre),
+     * lo que permite secuenciar la cocina.
      *
      * Devuelve los tickets creados.
      */
-    public function sendPendingToKitchen(Order $order): array
+    public function sendPendingToKitchen(Order $order, ?int $courseFilter = null): array
     {
-        $order->loadMissing('items');
+        $order->load('items');
         $pending = $order->items->where('kitchen_status', OrderItem::KS_PENDING);
 
+        if ($courseFilter !== null) {
+            $pending = $pending->where('course', $courseFilter);
+        }
+
         if ($pending->isEmpty()) {
-            throw new RuntimeException('No hay items pendientes para enviar a cocina.');
+            throw new RuntimeException(
+                $courseFilter !== null
+                    ? 'No hay items pendientes del curso '.($courseFilter).' para enviar.'
+                    : 'No hay items pendientes para enviar a cocina.'
+            );
         }
 
         return DB::transaction(function () use ($order, $pending) {

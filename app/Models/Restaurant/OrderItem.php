@@ -30,6 +30,24 @@ class OrderItem extends Model
         self::KS_CANCELLED => 'Cancelado',
     ];
 
+    /**
+     * Cursos / tiempos de servicio. Se imprimen y sirven en secuencia
+     * (no se envía la principal hasta que la entrada esté servida).
+     */
+    public const COURSES = [
+        1 => 'Entrada',
+        2 => 'Principal',
+        3 => 'Postre',
+        4 => 'Bebida/Café',
+    ];
+
+    public const COURSE_ICONS = [
+        1 => '🥗',
+        2 => '🍽️',
+        3 => '🍰',
+        4 => '☕',
+    ];
+
     protected $fillable = [
         'restaurant_order_id',
         'line_number',

@@ -111,6 +111,28 @@
                             style="width:36px; height:36px; border-radius:8px; background:#ef4444; color:#ffffff; border:0; cursor:pointer; font-size:20px; font-weight:700; line-height:1; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 2px 4px rgba(0,0,0,0.15);">×</button>
                 </div>
 
+                {{-- Selector de curso "actual" — items nuevos heredan este --}}
+                @php
+                    $courses = \App\Models\Restaurant\OrderItem::COURSES;
+                    $courseIcons = \App\Models\Restaurant\OrderItem::COURSE_ICONS;
+                @endphp
+                <div style="background:#ffffff; border:1px solid #d1d5db; border-radius:8px; padding:8px 10px;">
+                    <div style="font-size:10px; font-weight:700; color:#6b7280; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">
+                        Curso al agregar
+                    </div>
+                    <div style="display:flex; gap:4px;">
+                        @foreach ($courses as $cNum => $cName)
+                            @php $isActive = (int) $currentCourse === (int) $cNum; @endphp
+                            <button type="button" wire:click="setCurrentCourse({{ $cNum }})"
+                                    title="{{ $cName }}"
+                                    style="flex:1; padding:6px 4px; border-radius:6px; border:1px solid {{ $isActive ? '#3b82f6' : '#d1d5db' }}; background:{{ $isActive ? '#3b82f6' : '#ffffff' }}; color:{{ $isActive ? '#ffffff' : '#374151' }}; cursor:pointer; font-size:11px; font-weight:{{ $isActive ? '700' : '500' }}; line-height:1.2; transition:all 100ms;">
+                                <div style="font-size:14px;">{{ $courseIcons[$cNum] ?? '' }}</div>
+                                <div>{{ $cName }}</div>
+                            </button>
+                        @endforeach
+                    </div>
+                </div>
+
                 {{-- Lista de items --}}
                 <div style="display:flex; flex-direction:column; gap:6px;">
                     @if ($order->items->isEmpty())
@@ -135,10 +157,27 @@
                                     <div style="font-size:13px; font-weight:600; @if($item->kitchen_status === 'cancelled') text-decoration:line-through; opacity:0.6; @endif">
                                         {{ $item->description }}
                                     </div>
-                                    <div style="display:flex; gap:6px; align-items:center; margin-top:2px;">
+                                    <div style="display:flex; gap:6px; align-items:center; margin-top:2px; flex-wrap:wrap;">
                                         <span class="rpos-status-badge" style="background:{{ $statusColor }}33; color:{{ $statusColor }};">
                                             {{ \App\Models\Restaurant\OrderItem::KITCHEN_STATUSES[$item->kitchen_status] ?? $item->kitchen_status }}
                                         </span>
+                                        @php
+                                            $itemCourse = (int) $item->course;
+                                            $courseName = $courses[$itemCourse] ?? ('C'.$itemCourse);
+                                            $courseIcon = $courseIcons[$itemCourse] ?? '•';
+                                            $isPendingItem = $item->kitchen_status === 'pending';
+                                        @endphp
+                                        @if ($isPendingItem)
+                                            <button type="button" wire:click="cycleItemCourse({{ $item->id }})"
+                                                    title="Click para cambiar curso"
+                                                    style="background:#eff6ff; color:#1e40af; border:1px solid #bfdbfe; border-radius:999px; font-size:10px; font-weight:700; padding:2px 8px; cursor:pointer;">
+                                                {{ $courseIcon }} {{ $courseName }} ⇄
+                                            </button>
+                                        @else
+                                            <span style="background:#f3f4f6; color:#4b5563; border-radius:999px; font-size:10px; font-weight:700; padding:2px 8px;">
+                                                {{ $courseIcon }} {{ $courseName }}
+                                            </span>
+                                        @endif
                                         @if ($item->item_note)
                                             <span style="font-size:11px; color:#6b7280; font-style:italic;">"{{ $item->item_note }}"</span>
                                         @endif
@@ -194,19 +233,48 @@
 
                 {{-- Acciones --}}
                 <div x-data="{ confirmCancel: false, confirmClose: false }">
+                    @php
+                        // Cuenta items pendientes agrupados por curso
+                        $pendingByCourse = $order->items
+                            ->where('kitchen_status', 'pending')
+                            ->groupBy('course')
+                            ->map->count();
+                        $totalPending = $pendingByCourse->sum();
+                    @endphp
+
                     <div style="display:grid; grid-template-columns: 1fr; gap:8px;">
+                        {{-- Botón "Enviar TODO" siempre primero, más fácil de tocar --}}
                         <button type="button" wire:click="sendToKitchen"
-                                @disabled($order->items->where('kitchen_status', 'pending')->isEmpty())
-                                style="padding:12px; border-radius:8px; background:#3b82f6; color:white; border:0; font-weight:700; cursor:pointer; font-size:14px;"
+                                @disabled($totalPending === 0)
+                                style="padding:12px; border-radius:8px; background:{{ $totalPending > 0 ? '#3b82f6' : '#9ca3af' }}; color:white; border:0; font-weight:700; cursor:pointer; font-size:14px;"
                                 wire:loading.attr="disabled"
                                 wire:target="sendToKitchen">
-                            <span wire:loading.remove wire:target="sendToKitchen">📨 Enviar a cocina e imprimir</span>
+                            <span wire:loading.remove wire:target="sendToKitchen">📨 Enviar TODO a cocina ({{ $totalPending }})</span>
                             <span wire:loading wire:target="sendToKitchen">Enviando + imprimiendo...</span>
                         </button>
 
+                        {{-- Botones por curso (solo si hay >1 curso pendiente) --}}
+                        @if ($pendingByCourse->count() > 1)
+                            <div style="font-size:10px; color:#6b7280; text-transform:uppercase; font-weight:700; margin-top:4px; letter-spacing:0.5px;">
+                                O enviar curso por curso
+                            </div>
+                            <div style="display:grid; grid-template-columns: repeat({{ min($pendingByCourse->count(), 4) }}, 1fr); gap:6px;">
+                                @foreach ($pendingByCourse as $cNum => $cCount)
+                                    <button type="button" wire:click="sendToKitchen({{ $cNum }})"
+                                            style="padding:8px 4px; border-radius:8px; background:#1e40af; color:white; border:0; font-weight:700; cursor:pointer; font-size:11px; line-height:1.3;"
+                                            wire:loading.attr="disabled"
+                                            wire:target="sendToKitchen({{ $cNum }})">
+                                        <div style="font-size:14px;">{{ $courseIcons[$cNum] ?? '' }}</div>
+                                        <div>{{ $courses[$cNum] ?? 'C'.$cNum }}</div>
+                                        <div style="font-size:10px; opacity:0.85;">({{ $cCount }})</div>
+                                    </button>
+                                @endforeach
+                            </div>
+                        @endif
+
                         <button type="button" @click="confirmClose = true"
                                 @disabled($order->items->isEmpty())
-                                style="padding:12px; border-radius:8px; background:#10b981; color:white; border:0; font-weight:700; cursor:pointer; font-size:14px;">
+                                style="padding:12px; border-radius:8px; background:#10b981; color:white; border:0; font-weight:700; cursor:pointer; font-size:14px; margin-top:4px;">
                             ✓ Cerrar cuenta y liberar mesa
                         </button>
 

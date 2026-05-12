@@ -102,32 +102,49 @@ class KitchenTicketPrinter
 
         $b->separator('=')->alignLeft();
 
-        // Items del snapshot
-        foreach (($ticket->items_snapshot ?? []) as $item) {
-            $qty = (float) ($item['quantity'] ?? 1);
-            $desc = $item['description'] ?? '?';
+        // Agrupar items por curso: imprime un sub-encabezado por curso para
+        // que el cocinero secuencie. Si el ticket fue filtrado por un solo
+        // curso, igual queda como un sub-bloque con titulo claro.
+        $snapshot = $ticket->items_snapshot ?? [];
+        $byCourse = [];
+        foreach ($snapshot as $it) {
+            $c = (int) ($it['course'] ?? 1);
+            $byCourse[$c][] = $it;
+        }
+        ksort($byCourse);
 
-            $b->bold(true)->size(2, 2)
-                ->line(rtrim(number_format($qty, 0).'x  '.strtoupper($desc)))
-                ->size(1, 1)->bold(false);
+        foreach ($byCourse as $courseNum => $items) {
+            $courseName = \App\Models\Restaurant\OrderItem::COURSES[$courseNum] ?? ('CURSO '.$courseNum);
+            $b->bold(true)->alignCenter()
+                ->line('--- '.strtoupper($courseName).' ---')
+                ->bold(false)->alignLeft()->lf();
 
-            // Modificadores
-            foreach (($item['modifiers'] ?? []) as $mod) {
-                $name = is_array($mod) ? ($mod['name'] ?? '') : (string) $mod;
-                if ($name) $b->line('   + '.$name);
+            foreach ($items as $item) {
+                $qty = (float) ($item['quantity'] ?? 1);
+                $desc = $item['description'] ?? '?';
+
+                $b->bold(true)->size(2, 2)
+                    ->line(rtrim(number_format($qty, 0).'x  '.strtoupper($desc)))
+                    ->size(1, 1)->bold(false);
+
+                // Modificadores
+                foreach (($item['modifiers'] ?? []) as $mod) {
+                    $name = is_array($mod) ? ($mod['name'] ?? '') : (string) $mod;
+                    if ($name) $b->line('   + '.$name);
+                }
+
+                // Nota
+                if (! empty($item['note'])) {
+                    $b->bold(true)->line('   NOTA: '.$item['note'])->bold(false);
+                }
+
+                // Split tab
+                if (! empty($item['split_tab'])) {
+                    $b->line('   ('.$item['split_tab'].')');
+                }
+
+                $b->lf();
             }
-
-            // Nota
-            if (! empty($item['note'])) {
-                $b->bold(true)->line('   NOTA: '.$item['note'])->bold(false);
-            }
-
-            // Split tab
-            if (! empty($item['split_tab'])) {
-                $b->line('   ('.$item['split_tab'].')');
-            }
-
-            $b->lf();
         }
 
         $b->separator('-');

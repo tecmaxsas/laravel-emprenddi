@@ -50,6 +50,9 @@ class RestaurantPos extends Page
     public ?int $activeCategoryId = null;
     public string $productSearch = '';
 
+    // Curso "actual" al agregar items: 1=entrada, 2=principal, 3=postre, 4=bebida
+    public int $currentCourse = 1;
+
     // Estado del modal de modificadores
     public ?int $modifierProductId = null;
     public array $modifierSelections = [];       // [groupId => [modifierId, ...]] (multi) | [groupId => modifierId] (single)
@@ -197,10 +200,17 @@ class RestaurantPos extends Page
         }
 
         try {
-            app(RestaurantOrderEngine::class)->addItem($order, $product, 1.0);
+            app(RestaurantOrderEngine::class)->addItem(
+                $order,
+                $product,
+                1.0,
+                null,
+                [],
+                $this->currentCourse,
+            );
             Notification::make()
                 ->title($product->name)
-                ->body('Agregado a la cuenta')
+                ->body('Agregado a la cuenta — '.(OrderItem::COURSES[$this->currentCourse] ?? 'Curso '.$this->currentCourse))
                 ->success()
                 ->duration(1500)
                 ->send();
@@ -211,6 +221,34 @@ class RestaurantPos extends Page
                 ->danger()
                 ->send();
         }
+    }
+
+    public function setCurrentCourse(int $course): void
+    {
+        if (! array_key_exists($course, OrderItem::COURSES)) return;
+        $this->currentCourse = $course;
+    }
+
+    /**
+     * Cicla el curso de un item: 1 → 2 → 3 → 4 → 1.
+     * Solo permitido en items pendientes (aún no enviados a cocina).
+     */
+    public function cycleItemCourse(int $itemId): void
+    {
+        $item = OrderItem::find($itemId);
+        if (! $item) return;
+        if ($item->kitchen_status !== OrderItem::KS_PENDING) {
+            Notification::make()
+                ->title('No se puede cambiar')
+                ->body('El item ya fue enviado a cocina.')
+                ->warning()
+                ->send();
+            return;
+        }
+        $courses = array_keys(OrderItem::COURSES);
+        $idx = array_search($item->course, $courses, true);
+        $next = $idx === false ? $courses[0] : $courses[($idx + 1) % count($courses)];
+        $item->update(['course' => $next]);
     }
 
     public function getModifierProductProperty(): ?Product
@@ -281,6 +319,7 @@ class RestaurantPos extends Page
                 1.0,
                 $this->modifierItemNote !== '' ? $this->modifierItemNote : null,
                 $modifiers,
+                $this->currentCourse,
             );
 
             $extra = array_sum(array_column($modifiers, 'price_delta'));
@@ -328,16 +367,23 @@ class RestaurantPos extends Page
         Notification::make()->title('Item cancelado')->warning()->send();
     }
 
-    public function sendToKitchen(): void
+    /**
+     * @param  int|null  $course  Si se pasa, solo envía items pendientes de ese curso.
+     */
+    public function sendToKitchen(?int $course = null): void
     {
         $order = $this->activeOrder;
         if (! $order) return;
 
         try {
-            $tickets = app(RestaurantOrderEngine::class)->sendPendingToKitchen($order);
+            $tickets = app(RestaurantOrderEngine::class)->sendPendingToKitchen($order, $course);
             $count = count($tickets);
+            $label = $course
+                ? (OrderItem::COURSES[$course] ?? 'Curso '.$course)
+                : 'Todo lo pendiente';
+
             Notification::make()
-                ->title("Comanda enviada")
+                ->title("Comanda enviada · {$label}")
                 ->body($count > 0
                     ? "{$count} ticket(s) generado(s) por impresora."
                     : "Items marcados como enviados (sin impresora asignada).")
