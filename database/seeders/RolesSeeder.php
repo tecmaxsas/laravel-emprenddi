@@ -20,7 +20,7 @@ class RolesSeeder extends Seeder
         }
 
         // 2. Roles base + asignación de permisos default
-        $roles = ['admin', 'manager', 'accountant', 'cashier', 'seller'];
+        $roles = ['admin', 'manager', 'accountant', 'cashier', 'seller', 'accountant_external'];
 
         foreach ($roles as $name) {
             $role = Role::firstOrCreate(['name' => $name, 'guard_name' => 'web']);

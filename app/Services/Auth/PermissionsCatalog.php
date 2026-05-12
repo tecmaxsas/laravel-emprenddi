@@ -149,6 +149,25 @@ class PermissionsCatalog
                 'third_parties.view', 'third_parties.manage',
                 'inventory.view',
             ],
+            // Contador externo del Portal Contador. Lectura amplia + edición
+            // contable (postear, anular, ajustes). No puede crear ventas/POS
+            // ni tocar settings de empresa.
+            'accountant_external' => [
+                'accounts.view', 'accounts.manage',
+                'taxes.view',
+                'payment_methods.view',
+                'third_parties.view',
+                'journal_entries.view', 'journal_entries.create', 'journal_entries.post',
+                'purchases.view', 'purchases.post', 'purchases.pay',
+                'sales.view', 'sales.post', 'sales.receive_payment',
+                'quotations.view',
+                'delivery_notes.view',
+                'credit_debit_notes.view', 'credit_debit_notes.create', 'credit_debit_notes.post', 'credit_debit_notes.send_dian',
+                'reports.journal_book', 'reports.general_ledger', 'reports.trial_balance', 'reports.kardex',
+                'reports.sales', 'reports.accounts_receivable', 'reports.cash_closings',
+                'inventory.view',
+                'products.view', 'categories.view',
+            ],
             'seller' => [
                 'products.view', 'categories.view',
                 'sales.view', 'sales.create',
