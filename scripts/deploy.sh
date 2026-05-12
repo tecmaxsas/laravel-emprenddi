@@ -45,7 +45,17 @@ cd "$PROJECT_DIR"
 
 # ---- Pull -------------------------------------------------------------------
 echo "==> Pull últimos cambios desde origin/main..."
-PRE_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "")
+
+# Si venimos de un re-exec (el propio deploy.sh cambió en el pull anterior),
+# el reset ya se ejecutó: usamos el PRE_HEAD original que el padre nos pasa.
+# Si no, lo capturamos del HEAD actual antes de fetch+reset.
+if [ -n "${EMPRENDDI_DEPLOY_PRE_HEAD:-}" ]; then
+    PRE_HEAD="$EMPRENDDI_DEPLOY_PRE_HEAD"
+    echo "   (continuación post re-exec, PRE_HEAD heredado: $(git rev-parse --short "$PRE_HEAD" 2>/dev/null || echo "$PRE_HEAD"))"
+else
+    PRE_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "")
+fi
+
 SCRIPT_FILE="$(realpath "$0")"
 SCRIPT_HASH_BEFORE=$(md5sum "$SCRIPT_FILE" | awk '{print $1}')
 git fetch origin main
@@ -56,6 +66,7 @@ SCRIPT_HASH_AFTER=$(md5sum "$SCRIPT_FILE" | awk '{print $1}')
 if [ "$SCRIPT_HASH_BEFORE" != "$SCRIPT_HASH_AFTER" ] && [ "${EMPRENDDI_DEPLOY_REEXEC:-0}" != "1" ]; then
     echo "==> deploy.sh cambió en este pull — re-ejecutando con la versión nueva..."
     export EMPRENDDI_DEPLOY_REEXEC=1
+    export EMPRENDDI_DEPLOY_PRE_HEAD="$PRE_HEAD"
     exec bash "$SCRIPT_FILE" "$@"
 fi
 
