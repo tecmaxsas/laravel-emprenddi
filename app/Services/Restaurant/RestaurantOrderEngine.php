@@ -947,6 +947,20 @@ class RestaurantOrderEngine
                     ]);
                 }
 
+                // Asiento contable de propina del tab (si configurado y >0)
+                if ($tipShare > 0) {
+                    $firstPaymentAccountId = (int) ($payments[0]['account_id'] ?? 0);
+                    if ($firstPaymentAccountId > 0) {
+                        $this->recordTipJournalEntry(
+                            $order,
+                            $invoice,
+                            $tipShare,
+                            $firstPaymentAccountId,
+                            $tabLabel,
+                        );
+                    }
+                }
+
                 $invoices[] = $invoice->fresh();
             }
 
@@ -1036,5 +1050,74 @@ class RestaurantOrderEngine
 
             return $order->fresh();
         });
+    }
+
+    /**
+     * Crea el asiento contable de la propina recibida:
+     *   DR cuenta de caja/banco (donde entró el dinero)
+     *   CR cuenta de "propinas por pagar" (pasivo al staff)
+     *
+     * Solo se ejecuta si la empresa tiene configurada la cuenta en
+     * settings.restaurant.tip_payable_account_id. Si no, el asiento NO se
+     * crea — la propina sigue registrada en order.tip_amount para reportes,
+     * pero el dinero queda fuera del journal hasta que el admin lo asigne.
+     */
+    protected function recordTipJournalEntry(
+        Order $order,
+        SaleInvoice $invoice,
+        float $tipAmount,
+        int $cashAccountId,
+        ?string $tabLabel = null,
+    ): ?\App\Models\JournalEntry {
+        $company = \App\Models\Company::find($order->company_id);
+        $settings = $company?->settings ?? [];
+        $tipAccountId = data_get($settings, 'restaurant.tip_payable_account_id');
+
+        if (! $tipAccountId) {
+            return null; // sin cuenta configurada, no se crea asiento
+        }
+
+        $numberer = app(\App\Services\Accounting\JournalEntryNumberer::class);
+        $number = $numberer->next($company, 'PR'); // PR = Propina Recibida
+
+        $description = "Propina recibida — Orden {$order->fullNumber()}"
+            .($tabLabel ? " tab {$tabLabel}" : '')
+            ." (Factura {$invoice->fullNumber()})";
+
+        $entry = \App\Models\JournalEntry::create([
+            'company_id' => $order->company_id,
+            'prefix' => 'PR',
+            'number' => $number,
+            'date' => now()->toDateString(),
+            'type' => 'receipt',
+            'reference' => $invoice->fullNumber(),
+            'description' => $description,
+            'status' => 'posted',
+            'posted_at' => now(),
+            'posted_by_user_id' => Auth::id(),
+            'created_by_user_id' => Auth::id(),
+            'total_debit' => $tipAmount,
+            'total_credit' => $tipAmount,
+        ]);
+
+        \App\Models\JournalEntryLine::create([
+            'journal_entry_id' => $entry->id,
+            'line_number' => 1,
+            'account_id' => $cashAccountId,
+            'description' => 'Propina recibida en efectivo/banco',
+            'debit' => $tipAmount,
+            'credit' => 0,
+        ]);
+
+        \App\Models\JournalEntryLine::create([
+            'journal_entry_id' => $entry->id,
+            'line_number' => 2,
+            'account_id' => (int) $tipAccountId,
+            'description' => 'Propina por pagar al staff — Orden '.$order->fullNumber(),
+            'debit' => 0,
+            'credit' => $tipAmount,
+        ]);
+
+        return $entry;
     }
 }

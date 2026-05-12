@@ -89,6 +89,9 @@ class Settings extends Page implements HasForms
             );
         }
 
+        // Cuenta de propinas por pagar
+        $this->data['restaurant_tip_payable_account_id'] = data_get($settings, 'restaurant.tip_payable_account_id');
+
         $this->form->fill($this->data);
     }
 
@@ -321,6 +324,24 @@ class Settings extends Page implements HasForms
                 ->columns(2)
                 ->schema($toggles),
 
+            Forms\Components\Section::make('Cuentas contables')
+                ->description('Configuración contable específica del módulo.')
+                ->schema([
+                    Forms\Components\Select::make('restaurant_tip_payable_account_id')
+                        ->label('Cuenta de propinas por pagar (mesero/staff)')
+                        ->helperText('Al cobrar una orden con propina, el sistema crea un asiento DR Caja / CR esta cuenta — así la propina queda registrada como pasivo a pagar al staff. Si no se configura, las propinas siguen contándose en order.tip_amount pero NO se genera asiento. Default sugerido: cuenta 218505.')
+                        ->options(fn () => \App\Models\Account::query()
+                            ->where('accepts_movements', true)
+                            ->where('active', true)
+                            ->where('code', 'like', '21%')   // pasivos
+                            ->orderBy('code')
+                            ->get()
+                            ->mapWithKeys(fn ($a) => [$a->id => $a->code.' — '.$a->name])
+                            ->all())
+                        ->searchable()
+                        ->placeholder('— Sin asiento de propina —'),
+                ]),
+
             // Bloque visual de "submit" — el botón real está fuera del form
             // (ver settings.blade.php). El Filament Action dentro del tab no
             // dispara saveRestaurant() de forma confiable.
@@ -362,6 +383,11 @@ class Settings extends Page implements HasForms
             $restaurant['enable_'.$key] = $value;
             $debug[$key] = ['value' => $value, 'source' => $source];
         }
+
+        // Cuenta de propinas por pagar (puede ser null = sin asiento)
+        $tipAccount = $this->data['restaurant_tip_payable_account_id'] ?? null;
+        $restaurant['tip_payable_account_id'] = $tipAccount ? (int) $tipAccount : null;
+
         $settings['restaurant'] = $restaurant;
 
         \Log::info('[Settings.saveRestaurant] writing', [
