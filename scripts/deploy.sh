@@ -106,7 +106,7 @@ changed '^(Dockerfile|docker/php/|composer\.(json|lock))'            && NEEDS_BU
 changed '^composer\.(json|lock)$'                                    && NEEDS_COMPOSER=true
 changed '^(package(-lock)?\.json|vite\.config\.|tailwind\.config\.|resources/(css|js)/)' && NEEDS_NPM=true
 changed '^database/migrations/'                                      && NEEDS_MIGRATE=true
-changed '^database/seeders/'                                         && NEEDS_SEEDERS=true
+changed '^database/seeders/|^app/Services/Auth/PermissionsCatalog\.php' && NEEDS_SEEDERS=true
 changed '^composer\.lock$|^app/Providers/Filament/'                  && NEEDS_FILAMENT_ASSETS=true
 changed '\.blade\.php$|^resources/views/'                            && NEEDS_VIEW_CACHE=true
 
