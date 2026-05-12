@@ -33,6 +33,7 @@ class TrialBalancePage extends Page implements HasForms, HasTable
 
     public static function canAccess(): bool
     {
+        if (! \App\Support\AccountantContext::ready()) return false;
         return (bool) auth()->user()?->can('reports.trial_balance');
     }
 
