@@ -58,6 +58,12 @@ class RestaurantPos extends Page
     public array $modifierSelections = [];       // [groupId => [modifierId, ...]] (multi) | [groupId => modifierId] (single)
     public string $modifierItemNote = '';
 
+    // Estado del modal mitad y mitad
+    public bool $halfModalOpen = false;
+    public ?int $halfAProductId = null;
+    public ?int $halfBProductId = null;
+    public string $halfNote = '';
+
     public static function canAccess(): bool
     {
         if (! ModuleGate::active('restaurant')) return false;
@@ -333,6 +339,118 @@ class RestaurantPos extends Page
             $this->cancelModifiers();
         } catch (\Throwable $e) {
             Notification::make()->title('Error al agregar')->body($e->getMessage())->danger()->send();
+        }
+    }
+
+    // ============ MITAD Y MITAD ============
+
+    public function openHalfModal(): void
+    {
+        if (! $this->activeOrder) return;
+        $this->halfModalOpen = true;
+        $this->halfAProductId = null;
+        $this->halfBProductId = null;
+        $this->halfNote = '';
+    }
+
+    public function closeHalfModal(): void
+    {
+        $this->halfModalOpen = false;
+        $this->halfAProductId = null;
+        $this->halfBProductId = null;
+        $this->halfNote = '';
+    }
+
+    /**
+     * Lista de productos elegibles para la mitad B: solo los de la misma
+     * categoria que A. Si A no se ha elegido, retorna vacio.
+     */
+    public function getHalfBOptionsProperty()
+    {
+        if (! $this->halfAProductId) return collect();
+
+        $a = Product::find($this->halfAProductId);
+        if (! $a || ! $a->category_id) return collect();
+
+        return Product::query()
+            ->where('active', true)
+            ->where('is_sellable', true)
+            ->where('category_id', $a->category_id)
+            ->where('id', '!=', $a->id)
+            ->orderBy('name')
+            ->get();
+    }
+
+    /**
+     * Catalogo para la mitad A: solo productos con categoria asignada.
+     */
+    public function getHalfAOptionsProperty()
+    {
+        return Product::query()
+            ->where('active', true)
+            ->where('is_sellable', true)
+            ->whereNotNull('category_id')
+            ->orderBy('name')
+            ->get();
+    }
+
+    public function getHalfPreviewProperty(): ?array
+    {
+        if (! $this->halfAProductId || ! $this->halfBProductId) return null;
+
+        $a = Product::find($this->halfAProductId);
+        $b = Product::find($this->halfBProductId);
+        if (! $a || ! $b) return null;
+
+        $location = $this->activeOrder?->location_id ? \App\Models\Location::find($this->activeOrder->location_id) : null;
+        $priceA = (float) $a->priceForLocation($location);
+        $priceB = (float) $b->priceForLocation($location);
+
+        return [
+            'a' => $a->name,
+            'b' => $b->name,
+            'price_a' => $priceA,
+            'price_b' => $priceB,
+            'final_price' => max($priceA, $priceB),
+            'description' => "1/2 {$a->name} + 1/2 {$b->name}",
+        ];
+    }
+
+    public function confirmHalfAndHalf(): void
+    {
+        $order = $this->activeOrder;
+        if (! $order) { $this->closeHalfModal(); return; }
+        if (! $this->halfAProductId || ! $this->halfBProductId) {
+            Notification::make()->title('Faltan mitades')->body('Debes elegir las 2 mitades.')->danger()->send();
+            return;
+        }
+
+        $a = Product::find($this->halfAProductId);
+        $b = Product::find($this->halfBProductId);
+        if (! $a || ! $b) {
+            Notification::make()->title('Productos invalidos')->danger()->send();
+            return;
+        }
+
+        try {
+            app(RestaurantOrderEngine::class)->addHalfAndHalf(
+                $order,
+                $a,
+                $b,
+                $this->currentCourse,
+                $this->halfNote !== '' ? $this->halfNote : null,
+            );
+
+            Notification::make()
+                ->title('Mitad y mitad agregada')
+                ->body("1/2 {$a->name} + 1/2 {$b->name}")
+                ->success()
+                ->duration(2000)
+                ->send();
+
+            $this->closeHalfModal();
+        } catch (\Throwable $e) {
+            Notification::make()->title('Error')->body($e->getMessage())->danger()->send();
         }
     }
 

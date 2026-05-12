@@ -380,6 +380,12 @@
                                placeholder="Buscar por nombre / código / barcode"
                                style="flex:1; padding:8px 10px; border-radius:8px; border:1px solid #d1d5db; font-size:13px;"
                                class="dark:!bg-gray-800 dark:!border-gray-700 dark:!text-gray-100" />
+
+                        <button type="button" wire:click="openHalfModal"
+                                title="Pizza/pasta con dos sabores"
+                                style="padding:8px 14px; border-radius:8px; background:#a855f7; color:white; border:0; font-weight:700; cursor:pointer; font-size:13px; white-space:nowrap;">
+                            🍕 1/2 + 1/2
+                        </button>
                     </div>
 
                     {{-- Tabs de categoría --}}
@@ -527,6 +533,129 @@
                     <button type="button" wire:click="confirmModifiers"
                             style="padding:10px 22px; background:#10b981; color:white; border:0; border-radius:8px; font-weight:700; cursor:pointer;">
                         ✓ Agregar a la cuenta
+                    </button>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    {{-- ============ MODAL MITAD Y MITAD ============ --}}
+    @if ($halfModalOpen)
+        @php
+            $halfAOpts = $this->halfAOptions;
+            $halfBOpts = $this->halfBOptions;
+            $preview = $this->halfPreview;
+        @endphp
+        <div
+            style="position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:9999; padding:20px;"
+            wire:click.self="closeHalfModal"
+            wire:keydown.escape.window="closeHalfModal"
+        >
+            <div style="background:#ffffff; border-radius:14px; max-width:560px; width:100%; max-height:90vh; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 25px 50px rgba(0,0,0,0.4);">
+
+                {{-- Header --}}
+                <div style="padding:18px 22px; border-bottom:1px solid #e5e7eb; background:#faf5ff; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <h2 style="margin:0; font-size:18px; font-weight:700; color:#581c87;">
+                            🍕 Mitad y mitad
+                        </h2>
+                        <div style="font-size:12px; color:#6b7280; margin-top:2px;">
+                            Combina 2 productos de la misma categoría en una sola línea
+                        </div>
+                    </div>
+                    <button type="button" wire:click="closeHalfModal"
+                            style="background:transparent; border:0; cursor:pointer; padding:6px; border-radius:6px; font-size:24px; color:#6b7280; line-height:1;">
+                        ×
+                    </button>
+                </div>
+
+                {{-- Cuerpo --}}
+                <div style="padding:18px 22px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:14px; color:#111827;">
+
+                    {{-- Mitad A --}}
+                    <div>
+                        <label style="display:block; font-size:13px; font-weight:700; color:#111827; margin-bottom:6px;">
+                            🍕 Primera mitad
+                        </label>
+                        <select wire:model.live="halfAProductId"
+                                style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid #d1d5db; font-size:14px; background:#ffffff; color:#111827;">
+                            <option value="">— Elige el primer sabor —</option>
+                            @foreach ($halfAOpts as $p)
+                                <option value="{{ $p->id }}">{{ $p->name }} (${{ number_format((float) $p->default_sale_price, 0) }})</option>
+                            @endforeach
+                        </select>
+                        @if ($halfAOpts->isEmpty())
+                            <div style="font-size:11px; color:#dc2626; margin-top:4px;">
+                                No hay productos con categoría asignada. Asigna una categoría a tus pizzas/pastas primero.
+                            </div>
+                        @endif
+                    </div>
+
+                    {{-- Mitad B --}}
+                    <div>
+                        <label style="display:block; font-size:13px; font-weight:700; color:#111827; margin-bottom:6px;">
+                            🍕 Segunda mitad
+                            @if ($halfAProductId)
+                                <span style="font-size:11px; color:#6b7280; font-weight:500;">(misma categoría)</span>
+                            @endif
+                        </label>
+                        <select wire:model.live="halfBProductId"
+                                @disabled(! $halfAProductId)
+                                style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid #d1d5db; font-size:14px; background:{{ $halfAProductId ? '#ffffff' : '#f3f4f6' }}; color:#111827;">
+                            <option value="">— Elige el segundo sabor —</option>
+                            @foreach ($halfBOpts as $p)
+                                <option value="{{ $p->id }}">{{ $p->name }} (${{ number_format((float) $p->default_sale_price, 0) }})</option>
+                            @endforeach
+                        </select>
+                        @if ($halfAProductId && $halfBOpts->isEmpty())
+                            <div style="font-size:11px; color:#dc2626; margin-top:4px;">
+                                No hay otros productos en esa categoría.
+                            </div>
+                        @endif
+                    </div>
+
+                    {{-- Preview --}}
+                    @if ($preview)
+                        <div style="background:#f0fdf4; border:1px solid #86efac; border-radius:8px; padding:12px;">
+                            <div style="font-size:12px; color:#15803d; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">
+                                Vista previa
+                            </div>
+                            <div style="font-size:15px; font-weight:700; color:#111827; margin-bottom:6px;">
+                                {{ $preview['description'] }}
+                            </div>
+                            <div style="font-size:11px; color:#374151; line-height:1.5;">
+                                <div>· 1/2 {{ $preview['a'] }} → ${{ number_format($preview['price_a'], 0) }}</div>
+                                <div>· 1/2 {{ $preview['b'] }} → ${{ number_format($preview['price_b'], 0) }}</div>
+                            </div>
+                            <div style="margin-top:8px; padding-top:8px; border-top:1px dashed #86efac; display:flex; justify-content:space-between; align-items:center;">
+                                <span style="font-size:12px; color:#374151; font-weight:600;">Precio (cobramos la mitad más cara)</span>
+                                <span style="font-size:18px; font-weight:800; color:#059669;">${{ number_format($preview['final_price'], 0) }}</span>
+                            </div>
+                        </div>
+                    @endif
+
+                    {{-- Nota --}}
+                    <div>
+                        <label style="font-size:13px; font-weight:600; color:#111827; margin-bottom:6px; display:block;">
+                            📝 Nota para cocina (opcional)
+                        </label>
+                        <textarea wire:model.live="halfNote"
+                                  placeholder="Ej: borde de queso, sin aceitunas en la mitad de hawaiana..."
+                                  rows="2"
+                                  style="width:100%; padding:8px 10px; border:1px solid #d1d5db; border-radius:8px; font-size:13px; resize:vertical; color:#111827; background:#ffffff;"></textarea>
+                    </div>
+                </div>
+
+                {{-- Footer --}}
+                <div style="padding:14px 22px; border-top:1px solid #e5e7eb; background:#fafafa; display:flex; gap:10px; justify-content:flex-end;">
+                    <button type="button" wire:click="closeHalfModal"
+                            style="padding:10px 18px; background:transparent; color:#6b7280; border:1px solid #d1d5db; border-radius:8px; font-weight:600; cursor:pointer;">
+                        Cancelar
+                    </button>
+                    <button type="button" wire:click="confirmHalfAndHalf"
+                            @disabled(! $halfAProductId || ! $halfBProductId)
+                            style="padding:10px 22px; background:{{ $halfAProductId && $halfBProductId ? '#a855f7' : '#c4b5fd' }}; color:white; border:0; border-radius:8px; font-weight:700; cursor:pointer;">
+                        ✓ Agregar 1/2 + 1/2
                     </button>
                 </div>
             </div>

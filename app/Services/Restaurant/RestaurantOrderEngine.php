@@ -163,6 +163,96 @@ class RestaurantOrderEngine
         return $item;
     }
 
+    /**
+     * Agrega un item "mitad y mitad": dos productos diferentes en una sola
+     * linea (típicamente pizza con dos sabores). Precio = max(precio A, B)
+     * — convencion CO de cobrar la mitad mas cara.
+     *
+     * Ambas mitades deben pertenecer a la misma categoria para evitar
+     * combinaciones absurdas (pizza + sopa). Tax y impresora se toman del
+     * producto mas caro para reportes y ruteo.
+     */
+    public function addHalfAndHalf(
+        Order $order,
+        Product $a,
+        Product $b,
+        int $course = 1,
+        ?string $note = null,
+    ): OrderItem {
+        if (! $order->isOpen()) {
+            throw new RuntimeException('No se pueden agregar items a una orden cerrada.');
+        }
+        if ($a->id === $b->id) {
+            throw new RuntimeException('Las dos mitades deben ser productos distintos.');
+        }
+        if ($a->category_id !== $b->category_id) {
+            throw new RuntimeException('Las dos mitades deben ser de la misma categoria.');
+        }
+
+        $location = $order->location_id ? \App\Models\Location::find($order->location_id) : null;
+        $priceA = (float) $a->priceForLocation($location);
+        $priceB = (float) $b->priceForLocation($location);
+        $unitPrice = max($priceA, $priceB);
+
+        // Producto "principal" = el mas caro (atribucion en reportes + tax + printer)
+        $mainProduct = $priceA >= $priceB ? $a : $b;
+
+        $tax = $mainProduct->default_sale_tax_id ? Tax::find($mainProduct->default_sale_tax_id) : null;
+        $taxRate = $tax ? (float) $tax->rate : 0.0;
+
+        $quantity = 1.0;
+        $subtotal = round($quantity * $unitPrice, 2);
+        $taxAmount = round($subtotal * $taxRate / 100, 2);
+        $total = round($subtotal + $taxAmount, 2);
+
+        $description = "1/2 {$a->name} + 1/2 {$b->name}";
+
+        $composite = [
+            ['product_id' => $a->id, 'name' => $a->name, 'price' => round($priceA, 2), 'ratio' => 0.5],
+            ['product_id' => $b->id, 'name' => $b->name, 'price' => round($priceB, 2), 'ratio' => 0.5],
+        ];
+
+        $lineNumber = ((int) $order->items()->max('line_number')) + 1;
+
+        // Printer del producto principal (su categoria)
+        $printerId = null;
+        if ($mainProduct->category_id) {
+            $printer = Printer::query()
+                ->where('company_id', $order->company_id)
+                ->where('location_id', $order->location_id)
+                ->where('active', true)
+                ->where('connection_type', '!=', 'browser')
+                ->get()
+                ->first(fn (Printer $p) => $p->handlesCategory((int) $mainProduct->category_id));
+            $printerId = $printer?->id;
+        }
+
+        $item = OrderItem::create([
+            'restaurant_order_id' => $order->id,
+            'line_number' => $lineNumber,
+            'product_id' => $mainProduct->id,
+            'description' => $description,
+            'quantity' => $quantity,
+            'unit_price' => $unitPrice,
+            'subtotal' => $subtotal,
+            'modifier_total' => 0,
+            'tax_id' => $tax?->id,
+            'tax_rate' => $taxRate,
+            'tax_amount' => $taxAmount,
+            'total' => $total,
+            'modifiers' => null,
+            'composite_items' => $composite,
+            'item_note' => $note,
+            'kitchen_status' => OrderItem::KS_PENDING,
+            'course' => max(1, $course),
+            'printed_to_printer_id' => $printerId,
+        ]);
+
+        $this->recalculateTotals($order);
+
+        return $item;
+    }
+
     public function updateItemQuantity(OrderItem $item, float $quantity): void
     {
         if ($quantity <= 0) {
@@ -272,6 +362,7 @@ class RestaurantOrderEngine
                     'description' => $i->description,
                     'quantity' => (float) $i->quantity,
                     'modifiers' => $i->modifiers,
+                    'composite_items' => $i->composite_items,
                     'note' => $i->item_note,
                     'course' => (int) $i->course,
                     'split_tab' => $i->split_tab,
