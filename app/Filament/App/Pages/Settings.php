@@ -326,7 +326,7 @@ class Settings extends Page implements HasForms
                     ->label('Guardar configuración Restaurante')
                     ->icon('heroicon-o-check-circle')
                     ->color('primary')
-                    ->action('saveRestaurant'),
+                    ->action(fn () => $this->saveRestaurant()),
             ])->alignEnd(),
         ];
     }
@@ -338,13 +338,22 @@ class Settings extends Page implements HasForms
             return;
         }
 
-        $state = $this->form->getState();
+        // Leer directo de $this->data (wire:model lo actualiza en cada toggle).
+        // Evita problemas con getState() si el form no esta plenamente hidratado.
         $company = $this->getCompany();
         $settings = $company->settings ?? [];
 
         $restaurant = $settings['restaurant'] ?? [];
         foreach (array_keys(RestaurantSettings::FEATURES) as $key) {
-            $restaurant['enable_'.$key] = (bool) ($state['restaurant_enable_'.$key] ?? RestaurantSettings::FEATURES[$key]['default']);
+            $stateKey = 'restaurant_enable_'.$key;
+            // Si la clave existe en data, usarla. Si no, conservar valor previo
+            // o caer al default — NO usar default si la clave SI existe pero es false.
+            if (array_key_exists($stateKey, $this->data)) {
+                $value = (bool) $this->data[$stateKey];
+            } else {
+                $value = (bool) ($restaurant['enable_'.$key] ?? RestaurantSettings::FEATURES[$key]['default']);
+            }
+            $restaurant['enable_'.$key] = $value;
         }
         $settings['restaurant'] = $restaurant;
 
