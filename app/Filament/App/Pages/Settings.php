@@ -339,25 +339,36 @@ class Settings extends Page implements HasForms
         }
 
         // Leer directo de $this->data (wire:model lo actualiza en cada toggle).
-        // Evita problemas con getState() si el form no esta plenamente hidratado.
         $company = $this->getCompany();
         $settings = $company->settings ?? [];
 
         $restaurant = $settings['restaurant'] ?? [];
+        $debug = [];
         foreach (array_keys(RestaurantSettings::FEATURES) as $key) {
             $stateKey = 'restaurant_enable_'.$key;
-            // Si la clave existe en data, usarla. Si no, conservar valor previo
-            // o caer al default — NO usar default si la clave SI existe pero es false.
             if (array_key_exists($stateKey, $this->data)) {
                 $value = (bool) $this->data[$stateKey];
+                $source = 'data';
             } else {
                 $value = (bool) ($restaurant['enable_'.$key] ?? RestaurantSettings::FEATURES[$key]['default']);
+                $source = 'fallback';
             }
             $restaurant['enable_'.$key] = $value;
+            $debug[$key] = ['value' => $value, 'source' => $source];
         }
         $settings['restaurant'] = $restaurant;
 
+        \Log::info('[Settings.saveRestaurant] writing', [
+            'company_id' => $company->id,
+            'restaurant_settings' => $restaurant,
+            'sources' => $debug,
+            'data_has_restaurant_keys' => array_filter(array_keys($this->data), fn ($k) => str_starts_with($k, 'restaurant_enable_')),
+        ]);
+
         $company->update(['settings' => $settings]);
+
+        // Refrescar singleton de empresa por si hay re-render que usa la version vieja
+        app(\App\Support\CurrentCompany::class)->set($company->fresh());
 
         Notification::make()->title('Configuración de Restaurante guardada')->success()->send();
     }
