@@ -78,6 +78,7 @@ class PermissionsCatalog
                 'restaurant.kitchen' => 'Ver y operar la pantalla de cocina (KDS)',
                 'restaurant.tables.manage' => 'Configurar zonas, mesas e impresoras',
                 'restaurant.modifiers.manage' => 'Configurar grupos de modificadores',
+                'restaurant.reservations.manage' => 'Crear y gestionar reservaciones',
                 'restaurant.delivery.manage' => 'Operar pedidos de delivery',
                 'restaurant.bill.split' => 'Dividir cuentas',
             ],
@@ -158,7 +159,7 @@ class PermissionsCatalog
                 'inventory.view',
                 // Restaurant: el cajero/mesero usa el POS de mesas y la cocina
                 'restaurant.use', 'restaurant.kitchen', 'restaurant.bill.split',
-                'restaurant.delivery.manage',
+                'restaurant.delivery.manage', 'restaurant.reservations.manage',
             ],
             // Contador externo del Portal Contador. Lectura amplia + edición
             // contable (postear, anular, ajustes). No puede crear ventas/POS

@@ -64,6 +64,69 @@
                 </div>
             </div>
 
+            {{-- Próximas reservas --}}
+            @php $upcomingRes = $this->upcomingReservations; @endphp
+            @if ($upcomingRes->isNotEmpty())
+                <div class="rpos-card" style="margin-bottom:14px; background:#eef2ff; border-color:#c7d2fe;">
+                    <div style="font-size:11px; color:#3730a3; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">
+                        📅 Próximas reservas ({{ $upcomingRes->count() }})
+                    </div>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                        @foreach ($upcomingRes as $res)
+                            @php
+                                $diff = $res->reserved_for->diffInMinutes(now(), false);
+                                $isPast = $res->reserved_for->isPast();
+                                $isImminent = abs($diff) <= 15;
+                                $borderColor = $isPast ? '#dc2626' : ($isImminent ? '#f59e0b' : '#a5b4fc');
+                                $bg = $isPast ? '#fef2f2' : ($isImminent ? '#fffbeb' : '#ffffff');
+                            @endphp
+                            <div style="padding:10px 12px; border-radius:8px; background:{{ $bg }}; border:2px solid {{ $borderColor }}; min-width:220px;">
+                                <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px;">
+                                    <div style="font-weight:700; font-size:13px; color:#111827;">
+                                        {{ $res->customer_name }}
+                                    </div>
+                                    <div style="font-size:11px; color:{{ $isPast ? '#dc2626' : '#374151' }}; font-weight:600;">
+                                        {{ $res->reserved_for->format('H:i') }}
+                                        @if ($isPast)
+                                            <span style="font-weight:700;">· hace {{ abs($diff) }}min</span>
+                                        @else
+                                            <span>· en {{ $diff === 0 ? 'ahora' : abs($diff).'min' }}</span>
+                                        @endif
+                                    </div>
+                                </div>
+                                <div style="font-size:11px; color:#6b7280; margin-top:2px;">
+                                    {{ $res->guests }} pers ·
+                                    @if ($res->table)
+                                        Mesa {{ $res->table->code }}
+                                    @elseif ($res->zone)
+                                        Zona {{ $res->zone->name }}
+                                    @else
+                                        Sin mesa asignada
+                                    @endif
+                                    @if ($res->customer_phone) · {{ $res->customer_phone }} @endif
+                                </div>
+                                @if ($res->notes)
+                                    <div style="font-size:10px; color:#92400e; background:#fef3c7; padding:3px 6px; border-radius:4px; margin-top:4px; line-height:1.3;">
+                                        ⚠ {{ \Illuminate\Support\Str::limit($res->notes, 80) }}
+                                    </div>
+                                @endif
+                                <div style="display:flex; gap:4px; margin-top:6px;">
+                                    <button type="button" wire:click="seatReservation({{ $res->id }})"
+                                            style="flex:1; padding:5px 8px; border-radius:6px; background:#059669; color:white; border:0; font-weight:700; cursor:pointer; font-size:11px;">
+                                        ✓ Sentar
+                                    </button>
+                                    <button type="button" wire:click="markReservationNoShow({{ $res->id }})"
+                                            title="Marcar como no vino"
+                                            style="padding:5px 8px; border-radius:6px; background:transparent; color:#dc2626; border:1px solid #fecaca; font-weight:600; cursor:pointer; font-size:11px;">
+                                        No vino
+                                    </button>
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
+            @endif
+
             {{-- Ordenes "para llevar" activas (sin mesa) --}}
             @php $takeawayList = $this->takeawayOrders; @endphp
             @if ($takeawayList->isNotEmpty())

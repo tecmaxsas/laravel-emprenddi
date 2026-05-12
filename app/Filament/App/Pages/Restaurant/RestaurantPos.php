@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\Restaurant\Modifier;
 use App\Models\Restaurant\Order;
 use App\Models\Restaurant\OrderItem;
+use App\Models\Restaurant\Reservation;
 use App\Models\Restaurant\ServiceZone;
 use App\Models\Restaurant\Table;
 use App\Services\Restaurant\RestaurantOrderEngine;
@@ -667,6 +668,120 @@ class RestaurantPos extends Page
             ->with('items')
             ->orderBy('opened_at')
             ->get();
+    }
+
+    // ============ RESERVACIONES ============
+
+    /**
+     * Reservaciones activas en los proximos 120 minutos (incluye ya-en-hora ±30 min).
+     */
+    public function getUpcomingReservationsProperty()
+    {
+        if (! $this->locationId) return collect();
+
+        $now = now();
+        return Reservation::query()
+            ->where('location_id', $this->locationId)
+            ->whereIn('status', [Reservation::STATUS_PENDING, Reservation::STATUS_CONFIRMED])
+            ->whereBetween('reserved_for', [
+                $now->copy()->subMinutes(30),
+                $now->copy()->addMinutes(120),
+            ])
+            ->with(['table', 'zone'])
+            ->orderBy('reserved_for')
+            ->get();
+    }
+
+    /**
+     * Sentar cliente: abre orden en la mesa reservada (o le pide al cajero que
+     * elija una si no hay mesa especifica) y linkea la Reservation -> Order.
+     */
+    public function seatReservation(int $reservationId): void
+    {
+        $reservation = Reservation::find($reservationId);
+        if (! $reservation) return;
+        if (! $reservation->isActive()) {
+            Notification::make()->title('Reserva no activa')->warning()->send();
+            return;
+        }
+
+        // Sin mesa especifica: solo marcar seated; el host elige mesa manualmente
+        if (! $reservation->table_id) {
+            $reservation->update([
+                'status' => Reservation::STATUS_SEATED,
+                'seated_at' => now(),
+            ]);
+            Notification::make()
+                ->title('Reserva marcada como sentado')
+                ->body("{$reservation->customer_name} llegó. Asigna mesa manualmente.")
+                ->success()
+                ->send();
+            return;
+        }
+
+        $table = Table::find($reservation->table_id);
+        if (! $table) {
+            Notification::make()->title('Mesa de la reserva ya no existe')->danger()->send();
+            return;
+        }
+
+        // Si la mesa ya tiene orden activa, no podemos abrir otra — solo abrir esa
+        $existing = $table->activeOrder();
+        if ($existing) {
+            $this->activeOrderId = $existing->id;
+            $reservation->update([
+                'status' => Reservation::STATUS_SEATED,
+                'seated_at' => now(),
+                'seated_order_id' => $existing->id,
+            ]);
+            Notification::make()
+                ->title('Mesa ya estaba ocupada')
+                ->body("Vinculada a orden existente {$existing->fullNumber()}.")
+                ->info()
+                ->send();
+            return;
+        }
+
+        try {
+            $order = app(RestaurantOrderEngine::class)->openTableOrder(
+                $table,
+                null,
+                max(1, (int) $reservation->guests),
+            );
+
+            $reservation->update([
+                'status' => Reservation::STATUS_SEATED,
+                'seated_at' => now(),
+                'seated_order_id' => $order->id,
+            ]);
+
+            // Heredar nombre del cliente como nota
+            $order->update([
+                'notes' => trim(($order->notes ?? '')."\nReserva: {$reservation->customer_name}"
+                    .($reservation->customer_phone ? " ({$reservation->customer_phone})" : '')),
+            ]);
+
+            $this->activeOrderId = $order->id;
+
+            Notification::make()
+                ->title("Bienvenido {$reservation->customer_name}")
+                ->body("Mesa {$table->code} abierta para {$reservation->guests} comensal(es).")
+                ->success()
+                ->send();
+        } catch (\Throwable $e) {
+            Notification::make()->title('Error al sentar')->body($e->getMessage())->danger()->send();
+        }
+    }
+
+    public function markReservationNoShow(int $reservationId): void
+    {
+        $reservation = Reservation::find($reservationId);
+        if (! $reservation || ! $reservation->isActive()) return;
+        $reservation->update([
+            'status' => Reservation::STATUS_NO_SHOW,
+            'cancelled_at' => now(),
+        ]);
+        Notification::make()->title("Marcada como no-show: {$reservation->customer_name}")->warning()->send();
     }
 
     public function increaseQty(int $itemId): void
