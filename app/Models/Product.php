@@ -163,7 +163,7 @@ class Product extends Model
             'product_restaurant_modifier_group',
             'product_id',
             'restaurant_modifier_group_id',
-        )->withPivot('display_order')->orderBy('pivot_display_order');
+        )->withPivot('display_order')->orderByPivot('display_order');
     }
 
     public function fullName(): string
