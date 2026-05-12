@@ -28,6 +28,7 @@ class RestaurantOrderEngine
 {
     public function __construct(
         protected RestaurantOrderNumberer $numberer,
+        protected KitchenTicketPrinter $ticketPrinter,
     ) {}
 
     /**
@@ -266,7 +267,44 @@ class RestaurantOrderEngine
                 $order->update(['status' => Order::STATUS_IN_KITCHEN]);
             }
 
+            // Disparar impresión REAL (network/cups). Si falla, el ticket
+            // queda status='failed' con error_message pero la orden ya
+            // está enviada — el cocinero puede ver desde el KDS.
+            foreach ($tickets as $ticket) {
+                $this->ticketPrinter->print($ticket);
+            }
+
             return $tickets;
+        });
+    }
+
+    /**
+     * Cierra la orden tras pagar. Marca status=closed, posted_at,
+     * libera la mesa. Iter 21e: aquí debería generarse SaleInvoice
+     * y aplicar pagos. Por ahora solo finaliza la orden y libera
+     * la mesa para que se pueda usar de nuevo.
+     */
+    public function close(Order $order, ?string $notes = null): Order
+    {
+        if (! $order->isOpen()) {
+            throw new RuntimeException('Solo se pueden cerrar órdenes abiertas.');
+        }
+
+        return DB::transaction(function () use ($order, $notes) {
+            $order->update([
+                'status' => Order::STATUS_CLOSED,
+                'closed_at' => now(),
+                'closed_by_user_id' => Auth::id(),
+                'notes' => $notes
+                    ? trim(($order->notes ?? '')."\n".$notes)
+                    : $order->notes,
+            ]);
+
+            if ($order->table) {
+                $order->table->update(['status' => 'free']);
+            }
+
+            return $order->fresh();
         });
     }
 

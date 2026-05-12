@@ -185,19 +185,26 @@
                 </div>
 
                 {{-- Acciones --}}
-                <div x-data="{ confirmCancel: false }">
-                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+                <div x-data="{ confirmCancel: false, confirmClose: false }">
+                    <div style="display:grid; grid-template-columns: 1fr; gap:8px;">
                         <button type="button" wire:click="sendToKitchen"
                                 @disabled($order->items->where('kitchen_status', 'pending')->isEmpty())
-                                style="padding:10px; border-radius:8px; background:#3b82f6; color:white; border:0; font-weight:700; cursor:pointer; font-size:13px;"
+                                style="padding:12px; border-radius:8px; background:#3b82f6; color:white; border:0; font-weight:700; cursor:pointer; font-size:14px;"
                                 wire:loading.attr="disabled"
                                 wire:target="sendToKitchen">
-                            <span wire:loading.remove wire:target="sendToKitchen">📨 Enviar a cocina</span>
-                            <span wire:loading wire:target="sendToKitchen">Enviando...</span>
+                            <span wire:loading.remove wire:target="sendToKitchen">📨 Enviar a cocina e imprimir</span>
+                            <span wire:loading wire:target="sendToKitchen">Enviando + imprimiendo...</span>
                         </button>
+
+                        <button type="button" @click="confirmClose = true"
+                                @disabled($order->items->isEmpty())
+                                style="padding:12px; border-radius:8px; background:#10b981; color:white; border:0; font-weight:700; cursor:pointer; font-size:14px;">
+                            ✓ Cerrar cuenta y liberar mesa
+                        </button>
+
                         <button type="button" @click="confirmCancel = true"
-                                style="padding:10px; border-radius:8px; background:#fee2e2; color:#991b1b; border:0; font-weight:600; cursor:pointer; font-size:13px;">
-                            Cancelar orden
+                                style="padding:8px; border-radius:8px; background:transparent; color:#dc2626; border:1px solid #fecaca; font-weight:600; cursor:pointer; font-size:12px;">
+                            Cancelar orden (sin cobrar)
                         </button>
                     </div>
 
@@ -241,6 +248,49 @@
                                 <button type="button" @click="confirmCancel = false; $wire.cancelOrder()"
                                         style="padding:10px 16px; border-radius:8px; background:#dc2626; color:white; border:0; font-weight:600; cursor:pointer; font-size:13px;">
                                     Sí, cancelar orden
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {{-- Modal de confirmación de CIERRE (cobro) --}}
+                    <div x-show="confirmClose"
+                         x-cloak
+                         x-transition.opacity
+                         @click.self="confirmClose = false"
+                         @keydown.escape.window="confirmClose = false"
+                         style="position:fixed; inset:0; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; padding:20px; z-index:100;">
+                        <div @click.stop
+                             style="background:#ffffff; border-radius:14px; padding:24px; max-width:460px; width:100%; box-shadow:0 20px 50px rgba(0,0,0,0.3); animation: rposModal 200ms ease-out;"
+                             class="dark:!bg-gray-900">
+                            <div style="display:flex; gap:14px; align-items:flex-start;">
+                                <div style="flex-shrink:0; width:48px; height:48px; border-radius:50%; background:#d1fae5; display:flex; align-items:center; justify-content:center;">
+                                    <svg style="width:26px; height:26px; color:#059669;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+                                    </svg>
+                                </div>
+                                <div style="flex:1;">
+                                    <h3 style="font-size:18px; font-weight:700; margin:0; color:#111827;" class="dark:!text-gray-100">
+                                        Cerrar cuenta de {{ $order->table?->code ?? 'orden' }}
+                                    </h3>
+                                    <p style="font-size:14px; color:#6b7280; margin:8px 0 0; line-height:1.5;" class="dark:!text-gray-400">
+                                        Total <strong style="color:#10b981;">${{ number_format((float) $order->total, 0, ',', '.') }}</strong>.
+                                        La mesa <strong>{{ $order->table?->code ?? '—' }}</strong> quedará libre para una nueva orden.
+                                    </p>
+                                    <div style="margin-top:8px; padding:8px 10px; background:#fef3c7; border-radius:6px; font-size:11px; color:#92400e;">
+                                        ℹ️ Próximamente — Iter 21e: capturar propina, dividir cuenta y generar factura DIAN.
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:20px;">
+                                <button type="button" @click="confirmClose = false"
+                                        style="padding:10px 16px; border-radius:8px; background:#f3f4f6; color:#374151; border:0; font-weight:600; cursor:pointer; font-size:13px;"
+                                        class="dark:!bg-gray-800 dark:!text-gray-200">
+                                    Volver
+                                </button>
+                                <button type="button" @click="confirmClose = false; $wire.closeOrder()"
+                                        style="padding:10px 16px; border-radius:8px; background:#10b981; color:white; border:0; font-weight:700; cursor:pointer; font-size:13px;">
+                                    ✓ Cerrar cuenta
                                 </button>
                             </div>
                         </div>

@@ -250,4 +250,27 @@ class RestaurantPos extends Page
             Notification::make()->title('Error')->body($e->getMessage())->danger()->send();
         }
     }
+
+    /**
+     * Cierra la cuenta y libera la mesa. Iter 21e: agregará cobro
+     * con propina, división de cuenta y generación de SaleInvoice.
+     * Por ahora solo libera la mesa para empezar de cero.
+     */
+    public function closeOrder(): void
+    {
+        $order = $this->activeOrder;
+        if (! $order) return;
+
+        try {
+            app(RestaurantOrderEngine::class)->close($order);
+            Notification::make()
+                ->title('Cuenta cerrada')
+                ->body("Mesa {$order->table?->code} liberada y lista para nueva orden.")
+                ->success()
+                ->send();
+            $this->closeOrderPanel();
+        } catch (\Throwable $e) {
+            Notification::make()->title('Error')->body($e->getMessage())->danger()->send();
+        }
+    }
 }
