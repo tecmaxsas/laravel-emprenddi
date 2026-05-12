@@ -119,6 +119,13 @@ class AccountantResource extends Resource
                 Tables\Filters\TernaryFilter::make('active')->label('Activo')->default(true),
             ])
             ->actions([
+                Tables\Actions\Action::make('manageCompanies')
+                    ->label('Empresas')
+                    ->icon('heroicon-o-building-office-2')
+                    ->color('info')
+                    ->tooltip('Ver el contador y vincular/desvincular sus empresas')
+                    ->url(fn (User $u) => static::getUrl('view', ['record' => $u])),
+
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
 

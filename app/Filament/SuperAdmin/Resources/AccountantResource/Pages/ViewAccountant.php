@@ -3,6 +3,7 @@
 namespace App\Filament\SuperAdmin\Resources\AccountantResource\Pages;
 
 use App\Filament\SuperAdmin\Resources\AccountantResource;
+use App\Filament\SuperAdmin\Resources\AccountantResource\RelationManagers\ManagedCompaniesRelationManager;
 use App\Models\User;
 use Filament\Actions;
 use Filament\Infolists;
@@ -22,6 +23,19 @@ class ViewAccountant extends ViewRecord
     {
         return [
             Actions\EditAction::make(),
+        ];
+    }
+
+    /**
+     * Filament 3 ViewRecord no expone los relation managers tan
+     * automáticamente como EditRecord; los declaramos explícitamente
+     * para que la sección "Empresas vinculadas" salga debajo del
+     * infolist con su AttachAction.
+     */
+    public function getRelationManagers(): array
+    {
+        return [
+            ManagedCompaniesRelationManager::class,
         ];
     }
 
