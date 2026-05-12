@@ -73,6 +73,13 @@ class PermissionsCatalog
                 'pos.use' => 'Usar el terminal POS',
                 'pos.cash_close' => 'Cerrar turno de caja',
             ],
+            'Restaurante' => [
+                'restaurant.use' => 'Usar el POS de restaurante (tomar pedidos)',
+                'restaurant.kitchen' => 'Ver y operar la pantalla de cocina (KDS)',
+                'restaurant.tables.manage' => 'Configurar zonas, mesas e impresoras',
+                'restaurant.delivery.manage' => 'Operar pedidos de delivery',
+                'restaurant.bill.split' => 'Dividir cuentas',
+            ],
             'Reportes' => [
                 'reports.journal_book' => 'Ver Libro Diario',
                 'reports.general_ledger' => 'Ver Libro Mayor',
@@ -148,6 +155,9 @@ class PermissionsCatalog
                 'products.view', 'categories.view',
                 'third_parties.view', 'third_parties.manage',
                 'inventory.view',
+                // Restaurant: el cajero/mesero usa el POS de mesas y la cocina
+                'restaurant.use', 'restaurant.kitchen', 'restaurant.bill.split',
+                'restaurant.delivery.manage',
             ],
             // Contador externo del Portal Contador. Lectura amplia + edición
             // contable (postear, anular, ajustes). No puede crear ventas/POS

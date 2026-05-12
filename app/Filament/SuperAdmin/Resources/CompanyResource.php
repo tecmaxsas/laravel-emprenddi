@@ -124,6 +124,25 @@ class CompanyResource extends Resource
                 ->schema([
                     Forms\Components\Toggle::make('active')->label('Activa'),
                 ]),
+
+            Forms\Components\Section::make('Módulos activos')
+                ->description('Habilita capacidades verticales de esta empresa. Las requeridas por el plan se activan solas.')
+                ->schema([
+                    Forms\Components\CheckboxList::make('active_modules')
+                        ->label('Módulos opcionales')
+                        ->options([
+                            'restaurant' => 'Restaurante (mesas, comandas, cocina, delivery)',
+                            'pharmacy' => 'Farmacia (próximamente)',
+                            'retail' => 'Retail / Tiendas (próximamente)',
+                            'services' => 'Servicios profesionales (próximamente)',
+                            'ecommerce' => 'E-commerce (próximamente)',
+                            'payroll' => 'Nómina (próximamente)',
+                            'assets' => 'Activos fijos avanzado (próximamente)',
+                            'multi_currency' => 'Multi-moneda',
+                        ])
+                        ->columns(2)
+                        ->bulkToggleable(),
+                ]),
         ]);
     }
 
