@@ -316,6 +316,27 @@
                                         @if ($item->item_note)
                                             <span style="font-size:11px; color:#6b7280; font-style:italic;">"{{ $item->item_note }}"</span>
                                         @endif
+                                        {{-- Tag de tab (solo en split by_item) --}}
+                                        @if ($splitMode === 'by_item')
+                                            @if ($item->split_tab)
+                                                <span style="background:#7c3aed; color:white; border-radius:999px; font-size:10px; font-weight:700; padding:2px 8px; display:inline-flex; align-items:center; gap:4px;">
+                                                    Tab {{ $item->split_tab }}
+                                                    <button type="button" wire:click="unassignItemTab({{ $item->id }})"
+                                                            title="Quitar etiqueta"
+                                                            style="background:transparent; color:white; border:0; cursor:pointer; padding:0; font-size:12px; line-height:1;">×</button>
+                                                </span>
+                                            @else
+                                                <span style="display:inline-flex; gap:2px; align-items:center;">
+                                                    @foreach (['A', 'B', 'C', 'D'] as $tabKey)
+                                                        <button type="button" wire:click="assignItemTab({{ $item->id }}, '{{ $tabKey }}')"
+                                                                title="Asignar tab {{ $tabKey }}"
+                                                                style="background:#ede9fe; color:#5b21b6; border:1px dashed #c4b5fd; border-radius:4px; font-size:10px; font-weight:700; padding:1px 6px; cursor:pointer;">
+                                                            {{ $tabKey }}
+                                                        </button>
+                                                    @endforeach
+                                                </span>
+                                            @endif
+                                        @endif
                                     </div>
                                 </div>
 
@@ -366,6 +387,54 @@
                     </div>
                 </div>
 
+                {{-- Propina --}}
+                <div style="background:#fefce8; border:1px solid #fde047; border-radius:8px; padding:10px;">
+                    <div style="font-size:11px; font-weight:700; color:#854d0e; text-transform:uppercase; margin-bottom:6px; letter-spacing:0.5px;">
+                        💵 Propina
+                    </div>
+                    <div style="display:flex; gap:4px; margin-bottom:6px;">
+                        @foreach ([0, 5, 10, 15] as $pct)
+                            @php $active = (float) $order->tip_percentage === (float) $pct; @endphp
+                            <button type="button" wire:click="applyTipPercent({{ $pct }})"
+                                    style="flex:1; padding:6px 4px; border-radius:6px; border:1px solid {{ $active ? '#f59e0b' : '#d1d5db' }}; background:{{ $active ? '#f59e0b' : '#ffffff' }}; color:{{ $active ? '#ffffff' : '#374151' }}; cursor:pointer; font-size:12px; font-weight:700;">
+                                {{ $pct }}%
+                            </button>
+                        @endforeach
+                    </div>
+                    <div style="display:flex; gap:4px;">
+                        <input type="text" wire:model="customTipAmount"
+                               wire:keydown.enter="applyCustomTip"
+                               placeholder="O monto fijo $"
+                               style="flex:1; padding:6px 8px; border-radius:6px; border:1px solid #d1d5db; font-size:12px; color:#111827; background:#ffffff;" />
+                        <button type="button" wire:click="applyCustomTip"
+                                style="padding:6px 10px; border-radius:6px; background:#f59e0b; color:white; border:0; font-weight:700; cursor:pointer; font-size:12px;">
+                            ✓
+                        </button>
+                    </div>
+                </div>
+
+                {{-- División de cuenta --}}
+                <div style="background:#f5f3ff; border:1px solid #c4b5fd; border-radius:8px; padding:10px;">
+                    <div style="font-size:11px; font-weight:700; color:#5b21b6; text-transform:uppercase; margin-bottom:6px; letter-spacing:0.5px;">
+                        🪙 División de cuenta
+                    </div>
+                    <div style="display:flex; gap:4px;">
+                        <button type="button" wire:click="setSplitMode('none')"
+                                style="flex:1; padding:6px; border-radius:6px; border:1px solid {{ $splitMode === 'none' ? '#7c3aed' : '#d1d5db' }}; background:{{ $splitMode === 'none' ? '#7c3aed' : '#ffffff' }}; color:{{ $splitMode === 'none' ? '#ffffff' : '#374151' }}; cursor:pointer; font-size:11px; font-weight:700;">
+                            Una cuenta
+                        </button>
+                        <button type="button" wire:click="setSplitMode('by_item')"
+                                style="flex:1; padding:6px; border-radius:6px; border:1px solid {{ $splitMode === 'by_item' ? '#7c3aed' : '#d1d5db' }}; background:{{ $splitMode === 'by_item' ? '#7c3aed' : '#ffffff' }}; color:{{ $splitMode === 'by_item' ? '#ffffff' : '#374151' }}; cursor:pointer; font-size:11px; font-weight:700;">
+                            Dividir por item
+                        </button>
+                    </div>
+                    @if ($splitMode === 'by_item')
+                        <div style="font-size:10px; color:#5b21b6; margin-top:6px; line-height:1.4;">
+                            Asigna una etiqueta (A, B, C…) a cada item. Cada etiqueta es una factura aparte.
+                        </div>
+                    @endif
+                </div>
+
                 {{-- Acciones --}}
                 <div x-data="{ confirmCancel: false, confirmClose: false }">
                     @php
@@ -407,10 +476,17 @@
                             </div>
                         @endif
 
+                        <button type="button" wire:click="openBillingModal"
+                                @disabled($order->items->reject(fn ($i) => $i->kitchen_status === 'cancelled')->isEmpty())
+                                style="padding:14px; border-radius:8px; background:#10b981; color:white; border:0; font-weight:800; cursor:pointer; font-size:15px; margin-top:6px; box-shadow:0 2px 4px rgba(16,185,129,0.3);">
+                            💵 Cobrar cuenta y facturar
+                        </button>
+
                         <button type="button" @click="confirmClose = true"
                                 @disabled($order->items->isEmpty())
-                                style="padding:12px; border-radius:8px; background:#10b981; color:white; border:0; font-weight:700; cursor:pointer; font-size:14px; margin-top:4px;">
-                            ✓ Cerrar cuenta y liberar mesa
+                                title="Cerrar sin generar factura (casa invita)"
+                                style="padding:8px; border-radius:8px; background:transparent; color:#10b981; border:1px solid #a7f3d0; font-weight:600; cursor:pointer; font-size:11px;">
+                            Cerrar sin facturar (casa invita)
                         </button>
 
                         <button type="button" @click="confirmCancel = true"
@@ -960,6 +1036,147 @@
                     <button type="button" wire:click="createTakeaway"
                             style="padding:10px 22px; background:#ea580c; color:white; border:0; border-radius:8px; font-weight:700; cursor:pointer;">
                         ✓ Abrir orden
+                    </button>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    {{-- ============ MODAL DE COBRO ============ --}}
+    @if ($billingModalOpen && $this->activeOrder)
+        @php
+            $billTabs = $this->billingTabs;
+            $methods = $this->paymentMethodOptions;
+            $accounts = $this->cashAccountOptions;
+            $orderTotal = (float) $this->activeOrder->total;
+        @endphp
+        <div
+            style="position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:9999; padding:20px;"
+            wire:click.self="closeBillingModal"
+            wire:keydown.escape.window="closeBillingModal"
+        >
+            <div style="background:#ffffff; border-radius:14px; max-width:720px; width:100%; max-height:92vh; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 25px 50px rgba(0,0,0,0.5);">
+
+                <div style="padding:18px 22px; border-bottom:1px solid #e5e7eb; background:#ecfdf5; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <h2 style="margin:0; font-size:18px; font-weight:700; color:#065f46;">
+                            💵 Cobrar cuenta
+                        </h2>
+                        <div style="font-size:12px; color:#6b7280; margin-top:2px;">
+                            {{ count($billTabs) }} {{ count($billTabs) === 1 ? 'factura' : 'facturas' }} a generar · Total: ${{ number_format($orderTotal, 0, ',', '.') }}
+                        </div>
+                    </div>
+                    <button type="button" wire:click="closeBillingModal"
+                            style="background:transparent; border:0; cursor:pointer; padding:6px; font-size:24px; color:#6b7280; line-height:1;">×</button>
+                </div>
+
+                <div style="padding:18px 22px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:14px; color:#111827;">
+                    @foreach ($billTabs as $t)
+                        <div style="border:1px solid #d1d5db; border-radius:10px; padding:14px; background:#fafafa;">
+                            <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:10px;">
+                                <div style="font-size:15px; font-weight:700; color:#111827;">
+                                    @if ($t['label'])
+                                        🪙 Tab {{ $t['label'] }}
+                                    @else
+                                        📋 Cuenta completa
+                                    @endif
+                                    <span style="font-size:11px; font-weight:500; color:#6b7280;">({{ $t['items']->count() }} items)</span>
+                                </div>
+                            </div>
+
+                            {{-- Items del tab --}}
+                            <div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:6px; padding:8px; margin-bottom:10px; max-height:160px; overflow-y:auto;">
+                                @foreach ($t['items'] as $it)
+                                    <div style="display:flex; justify-content:space-between; font-size:12px; color:#374151; padding:3px 0;">
+                                        <span>{{ number_format((float) $it->quantity, 0) }} × {{ $it->description }}</span>
+                                        <span style="font-weight:600; color:#111827;">${{ number_format((float) $it->total, 0, ',', '.') }}</span>
+                                    </div>
+                                @endforeach
+                            </div>
+
+                            {{-- Desglose --}}
+                            <div style="font-size:12px; color:#374151; display:flex; flex-direction:column; gap:3px; margin-bottom:10px;">
+                                <div style="display:flex; justify-content:space-between;">
+                                    <span>Subtotal</span>
+                                    <span>${{ number_format($t['subtotal'], 0, ',', '.') }}</span>
+                                </div>
+                                @if ($t['tax'] > 0)
+                                    <div style="display:flex; justify-content:space-between;">
+                                        <span>IVA</span>
+                                        <span>${{ number_format($t['tax'], 0, ',', '.') }}</span>
+                                    </div>
+                                @endif
+                                <div style="display:flex; justify-content:space-between; font-weight:700; padding-top:3px; border-top:1px dashed #d1d5db;">
+                                    <span>Factura (sin propina)</span>
+                                    <span style="color:#1e40af;">${{ number_format($t['invoice_total'], 0, ',', '.') }}</span>
+                                </div>
+                                @if ($t['tip_share'] > 0)
+                                    <div style="display:flex; justify-content:space-between; color:#92400e;">
+                                        <span>+ Propina (no facturada)</span>
+                                        <span>${{ number_format($t['tip_share'], 0, ',', '.') }}</span>
+                                    </div>
+                                    <div style="display:flex; justify-content:space-between; font-weight:800; font-size:14px; padding-top:4px; border-top:1px solid #d1d5db; color:#059669;">
+                                        <span>Total a recibir</span>
+                                        <span>${{ number_format($t['grand_total'], 0, ',', '.') }}</span>
+                                    </div>
+                                @endif
+                            </div>
+
+                            {{-- Método y cuenta --}}
+                            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+                                <div>
+                                    <label style="font-size:11px; font-weight:600; color:#374151; margin-bottom:3px; display:block;">Método de pago</label>
+                                    <select wire:model.live="billingMethods.{{ $t['key'] }}"
+                                            wire:change="onBillingMethodChange('{{ $t['key'] }}', $event.target.value)"
+                                            style="width:100%; padding:8px 10px; border-radius:6px; border:1px solid #d1d5db; font-size:13px; color:#111827; background:#ffffff;">
+                                        @foreach ($methods as $code => $name)
+                                            <option value="{{ $code }}">{{ $name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="font-size:11px; font-weight:600; color:#374151; margin-bottom:3px; display:block;">Cuenta contable</label>
+                                    <select wire:model.live="billingAccounts.{{ $t['key'] }}"
+                                            style="width:100%; padding:8px 10px; border-radius:6px; border:1px solid #d1d5db; font-size:13px; color:#111827; background:#ffffff;">
+                                        <option value="">— Elige cuenta —</option>
+                                        @foreach ($accounts as $acc)
+                                            <option value="{{ $acc->id }}">{{ $acc->code }} — {{ $acc->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    @endforeach
+
+                    {{-- Referencia común --}}
+                    <div>
+                        <label style="font-size:12px; font-weight:600; color:#374151; margin-bottom:4px; display:block;">
+                            Referencia (opcional)
+                        </label>
+                        <input type="text" wire:model="billingReference"
+                               placeholder="Ej: voucher tarjeta #1234, transferencia, etc."
+                               style="width:100%; padding:8px 10px; border-radius:6px; border:1px solid #d1d5db; font-size:13px; color:#111827; background:#ffffff;" />
+                    </div>
+
+                    {{-- Aviso de propina --}}
+                    @if ((float) $this->activeOrder->tip_amount > 0)
+                        <div style="background:#fefce8; border:1px solid #fde047; border-radius:8px; padding:10px; font-size:11px; color:#713f12; line-height:1.5;">
+                            ℹ️ <strong>Propina:</strong> ${{ number_format((float) $this->activeOrder->tip_amount, 0, ',', '.') }} se recibe pero NO va en la factura (CO: la propina es voluntaria y sin IVA). Queda registrada en la orden y aparece en el reporte de propinas por mesero.
+                        </div>
+                    @endif
+                </div>
+
+                <div style="padding:14px 22px; border-top:1px solid #e5e7eb; background:#fafafa; display:flex; gap:10px; justify-content:flex-end;">
+                    <button type="button" wire:click="closeBillingModal"
+                            style="padding:10px 18px; background:transparent; color:#6b7280; border:1px solid #d1d5db; border-radius:8px; font-weight:600; cursor:pointer;">
+                        Cancelar
+                    </button>
+                    <button type="button" wire:click="confirmBilling"
+                            wire:loading.attr="disabled"
+                            wire:target="confirmBilling"
+                            style="padding:10px 22px; background:#10b981; color:white; border:0; border-radius:8px; font-weight:800; cursor:pointer;">
+                        <span wire:loading.remove wire:target="confirmBilling">✓ Facturar y cerrar</span>
+                        <span wire:loading wire:target="confirmBilling">Procesando...</span>
                     </button>
                 </div>
             </div>

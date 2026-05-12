@@ -9,7 +9,10 @@ use App\Models\Restaurant\Order;
 use App\Models\Restaurant\OrderItem;
 use App\Models\Restaurant\Printer;
 use App\Models\Restaurant\Table;
+use App\Models\SaleInvoice;
 use App\Models\Tax;
+use App\Services\Sales\SaleInvoiceEngine;
+use App\Services\Sales\SaleInvoiceNumberer;
 use App\Support\CashSessionGate;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -587,6 +590,218 @@ class RestaurantOrderEngine
             $this->recalculateTotals($primary);
 
             return $primary->fresh();
+        });
+    }
+
+    // ============ COBRO / FACTURACION ============
+
+    /**
+     * Setea la propina de la orden. Si $percentage no es null, calcula
+     * el monto sobre el subtotal y guarda ambos campos. Si solo viene
+     * $amount, guarda el monto y limpia el porcentaje.
+     */
+    public function setTip(Order $order, ?float $percentage, ?float $amount = null): Order
+    {
+        if (! $order->isOpen()) {
+            throw new RuntimeException('Solo se puede ajustar propina en órdenes abiertas.');
+        }
+
+        if ($percentage !== null) {
+            $pct = max(0, min(100, (float) $percentage));
+            $tip = round((float) $order->subtotal * $pct / 100, 2);
+            $order->update([
+                'tip_percentage' => $pct,
+                'tip_amount' => $tip,
+            ]);
+        } else {
+            $order->update([
+                'tip_percentage' => null,
+                'tip_amount' => round((float) ($amount ?? 0), 2),
+            ]);
+        }
+
+        $this->recalculateTotals($order);
+        return $order->fresh();
+    }
+
+    public function setItemTab(OrderItem $item, ?string $tab): void
+    {
+        $clean = $tab !== null ? trim($tab) : null;
+        $item->update(['split_tab' => $clean !== '' ? $clean : null]);
+    }
+
+    /**
+     * Genera SaleInvoice(s) para una orden y aplica los pagos. Cierra la
+     * orden y libera la mesa.
+     *
+     * $tabs: array de tabs a facturar, cada uno:
+     *   [
+     *     'label'          => 'A' | null  (null = cuenta única sin split),
+     *     'item_ids'       => [1, 2, 3],
+     *     'payment_method' => 'cash' | 'bank_transfer' | ...,
+     *     'account_id'     => int (cuenta contable donde entra la plata),
+     *     'reference'      => string|null,
+     *   ]
+     *
+     * Si no hay split, debe venir un único tab con todos los item_ids
+     * vivos (no cancelados). La propina se distribuye proporcional al
+     * subtotal de cada tab y se imprime en notas de la factura — NO
+     * va como linea (CO: propina voluntaria, sin IVA, no facturable).
+     *
+     * @return SaleInvoice[]
+     */
+    public function bill(Order $order, array $tabs, int $thirdPartyId): array
+    {
+        if (! $order->isOpen()) {
+            throw new RuntimeException('Solo se pueden cobrar órdenes abiertas.');
+        }
+        if (empty($tabs)) {
+            throw new RuntimeException('No hay tabs para facturar.');
+        }
+
+        $order->load('items');
+        $activeItems = $order->items->reject(fn ($i) => $i->kitchen_status === OrderItem::KS_CANCELLED);
+
+        if ($activeItems->isEmpty()) {
+            throw new RuntimeException('La orden no tiene items para cobrar.');
+        }
+
+        // Validar que cada item_id pertenece a la orden y solo aparece en un tab
+        $declaredIds = [];
+        foreach ($tabs as $t) {
+            foreach (($t['item_ids'] ?? []) as $id) {
+                if (in_array($id, $declaredIds, true)) {
+                    throw new RuntimeException("Item {$id} declarado en más de un tab.");
+                }
+                $declaredIds[] = (int) $id;
+            }
+        }
+        $activeIds = $activeItems->pluck('id')->all();
+        $missing = array_diff($activeIds, $declaredIds);
+        if ($missing) {
+            throw new RuntimeException('Hay items sin asignar a un tab: '.implode(', ', $missing));
+        }
+        $extra = array_diff($declaredIds, $activeIds);
+        if ($extra) {
+            throw new RuntimeException('Hay items que no pertenecen a la orden: '.implode(', ', $extra));
+        }
+
+        $orderSubtotal = (float) $activeItems->sum('subtotal');
+        $orderTip = (float) $order->tip_amount;
+
+        $invoiceEngine = app(SaleInvoiceEngine::class);
+        $numberer = app(SaleInvoiceNumberer::class);
+        $company = Company::find($order->company_id);
+
+        return DB::transaction(function () use (
+            $order, $tabs, $activeItems, $orderSubtotal, $orderTip,
+            $invoiceEngine, $numberer, $company, $thirdPartyId
+        ) {
+            $invoices = [];
+
+            foreach ($tabs as $tab) {
+                $items = $activeItems->whereIn('id', $tab['item_ids'])->values();
+                if ($items->isEmpty()) continue;
+
+                $tabSubtotal = (float) $items->sum('subtotal');
+                $tipShare = $orderSubtotal > 0
+                    ? round($orderTip * $tabSubtotal / $orderSubtotal, 2)
+                    : 0;
+
+                $tableLabel = $order->table?->code ?? ($order->is_takeaway ? 'Para llevar' : 'Sin mesa');
+                $tabLabel = $tab['label'] ?? null;
+                $notes = "Orden restaurante {$order->fullNumber()} — {$tableLabel}"
+                    .($tabLabel ? " — Tab {$tabLabel}" : '')
+                    .($tipShare > 0 ? sprintf(' — Propina: $%s', number_format($tipShare, 0, ',', '.')) : '');
+
+                $invoice = SaleInvoice::create([
+                    'company_id' => $order->company_id,
+                    'location_id' => $order->location_id,
+                    'third_party_id' => $thirdPartyId,
+                    'prefix' => 'POS',
+                    'number' => $numberer->next($company, 'POS'),
+                    'date' => now()->toDateString(),
+                    'currency' => 'COP',
+                    'status' => 'draft',
+                    'payment_status' => 'pendiente',
+                    'created_by_user_id' => Auth::id(),
+                    'seller_user_id' => $order->server_user_id ?? Auth::id(),
+                    'cash_register_session_id' => $order->cash_register_session_id,
+                    'notes' => $notes,
+                ]);
+
+                $lineNum = 1;
+                foreach ($items as $item) {
+                    // unit_price efectivo incluye delta de modificadores
+                    // (item.subtotal = qty * unit_price + modifier_total)
+                    $effUnit = (float) $item->quantity > 0
+                        ? round((float) $item->subtotal / (float) $item->quantity, 2)
+                        : 0;
+
+                    $invoice->lines()->create([
+                        'line_number' => $lineNum++,
+                        'product_id' => $item->product_id,
+                        'description' => $item->description,
+                        'quantity' => $item->quantity,
+                        'unit_price' => $effUnit,
+                        'discount_percentage' => 0,
+                        'discount_amount' => 0,
+                        'tax_id' => $item->tax_id,
+                        'tax_rate' => $item->tax_rate,
+                        'tax_amount' => $item->tax_amount,
+                        'subtotal' => $item->subtotal,
+                        'total' => $item->total,
+                    ]);
+                }
+
+                // Postear (recalcula totales internamente)
+                $invoice = $invoiceEngine->post($invoice->fresh(['lines']));
+
+                // Aplicar pago: cubre invoice.total (sin tip — tip es extra)
+                $payment = (float) $invoice->total;
+                if ($payment > 0) {
+                    $invoiceEngine->addPayment($invoice, [
+                        'amount' => $payment,
+                        'payment_method' => $tab['payment_method'] ?? 'cash',
+                        'account_id' => (int) $tab['account_id'],
+                        'date' => now()->toDateString(),
+                        'reference' => $tab['reference'] ?? null,
+                        'description' => 'Orden restaurante '.$order->fullNumber()
+                            .($tabLabel ? ' tab '.$tabLabel : ''),
+                    ]);
+                }
+
+                $invoices[] = $invoice->fresh();
+            }
+
+            // Marcar todos los items como servidos (los que estaban pendientes
+            // quedarian inconsistentes; en flujo normal ya estarian served via KDS)
+            foreach ($activeItems as $item) {
+                if ($item->kitchen_status !== OrderItem::KS_SERVED) {
+                    $item->update([
+                        'kitchen_status' => OrderItem::KS_SERVED,
+                        'served_at' => $item->served_at ?? now(),
+                    ]);
+                }
+            }
+
+            // Cerrar la orden y liberar la mesa. Linkea los invoice_ids para
+            // trazabilidad bidireccional desde la orden.
+            $invoiceIds = array_map(fn ($inv) => $inv->id, $invoices);
+            $order->update([
+                'status' => Order::STATUS_CLOSED,
+                'closed_at' => now(),
+                'closed_by_user_id' => Auth::id(),
+                'invoice_ids' => $invoiceIds,
+                'notes' => trim(($order->notes ?? '')."\nCerrada. Facturas: "
+                    .implode(', ', array_map(fn ($i) => $i->fullNumber(), $invoices))),
+            ]);
+
+            if ($order->table) {
+                $order->table->update(['status' => 'free']);
+            }
+
+            return $invoices;
         });
     }
 

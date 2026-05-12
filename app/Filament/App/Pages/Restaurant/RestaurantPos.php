@@ -2,8 +2,10 @@
 
 namespace App\Filament\App\Pages\Restaurant;
 
+use App\Models\Account;
 use App\Models\Category;
 use App\Models\Location;
+use App\Models\PaymentMethod;
 use App\Models\Product;
 use App\Models\Restaurant\Modifier;
 use App\Models\Restaurant\Order;
@@ -11,6 +13,7 @@ use App\Models\Restaurant\OrderItem;
 use App\Models\Restaurant\Reservation;
 use App\Models\Restaurant\ServiceZone;
 use App\Models\Restaurant\Table;
+use App\Models\ThirdParty;
 use App\Services\Restaurant\RestaurantOrderEngine;
 use App\Support\AccountantContext;
 use App\Support\ModuleGate;
@@ -75,6 +78,14 @@ class RestaurantPos extends Page
     // Modal "nueva para llevar"
     public bool $takeawayModalOpen = false;
     public string $takeawayCustomerName = '';
+
+    // Cobro / facturación
+    public string $customTipAmount = '';        // input manual de propina ($)
+    public string $splitMode = 'none';          // 'none' | 'by_item'
+    public bool $billingModalOpen = false;
+    public array $billingMethods = [];          // [tabKey => 'cash'|...]
+    public array $billingAccounts = [];         // [tabKey => account_id]
+    public string $billingReference = '';
 
     public static function canAccess(): bool
     {
@@ -782,6 +793,282 @@ class RestaurantPos extends Page
             'cancelled_at' => now(),
         ]);
         Notification::make()->title("Marcada como no-show: {$reservation->customer_name}")->warning()->send();
+    }
+
+    // ============ PROPINA / SPLIT / COBRO ============
+
+    public function applyTipPercent(int $percentage): void
+    {
+        $order = $this->activeOrder;
+        if (! $order) return;
+        try {
+            app(RestaurantOrderEngine::class)->setTip($order, (float) $percentage);
+            $this->customTipAmount = '';
+        } catch (\Throwable $e) {
+            Notification::make()->title('Error propina')->body($e->getMessage())->danger()->send();
+        }
+    }
+
+    public function applyCustomTip(): void
+    {
+        $order = $this->activeOrder;
+        if (! $order) return;
+        $amount = (float) str_replace(['.', ','], ['', '.'], $this->customTipAmount);
+        if ($amount < 0) {
+            Notification::make()->title('Monto inválido')->danger()->send();
+            return;
+        }
+        try {
+            app(RestaurantOrderEngine::class)->setTip($order, null, $amount);
+        } catch (\Throwable $e) {
+            Notification::make()->title('Error propina')->body($e->getMessage())->danger()->send();
+        }
+    }
+
+    public function setSplitMode(string $mode): void
+    {
+        if (! in_array($mode, ['none', 'by_item'], true)) return;
+        $this->splitMode = $mode;
+        // Si vuelven a 'none', limpiar etiquetas de todos los items
+        if ($mode === 'none' && $this->activeOrder) {
+            foreach ($this->activeOrder->items as $it) {
+                if ($it->split_tab) {
+                    $it->update(['split_tab' => null]);
+                }
+            }
+        }
+    }
+
+    public function assignItemTab(int $itemId, string $tab): void
+    {
+        $item = OrderItem::find($itemId);
+        if (! $item) return;
+        $clean = trim($tab);
+        if ($clean === '') return;
+        // Solo aceptar A-Z, 1-9 mayúsculas para mantenerlo simple
+        $clean = strtoupper(substr($clean, 0, 5));
+        app(RestaurantOrderEngine::class)->setItemTab($item, $clean);
+    }
+
+    public function unassignItemTab(int $itemId): void
+    {
+        $item = OrderItem::find($itemId);
+        if (! $item) return;
+        app(RestaurantOrderEngine::class)->setItemTab($item, null);
+    }
+
+    /**
+     * Asegura un ThirdParty "Consumidor Final" para órdenes sin cliente.
+     */
+    protected function ensureDefaultCustomer(): ThirdParty
+    {
+        return ThirdParty::firstOrCreate(
+            [
+                'company_id' => Auth::user()->company_id,
+                'document_number' => '222222222',
+            ],
+            [
+                'person_type' => 'natural',
+                'document_type' => 'cc',
+                'name' => 'Consumidor Final',
+                'is_customer' => true,
+                'is_supplier' => false,
+                'active' => true,
+            ],
+        );
+    }
+
+    /**
+     * Estructura de tabs para facturar.
+     * - 'none': 1 tab con TODOS los items activos.
+     * - 'by_item': 1 tab por cada valor único de split_tab; los items sin tag
+     *   van a un tab 'Sin asignar'.
+     */
+    public function getBillingTabsProperty(): array
+    {
+        $order = $this->activeOrder;
+        if (! $order) return [];
+
+        $items = $order->items->reject(fn ($i) => $i->kitchen_status === OrderItem::KS_CANCELLED);
+        $orderSubtotal = (float) $items->sum('subtotal');
+        $orderTip = (float) $order->tip_amount;
+
+        if ($this->splitMode === 'none') {
+            $taxSum = (float) $items->sum('tax_amount');
+            $totalSum = (float) $items->sum('total');
+            $tipShare = $orderTip;
+            return [[
+                'key' => 'main',
+                'label' => null,
+                'items' => $items->values(),
+                'subtotal' => $orderSubtotal,
+                'tax' => $taxSum,
+                'tip_share' => $tipShare,
+                'invoice_total' => $totalSum,        // lo que va a la factura
+                'grand_total' => $totalSum + $tipShare, // con propina
+            ]];
+        }
+
+        // by_item
+        $grouped = $items->groupBy(fn ($i) => $i->split_tab ?: '—');
+        $tabs = [];
+        foreach ($grouped as $label => $group) {
+            $sub = (float) $group->sum('subtotal');
+            $tax = (float) $group->sum('tax_amount');
+            $total = (float) $group->sum('total');
+            $tipShare = $orderSubtotal > 0
+                ? round($orderTip * $sub / $orderSubtotal, 2)
+                : 0;
+            $tabs[] = [
+                'key' => $label,
+                'label' => $label === '—' ? 'Sin asignar' : $label,
+                'items' => $group->values(),
+                'subtotal' => $sub,
+                'tax' => $tax,
+                'tip_share' => $tipShare,
+                'invoice_total' => $total,
+                'grand_total' => $total + $tipShare,
+                'unassigned' => $label === '—',
+            ];
+        }
+        return $tabs;
+    }
+
+    public function getPaymentMethodOptionsProperty(): array
+    {
+        return \App\Models\Payment::PAYMENT_METHODS;
+    }
+
+    /**
+     * Cuentas contables aceptables para recibir pago (caja + bancos).
+     * Filtra por accepts_movements para que no haya errores al postear.
+     */
+    public function getCashAccountOptionsProperty()
+    {
+        return Account::query()
+            ->where('accepts_movements', true)
+            ->where('active', true)
+            ->where(function ($q) {
+                $q->where('code', 'like', '11%')   // disponible
+                  ->orWhere('code', 'like', '1305%'); // CxC
+            })
+            ->orderBy('code')
+            ->get(['id', 'code', 'name']);
+    }
+
+    public function openBillingModal(): void
+    {
+        $order = $this->activeOrder;
+        if (! $order) return;
+
+        $tabs = $this->billingTabs;
+        if (empty($tabs)) {
+            Notification::make()->title('Nada para cobrar')->warning()->send();
+            return;
+        }
+
+        // Validar que en by_item no haya items sin asignar
+        if ($this->splitMode === 'by_item') {
+            foreach ($tabs as $t) {
+                if (! empty($t['unassigned'])) {
+                    Notification::make()
+                        ->title('Hay items sin asignar')
+                        ->body('Asigna una etiqueta (A, B, …) a cada item antes de cobrar.')
+                        ->danger()->send();
+                    return;
+                }
+            }
+        }
+
+        // Pre-seleccionar método y cuenta default por tab
+        $defaultMethod = 'cash';
+        $defaultAccount = Account::query()
+            ->where('accepts_movements', true)
+            ->where('active', true)
+            ->where('code', 'like', '110505%')
+            ->value('id') ?? Account::query()
+                ->where('accepts_movements', true)
+                ->where('active', true)
+                ->where('code', 'like', '11%')
+                ->value('id');
+
+        $this->billingMethods = [];
+        $this->billingAccounts = [];
+        foreach ($tabs as $t) {
+            $this->billingMethods[$t['key']] = $defaultMethod;
+            $this->billingAccounts[$t['key']] = $defaultAccount;
+        }
+        $this->billingReference = '';
+        $this->billingModalOpen = true;
+    }
+
+    public function closeBillingModal(): void
+    {
+        $this->billingModalOpen = false;
+    }
+
+    /**
+     * Al cambiar de método de pago en un tab, intentar resolver cuenta default.
+     */
+    public function onBillingMethodChange(string $tabKey, string $method): void
+    {
+        $configured = PaymentMethod::query()
+            ->where('code', $method)
+            ->where('active', true)
+            ->value('account_id');
+        if ($configured) {
+            $this->billingAccounts[$tabKey] = $configured;
+        }
+    }
+
+    public function confirmBilling(): void
+    {
+        $order = $this->activeOrder;
+        if (! $order) return;
+
+        $tabs = $this->billingTabs;
+        if (empty($tabs)) return;
+
+        // Validar cuenta + método por tab
+        foreach ($tabs as $t) {
+            if (empty($this->billingMethods[$t['key']]) || empty($this->billingAccounts[$t['key']])) {
+                Notification::make()
+                    ->title('Configuración incompleta')
+                    ->body("Tab {$t['label']}: elige método de pago y cuenta.")
+                    ->danger()->send();
+                return;
+            }
+        }
+
+        $thirdPartyId = $this->ensureDefaultCustomer()->id;
+
+        // Construir payload del engine
+        $payload = [];
+        foreach ($tabs as $t) {
+            $payload[] = [
+                'label' => $t['label'],
+                'item_ids' => $t['items']->pluck('id')->all(),
+                'payment_method' => $this->billingMethods[$t['key']],
+                'account_id' => (int) $this->billingAccounts[$t['key']],
+                'reference' => $this->billingReference !== '' ? $this->billingReference : null,
+            ];
+        }
+
+        try {
+            $invoices = app(RestaurantOrderEngine::class)->bill($order, $payload, $thirdPartyId);
+
+            $numbers = implode(', ', array_map(fn ($i) => $i->fullNumber(), $invoices));
+            Notification::make()
+                ->title('Cuenta cobrada')
+                ->body(count($invoices).' factura(s) generada(s): '.$numbers)
+                ->success()
+                ->send();
+
+            $this->billingModalOpen = false;
+            $this->closeOrderPanel();
+        } catch (\Throwable $e) {
+            Notification::make()->title('Error al cobrar')->body($e->getMessage())->danger()->send();
+        }
     }
 
     public function increaseQty(int $itemId): void
