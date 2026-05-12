@@ -37,7 +37,8 @@ class ServiceZoneResource extends Resource
     public static function canAccess(): bool
     {
         if (! ModuleGate::active('restaurant')) return false;
-        return parent::canAccess();
+        if (! \App\Support\AccountantContext::ready()) return false;
+        return (bool) auth()->user()?->can(static::viewPermission());
     }
 
     public static function form(Form $form): Form
