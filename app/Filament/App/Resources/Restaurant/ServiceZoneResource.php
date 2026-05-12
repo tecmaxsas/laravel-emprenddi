@@ -106,7 +106,10 @@ class ServiceZoneResource extends Resource
 
                 Tables\Columns\TextColumn::make('location.name')->label('Sede')->toggleable(),
 
-                Tables\Columns\ColorColumn::make('color')->label('Color'),
+                Tables\Columns\TextColumn::make('color')
+                    ->label('Color')
+                    ->formatStateUsing(fn (?string $hex) => $hex ?: '—')
+                    ->fontFamily('mono'),
 
                 Tables\Columns\TextColumn::make('tables_count')
                     ->label('Mesas')
