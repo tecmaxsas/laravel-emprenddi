@@ -19,6 +19,10 @@ class JournalEntryLine extends Model
         'description',
         'debit',
         'credit',
+        'bank_reconciled',
+        'bank_reconciled_at',
+        'bank_reconciled_by_user_id',
+        'bank_reference',
     ];
 
     protected function casts(): array
@@ -27,6 +31,8 @@ class JournalEntryLine extends Model
             'line_number' => 'integer',
             'debit' => 'decimal:2',
             'credit' => 'decimal:2',
+            'bank_reconciled' => 'boolean',
+            'bank_reconciled_at' => 'datetime',
         ];
     }
 
