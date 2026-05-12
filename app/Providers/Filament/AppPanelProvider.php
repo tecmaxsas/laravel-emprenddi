@@ -19,7 +19,6 @@ use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Filament\View\PanelsRenderHook;
 use Illuminate\Session\Middleware\StartSession;
-use Illuminate\Support\Facades\Blade;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 class AppPanelProvider extends PanelProvider
@@ -36,6 +35,9 @@ class AppPanelProvider extends PanelProvider
             ->colors([
                 'primary' => Color::Indigo,
             ])
+            // Sidebar contraíble en desktop: el hamburger queda en el topbar y
+            // al contraer la barra lateral muestra solo iconos.
+            ->sidebarCollapsibleOnDesktop()
             ->discoverResources(in: app_path('Filament/App/Resources'), for: 'App\\Filament\\App\\Resources')
             ->discoverPages(in: app_path('Filament/App/Pages'), for: 'App\\Filament\\App\\Pages')
             ->pages([
@@ -60,9 +62,11 @@ class AppPanelProvider extends PanelProvider
                 Authenticate::class,
                 SetActiveCompany::class,
             ])
+            // Botón "POS" en el topbar — se inyecta antes del user menu,
+            // que Filament siempre renderiza al final del TOPBAR_END.
             ->renderHook(
                 PanelsRenderHook::TOPBAR_END,
-                fn (): string => Blade::render('@include(\'filament.app.topbar.pos-button\')'),
+                fn (): string => view('filament.app.topbar.pos-button')->render(),
             );
     }
 }
