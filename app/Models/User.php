@@ -66,6 +66,7 @@ class User extends Authenticatable implements FilamentUser
     public function managedCompanies(): BelongsToMany
     {
         return $this->belongsToMany(Company::class, 'accountant_companies')
+            ->using(AccountantCompany::class)  // pivot con casts (granted_at => datetime)
             ->withPivot(['active', 'granted_at', 'granted_by_user_id', 'notes'])
             ->withTimestamps();
     }
