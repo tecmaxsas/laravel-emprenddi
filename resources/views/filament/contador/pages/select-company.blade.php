@@ -54,9 +54,19 @@
                             </span>
                         @endif
                     </div>
-                    <div style="font-size: 12px; color: rgb(107, 114, 128);">
-                        Vinculada {{ $company->pivot->granted_at?->diffForHumans() }}
-                    </div>
+                    @php
+                        // Defensivo: el pivot puede venir como string o Carbon
+                        // según si Laravel hidrata el Pivot custom o el default.
+                        $granted = $company->pivot->granted_at ?? null;
+                        $grantedLabel = $granted
+                            ? \Illuminate\Support\Carbon::parse($granted)->diffForHumans()
+                            : null;
+                    @endphp
+                    @if ($grantedLabel)
+                        <div style="font-size: 12px; color: rgb(107, 114, 128);">
+                            Vinculada {{ $grantedLabel }}
+                        </div>
+                    @endif
                 </button>
             @endforeach
         </div>
