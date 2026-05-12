@@ -68,6 +68,21 @@ class CashRegisterSession extends Model
         return $this->hasMany(SaleInvoice::class);
     }
 
+    public function purchaseInvoices(): HasMany
+    {
+        return $this->hasMany(PurchaseInvoice::class);
+    }
+
+    public function expenses(): HasMany
+    {
+        return $this->hasMany(Expense::class);
+    }
+
+    public function payments(): HasMany
+    {
+        return $this->hasMany(Payment::class);
+    }
+
     public function isOpen(): bool
     {
         return $this->status === self::STATUS_OPEN;

@@ -169,7 +169,8 @@ class SaleInvoiceEngine
                 $data['reference'] ?? null,
             );
 
-            // 2. Payment record
+            // 2. Payment record — hereda la sesión de caja del invoice
+            // para que el cierre de caja agregue este ingreso al turno correcto.
             $payment = Payment::create([
                 'company_id' => $invoice->company_id,
                 'paymentable_type' => SaleInvoice::class,
@@ -179,6 +180,7 @@ class SaleInvoiceEngine
                 'amount' => $amount,
                 'payment_method' => $data['payment_method'],
                 'account_id' => $cashAccountId,
+                'cash_register_session_id' => $invoice->cash_register_session_id,
                 'reference' => $data['reference'] ?? null,
                 'description' => $data['description'] ?? null,
                 'journal_entry_id' => $entry->id,

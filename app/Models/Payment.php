@@ -33,6 +33,7 @@ class Payment extends Model
         'amount',
         'payment_method',
         'account_id',
+        'cash_register_session_id',
         'reference',
         'description',
         'journal_entry_id',
@@ -65,6 +66,11 @@ class Payment extends Model
     public function journalEntry(): BelongsTo
     {
         return $this->belongsTo(JournalEntry::class);
+    }
+
+    public function cashSession(): BelongsTo
+    {
+        return $this->belongsTo(CashRegisterSession::class, 'cash_register_session_id');
     }
 
     public function createdBy(): BelongsTo
