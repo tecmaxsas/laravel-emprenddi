@@ -46,6 +46,7 @@ class KitchenDisplay extends Page
     {
         if (! ModuleGate::active('restaurant')) return false;
         if (! AccountantContext::ready()) return false;
+        if (! \App\Support\RestaurantSettings::isEnabled('kds')) return false;
         return (bool) Auth::user()?->can('restaurant.kitchen');
     }
 

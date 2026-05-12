@@ -203,10 +203,11 @@ class RestaurantPos extends Page
         $product = Product::find($productId);
         if (! $product) return;
 
-        // Si el producto tiene grupos de modificadores, abrir el modal en vez
-        // de agregar directo. El modal recolecta las opciones y llama a
-        // confirmModifiers() que sí invoca al engine.
-        if ($product->modifierGroups()->where('active', true)->exists()) {
+        // Si el producto tiene grupos de modificadores Y la feature 'modifiers'
+        // está activa en la empresa, abrir el modal en vez de agregar directo.
+        // Si está OFF, agrega como si no tuviera modificadores.
+        if (\App\Support\RestaurantSettings::isEnabled('modifiers')
+            && $product->modifierGroups()->where('active', true)->exists()) {
             $this->modifierProductId = $productId;
             $this->modifierSelections = [];
             $this->modifierItemNote = '';

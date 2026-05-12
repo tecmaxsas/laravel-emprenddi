@@ -3,6 +3,8 @@
 namespace App\Filament\App\Pages;
 
 use App\Models\Company;
+use App\Support\ModuleGate;
+use App\Support\RestaurantSettings;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
@@ -77,6 +79,16 @@ class Settings extends Page implements HasForms
             'pos_default_tip_percent' => (float) data_get($settings, 'pos.default_tip_percent', 0),
         ];
 
+        // Restaurant settings (settings.restaurant.enable_*) — uno por feature
+        foreach (array_keys(RestaurantSettings::FEATURES) as $key) {
+            $default = RestaurantSettings::FEATURES[$key]['default'];
+            $this->data['restaurant_enable_'.$key] = (bool) data_get(
+                $settings,
+                "restaurant.enable_{$key}",
+                $default,
+            );
+        }
+
         $this->form->fill($this->data);
     }
 
@@ -96,6 +108,12 @@ class Settings extends Page implements HasForms
                             ->icon('heroicon-o-computer-desktop')
                             ->visible(fn () => auth()->user()?->can('pos.settings'))
                             ->schema($this->posTabSchema()),
+
+                        Forms\Components\Tabs\Tab::make('Restaurante')
+                            ->icon('heroicon-o-building-storefront')
+                            ->visible(fn () => ModuleGate::active('restaurant')
+                                && auth()->user()?->can('company.settings'))
+                            ->schema($this->restaurantTabSchema()),
                     ]),
             ])
             ->statePath('data');
@@ -284,6 +302,55 @@ class Settings extends Page implements HasForms
         $company->update(['settings' => $settings]);
 
         Notification::make()->title('Configuración POS guardada')->success()->send();
+    }
+
+    protected function restaurantTabSchema(): array
+    {
+        $toggles = [];
+        foreach (RestaurantSettings::FEATURES as $key => $meta) {
+            $toggles[] = Forms\Components\Toggle::make("restaurant_enable_{$key}")
+                ->label($meta['label'])
+                ->helperText($meta['description'])
+                ->default((bool) $meta['default'])
+                ->inline(false);
+        }
+
+        return [
+            Forms\Components\Section::make('Features del módulo Restaurante')
+                ->description('Habilita o deshabilita cada funcionalidad. Lo que apagues acá desaparece tanto del menú lateral como del POS de restaurante. No borra datos — solo oculta la UI.')
+                ->columns(2)
+                ->schema($toggles),
+
+            Forms\Components\Actions::make([
+                Forms\Components\Actions\Action::make('saveRestaurant')
+                    ->label('Guardar configuración Restaurante')
+                    ->icon('heroicon-o-check-circle')
+                    ->color('primary')
+                    ->action('saveRestaurant'),
+            ])->alignEnd(),
+        ];
+    }
+
+    public function saveRestaurant(): void
+    {
+        if (! auth()->user()->can('company.settings')) {
+            $this->errorNotif('Sin permiso para editar configuración');
+            return;
+        }
+
+        $state = $this->form->getState();
+        $company = $this->getCompany();
+        $settings = $company->settings ?? [];
+
+        $restaurant = $settings['restaurant'] ?? [];
+        foreach (array_keys(RestaurantSettings::FEATURES) as $key) {
+            $restaurant['enable_'.$key] = (bool) ($state['restaurant_enable_'.$key] ?? RestaurantSettings::FEATURES[$key]['default']);
+        }
+        $settings['restaurant'] = $restaurant;
+
+        $company->update(['settings' => $settings]);
+
+        Notification::make()->title('Configuración de Restaurante guardada')->success()->send();
     }
 
     protected function getCompany(): Company

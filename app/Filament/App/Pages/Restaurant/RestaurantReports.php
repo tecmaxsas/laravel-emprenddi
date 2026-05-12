@@ -45,6 +45,7 @@ class RestaurantReports extends Page
     {
         if (! ModuleGate::active('restaurant')) return false;
         if (! AccountantContext::ready()) return false;
+        if (! \App\Support\RestaurantSettings::isEnabled('reports')) return false;
         return (bool) Auth::user()?->can('restaurant.reports.view');
     }
 

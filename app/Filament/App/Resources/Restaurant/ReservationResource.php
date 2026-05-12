@@ -40,6 +40,7 @@ class ReservationResource extends Resource
     {
         if (! ModuleGate::active('restaurant')) return false;
         if (! \App\Support\AccountantContext::ready()) return false;
+        if (! \App\Support\RestaurantSettings::isEnabled('reservations')) return false;
         return (bool) auth()->user()?->can(static::viewPermission());
     }
 

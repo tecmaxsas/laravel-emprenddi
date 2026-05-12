@@ -38,6 +38,7 @@ class ModifierGroupResource extends Resource
     {
         if (! ModuleGate::active('restaurant')) return false;
         if (! \App\Support\AccountantContext::ready()) return false;
+        if (! \App\Support\RestaurantSettings::isEnabled('modifiers')) return false;
         return (bool) auth()->user()?->can(static::viewPermission());
     }
 

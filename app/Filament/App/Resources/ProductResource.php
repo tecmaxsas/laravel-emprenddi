@@ -408,7 +408,8 @@ class ProductResource extends Resource
 
                 Forms\Components\Tabs\Tab::make('Modificadores (Restaurante)')
                     ->icon('heroicon-o-adjustments-horizontal')
-                    ->visible(fn () => \App\Support\ModuleGate::active('restaurant'))
+                    ->visible(fn () => \App\Support\ModuleGate::active('restaurant')
+                        && \App\Support\RestaurantSettings::isEnabled('modifiers'))
                     ->schema([
                         Forms\Components\Placeholder::make('modifier_hint')
                             ->label('')

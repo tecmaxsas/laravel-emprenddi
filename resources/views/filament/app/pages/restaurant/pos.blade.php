@@ -5,6 +5,9 @@
         $order = $this->activeOrder;
         $catalog = $this->catalog;
         $categories = $this->categories;
+
+        // Feature flags del modulo restaurante
+        $rs = \App\Support\RestaurantSettings::all();
     @endphp
 
     <style>
@@ -57,15 +60,17 @@
                         </button>
                     @endforeach
 
-                    <button type="button" wire:click="openTakeawayPrompt"
-                            style="margin-left:auto; padding:8px 16px; border-radius:8px; background:#ea580c; color:white; border:0; font-weight:700; cursor:pointer; font-size:13px; box-shadow:0 2px 4px rgba(0,0,0,0.1);">
-                        🥡 Nueva para llevar
-                    </button>
+                    @if ($rs['takeaway'])
+                        <button type="button" wire:click="openTakeawayPrompt"
+                                style="margin-left:auto; padding:8px 16px; border-radius:8px; background:#ea580c; color:white; border:0; font-weight:700; cursor:pointer; font-size:13px; box-shadow:0 2px 4px rgba(0,0,0,0.1);">
+                            🥡 Nueva para llevar
+                        </button>
+                    @endif
                 </div>
             </div>
 
             {{-- Próximas reservas --}}
-            @php $upcomingRes = $this->upcomingReservations; @endphp
+            @php $upcomingRes = $rs['reservations'] ? $this->upcomingReservations : collect(); @endphp
             @if ($upcomingRes->isNotEmpty())
                 <div class="rpos-card" style="margin-bottom:14px; background:#eef2ff; border-color:#c7d2fe;">
                     <div style="font-size:11px; color:#3730a3; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">
@@ -128,7 +133,7 @@
             @endif
 
             {{-- Ordenes "para llevar" activas (sin mesa) --}}
-            @php $takeawayList = $this->takeawayOrders; @endphp
+            @php $takeawayList = $rs['takeaway'] ? $this->takeawayOrders : collect(); @endphp
             @if ($takeawayList->isNotEmpty())
                 <div class="rpos-card" style="margin-bottom:14px; background:#fff7ed; border-color:#fed7aa;">
                     <div style="font-size:11px; color:#9a3412; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">
@@ -213,25 +218,27 @@
                 </div>
 
                 {{-- Modo de servicio --}}
-                <div style="display:flex; gap:6px; padding:6px; background:#f3f4f6; border-radius:8px;">
-                    @php
-                        $modeIsDineIn = ! $order->is_takeaway && ! $order->is_delivery;
-                        $modeIsTakeaway = (bool) $order->is_takeaway;
-                    @endphp
-                    <button type="button" wire:click="setServiceMode('dine_in')"
-                            @disabled(! $order->table_id)
-                            title="{{ $order->table_id ? 'Comer aquí' : 'No disponible: la orden no tiene mesa asignada' }}"
-                            style="flex:1; padding:8px; border-radius:6px; background:{{ $modeIsDineIn ? '#10b981' : 'transparent' }}; color:{{ $modeIsDineIn ? '#ffffff' : '#374151' }}; border:0; font-weight:700; cursor:{{ $order->table_id ? 'pointer' : 'not-allowed' }}; font-size:12px; opacity:{{ $order->table_id ? '1' : '0.5' }};">
-                        🍽️ Comer aquí
-                    </button>
-                    <button type="button" wire:click="setServiceMode('takeaway')"
-                            style="flex:1; padding:8px; border-radius:6px; background:{{ $modeIsTakeaway ? '#ea580c' : 'transparent' }}; color:{{ $modeIsTakeaway ? '#ffffff' : '#374151' }}; border:0; font-weight:700; cursor:pointer; font-size:12px;">
-                        🥡 Para llevar
-                    </button>
-                </div>
+                @if ($rs['takeaway'])
+                    <div style="display:flex; gap:6px; padding:6px; background:#f3f4f6; border-radius:8px;">
+                        @php
+                            $modeIsDineIn = ! $order->is_takeaway && ! $order->is_delivery;
+                            $modeIsTakeaway = (bool) $order->is_takeaway;
+                        @endphp
+                        <button type="button" wire:click="setServiceMode('dine_in')"
+                                @disabled(! $order->table_id)
+                                title="{{ $order->table_id ? 'Comer aquí' : 'No disponible: la orden no tiene mesa asignada' }}"
+                                style="flex:1; padding:8px; border-radius:6px; background:{{ $modeIsDineIn ? '#10b981' : 'transparent' }}; color:{{ $modeIsDineIn ? '#ffffff' : '#374151' }}; border:0; font-weight:700; cursor:{{ $order->table_id ? 'pointer' : 'not-allowed' }}; font-size:12px; opacity:{{ $order->table_id ? '1' : '0.5' }};">
+                            🍽️ Comer aquí
+                        </button>
+                        <button type="button" wire:click="setServiceMode('takeaway')"
+                                style="flex:1; padding:8px; border-radius:6px; background:{{ $modeIsTakeaway ? '#ea580c' : 'transparent' }}; color:{{ $modeIsTakeaway ? '#ffffff' : '#374151' }}; border:0; font-weight:700; cursor:pointer; font-size:12px;">
+                            🥡 Para llevar
+                        </button>
+                    </div>
+                @endif
 
                 {{-- Ops de mesa: transferir / juntar --}}
-                @if ($order->table_id)
+                @if ($rs['table_operations'] && $order->table_id)
                     <div style="display:flex; gap:6px;">
                         <button type="button" wire:click="openTransferModal"
                                 title="Mover esta orden a otra mesa libre"
@@ -251,22 +258,24 @@
                     $courses = \App\Models\Restaurant\OrderItem::COURSES;
                     $courseIcons = \App\Models\Restaurant\OrderItem::COURSE_ICONS;
                 @endphp
-                <div style="background:#ffffff; border:1px solid #d1d5db; border-radius:8px; padding:8px 10px;">
-                    <div style="font-size:10px; font-weight:700; color:#6b7280; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">
-                        Curso al agregar
+                @if ($rs['courses'])
+                    <div style="background:#ffffff; border:1px solid #d1d5db; border-radius:8px; padding:8px 10px;">
+                        <div style="font-size:10px; font-weight:700; color:#6b7280; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">
+                            Curso al agregar
+                        </div>
+                        <div style="display:flex; gap:4px;">
+                            @foreach ($courses as $cNum => $cName)
+                                @php $isActive = (int) $currentCourse === (int) $cNum; @endphp
+                                <button type="button" wire:click="setCurrentCourse({{ $cNum }})"
+                                        title="{{ $cName }}"
+                                        style="flex:1; padding:6px 4px; border-radius:6px; border:1px solid {{ $isActive ? '#3b82f6' : '#d1d5db' }}; background:{{ $isActive ? '#3b82f6' : '#ffffff' }}; color:{{ $isActive ? '#ffffff' : '#374151' }}; cursor:pointer; font-size:11px; font-weight:{{ $isActive ? '700' : '500' }}; line-height:1.2; transition:all 100ms;">
+                                    <div style="font-size:14px;">{{ $courseIcons[$cNum] ?? '' }}</div>
+                                    <div>{{ $cName }}</div>
+                                </button>
+                            @endforeach
+                        </div>
                     </div>
-                    <div style="display:flex; gap:4px;">
-                        @foreach ($courses as $cNum => $cName)
-                            @php $isActive = (int) $currentCourse === (int) $cNum; @endphp
-                            <button type="button" wire:click="setCurrentCourse({{ $cNum }})"
-                                    title="{{ $cName }}"
-                                    style="flex:1; padding:6px 4px; border-radius:6px; border:1px solid {{ $isActive ? '#3b82f6' : '#d1d5db' }}; background:{{ $isActive ? '#3b82f6' : '#ffffff' }}; color:{{ $isActive ? '#ffffff' : '#374151' }}; cursor:pointer; font-size:11px; font-weight:{{ $isActive ? '700' : '500' }}; line-height:1.2; transition:all 100ms;">
-                                <div style="font-size:14px;">{{ $courseIcons[$cNum] ?? '' }}</div>
-                                <div>{{ $cName }}</div>
-                            </button>
-                        @endforeach
-                    </div>
-                </div>
+                @endif
 
                 {{-- Lista de items --}}
                 <div style="display:flex; flex-direction:column; gap:6px;">
@@ -302,22 +311,24 @@
                                             $courseIcon = $courseIcons[$itemCourse] ?? '•';
                                             $isPendingItem = $item->kitchen_status === 'pending';
                                         @endphp
-                                        @if ($isPendingItem)
-                                            <button type="button" wire:click="cycleItemCourse({{ $item->id }})"
-                                                    title="Click para cambiar curso"
-                                                    style="background:#eff6ff; color:#1e40af; border:1px solid #bfdbfe; border-radius:999px; font-size:10px; font-weight:700; padding:2px 8px; cursor:pointer;">
-                                                {{ $courseIcon }} {{ $courseName }} ⇄
-                                            </button>
-                                        @else
-                                            <span style="background:#f3f4f6; color:#4b5563; border-radius:999px; font-size:10px; font-weight:700; padding:2px 8px;">
-                                                {{ $courseIcon }} {{ $courseName }}
-                                            </span>
+                                        @if ($rs['courses'])
+                                            @if ($isPendingItem)
+                                                <button type="button" wire:click="cycleItemCourse({{ $item->id }})"
+                                                        title="Click para cambiar curso"
+                                                        style="background:#eff6ff; color:#1e40af; border:1px solid #bfdbfe; border-radius:999px; font-size:10px; font-weight:700; padding:2px 8px; cursor:pointer;">
+                                                    {{ $courseIcon }} {{ $courseName }} ⇄
+                                                </button>
+                                            @else
+                                                <span style="background:#f3f4f6; color:#4b5563; border-radius:999px; font-size:10px; font-weight:700; padding:2px 8px;">
+                                                    {{ $courseIcon }} {{ $courseName }}
+                                                </span>
+                                            @endif
                                         @endif
                                         @if ($item->item_note)
                                             <span style="font-size:11px; color:#6b7280; font-style:italic;">"{{ $item->item_note }}"</span>
                                         @endif
                                         {{-- Tag de tab (solo en split by_item) --}}
-                                        @if ($splitMode === 'by_item')
+                                        @if ($rs['split_bill'] && $splitMode === 'by_item')
                                             @if ($item->split_tab)
                                                 <span style="background:#7c3aed; color:white; border-radius:999px; font-size:10px; font-weight:700; padding:2px 8px; display:inline-flex; align-items:center; gap:4px;">
                                                     Tab {{ $item->split_tab }}
@@ -388,6 +399,7 @@
                 </div>
 
                 {{-- Propina --}}
+                @if ($rs['tips'])
                 <div style="background:#fefce8; border:1px solid #fde047; border-radius:8px; padding:10px;">
                     <div style="font-size:11px; font-weight:700; color:#854d0e; text-transform:uppercase; margin-bottom:6px; letter-spacing:0.5px;">
                         💵 Propina
@@ -412,8 +424,10 @@
                         </button>
                     </div>
                 </div>
+                @endif
 
                 {{-- División de cuenta --}}
+                @if ($rs['split_bill'])
                 <div style="background:#f5f3ff; border:1px solid #c4b5fd; border-radius:8px; padding:10px;">
                     <div style="font-size:11px; font-weight:700; color:#5b21b6; text-transform:uppercase; margin-bottom:6px; letter-spacing:0.5px;">
                         🪙 División de cuenta
@@ -434,6 +448,7 @@
                         </div>
                     @endif
                 </div>
+                @endif
 
                 {{-- Acciones --}}
                 <div x-data="{ confirmCancel: false, confirmClose: false }">
@@ -457,8 +472,8 @@
                             <span wire:loading wire:target="sendToKitchen">Enviando + imprimiendo...</span>
                         </button>
 
-                        {{-- Botones por curso (solo si hay >1 curso pendiente) --}}
-                        @if ($pendingByCourse->count() > 1)
+                        {{-- Botones por curso (solo si hay >1 curso pendiente y feature ON) --}}
+                        @if ($rs['courses'] && $pendingByCourse->count() > 1)
                             <div style="font-size:10px; color:#6b7280; text-transform:uppercase; font-weight:700; margin-top:4px; letter-spacing:0.5px;">
                                 O enviar curso por curso
                             </div>
@@ -592,11 +607,13 @@
                                style="flex:1; padding:8px 10px; border-radius:8px; border:1px solid #d1d5db; font-size:13px;"
                                class="dark:!bg-gray-800 dark:!border-gray-700 dark:!text-gray-100" />
 
-                        <button type="button" wire:click="openHalfModal"
-                                title="Pizza/pasta con dos sabores"
-                                style="padding:8px 14px; border-radius:8px; background:#a855f7; color:white; border:0; font-weight:700; cursor:pointer; font-size:13px; white-space:nowrap;">
-                            🍕 1/2 + 1/2
-                        </button>
+                        @if ($rs['half_and_half'])
+                            <button type="button" wire:click="openHalfModal"
+                                    title="Pizza/pasta con dos sabores"
+                                    style="padding:8px 14px; border-radius:8px; background:#a855f7; color:white; border:0; font-weight:700; cursor:pointer; font-size:13px; white-space:nowrap;">
+                                🍕 1/2 + 1/2
+                            </button>
+                        @endif
                     </div>
 
                     {{-- Tabs de categoría --}}
@@ -751,7 +768,7 @@
     @endif
 
     {{-- ============ MODAL MITAD Y MITAD ============ --}}
-    @if ($halfModalOpen)
+    @if ($rs['half_and_half'] && $halfModalOpen)
         @php
             $halfAOpts = $this->halfAOptions;
             $halfBOpts = $this->halfBOptions;
@@ -874,7 +891,7 @@
     @endif
 
     {{-- ============ MODAL TRANSFERIR MESA ============ --}}
-    @if ($transferModalOpen && $this->activeOrder)
+    @if ($rs['table_operations'] && $transferModalOpen && $this->activeOrder)
         @php $availableTables = $this->transferTables; @endphp
         <div
             style="position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:9999; padding:20px;"
@@ -929,7 +946,7 @@
     @endif
 
     {{-- ============ MODAL JUNTAR MESAS ============ --}}
-    @if ($mergeModalOpen && $this->activeOrder)
+    @if ($rs['table_operations'] && $mergeModalOpen && $this->activeOrder)
         @php $mergeable = $this->mergeOrders; @endphp
         <div
             style="position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:9999; padding:20px;"
@@ -996,7 +1013,7 @@
     @endif
 
     {{-- ============ MODAL NUEVA PARA LLEVAR ============ --}}
-    @if ($takeawayModalOpen)
+    @if ($rs['takeaway'] && $takeawayModalOpen)
         <div
             style="position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:9999; padding:20px;"
             wire:click.self="closeTakeawayPrompt"
