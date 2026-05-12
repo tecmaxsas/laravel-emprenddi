@@ -43,6 +43,7 @@ class GeneralLedgerPage extends Page implements HasForms, HasTable
     {
         $this->filters = [
             'account_id' => null,
+            'cost_center_id' => null,
             'from' => now()->startOfMonth()->toDateString(),
             'to' => now()->endOfMonth()->toDateString(),
         ];
@@ -88,6 +89,25 @@ class GeneralLedgerPage extends Page implements HasForms, HasTable
                         Forms\Components\DatePicker::make('to')
                             ->label('Hasta')->required()->live(),
 
+                        Forms\Components\Select::make('cost_center_id')
+                            ->label('Centro de costo (opcional)')
+                            ->placeholder('Todos')
+                            ->searchable()
+                            ->live()
+                            ->getSearchResultsUsing(fn (string $search) => \App\Models\CostCenter::query()
+                                ->where('active', true)
+                                ->where(function ($q) use ($search) {
+                                    $q->where('code', 'ilike', "%{$search}%")
+                                      ->orWhere('name', 'ilike', "%{$search}%");
+                                })
+                                ->orderBy('code')
+                                ->limit(30)
+                                ->get()
+                                ->mapWithKeys(fn ($c) => [$c->id => $c->fullName()])
+                                ->all())
+                            ->getOptionLabelUsing(fn ($v) => \App\Models\CostCenter::find($v)?->fullName())
+                            ->columnSpan(2),
+
                         Forms\Components\Placeholder::make('initial_balance_display')
                             ->label('Saldo inicial')
                             ->content(fn () => '$ '.number_format($this->initialBalance(), 2)),
@@ -115,6 +135,7 @@ class GeneralLedgerPage extends Page implements HasForms, HasTable
     {
         $accountId = $this->filters['account_id'] ?? null;
         $from = $this->filters['from'] ?? null;
+        $costCenterId = $this->filters['cost_center_id'] ?? null;
 
         if (! $accountId || ! $from) {
             return 0;
@@ -122,6 +143,7 @@ class GeneralLedgerPage extends Page implements HasForms, HasTable
 
         return (float) JournalEntryLine::query()
             ->where('account_id', $accountId)
+            ->when($costCenterId, fn ($q) => $q->where('cost_center_id', $costCenterId))
             ->whereHas('entry', fn ($q) => $q
                 ->where('status', 'posted')
                 ->whereDate('date', '<', $from))
@@ -132,6 +154,7 @@ class GeneralLedgerPage extends Page implements HasForms, HasTable
     protected function periodTotal(string $column): float
     {
         $accountId = $this->filters['account_id'] ?? null;
+        $costCenterId = $this->filters['cost_center_id'] ?? null;
 
         if (! $accountId) {
             return 0;
@@ -139,6 +162,7 @@ class GeneralLedgerPage extends Page implements HasForms, HasTable
 
         return (float) JournalEntryLine::query()
             ->where('account_id', $accountId)
+            ->when($costCenterId, fn ($q) => $q->where('cost_center_id', $costCenterId))
             ->whereHas('entry', fn ($q) => $q
                 ->where('status', 'posted')
                 ->whereDate('date', '>=', $this->filters['from'])
@@ -153,6 +177,7 @@ class GeneralLedgerPage extends Page implements HasForms, HasTable
         return $table
             ->query(function () use ($initial) {
                 $accountId = $this->filters['account_id'] ?? null;
+                $costCenterId = $this->filters['cost_center_id'] ?? null;
                 if (! $accountId) {
                     return JournalEntryLine::query()->whereRaw('1 = 0');
                 }
@@ -164,13 +189,14 @@ class GeneralLedgerPage extends Page implements HasForms, HasTable
                     ])
                     ->join('journal_entries', 'journal_entries.id', '=', 'journal_entry_lines.journal_entry_id')
                     ->where('account_id', $accountId)
+                    ->when($costCenterId, fn ($q) => $q->where('journal_entry_lines.cost_center_id', $costCenterId))
                     ->where('journal_entries.status', 'posted')
                     ->whereDate('journal_entries.date', '>=', $this->filters['from'])
                     ->whereDate('journal_entries.date', '<=', $this->filters['to'])
                     ->orderBy('journal_entries.date')
                     ->orderBy('journal_entries.id')
                     ->orderBy('journal_entry_lines.line_number')
-                    ->with(['entry', 'thirdParty']);
+                    ->with(['entry', 'thirdParty', 'costCenter']);
             })
             ->defaultPaginationPageOption(50)
             ->columns([
@@ -183,6 +209,10 @@ class GeneralLedgerPage extends Page implements HasForms, HasTable
                         ? route('filament.app.resources.journal-entries.view', $record->entry)
                         : null),
                 Tables\Columns\TextColumn::make('thirdParty.name')->label('Tercero')->wrap()->placeholder('—'),
+                Tables\Columns\TextColumn::make('costCenter.code')
+                    ->label('Centro costo')
+                    ->placeholder('—')
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('description')->label('Detalle')->limit(60)->wrap()->placeholder('—'),
                 Tables\Columns\TextColumn::make('debit')->label('Débito')->money('COP')->alignEnd(),
                 Tables\Columns\TextColumn::make('credit')->label('Crédito')->money('COP')->alignEnd(),

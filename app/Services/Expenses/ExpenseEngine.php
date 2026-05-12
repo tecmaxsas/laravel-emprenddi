@@ -106,12 +106,14 @@ class ExpenseEngine
 
         $lineNum = 1;
 
-        // DR cuenta de gasto por el subtotal
+        // DR cuenta de gasto por el subtotal — propaga el centro de costo
+        // del gasto a la línea de imputación para reportes por CC.
         JournalEntryLine::create([
             'journal_entry_id' => $entry->id,
             'line_number' => $lineNum++,
             'account_id' => $expense->expense_account_id,
             'third_party_id' => $expense->third_party_id,
+            'cost_center_id' => $expense->cost_center_id,
             'debit' => $subtotal,
             'credit' => 0,
             'description' => $expense->concept,
@@ -125,6 +127,7 @@ class ExpenseEngine
                 'line_number' => $lineNum++,
                 'account_id' => $expense->expense_account_id,
                 'third_party_id' => $expense->third_party_id,
+                'cost_center_id' => $expense->cost_center_id,
                 'debit' => $taxAmount,
                 'credit' => 0,
                 'description' => 'IVA gasto '.$expense->fullNumber(),

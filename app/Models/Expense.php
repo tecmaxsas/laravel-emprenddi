@@ -29,6 +29,7 @@ class Expense extends Model
         'cash_register_session_id',
         'third_party_id',
         'expense_account_id',
+        'cost_center_id',
         'payment_account_id',
         'prefix',
         'number',
@@ -82,6 +83,11 @@ class Expense extends Model
     public function expenseAccount(): BelongsTo
     {
         return $this->belongsTo(Account::class, 'expense_account_id');
+    }
+
+    public function costCenter(): BelongsTo
+    {
+        return $this->belongsTo(CostCenter::class);
     }
 
     public function paymentAccount(): BelongsTo

@@ -44,4 +44,9 @@ class JournalEntryLine extends Model
     {
         return $this->belongsTo(ThirdParty::class);
     }
+
+    public function costCenter(): BelongsTo
+    {
+        return $this->belongsTo(CostCenter::class);
+    }
 }

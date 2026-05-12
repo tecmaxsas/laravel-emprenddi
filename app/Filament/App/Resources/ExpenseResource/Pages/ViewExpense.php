@@ -120,7 +120,7 @@ class ViewExpense extends ViewRecord
                 ]),
 
             Infolists\Components\Section::make('Imputación contable')
-                ->columns(2)
+                ->columns(3)
                 ->schema([
                     Infolists\Components\TextEntry::make('expenseAccount')
                         ->label('Cuenta de gasto (DR)')
@@ -128,6 +128,10 @@ class ViewExpense extends ViewRecord
                     Infolists\Components\TextEntry::make('paymentAccount')
                         ->label('Cuenta de pago (CR)')
                         ->state(fn (Expense $record) => $record->paymentAccount?->fullName()),
+                    Infolists\Components\TextEntry::make('costCenter')
+                        ->label('Centro de costo')
+                        ->state(fn (Expense $record) => $record->costCenter?->fullName())
+                        ->placeholder('—'),
                 ]),
 
             Infolists\Components\Section::make('Montos')

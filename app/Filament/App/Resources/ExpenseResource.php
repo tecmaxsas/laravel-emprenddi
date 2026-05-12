@@ -5,6 +5,7 @@ namespace App\Filament\App\Resources;
 use App\Filament\App\Resources\ExpenseResource\Pages;
 use App\Filament\Concerns\ChecksPermission;
 use App\Models\Account;
+use App\Models\CostCenter;
 use App\Models\Expense;
 use App\Models\Location;
 use App\Models\Tax;
@@ -134,6 +135,26 @@ class ExpenseResource extends Resource
                             ->all())
                         ->getOptionLabelUsing(fn ($value) => Account::find($value)?->fullName())
                         ->helperText('Cuenta clase 5 (p. ej. 5135 Servicios, 5145 Mantenimiento)'),
+
+                    Forms\Components\Select::make('cost_center_id')
+                        ->label('Centro de costo (opcional)')
+                        ->searchable()
+                        ->placeholder('Sin centro de costo')
+                        ->getSearchResultsUsing(fn (string $search) => CostCenter::query()
+                            ->where('active', true)
+                            ->where('accepts_movements', true)
+                            ->where(function ($q) use ($search) {
+                                $q->where('code', 'ilike', "%{$search}%")
+                                  ->orWhere('name', 'ilike', "%{$search}%");
+                            })
+                            ->orderBy('code')
+                            ->limit(30)
+                            ->get()
+                            ->mapWithKeys(fn (CostCenter $c) => [$c->id => $c->fullName()])
+                            ->all())
+                        ->getOptionLabelUsing(fn ($value) => CostCenter::find($value)?->fullName())
+                        ->helperText('Para reportes de gastos por área / sucursal / proyecto.')
+                        ->columnSpanFull(),
 
                     Forms\Components\Select::make('payment_account_id')
                         ->label('Cuenta de pago (CR)')
