@@ -203,4 +203,80 @@ class RestaurantReports extends Page
             'gross_total' => (float) ($row->gross_total ?? 0),
         ];
     }
+
+    /**
+     * Ordenes anuladas + cerradas SIN facturar (casa invita) en el rango.
+     * Auditoria para el administrador: quien lo hizo, cuando, monto y motivo.
+     *
+     * 'voided_kind':
+     *   - 'cancelled': status = cancelled
+     *   - 'no_invoice': status = closed pero invoice_ids vacio/null
+     */
+    public function getVoidedOrdersProperty()
+    {
+        [$from, $to] = $this->rangeCarbon();
+        $companyId = $this->companyId();
+
+        return DB::table('restaurant_orders as o')
+            ->leftJoin('users as u', 'u.id', '=', 'o.closed_by_user_id')
+            ->leftJoin('users as srv', 'srv.id', '=', 'o.server_user_id')
+            ->leftJoin('restaurant_tables as t', 't.id', '=', 'o.table_id')
+            ->select([
+                'o.id',
+                'o.prefix',
+                'o.number',
+                'o.status',
+                'o.subtotal',
+                'o.tax_total',
+                'o.total',
+                'o.tip_amount',
+                'o.opened_at',
+                'o.closed_at',
+                'o.cancelled_at',
+                'o.notes',
+                'o.invoice_ids',
+                'o.is_takeaway',
+                'o.is_delivery',
+                't.code as table_code',
+                'u.name as closed_by_name',
+                'srv.name as server_name',
+                DB::raw("case
+                    when o.status = 'cancelled' then 'cancelled'
+                    when o.status = 'closed' and (o.invoice_ids is null or jsonb_array_length(o.invoice_ids) = 0) then 'no_invoice'
+                    else 'other'
+                end as voided_kind"),
+            ])
+            ->where('o.company_id', $companyId)
+            ->where(function ($q) use ($from, $to) {
+                $q->where(function ($q2) use ($from, $to) {
+                    // Canceladas en el rango
+                    $q2->where('o.status', Order::STATUS_CANCELLED)
+                       ->whereBetween('o.cancelled_at', [$from, $to]);
+                })->orWhere(function ($q2) use ($from, $to) {
+                    // Cerradas sin factura en el rango
+                    $q2->where('o.status', Order::STATUS_CLOSED)
+                       ->whereBetween('o.closed_at', [$from, $to])
+                       ->where(function ($q3) {
+                           $q3->whereNull('o.invoice_ids')
+                              ->orWhereRaw("jsonb_array_length(o.invoice_ids) = 0");
+                       });
+                });
+            })
+            ->orderByDesc(DB::raw('coalesce(o.cancelled_at, o.closed_at)'))
+            ->limit(200)
+            ->get();
+    }
+
+    /**
+     * Items de las ordenes anuladas/sin factura para el preview.
+     */
+    public function voidedOrderItems(int $orderId): array
+    {
+        return DB::table('restaurant_order_items')
+            ->where('restaurant_order_id', $orderId)
+            ->select(['description', 'quantity', 'total', 'kitchen_status'])
+            ->orderBy('line_number')
+            ->get()
+            ->toArray();
+    }
 }

@@ -1138,9 +1138,16 @@ class RestaurantPos extends Page
     {
         $order = $this->activeOrder;
         if (! $order) return;
+        if (! Auth::user()?->can('restaurant.order.cancel')) {
+            Notification::make()
+                ->title('Sin permiso')
+                ->body('No tienes permiso para cancelar órdenes. Pide al administrador.')
+                ->danger()->send();
+            return;
+        }
 
         try {
-            app(RestaurantOrderEngine::class)->cancel($order, 'Cancelado desde POS');
+            app(RestaurantOrderEngine::class)->cancel($order, 'Cancelado desde POS por '.(Auth::user()?->name ?? 'usuario'));
             Notification::make()->title('Orden cancelada')->warning()->send();
             $this->closeOrderPanel();
         } catch (\Throwable $e) {
@@ -1149,21 +1156,31 @@ class RestaurantPos extends Page
     }
 
     /**
-     * Cierra la cuenta y libera la mesa. Iter 21e: agregará cobro
-     * con propina, división de cuenta y generación de SaleInvoice.
-     * Por ahora solo libera la mesa para empezar de cero.
+     * Cierra la cuenta SIN facturar (casa invita). Para flujo normal con
+     * factura usar confirmBilling(). Requiere permiso explicito porque
+     * implica perdida fiscal/contable (ingreso no registrado).
      */
     public function closeOrder(): void
     {
         $order = $this->activeOrder;
         if (! $order) return;
+        if (! Auth::user()?->can('restaurant.order.close_without_invoice')) {
+            Notification::make()
+                ->title('Sin permiso')
+                ->body('No tienes permiso para cerrar sin facturar. Pide al administrador.')
+                ->danger()->send();
+            return;
+        }
 
         try {
-            app(RestaurantOrderEngine::class)->close($order);
+            app(RestaurantOrderEngine::class)->close(
+                $order,
+                'Casa invita — cerrado sin facturar por '.(Auth::user()?->name ?? 'usuario'),
+            );
             Notification::make()
-                ->title('Cuenta cerrada')
-                ->body("Mesa {$order->table?->code} liberada y lista para nueva orden.")
-                ->success()
+                ->title('Cuenta cerrada sin factura')
+                ->body("Mesa {$order->table?->code} liberada. La orden quedó registrada como 'casa invita'.")
+                ->warning()
                 ->send();
             $this->closeOrderPanel();
         } catch (\Throwable $e) {

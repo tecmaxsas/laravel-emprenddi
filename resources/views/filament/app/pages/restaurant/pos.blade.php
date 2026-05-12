@@ -497,17 +497,21 @@
                             💵 Cobrar cuenta y facturar
                         </button>
 
-                        <button type="button" @click="confirmClose = true"
-                                @disabled($order->items->isEmpty())
-                                title="Cerrar sin generar factura (casa invita)"
-                                style="padding:8px; border-radius:8px; background:transparent; color:#10b981; border:1px solid #a7f3d0; font-weight:600; cursor:pointer; font-size:11px;">
-                            Cerrar sin facturar (casa invita)
-                        </button>
+                        @can('restaurant.order.close_without_invoice')
+                            <button type="button" @click="confirmClose = true"
+                                    @disabled($order->items->isEmpty())
+                                    title="Cerrar sin generar factura (casa invita)"
+                                    style="padding:8px; border-radius:8px; background:transparent; color:#10b981; border:1px solid #a7f3d0; font-weight:600; cursor:pointer; font-size:11px;">
+                                Cerrar sin facturar (casa invita)
+                            </button>
+                        @endcan
 
-                        <button type="button" @click="confirmCancel = true"
-                                style="padding:8px; border-radius:8px; background:transparent; color:#dc2626; border:1px solid #fecaca; font-weight:600; cursor:pointer; font-size:12px;">
-                            Cancelar orden (sin cobrar)
-                        </button>
+                        @can('restaurant.order.cancel')
+                            <button type="button" @click="confirmCancel = true"
+                                    style="padding:8px; border-radius:8px; background:transparent; color:#dc2626; border:1px solid #fecaca; font-weight:600; cursor:pointer; font-size:12px;">
+                                Cancelar orden (sin cobrar)
+                            </button>
+                        @endcan
                     </div>
 
                     {{-- Modal de confirmación estilo Filament/SweetAlert --}}

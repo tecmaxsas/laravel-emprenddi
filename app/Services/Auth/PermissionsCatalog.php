@@ -81,6 +81,8 @@ class PermissionsCatalog
                 'restaurant.reservations.manage' => 'Crear y gestionar reservaciones',
                 'restaurant.delivery.manage' => 'Operar pedidos de delivery',
                 'restaurant.bill.split' => 'Dividir cuentas',
+                'restaurant.order.close_without_invoice' => 'Cerrar orden sin facturar (casa invita)',
+                'restaurant.order.cancel' => 'Cancelar/anular orden sin cobrar',
                 'restaurant.reports.view' => 'Ver reportes de restaurante (propinas, items, tiempos)',
             ],
             'Reportes' => [
