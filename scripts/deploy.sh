@@ -168,6 +168,7 @@ if [ "$NEEDS_SEEDERS" = true ]; then
     $COMPOSE exec -T app php artisan db:seed --class=SuperAdminUserSeeder --force
     $COMPOSE exec -T app php artisan db:seed --class=DianCatalogsSeeder --force
     $COMPOSE exec -T app php artisan db:seed --class=DefaultPaymentMethodsSeeder --force
+    $COMPOSE exec -T app php artisan db:seed --class=DefaultCurrenciesSeeder --force
 fi
 
 # ---- Caches (siempre, son <10s) ---------------------------------------------
