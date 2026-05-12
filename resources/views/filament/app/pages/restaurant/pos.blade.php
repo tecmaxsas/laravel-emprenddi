@@ -111,6 +111,22 @@
                             style="width:36px; height:36px; border-radius:8px; background:#ef4444; color:#ffffff; border:0; cursor:pointer; font-size:20px; font-weight:700; line-height:1; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 2px 4px rgba(0,0,0,0.15);">×</button>
                 </div>
 
+                {{-- Ops de mesa: transferir / juntar --}}
+                @if ($order->table_id)
+                    <div style="display:flex; gap:6px;">
+                        <button type="button" wire:click="openTransferModal"
+                                title="Mover esta orden a otra mesa libre"
+                                style="flex:1; padding:8px; border-radius:8px; background:#f3e8ff; color:#6b21a8; border:1px solid #d8b4fe; font-weight:600; cursor:pointer; font-size:12px;">
+                            🔄 Transferir mesa
+                        </button>
+                        <button type="button" wire:click="openMergeModal"
+                                title="Fusionar con otra orden abierta"
+                                style="flex:1; padding:8px; border-radius:8px; background:#dbeafe; color:#1e40af; border:1px solid #93c5fd; font-weight:600; cursor:pointer; font-size:12px;">
+                            🔗 Juntar mesas
+                        </button>
+                    </div>
+                @endif
+
                 {{-- Selector de curso "actual" — items nuevos heredan este --}}
                 @php
                     $courses = \App\Models\Restaurant\OrderItem::COURSES;
@@ -656,6 +672,128 @@
                             @disabled(! $halfAProductId || ! $halfBProductId)
                             style="padding:10px 22px; background:{{ $halfAProductId && $halfBProductId ? '#a855f7' : '#c4b5fd' }}; color:white; border:0; border-radius:8px; font-weight:700; cursor:pointer;">
                         ✓ Agregar 1/2 + 1/2
+                    </button>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    {{-- ============ MODAL TRANSFERIR MESA ============ --}}
+    @if ($transferModalOpen && $this->activeOrder)
+        @php $availableTables = $this->transferTables; @endphp
+        <div
+            style="position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:9999; padding:20px;"
+            wire:click.self="closeTransferModal"
+            wire:keydown.escape.window="closeTransferModal"
+        >
+            <div style="background:#ffffff; border-radius:14px; max-width:520px; width:100%; max-height:90vh; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 25px 50px rgba(0,0,0,0.4);">
+                <div style="padding:18px 22px; border-bottom:1px solid #e5e7eb; background:#faf5ff; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <h2 style="margin:0; font-size:18px; font-weight:700; color:#581c87;">🔄 Transferir mesa</h2>
+                        <div style="font-size:12px; color:#6b7280; margin-top:2px;">
+                            Mover orden de <strong>{{ $this->activeOrder->table?->code }}</strong> a otra mesa libre
+                        </div>
+                    </div>
+                    <button type="button" wire:click="closeTransferModal"
+                            style="background:transparent; border:0; cursor:pointer; padding:6px; font-size:24px; color:#6b7280; line-height:1;">×</button>
+                </div>
+
+                <div style="padding:18px 22px; overflow-y:auto; flex:1; color:#111827;">
+                    @if ($availableTables->isEmpty())
+                        <div style="padding:20px; text-align:center; background:#fef3c7; border:1px solid #fde68a; border-radius:8px; color:#92400e; font-size:13px;">
+                            No hay mesas libres en esta sede. Libera una mesa o usa "Juntar mesas" si querés combinar con otra orden.
+                        </div>
+                    @else
+                        <label style="display:block; font-size:13px; font-weight:700; color:#111827; margin-bottom:8px;">Mesa destino</label>
+                        <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap:6px;">
+                            @foreach ($availableTables as $t)
+                                @php $sel = (int) $transferTargetTableId === (int) $t->id; @endphp
+                                <button type="button" wire:click="$set('transferTargetTableId', {{ $t->id }})"
+                                        style="padding:10px 6px; border-radius:8px; border:2px solid {{ $sel ? '#a855f7' : '#d1d5db' }}; background:{{ $sel ? '#a855f7' : '#ffffff' }}; color:{{ $sel ? '#ffffff' : '#111827' }}; cursor:pointer; font-weight:700; font-size:14px; text-align:center;">
+                                    {{ $t->code }}
+                                    <div style="font-size:9px; opacity:0.8; font-weight:500; margin-top:2px;">{{ $t->zone?->name ?? '' }}</div>
+                                </button>
+                            @endforeach
+                        </div>
+                    @endif
+                </div>
+
+                <div style="padding:14px 22px; border-top:1px solid #e5e7eb; background:#fafafa; display:flex; gap:10px; justify-content:flex-end;">
+                    <button type="button" wire:click="closeTransferModal"
+                            style="padding:10px 18px; background:transparent; color:#6b7280; border:1px solid #d1d5db; border-radius:8px; font-weight:600; cursor:pointer;">
+                        Cancelar
+                    </button>
+                    <button type="button" wire:click="confirmTransfer"
+                            @disabled(! $transferTargetTableId)
+                            style="padding:10px 22px; background:{{ $transferTargetTableId ? '#a855f7' : '#c4b5fd' }}; color:white; border:0; border-radius:8px; font-weight:700; cursor:pointer;">
+                        ✓ Transferir
+                    </button>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    {{-- ============ MODAL JUNTAR MESAS ============ --}}
+    @if ($mergeModalOpen && $this->activeOrder)
+        @php $mergeable = $this->mergeOrders; @endphp
+        <div
+            style="position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:9999; padding:20px;"
+            wire:click.self="closeMergeModal"
+            wire:keydown.escape.window="closeMergeModal"
+        >
+            <div style="background:#ffffff; border-radius:14px; max-width:560px; width:100%; max-height:90vh; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 25px 50px rgba(0,0,0,0.4);">
+                <div style="padding:18px 22px; border-bottom:1px solid #e5e7eb; background:#eff6ff; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <h2 style="margin:0; font-size:18px; font-weight:700; color:#1e3a8a;">🔗 Juntar mesas</h2>
+                        <div style="font-size:12px; color:#6b7280; margin-top:2px;">
+                            Trae items de otra orden a <strong>{{ $this->activeOrder->table?->code }}</strong>. La mesa origen se libera.
+                        </div>
+                    </div>
+                    <button type="button" wire:click="closeMergeModal"
+                            style="background:transparent; border:0; cursor:pointer; padding:6px; font-size:24px; color:#6b7280; line-height:1;">×</button>
+                </div>
+
+                <div style="padding:18px 22px; overflow-y:auto; flex:1; color:#111827;">
+                    @if ($mergeable->isEmpty())
+                        <div style="padding:20px; text-align:center; background:#fef3c7; border:1px solid #fde68a; border-radius:8px; color:#92400e; font-size:13px;">
+                            No hay otras órdenes abiertas en esta sede.
+                        </div>
+                    @else
+                        <label style="display:block; font-size:13px; font-weight:700; color:#111827; margin-bottom:8px;">Orden a fusionar (se vacía y libera su mesa)</label>
+                        <div style="display:flex; flex-direction:column; gap:6px;">
+                            @foreach ($mergeable as $o)
+                                @php
+                                    $sel = (int) $mergeTargetOrderId === (int) $o->id;
+                                    $count = $o->items->reject(fn ($i) => $i->kitchen_status === 'cancelled')->count();
+                                @endphp
+                                <button type="button" wire:click="$set('mergeTargetOrderId', {{ $o->id }})"
+                                        style="display:flex; justify-content:space-between; align-items:center; padding:12px; border-radius:8px; border:2px solid {{ $sel ? '#3b82f6' : '#d1d5db' }}; background:{{ $sel ? '#dbeafe' : '#ffffff' }}; cursor:pointer; text-align:left;">
+                                    <div>
+                                        <div style="font-size:14px; font-weight:700; color:#111827;">
+                                            Mesa {{ $o->table?->code ?? '—' }}
+                                        </div>
+                                        <div style="font-size:11px; color:#6b7280; margin-top:2px;">
+                                            {{ $o->fullNumber() }} · {{ $count }} item(s) · {{ $o->opened_at?->diffForHumans() }}
+                                        </div>
+                                    </div>
+                                    <div style="font-size:14px; font-weight:700; color:#059669;">
+                                        ${{ number_format((float) $o->total, 0, ',', '.') }}
+                                    </div>
+                                </button>
+                            @endforeach
+                        </div>
+                    @endif
+                </div>
+
+                <div style="padding:14px 22px; border-top:1px solid #e5e7eb; background:#fafafa; display:flex; gap:10px; justify-content:flex-end;">
+                    <button type="button" wire:click="closeMergeModal"
+                            style="padding:10px 18px; background:transparent; color:#6b7280; border:1px solid #d1d5db; border-radius:8px; font-weight:600; cursor:pointer;">
+                        Cancelar
+                    </button>
+                    <button type="button" wire:click="confirmMerge"
+                            @disabled(! $mergeTargetOrderId)
+                            style="padding:10px 22px; background:{{ $mergeTargetOrderId ? '#3b82f6' : '#93c5fd' }}; color:white; border:0; border-radius:8px; font-weight:700; cursor:pointer;">
+                        ✓ Juntar
                     </button>
                 </div>
             </div>

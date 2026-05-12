@@ -434,6 +434,102 @@ class RestaurantOrderEngine
         });
     }
 
+    /**
+     * Mueve una orden a otra mesa libre (misma sede). Util cuando los
+     * clientes piden cambio de mesa o el mesero se equivoco al abrir.
+     */
+    public function transferOrder(Order $order, Table $newTable): Order
+    {
+        if (! $order->isOpen()) {
+            throw new RuntimeException('Solo se pueden transferir ordenes abiertas.');
+        }
+        if ($newTable->id === $order->table_id) {
+            throw new RuntimeException('La orden ya esta en esa mesa.');
+        }
+        if (! $newTable->active) {
+            throw new RuntimeException('La mesa destino esta inactiva.');
+        }
+        if ($newTable->activeOrder()) {
+            throw new RuntimeException('La mesa destino ya tiene una orden abierta. Usa "Juntar mesas".');
+        }
+        if ($newTable->location_id !== $order->location_id) {
+            throw new RuntimeException('No se puede transferir entre sedes distintas.');
+        }
+
+        return DB::transaction(function () use ($order, $newTable) {
+            $oldTable = $order->table;
+            $oldCode = $oldTable?->code ?? '—';
+
+            $order->update([
+                'table_id' => $newTable->id,
+                'zone_id' => $newTable->zone_id,
+                'notes' => trim(($order->notes ?? '')."\nTransferida: mesa {$oldCode} → mesa {$newTable->code}"),
+            ]);
+
+            if ($oldTable) {
+                $oldTable->update(['status' => 'free']);
+            }
+            $newTable->update(['status' => 'occupied']);
+
+            return $order->fresh();
+        });
+    }
+
+    /**
+     * Fusiona la orden secondary dentro de la primary. Los items pasan a
+     * la primary, la secondary se cancela con nota de fusion y su mesa
+     * se libera. Los tickets ya impresos del secondary quedan historicos
+     * (no se reescriben — son evidencia inmutable de lo que fue a cocina).
+     */
+    public function mergeOrders(Order $primary, Order $secondary): Order
+    {
+        if (! $primary->isOpen() || ! $secondary->isOpen()) {
+            throw new RuntimeException('Ambas ordenes deben estar abiertas para fusionar.');
+        }
+        if ($primary->id === $secondary->id) {
+            throw new RuntimeException('No se puede fusionar una orden consigo misma.');
+        }
+        if ($primary->company_id !== $secondary->company_id) {
+            throw new RuntimeException('No se puede fusionar entre empresas distintas.');
+        }
+
+        return DB::transaction(function () use ($primary, $secondary) {
+            $secTable = $secondary->table;
+            $secCode = $secTable?->code ?? '—';
+            $secNumber = $secondary->fullNumber();
+
+            // Mover items del secondary al primary, ajustando line_number
+            $startLine = ((int) $primary->items()->max('line_number')) + 1;
+            $secondary->items()->orderBy('line_number')->get()
+                ->each(function (OrderItem $item) use ($primary, &$startLine) {
+                    $item->update([
+                        'restaurant_order_id' => $primary->id,
+                        'line_number' => $startLine++,
+                    ]);
+                });
+
+            // Marcar secondary como anulado con nota explicita de fusion
+            // (no creamos status 'merged' nuevo para no migrar el enum)
+            $secondary->update([
+                'status' => Order::STATUS_CANCELLED,
+                'cancelled_at' => now(),
+                'closed_by_user_id' => Auth::id(),
+                'notes' => trim(($secondary->notes ?? '')."\nFusionada en orden {$primary->fullNumber()} (mesa {$primary->table?->code})"),
+            ]);
+
+            if ($secTable) {
+                $secTable->update(['status' => 'free']);
+            }
+
+            $primary->update([
+                'notes' => trim(($primary->notes ?? '')."\nIncluye items fusionados de mesa {$secCode} (orden {$secNumber})"),
+            ]);
+            $this->recalculateTotals($primary);
+
+            return $primary->fresh();
+        });
+    }
+
     public function markItemPreparing(OrderItem $item): void
     {
         $item->update([

@@ -64,6 +64,13 @@ class RestaurantPos extends Page
     public ?int $halfBProductId = null;
     public string $halfNote = '';
 
+    // Transferir / juntar mesas
+    public bool $transferModalOpen = false;
+    public ?int $transferTargetTableId = null;
+
+    public bool $mergeModalOpen = false;
+    public ?int $mergeTargetOrderId = null;
+
     public static function canAccess(): bool
     {
         if (! ModuleGate::active('restaurant')) return false;
@@ -451,6 +458,127 @@ class RestaurantPos extends Page
             $this->closeHalfModal();
         } catch (\Throwable $e) {
             Notification::make()->title('Error')->body($e->getMessage())->danger()->send();
+        }
+    }
+
+    // ============ TRANSFERIR MESA ============
+
+    public function openTransferModal(): void
+    {
+        if (! $this->activeOrder) return;
+        $this->transferModalOpen = true;
+        $this->transferTargetTableId = null;
+    }
+
+    public function closeTransferModal(): void
+    {
+        $this->transferModalOpen = false;
+        $this->transferTargetTableId = null;
+    }
+
+    /**
+     * Mesas libres en la misma sede, excluyendo la actual.
+     */
+    public function getTransferTablesProperty()
+    {
+        $order = $this->activeOrder;
+        if (! $order) return collect();
+
+        return Table::query()
+            ->where('active', true)
+            ->where('location_id', $order->location_id)
+            ->where('id', '!=', $order->table_id)
+            ->where('status', 'free')
+            ->with('zone')
+            ->orderBy('code')
+            ->get();
+    }
+
+    public function confirmTransfer(): void
+    {
+        $order = $this->activeOrder;
+        if (! $order || ! $this->transferTargetTableId) {
+            Notification::make()->title('Selecciona una mesa')->danger()->send();
+            return;
+        }
+
+        $newTable = Table::find($this->transferTargetTableId);
+        if (! $newTable) {
+            Notification::make()->title('Mesa invalida')->danger()->send();
+            return;
+        }
+
+        try {
+            $oldCode = $order->table?->code ?? '—';
+            app(RestaurantOrderEngine::class)->transferOrder($order, $newTable);
+            Notification::make()
+                ->title('Mesa transferida')
+                ->body("Orden movida de {$oldCode} → {$newTable->code}")
+                ->success()
+                ->send();
+            $this->closeTransferModal();
+        } catch (\Throwable $e) {
+            Notification::make()->title('Error al transferir')->body($e->getMessage())->danger()->send();
+        }
+    }
+
+    // ============ JUNTAR MESAS ============
+
+    public function openMergeModal(): void
+    {
+        if (! $this->activeOrder) return;
+        $this->mergeModalOpen = true;
+        $this->mergeTargetOrderId = null;
+    }
+
+    public function closeMergeModal(): void
+    {
+        $this->mergeModalOpen = false;
+        $this->mergeTargetOrderId = null;
+    }
+
+    /**
+     * Ordenes abiertas en otras mesas (no la actual) de la misma sede.
+     */
+    public function getMergeOrdersProperty()
+    {
+        $order = $this->activeOrder;
+        if (! $order) return collect();
+
+        return Order::query()
+            ->whereIn('status', [Order::STATUS_OPEN, Order::STATUS_IN_KITCHEN, Order::STATUS_SERVED])
+            ->where('location_id', $order->location_id)
+            ->where('id', '!=', $order->id)
+            ->with(['table', 'items'])
+            ->orderBy('opened_at')
+            ->get();
+    }
+
+    public function confirmMerge(): void
+    {
+        $order = $this->activeOrder;
+        if (! $order || ! $this->mergeTargetOrderId) {
+            Notification::make()->title('Selecciona una orden')->danger()->send();
+            return;
+        }
+
+        $secondary = Order::find($this->mergeTargetOrderId);
+        if (! $secondary) {
+            Notification::make()->title('Orden invalida')->danger()->send();
+            return;
+        }
+
+        try {
+            $secCode = $secondary->table?->code ?? '—';
+            app(RestaurantOrderEngine::class)->mergeOrders($order, $secondary);
+            Notification::make()
+                ->title('Mesas fusionadas')
+                ->body("Items de mesa {$secCode} traidos a {$order->table?->code}. Mesa {$secCode} liberada.")
+                ->success()
+                ->send();
+            $this->closeMergeModal();
+        } catch (\Throwable $e) {
+            Notification::make()->title('Error al fusionar')->body($e->getMessage())->danger()->send();
         }
     }
 
