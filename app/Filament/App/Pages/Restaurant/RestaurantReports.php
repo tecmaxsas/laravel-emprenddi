@@ -279,4 +279,87 @@ class RestaurantReports extends Page
             ->get()
             ->toArray();
     }
+
+    // ============ DELIVERY ============
+
+    /**
+     * KPIs y tiempos promedio del flujo delivery en el rango. Calcula:
+     *  - Total deliveries iniciados (is_delivery)
+     *  - Entregados (delivery_status = delivered)
+     *  - No entregados (cualquier otro estado y orden cerrada/cancelada)
+     *  - Tasa de exito
+     *  - Tiempos promedio (min): cocina->despacho, ruta, total
+     *  - Costo total de envios (delivery_fee)
+     */
+    public function getDeliveryTimesProperty(): array
+    {
+        [$from, $to] = $this->rangeCarbon();
+        $companyId = $this->companyId();
+
+        // Postgres jsonb extraction: delivery_metadata->>'dispatched_at' etc.
+        $row = DB::table('restaurant_orders')
+            ->where('company_id', $companyId)
+            ->where('is_delivery', true)
+            ->whereBetween('opened_at', [$from, $to])
+            ->selectRaw("
+                count(*) as total,
+                count(*) filter (where delivery_metadata->>'delivery_status' = 'delivered') as delivered,
+                count(*) filter (where status in ('closed', 'cancelled') and (delivery_metadata->>'delivery_status' is null or delivery_metadata->>'delivery_status' != 'delivered')) as not_delivered,
+                avg(extract(epoch from ((delivery_metadata->>'dispatched_at')::timestamp - opened_at)) / 60.0)
+                    filter (where delivery_metadata->>'dispatched_at' is not null) as avg_kitchen_to_dispatch,
+                avg(extract(epoch from ((delivery_metadata->>'delivered_at')::timestamp - (delivery_metadata->>'dispatched_at')::timestamp)) / 60.0)
+                    filter (where delivery_metadata->>'dispatched_at' is not null and delivery_metadata->>'delivered_at' is not null) as avg_route,
+                avg(extract(epoch from ((delivery_metadata->>'delivered_at')::timestamp - opened_at)) / 60.0)
+                    filter (where delivery_metadata->>'delivered_at' is not null) as avg_total,
+                coalesce(sum(delivery_fee), 0) as total_delivery_fees
+            ")
+            ->first();
+
+        $total = (int) ($row->total ?? 0);
+        $delivered = (int) ($row->delivered ?? 0);
+
+        return [
+            'total' => $total,
+            'delivered' => $delivered,
+            'not_delivered' => (int) ($row->not_delivered ?? 0),
+            'success_rate' => $total > 0 ? round($delivered / $total * 100, 1) : 0,
+            'avg_kitchen_to_dispatch' => round((float) ($row->avg_kitchen_to_dispatch ?? 0), 1),
+            'avg_route' => round((float) ($row->avg_route ?? 0), 1),
+            'avg_total' => round((float) ($row->avg_total ?? 0), 1),
+            'total_delivery_fees' => (float) ($row->total_delivery_fees ?? 0),
+        ];
+    }
+
+    /**
+     * Performance por driver en el rango:
+     *  - # deliveries asignados
+     *  - # entregados
+     *  - Tiempo promedio en ruta (dispatch -> delivered)
+     *  - Valor total entregado (suma de order.total de las entregadas)
+     */
+    public function getDeliveryByDriverProperty()
+    {
+        [$from, $to] = $this->rangeCarbon();
+        $companyId = $this->companyId();
+
+        return DB::table('restaurant_orders as o')
+            ->leftJoin('restaurant_drivers as d', 'd.id', '=', DB::raw("(o.delivery_metadata->>'driver_id')::bigint"))
+            ->where('o.company_id', $companyId)
+            ->where('o.is_delivery', true)
+            ->whereBetween('o.opened_at', [$from, $to])
+            ->whereNotNull(DB::raw("o.delivery_metadata->>'driver_id'"))
+            ->select([
+                DB::raw("(o.delivery_metadata->>'driver_id')::bigint as driver_id"),
+                DB::raw("max(coalesce(d.name, o.delivery_metadata->>'driver_name')) as driver_name"),
+                DB::raw('max(d.license_plate) as license_plate'),
+                DB::raw('count(*) as assigned_count'),
+                DB::raw("count(*) filter (where o.delivery_metadata->>'delivery_status' = 'delivered') as delivered_count"),
+                DB::raw("avg(extract(epoch from ((o.delivery_metadata->>'delivered_at')::timestamp - (o.delivery_metadata->>'dispatched_at')::timestamp)) / 60.0)
+                    filter (where o.delivery_metadata->>'dispatched_at' is not null and o.delivery_metadata->>'delivered_at' is not null) as avg_route_min"),
+                DB::raw("coalesce(sum(o.total) filter (where o.delivery_metadata->>'delivery_status' = 'delivered'), 0) as revenue_delivered"),
+            ])
+            ->groupBy(DB::raw("(o.delivery_metadata->>'driver_id')::bigint"))
+            ->orderByDesc('delivered_count')
+            ->get();
+    }
 }

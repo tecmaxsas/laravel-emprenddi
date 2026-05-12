@@ -194,6 +194,145 @@
         @endif
     </div>
 
+    {{-- Delivery: KPIs y tabla por driver --}}
+    @if (\App\Support\RestaurantSettings::isEnabled('delivery'))
+        @php
+            $dt = $this->deliveryTimes;
+            $byDriver = $this->deliveryByDriver;
+        @endphp
+        <div style="background:#ffffff; border:1px solid #d8b4fe; border-radius:12px; padding:18px; margin-bottom:18px;">
+            <h2 style="margin:0 0 14px 0; font-size:16px; font-weight:700; color:#5b21b6; display:flex; align-items:center; gap:8px;">
+                🛵 Domicilios
+                <span style="font-size:11px; color:#6b7280; font-weight:500;">({{ $dt['total'] }} pedidos en el rango)</span>
+            </h2>
+
+            @if ($dt['total'] === 0)
+                <div style="padding:24px; text-align:center; color:#9ca3af; font-size:13px;">
+                    No hay pedidos a domicilio en este rango.
+                </div>
+            @else
+                {{-- KPIs --}}
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap:10px; margin-bottom:16px;">
+                    <div style="padding:12px; background:#dcfce7; border:1px solid #86efac; border-radius:8px;">
+                        <div style="font-size:11px; color:#15803d; font-weight:700; text-transform:uppercase;">Entregados</div>
+                        <div style="font-size:22px; font-weight:800; color:#14532d; margin-top:4px;">
+                            {{ $dt['delivered'] }}
+                            <span style="font-size:13px; font-weight:600; color:#15803d;">/ {{ $dt['total'] }}</span>
+                        </div>
+                        <div style="font-size:11px; color:#15803d; margin-top:2px;">
+                            Tasa éxito: {{ number_format($dt['success_rate'], 1) }}%
+                        </div>
+                    </div>
+
+                    <div style="padding:12px; background:#fef3c7; border:1px solid #fcd34d; border-radius:8px;">
+                        <div style="font-size:11px; color:#92400e; font-weight:700; text-transform:uppercase;">Cocina → Despacho</div>
+                        <div style="font-size:22px; font-weight:800; color:#78350f; margin-top:4px;">
+                            {{ $dt['avg_kitchen_to_dispatch'] }} <span style="font-size:13px; font-weight:600;">min</span>
+                        </div>
+                        <div style="font-size:11px; color:#92400e; margin-top:2px;">
+                            Promedio desde abrir hasta salir
+                        </div>
+                    </div>
+
+                    <div style="padding:12px; background:#e0e7ff; border:1px solid #a5b4fc; border-radius:8px;">
+                        <div style="font-size:11px; color:#3730a3; font-weight:700; text-transform:uppercase;">Tiempo en ruta</div>
+                        <div style="font-size:22px; font-weight:800; color:#312e81; margin-top:4px;">
+                            {{ $dt['avg_route'] }} <span style="font-size:13px; font-weight:600;">min</span>
+                        </div>
+                        <div style="font-size:11px; color:#3730a3; margin-top:2px;">
+                            Despachado → entregado
+                        </div>
+                    </div>
+
+                    <div style="padding:12px; background:#f3e8ff; border:2px solid #a855f7; border-radius:8px;">
+                        <div style="font-size:11px; color:#6b21a8; font-weight:700; text-transform:uppercase;">Tiempo total</div>
+                        <div style="font-size:22px; font-weight:800; color:#581c87; margin-top:4px;">
+                            {{ $dt['avg_total'] }} <span style="font-size:13px; font-weight:600;">min</span>
+                        </div>
+                        <div style="font-size:11px; color:#6b21a8; margin-top:2px;">
+                            Abierto → entregado
+                        </div>
+                    </div>
+
+                    <div style="padding:12px; background:#fef2f2; border:1px solid #fca5a5; border-radius:8px;">
+                        <div style="font-size:11px; color:#991b1b; font-weight:700; text-transform:uppercase;">Pendientes / No entregados</div>
+                        <div style="font-size:22px; font-weight:800; color:#7f1d1d; margin-top:4px;">
+                            {{ $dt['not_delivered'] }}
+                        </div>
+                        <div style="font-size:11px; color:#991b1b; margin-top:2px;">
+                            Cerrados sin marcar entrega
+                        </div>
+                    </div>
+
+                    <div style="padding:12px; background:#f0fdf4; border:1px solid #86efac; border-radius:8px;">
+                        <div style="font-size:11px; color:#166534; font-weight:700; text-transform:uppercase;">Ingresos por envíos</div>
+                        <div style="font-size:22px; font-weight:800; color:#14532d; margin-top:4px;">
+                            ${{ number_format($dt['total_delivery_fees'], 0, ',', '.') }}
+                        </div>
+                        <div style="font-size:11px; color:#166534; margin-top:2px;">
+                            Suma de delivery_fee
+                        </div>
+                    </div>
+                </div>
+
+                {{-- Tabla por driver --}}
+                @if ($byDriver->isNotEmpty())
+                    <h3 style="margin:18px 0 10px 0; font-size:13px; font-weight:700; color:#374151; text-transform:uppercase; letter-spacing:0.5px;">
+                        Performance por repartidor
+                    </h3>
+                    <div style="overflow-x:auto;">
+                        <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                            <thead>
+                                <tr style="background:#f9fafb; border-bottom:2px solid #e5e7eb;">
+                                    <th style="text-align:left; padding:10px 12px; font-weight:700; color:#374151;">Repartidor</th>
+                                    <th style="text-align:right; padding:10px 12px; font-weight:700; color:#374151;">Asignados</th>
+                                    <th style="text-align:right; padding:10px 12px; font-weight:700; color:#374151;">Entregados</th>
+                                    <th style="text-align:right; padding:10px 12px; font-weight:700; color:#374151;">% éxito</th>
+                                    <th style="text-align:right; padding:10px 12px; font-weight:700; color:#374151;">Tiempo en ruta</th>
+                                    <th style="text-align:right; padding:10px 12px; font-weight:700; color:#374151;">Valor entregado</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($byDriver as $d)
+                                    @php
+                                        $success = $d->assigned_count > 0
+                                            ? round((float) $d->delivered_count / (float) $d->assigned_count * 100, 1)
+                                            : 0;
+                                    @endphp
+                                    <tr style="border-bottom:1px solid #f3f4f6;">
+                                        <td style="padding:10px 12px; color:#111827;">
+                                            <div style="font-weight:600;">{{ $d->driver_name ?: 'Driver borrado #'.$d->driver_id }}</div>
+                                            @if ($d->license_plate)
+                                                <div style="font-size:10px; color:#6b7280; font-family:monospace;">{{ $d->license_plate }}</div>
+                                            @endif
+                                        </td>
+                                        <td style="padding:10px 12px; text-align:right; color:#6b7280;">{{ $d->assigned_count }}</td>
+                                        <td style="padding:10px 12px; text-align:right; color:#15803d; font-weight:700;">{{ $d->delivered_count }}</td>
+                                        <td style="padding:10px 12px; text-align:right; color:#374151;">
+                                            <span style="background:{{ $success >= 90 ? '#dcfce7' : ($success >= 70 ? '#fef3c7' : '#fee2e2') }}; color:{{ $success >= 90 ? '#166534' : ($success >= 70 ? '#92400e' : '#991b1b') }}; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700;">
+                                                {{ number_format($success, 1) }}%
+                                            </span>
+                                        </td>
+                                        <td style="padding:10px 12px; text-align:right; color:#3730a3; font-weight:600;">
+                                            {{ $d->avg_route_min !== null ? round((float) $d->avg_route_min, 1).' min' : '—' }}
+                                        </td>
+                                        <td style="padding:10px 12px; text-align:right; color:#059669; font-weight:700;">
+                                            ${{ number_format((float) $d->revenue_delivered, 0, ',', '.') }}
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @else
+                    <div style="padding:14px; text-align:center; color:#9ca3af; font-size:12px; font-style:italic;">
+                        Hubo pedidos delivery pero ninguno fue asignado a un repartidor en el rango.
+                    </div>
+                @endif
+            @endif
+        </div>
+    @endif
+
     {{-- Órdenes anuladas / cerradas sin facturar --}}
     @php $voided = $this->voidedOrders; @endphp
     <div style="background:#ffffff; border:1px solid #fecaca; border-radius:12px; padding:18px; margin-bottom:18px;">

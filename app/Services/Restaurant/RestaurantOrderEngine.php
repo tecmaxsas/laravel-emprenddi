@@ -206,6 +206,10 @@ class RestaurantOrderEngine
         $metadata = $order->delivery_metadata ?? [];
         $metadata['delivery_status'] = $status;
 
+        // Captura timestamp en cada transicion clave para reportes.
+        if ($status === Order::DELIVERY_READY && empty($metadata['ready_at'])) {
+            $metadata['ready_at'] = now()->toDateTimeString();
+        }
         if ($status === Order::DELIVERY_ON_THE_WAY && empty($metadata['dispatched_at'])) {
             $metadata['dispatched_at'] = now()->toDateTimeString();
         }
