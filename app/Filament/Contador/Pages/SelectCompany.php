@@ -58,6 +58,7 @@ class SelectCompany extends Page
             ->success()
             ->send();
 
-        $this->redirect(\App\Filament\Contador\Pages\Dashboard::getUrl());
+        // Redirige al home del panel contador (Dashboard default de Filament).
+        $this->redirect('/contador');
     }
 }
