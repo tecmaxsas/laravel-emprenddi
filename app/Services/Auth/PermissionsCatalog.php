@@ -78,6 +78,9 @@ class PermissionsCatalog
                 'reports.general_ledger' => 'Ver Libro Mayor',
                 'reports.trial_balance' => 'Ver Balance de Comprobación',
                 'reports.kardex' => 'Ver Kardex',
+                'reports.sales' => 'Ver Reporte de Ventas por Período',
+                'reports.accounts_receivable' => 'Ver Cartera (Cuentas por Cobrar)',
+                'reports.cash_closings' => 'Ver Cierres de Caja Históricos',
             ],
             'Administración' => [
                 'users.view' => 'Ver usuarios de la empresa',
@@ -135,6 +138,7 @@ class PermissionsCatalog
                 'delivery_notes.view', 'delivery_notes.manage', 'delivery_notes.dispatch', 'delivery_notes.bill',
                 'credit_debit_notes.view', 'credit_debit_notes.create', 'credit_debit_notes.post', 'credit_debit_notes.send_dian',
                 'reports.journal_book', 'reports.general_ledger', 'reports.trial_balance', 'reports.kardex',
+                'reports.sales', 'reports.accounts_receivable', 'reports.cash_closings',
                 'inventory.view',
                 'products.view', 'categories.view',
             ],
