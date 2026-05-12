@@ -77,4 +77,14 @@ class Payment extends Model
     {
         return $this->belongsTo(User::class, 'created_by_user_id');
     }
+
+    protected static function booted(): void
+    {
+        static::saving(function (Payment $payment) {
+            \App\Services\Accounting\FiscalPeriodGuard::ensureOpen(
+                $payment->company_id,
+                $payment->date,
+            );
+        });
+    }
 }

@@ -103,4 +103,14 @@ class InventoryMovement extends Model
     {
         return in_array($this->type, self::EXIT_TYPES, true);
     }
+
+    protected static function booted(): void
+    {
+        static::saving(function (InventoryMovement $movement) {
+            \App\Services\Accounting\FiscalPeriodGuard::ensureOpen(
+                $movement->company_id,
+                $movement->date,
+            );
+        });
+    }
 }

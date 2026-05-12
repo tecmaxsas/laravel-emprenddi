@@ -111,4 +111,17 @@ class JournalEntry extends Model
         $this->total_debit = $this->lines->sum('debit');
         $this->total_credit = $this->lines->sum('credit');
     }
+
+    protected static function booted(): void
+    {
+        // Bloquea creación/edición de asientos cuyo date cae en período
+        // fiscal cerrado. Aplica también a updates (no se puede mover un
+        // asiento a un mes cerrado).
+        static::saving(function (JournalEntry $entry) {
+            \App\Services\Accounting\FiscalPeriodGuard::ensureOpen(
+                $entry->company_id,
+                $entry->date,
+            );
+        });
+    }
 }
