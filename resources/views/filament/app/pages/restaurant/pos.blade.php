@@ -1143,28 +1143,65 @@
                                 @endif
                             </div>
 
-                            {{-- Método y cuenta --}}
-                            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
-                                <div>
-                                    <label style="font-size:11px; font-weight:600; color:#374151; margin-bottom:3px; display:block;">Método de pago</label>
-                                    <select wire:model.live="billingMethods.{{ $t['key'] }}"
-                                            wire:change="onBillingMethodChange('{{ $t['key'] }}', $event.target.value)"
-                                            style="width:100%; padding:8px 10px; border-radius:6px; border:1px solid #d1d5db; font-size:13px; color:#111827; background:#ffffff;">
-                                        @foreach ($methods as $code => $name)
-                                            <option value="{{ $code }}">{{ $name }}</option>
-                                        @endforeach
-                                    </select>
+                            {{-- Lista de pagos del tab (multi-pago) --}}
+                            @php
+                                $tabPayments = $billingPayments[$t['key']] ?? [];
+                                $paymentsSum = collect($tabPayments)->sum(fn ($p) => (float) ($p['amount'] ?? 0));
+                                $paymentsRemaining = round((float) $t['invoice_total'] - $paymentsSum, 2);
+                            @endphp
+                            <div>
+                                <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px;">
+                                    <label style="font-size:11px; font-weight:700; color:#374151; text-transform:uppercase;">Pagos ({{ count($tabPayments) }})</label>
+                                    @if (abs($paymentsRemaining) > 0.01)
+                                        <span style="font-size:11px; font-weight:700; color:{{ $paymentsRemaining > 0 ? '#dc2626' : '#7c3aed' }};">
+                                            {{ $paymentsRemaining > 0 ? 'Falta' : 'Sobra' }}: ${{ number_format(abs($paymentsRemaining), 0, ',', '.') }}
+                                        </span>
+                                    @else
+                                        <span style="font-size:11px; font-weight:700; color:#059669;">✓ Cuadra</span>
+                                    @endif
                                 </div>
-                                <div>
-                                    <label style="font-size:11px; font-weight:600; color:#374151; margin-bottom:3px; display:block;">Cuenta contable</label>
-                                    <select wire:model.live="billingAccounts.{{ $t['key'] }}"
-                                            style="width:100%; padding:8px 10px; border-radius:6px; border:1px solid #d1d5db; font-size:13px; color:#111827; background:#ffffff;">
-                                        <option value="">— Elige cuenta —</option>
-                                        @foreach ($accounts as $acc)
-                                            <option value="{{ $acc->id }}">{{ $acc->code }} — {{ $acc->name }}</option>
-                                        @endforeach
-                                    </select>
+
+                                <div style="display:flex; flex-direction:column; gap:6px;">
+                                    @foreach ($tabPayments as $pIdx => $p)
+                                        <div style="display:grid; grid-template-columns: 1fr 1.4fr 110px 32px; gap:6px; align-items:center;">
+                                            <select wire:model.live="billingPayments.{{ $t['key'] }}.{{ $pIdx }}.method"
+                                                    wire:change="onPaymentMethodChange('{{ $t['key'] }}', {{ $pIdx }}, $event.target.value)"
+                                                    style="width:100%; padding:7px 8px; border-radius:6px; border:1px solid #d1d5db; font-size:12px; color:#111827; background:#ffffff;">
+                                                @foreach ($methods as $code => $name)
+                                                    <option value="{{ $code }}">{{ $name }}</option>
+                                                @endforeach
+                                            </select>
+
+                                            <select wire:model.live="billingPayments.{{ $t['key'] }}.{{ $pIdx }}.account_id"
+                                                    style="width:100%; padding:7px 8px; border-radius:6px; border:1px solid #d1d5db; font-size:12px; color:#111827; background:#ffffff;">
+                                                <option value="">— Cuenta —</option>
+                                                @foreach ($accounts as $acc)
+                                                    <option value="{{ $acc->id }}">{{ $acc->code }} — {{ $acc->name }}</option>
+                                                @endforeach
+                                            </select>
+
+                                            <div style="position:relative;">
+                                                <span style="position:absolute; left:8px; top:50%; transform:translateY(-50%); color:#6b7280; font-size:12px;">$</span>
+                                                <input type="number" step="0.01" min="0"
+                                                       wire:model.live.debounce.300ms="billingPayments.{{ $t['key'] }}.{{ $pIdx }}.amount"
+                                                       style="width:100%; padding:7px 8px 7px 18px; border-radius:6px; border:1px solid #d1d5db; font-size:12px; color:#111827; background:#ffffff; text-align:right;" />
+                                            </div>
+
+                                            @if (count($tabPayments) > 1)
+                                                <button type="button" wire:click="removePaymentLine('{{ $t['key'] }}', {{ $pIdx }})"
+                                                        title="Quitar pago"
+                                                        style="padding:6px; border-radius:6px; background:transparent; color:#dc2626; border:1px solid #fecaca; cursor:pointer; font-size:14px; line-height:1;">×</button>
+                                            @else
+                                                <div></div>
+                                            @endif
+                                        </div>
+                                    @endforeach
                                 </div>
+
+                                <button type="button" wire:click="addPaymentLine('{{ $t['key'] }}')"
+                                        style="margin-top:6px; padding:6px 10px; background:transparent; color:#3b82f6; border:1px dashed #93c5fd; border-radius:6px; font-size:11px; font-weight:600; cursor:pointer;">
+                                    + Agregar otro pago
+                                </button>
                             </div>
                         </div>
                     @endforeach

@@ -781,17 +781,47 @@ class RestaurantOrderEngine
                 // Postear (recalcula totales internamente)
                 $invoice = $invoiceEngine->post($invoice->fresh(['lines']));
 
-                // Aplicar pago: cubre invoice.total (sin tip — tip es extra)
-                $payment = (float) $invoice->total;
-                if ($payment > 0) {
-                    $invoiceEngine->addPayment($invoice, [
-                        'amount' => $payment,
+                // Aplicar pagos. Soporta multi-pago: $tab['payments'] es array
+                // de {payment_method, account_id, amount}. Compat con la API
+                // antigua single-payment: si no viene 'payments', usa
+                // payment_method + account_id del tab.
+                $payments = $tab['payments'] ?? null;
+                if (! is_array($payments) || empty($payments)) {
+                    $payments = [[
                         'payment_method' => $tab['payment_method'] ?? 'cash',
-                        'account_id' => (int) $tab['account_id'],
+                        'account_id' => (int) ($tab['account_id'] ?? 0),
+                        'amount' => (float) $invoice->total,
+                    ]];
+                }
+
+                // Validar que la suma de pagos cubre exactamente invoice.total
+                $sum = round((float) array_sum(array_map(fn ($p) => (float) $p['amount'], $payments)), 2);
+                $target = round((float) $invoice->total, 2);
+                if (abs($sum - $target) > 0.01) {
+                    throw new RuntimeException(sprintf(
+                        'Los pagos del tab%s suman $%s pero la factura es $%s. Diferencia: $%s.',
+                        $tabLabel ? ' '.$tabLabel : '',
+                        number_format($sum, 0, ',', '.'),
+                        number_format($target, 0, ',', '.'),
+                        number_format(abs($sum - $target), 0, ',', '.'),
+                    ));
+                }
+
+                foreach ($payments as $idx => $p) {
+                    $amount = round((float) $p['amount'], 2);
+                    if ($amount <= 0) continue;
+                    if (empty($p['account_id'])) {
+                        throw new RuntimeException('Falta cuenta contable en uno de los pagos.');
+                    }
+                    $invoiceEngine->addPayment($invoice, [
+                        'amount' => $amount,
+                        'payment_method' => $p['payment_method'] ?? 'cash',
+                        'account_id' => (int) $p['account_id'],
                         'date' => now()->toDateString(),
-                        'reference' => $tab['reference'] ?? null,
+                        'reference' => $tab['reference'] ?? ($p['reference'] ?? null),
                         'description' => 'Orden restaurante '.$order->fullNumber()
-                            .($tabLabel ? ' tab '.$tabLabel : ''),
+                            .($tabLabel ? ' tab '.$tabLabel : '')
+                            .(count($payments) > 1 ? ' (pago '.($idx + 1).'/'.count($payments).')' : ''),
                     ]);
                 }
 

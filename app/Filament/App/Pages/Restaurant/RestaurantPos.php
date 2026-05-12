@@ -83,8 +83,9 @@ class RestaurantPos extends Page
     public string $customTipAmount = '';        // input manual de propina ($)
     public string $splitMode = 'none';          // 'none' | 'by_item'
     public bool $billingModalOpen = false;
-    public array $billingMethods = [];          // [tabKey => 'cash'|...]
-    public array $billingAccounts = [];         // [tabKey => account_id]
+    // Multi-pago: por cada tab un array de pagos
+    // [tabKey => [['method' => 'cash', 'account_id' => 5, 'amount' => '50000.00'], ...]]
+    public array $billingPayments = [];
     public string $billingReference = '';
 
     public static function canAccess(): bool
@@ -957,6 +958,29 @@ class RestaurantPos extends Page
             ->get(['id', 'code', 'name']);
     }
 
+    protected function defaultCashAccountId(?string $method = null): ?int
+    {
+        // 1. Si el metodo tiene PaymentMethod configurado, usar su account_id
+        if ($method) {
+            $configured = PaymentMethod::query()
+                ->where('code', $method)
+                ->where('active', true)
+                ->value('account_id');
+            if ($configured) return (int) $configured;
+        }
+
+        // 2. Fallback: caja general o primera cuenta disponible
+        return Account::query()
+            ->where('accepts_movements', true)
+            ->where('active', true)
+            ->where('code', 'like', '110505%')
+            ->value('id') ?? Account::query()
+                ->where('accepts_movements', true)
+                ->where('active', true)
+                ->where('code', 'like', '11%')
+                ->value('id');
+    }
+
     public function openBillingModal(): void
     {
         $order = $this->activeOrder;
@@ -981,23 +1005,16 @@ class RestaurantPos extends Page
             }
         }
 
-        // Pre-seleccionar método y cuenta default por tab
-        $defaultMethod = 'cash';
-        $defaultAccount = Account::query()
-            ->where('accepts_movements', true)
-            ->where('active', true)
-            ->where('code', 'like', '110505%')
-            ->value('id') ?? Account::query()
-                ->where('accepts_movements', true)
-                ->where('active', true)
-                ->where('code', 'like', '11%')
-                ->value('id');
+        $defaultAccount = $this->defaultCashAccountId('cash');
 
-        $this->billingMethods = [];
-        $this->billingAccounts = [];
+        // Inicializar pagos: un solo pago en efectivo por el total del tab
+        $this->billingPayments = [];
         foreach ($tabs as $t) {
-            $this->billingMethods[$t['key']] = $defaultMethod;
-            $this->billingAccounts[$t['key']] = $defaultAccount;
+            $this->billingPayments[$t['key']] = [[
+                'method' => 'cash',
+                'account_id' => $defaultAccount,
+                'amount' => number_format((float) $t['invoice_total'], 2, '.', ''),
+            ]];
         }
         $this->billingReference = '';
         $this->billingModalOpen = true;
@@ -1009,16 +1026,45 @@ class RestaurantPos extends Page
     }
 
     /**
-     * Al cambiar de método de pago en un tab, intentar resolver cuenta default.
+     * Agrega una linea de pago vacia al tab. El monto sugerido es el saldo
+     * pendiente (target - suma actual de pagos del tab).
      */
-    public function onBillingMethodChange(string $tabKey, string $method): void
+    public function addPaymentLine(string $tabKey): void
     {
-        $configured = PaymentMethod::query()
-            ->where('code', $method)
-            ->where('active', true)
-            ->value('account_id');
-        if ($configured) {
-            $this->billingAccounts[$tabKey] = $configured;
+        $tabs = $this->billingTabs;
+        $tab = collect($tabs)->firstWhere('key', $tabKey);
+        if (! $tab) return;
+
+        $current = collect($this->billingPayments[$tabKey] ?? [])
+            ->sum(fn ($p) => (float) ($p['amount'] ?? 0));
+        $remaining = max(0, round((float) $tab['invoice_total'] - $current, 2));
+
+        $this->billingPayments[$tabKey][] = [
+            'method' => 'cash',
+            'account_id' => $this->defaultCashAccountId('cash'),
+            'amount' => number_format($remaining, 2, '.', ''),
+        ];
+    }
+
+    public function removePaymentLine(string $tabKey, int $index): void
+    {
+        if (! isset($this->billingPayments[$tabKey][$index])) return;
+        // No permitir borrar el ultimo pago — debe quedar al menos uno
+        if (count($this->billingPayments[$tabKey]) <= 1) return;
+
+        unset($this->billingPayments[$tabKey][$index]);
+        $this->billingPayments[$tabKey] = array_values($this->billingPayments[$tabKey]);
+    }
+
+    /**
+     * Al cambiar de metodo de pago en una linea, sugerir la cuenta default.
+     */
+    public function onPaymentMethodChange(string $tabKey, int $index, string $method): void
+    {
+        if (! isset($this->billingPayments[$tabKey][$index])) return;
+        $account = $this->defaultCashAccountId($method);
+        if ($account) {
+            $this->billingPayments[$tabKey][$index]['account_id'] = $account;
         }
     }
 
@@ -1030,12 +1076,39 @@ class RestaurantPos extends Page
         $tabs = $this->billingTabs;
         if (empty($tabs)) return;
 
-        // Validar cuenta + método por tab
+        // Validar cada pago por tab: metodo, cuenta, monto > 0 y suma = invoice_total
         foreach ($tabs as $t) {
-            if (empty($this->billingMethods[$t['key']]) || empty($this->billingAccounts[$t['key']])) {
+            $payments = $this->billingPayments[$t['key']] ?? [];
+            if (empty($payments)) {
                 Notification::make()
-                    ->title('Configuración incompleta')
-                    ->body("Tab {$t['label']}: elige método de pago y cuenta.")
+                    ->title('Sin pagos')
+                    ->body('Tab '.($t['label'] ?? 'principal').' no tiene ningún pago.')
+                    ->danger()->send();
+                return;
+            }
+            $sum = 0;
+            foreach ($payments as $p) {
+                if (empty($p['method'])) {
+                    Notification::make()->title('Falta método')->body('Una línea de pago no tiene método.')->danger()->send();
+                    return;
+                }
+                if (empty($p['account_id'])) {
+                    Notification::make()->title('Falta cuenta')->body('Una línea de pago no tiene cuenta contable.')->danger()->send();
+                    return;
+                }
+                $amount = (float) ($p['amount'] ?? 0);
+                if ($amount <= 0) {
+                    Notification::make()->title('Monto inválido')->body('Hay una línea de pago con monto 0.')->danger()->send();
+                    return;
+                }
+                $sum += $amount;
+            }
+            $diff = round((float) $t['invoice_total'] - $sum, 2);
+            if (abs($diff) > 0.01) {
+                $tabName = $t['label'] ?: 'principal';
+                Notification::make()
+                    ->title('Pagos no cuadran')
+                    ->body("Tab {$tabName}: faltan o sobran $".number_format(abs($diff), 0, ',', '.')." (objetivo: $".number_format($t['invoice_total'], 0, ',', '.').")")
                     ->danger()->send();
                 return;
             }
@@ -1043,15 +1116,18 @@ class RestaurantPos extends Page
 
         $thirdPartyId = $this->ensureDefaultCustomer()->id;
 
-        // Construir payload del engine
+        // Construir payload con pagos detallados
         $payload = [];
         foreach ($tabs as $t) {
             $payload[] = [
                 'label' => $t['label'],
                 'item_ids' => $t['items']->pluck('id')->all(),
-                'payment_method' => $this->billingMethods[$t['key']],
-                'account_id' => (int) $this->billingAccounts[$t['key']],
                 'reference' => $this->billingReference !== '' ? $this->billingReference : null,
+                'payments' => array_map(fn ($p) => [
+                    'payment_method' => $p['method'],
+                    'account_id' => (int) $p['account_id'],
+                    'amount' => round((float) $p['amount'], 2),
+                ], $this->billingPayments[$t['key']]),
             ];
         }
 
