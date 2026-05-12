@@ -156,6 +156,16 @@ class Product extends Model
             ->withTimestamps();
     }
 
+    public function modifierGroups(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            \App\Models\Restaurant\ModifierGroup::class,
+            'product_restaurant_modifier_group',
+            'product_id',
+            'restaurant_modifier_group_id',
+        )->withPivot('display_order')->orderBy('pivot_display_order');
+    }
+
     public function fullName(): string
     {
         return "{$this->code} — {$this->name}";

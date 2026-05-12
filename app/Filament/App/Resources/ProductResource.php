@@ -357,6 +357,22 @@ class ProductResource extends Resource
                                 ? Location::find($state['location_id'])?->fullName()
                                 : 'Nueva sede'),
                     ]),
+
+                Forms\Components\Tabs\Tab::make('Modificadores (Restaurante)')
+                    ->icon('heroicon-o-adjustments-horizontal')
+                    ->visible(fn () => \App\Support\ModuleGate::active('restaurant'))
+                    ->schema([
+                        Forms\Components\Placeholder::make('modifier_hint')
+                            ->label('')
+                            ->content('💡 Asocia grupos de modificadores existentes. Al agregar este producto al pedido, el cajero podrá elegir las opciones que correspondan. Los grupos se administran en Restaurante → Modificadores.'),
+
+                        Forms\Components\Select::make('modifierGroups')
+                            ->label('Grupos de modificadores')
+                            ->relationship('modifierGroups', 'name')
+                            ->multiple()
+                            ->preload()
+                            ->searchable(),
+                    ]),
             ])->columnSpanFull(),
         ]);
     }

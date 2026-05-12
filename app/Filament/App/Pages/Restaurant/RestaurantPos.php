@@ -5,6 +5,7 @@ namespace App\Filament\App\Pages\Restaurant;
 use App\Models\Category;
 use App\Models\Location;
 use App\Models\Product;
+use App\Models\Restaurant\Modifier;
 use App\Models\Restaurant\Order;
 use App\Models\Restaurant\OrderItem;
 use App\Models\Restaurant\ServiceZone;
@@ -48,6 +49,11 @@ class RestaurantPos extends Page
     public ?int $activeOrderId = null;
     public ?int $activeCategoryId = null;
     public string $productSearch = '';
+
+    // Estado del modal de modificadores
+    public ?int $modifierProductId = null;
+    public array $modifierSelections = [];       // [groupId => [modifierId, ...]] (multi) | [groupId => modifierId] (single)
+    public string $modifierItemNote = '';
 
     public static function canAccess(): bool
     {
@@ -165,6 +171,24 @@ class RestaurantPos extends Page
         $product = Product::find($productId);
         if (! $product) return;
 
+        // Si el producto tiene grupos de modificadores, abrir el modal en vez
+        // de agregar directo. El modal recolecta las opciones y llama a
+        // confirmModifiers() que sí invoca al engine.
+        if ($product->modifierGroups()->where('active', true)->exists()) {
+            $this->modifierProductId = $productId;
+            $this->modifierSelections = [];
+            $this->modifierItemNote = '';
+
+            // Pre-seleccionar opciones default si solo hay una en el grupo
+            // (UX: si el grupo tiene una sola opción, marcarla)
+            foreach ($product->modifierGroups()->with(['modifiers' => fn ($q) => $q->where('active', true)])->get() as $group) {
+                if ($group->modifiers->count() === 1 && $group->isSingleSelect()) {
+                    $this->modifierSelections[$group->id] = (int) $group->modifiers->first()->id;
+                }
+            }
+            return;
+        }
+
         try {
             app(RestaurantOrderEngine::class)->addItem($order, $product, 1.0);
             Notification::make()
@@ -179,6 +203,90 @@ class RestaurantPos extends Page
                 ->body($e->getMessage())
                 ->danger()
                 ->send();
+        }
+    }
+
+    public function getModifierProductProperty(): ?Product
+    {
+        if (! $this->modifierProductId) return null;
+        return Product::with(['modifierGroups.modifiers' => fn ($q) => $q->where('active', true)])
+            ->find($this->modifierProductId);
+    }
+
+    public function cancelModifiers(): void
+    {
+        $this->modifierProductId = null;
+        $this->modifierSelections = [];
+        $this->modifierItemNote = '';
+    }
+
+    public function confirmModifiers(): void
+    {
+        $order = $this->activeOrder;
+        $product = $this->modifierProduct;
+        if (! $order || ! $product) {
+            $this->cancelModifiers();
+            return;
+        }
+
+        // Validar min/max por grupo
+        $groups = $product->modifierGroups()->with(['modifiers' => fn ($q) => $q->where('active', true)])->get();
+        $selectedIds = [];
+
+        foreach ($groups as $group) {
+            $raw = $this->modifierSelections[$group->id] ?? null;
+            $ids = is_array($raw) ? array_values(array_filter($raw)) : ($raw ? [(int) $raw] : []);
+            $count = count($ids);
+
+            if ($group->required && $count < max(1, $group->min_select)) {
+                Notification::make()->title('Falta elegir')->body("'{$group->name}' requiere al menos ".max(1, $group->min_select).' opción.')->danger()->send();
+                return;
+            }
+            if ($count < $group->min_select) {
+                Notification::make()->title('Mínimo no cumplido')->body("'{$group->name}' requiere al menos {$group->min_select}.")->danger()->send();
+                return;
+            }
+            if ($group->max_select > 0 && $count > $group->max_select) {
+                Notification::make()->title('Máximo excedido')->body("'{$group->name}' permite máximo {$group->max_select}.")->danger()->send();
+                return;
+            }
+            $selectedIds = array_merge($selectedIds, $ids);
+        }
+
+        // Resolver snapshot desde la BD (NO confiar en datos del front)
+        $modifiers = [];
+        if ($selectedIds) {
+            foreach (Modifier::with('group')->whereIn('id', $selectedIds)->get() as $m) {
+                $modifiers[] = [
+                    'group_id' => $m->restaurant_modifier_group_id,
+                    'group_name' => $m->group?->name,
+                    'modifier_id' => $m->id,
+                    'name' => $m->name,
+                    'price_delta' => (float) $m->price_delta,
+                ];
+            }
+        }
+
+        try {
+            app(RestaurantOrderEngine::class)->addItem(
+                $order,
+                $product,
+                1.0,
+                $this->modifierItemNote !== '' ? $this->modifierItemNote : null,
+                $modifiers,
+            );
+
+            $extra = array_sum(array_column($modifiers, 'price_delta'));
+            Notification::make()
+                ->title($product->name)
+                ->body($extra > 0 ? 'Agregado (+$'.number_format($extra, 0).' modificadores)' : 'Agregado a la cuenta')
+                ->success()
+                ->duration(1500)
+                ->send();
+
+            $this->cancelModifiers();
+        } catch (\Throwable $e) {
+            Notification::make()->title('Error al agregar')->body($e->getMessage())->danger()->send();
         }
     }
 

@@ -100,7 +100,25 @@ class RestaurantOrderEngine
         // priceForLocation() respeta override por sede; cae a default_sale_price.
         $location = $order->location_id ? \App\Models\Location::find($order->location_id) : null;
         $unitPrice = (float) $product->priceForLocation($location);
-        $subtotal = round($quantity * $unitPrice, 2);
+
+        // Suma de deltas de modificadores (por unidad). El POS pasa cada modifier
+        // como ['group_name'=>..,'name'=>..,'price_delta'=>..]. Snapshot al jsonb.
+        $modifierDeltaPerUnit = 0.0;
+        $modifierSnapshot = [];
+        foreach ($modifiers as $mod) {
+            $delta = (float) ($mod['price_delta'] ?? 0);
+            $modifierDeltaPerUnit += $delta;
+            $modifierSnapshot[] = [
+                'group_id' => $mod['group_id'] ?? null,
+                'group_name' => $mod['group_name'] ?? null,
+                'modifier_id' => $mod['modifier_id'] ?? null,
+                'name' => $mod['name'] ?? (string) $mod,
+                'price_delta' => round($delta, 2),
+            ];
+        }
+        $modifierTotal = round($modifierDeltaPerUnit * $quantity, 2);
+
+        $subtotal = round($quantity * $unitPrice + $modifierTotal, 2);
         $taxAmount = round($subtotal * $taxRate / 100, 2);
         $total = round($subtotal + $taxAmount, 2);
 
@@ -127,11 +145,12 @@ class RestaurantOrderEngine
             'quantity' => $quantity,
             'unit_price' => $unitPrice,
             'subtotal' => $subtotal,
+            'modifier_total' => $modifierTotal,
             'tax_id' => $tax?->id,
             'tax_rate' => $taxRate,
             'tax_amount' => $taxAmount,
             'total' => $total,
-            'modifiers' => $modifiers ?: null,
+            'modifiers' => $modifierSnapshot ?: null,
             'item_note' => $note,
             'kitchen_status' => OrderItem::KS_PENDING,
             'course' => max(1, $course),
@@ -155,12 +174,16 @@ class RestaurantOrderEngine
         }
 
         $unitPrice = (float) $item->unit_price;
-        $subtotal = round($quantity * $unitPrice, 2);
+        // modifier_total es per-linea, escala con la cantidad nueva.
+        $modifierDeltaPerUnit = $item->quantity > 0 ? (float) $item->modifier_total / (float) $item->quantity : 0;
+        $modifierTotal = round($modifierDeltaPerUnit * $quantity, 2);
+        $subtotal = round($quantity * $unitPrice + $modifierTotal, 2);
         $taxAmount = round($subtotal * (float) $item->tax_rate / 100, 2);
 
         $item->update([
             'quantity' => $quantity,
             'subtotal' => $subtotal,
+            'modifier_total' => $modifierTotal,
             'tax_amount' => $taxAmount,
             'total' => $subtotal + $taxAmount,
         ]);

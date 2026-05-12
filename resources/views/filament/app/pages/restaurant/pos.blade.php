@@ -341,4 +341,139 @@
             </div>
         @endif
     </div>
+
+    {{-- ============ MODAL DE MODIFICADORES ============ --}}
+    @if ($this->modifierProduct)
+        @php
+            $mp = $this->modifierProduct;
+            $mGroups = $mp->modifierGroups()->with(['modifiers' => fn ($q) => $q->where('active', true)])->get();
+        @endphp
+        <div
+             style="position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:9999; padding:20px;"
+             wire:click.self="cancelModifiers"
+             wire:keydown.escape.window="cancelModifiers"
+        >
+            <div style="background:white; border-radius:14px; padding:0; max-width:600px; width:100%; max-height:90vh; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 25px 50px rgba(0,0,0,0.4);"
+                 class="dark:!bg-gray-900">
+
+                {{-- Header --}}
+                <div style="padding:18px 22px; border-bottom:1px solid #e5e7eb; display:flex; justify-content:space-between; align-items:center;"
+                     class="dark:!border-gray-700">
+                    <div>
+                        <h2 style="margin:0; font-size:18px; font-weight:700; color:#111827;" class="dark:!text-gray-100">
+                            🍽️ {{ $mp->name }}
+                        </h2>
+                        <div style="font-size:12px; color:#6b7280; margin-top:2px;" class="dark:!text-gray-400">
+                            Base: ${{ number_format((float) $mp->default_sale_price, 0) }} — elige las opciones
+                        </div>
+                    </div>
+                    <button type="button" wire:click="cancelModifiers"
+                            style="background:transparent; border:0; cursor:pointer; padding:6px; border-radius:6px; font-size:24px; color:#6b7280; line-height:1;">
+                        ×
+                    </button>
+                </div>
+
+                {{-- Cuerpo (scrolleable) --}}
+                <div style="padding:18px 22px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:18px;">
+                    @forelse ($mGroups as $group)
+                        <div>
+                            <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px;">
+                                <div>
+                                    <span style="font-size:14px; font-weight:700; color:#111827;" class="dark:!text-gray-100">
+                                        {{ $group->name }}
+                                    </span>
+                                    @if ($group->required)
+                                        <span style="font-size:10px; color:#dc2626; font-weight:700; margin-left:6px;">*Obligatorio</span>
+                                    @endif
+                                </div>
+                                <span style="font-size:11px; color:#6b7280;" class="dark:!text-gray-400">
+                                    @if ($group->max_select <= 1)
+                                        Elige 1
+                                    @else
+                                        Min {{ $group->min_select }} / Max {{ $group->max_select }}
+                                    @endif
+                                </span>
+                            </div>
+
+                            @if ($group->description)
+                                <div style="font-size:12px; color:#6b7280; margin-bottom:8px;" class="dark:!text-gray-400">
+                                    {{ $group->description }}
+                                </div>
+                            @endif
+
+                            <div style="display:flex; flex-direction:column; gap:6px;">
+                                @foreach ($group->modifiers as $modifier)
+                                    @if ($group->max_select <= 1)
+                                        {{-- Radio --}}
+                                        <label style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; cursor:pointer; font-size:14px;"
+                                               class="dark:!border-gray-700 dark:!bg-gray-800 hover:!bg-gray-50 dark:hover:!bg-gray-700">
+                                            <span style="display:flex; align-items:center; gap:10px;">
+                                                <input type="radio"
+                                                       wire:model.live="modifierSelections.{{ $group->id }}"
+                                                       value="{{ $modifier->id }}"
+                                                       style="width:18px; height:18px;" />
+                                                <span class="dark:!text-gray-200">{{ $modifier->name }}</span>
+                                            </span>
+                                            @if ((float) $modifier->price_delta != 0)
+                                                <span style="font-size:13px; font-weight:700; color:{{ (float) $modifier->price_delta > 0 ? '#dc2626' : '#10b981' }};">
+                                                    {{ (float) $modifier->price_delta > 0 ? '+' : '' }}${{ number_format((float) $modifier->price_delta, 0) }}
+                                                </span>
+                                            @endif
+                                        </label>
+                                    @else
+                                        {{-- Checkbox --}}
+                                        <label style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; cursor:pointer; font-size:14px;"
+                                               class="dark:!border-gray-700 dark:!bg-gray-800 hover:!bg-gray-50 dark:hover:!bg-gray-700">
+                                            <span style="display:flex; align-items:center; gap:10px;">
+                                                <input type="checkbox"
+                                                       wire:model.live="modifierSelections.{{ $group->id }}"
+                                                       value="{{ $modifier->id }}"
+                                                       style="width:18px; height:18px;" />
+                                                <span class="dark:!text-gray-200">{{ $modifier->name }}</span>
+                                            </span>
+                                            @if ((float) $modifier->price_delta != 0)
+                                                <span style="font-size:13px; font-weight:700; color:{{ (float) $modifier->price_delta > 0 ? '#dc2626' : '#10b981' }};">
+                                                    {{ (float) $modifier->price_delta > 0 ? '+' : '' }}${{ number_format((float) $modifier->price_delta, 0) }}
+                                                </span>
+                                            @endif
+                                        </label>
+                                    @endif
+                                @endforeach
+                            </div>
+                        </div>
+                    @empty
+                        <div style="color:#6b7280; font-size:13px; text-align:center; padding:20px;">
+                            Este producto no tiene grupos activos.
+                        </div>
+                    @endforelse
+
+                    {{-- Nota libre --}}
+                    <div>
+                        <label style="font-size:13px; font-weight:600; color:#111827; margin-bottom:6px; display:block;" class="dark:!text-gray-200">
+                            📝 Nota para cocina (opcional)
+                        </label>
+                        <textarea wire:model.live="modifierItemNote"
+                                  placeholder="Ej: bien cocido, sin sal, alergia a maní..."
+                                  rows="2"
+                                  style="width:100%; padding:8px 10px; border:1px solid #d1d5db; border-radius:8px; font-size:13px; resize:vertical;"
+                                  class="dark:!bg-gray-800 dark:!border-gray-700 dark:!text-gray-100"></textarea>
+                    </div>
+                </div>
+
+                {{-- Footer --}}
+                <div style="padding:14px 22px; border-top:1px solid #e5e7eb; display:flex; gap:10px; justify-content:flex-end;"
+                     class="dark:!border-gray-700">
+                    <button type="button" wire:click="cancelModifiers"
+                            style="padding:10px 18px; background:transparent; color:#6b7280; border:1px solid #d1d5db; border-radius:8px; font-weight:600; cursor:pointer;"
+                            class="dark:!border-gray-600 dark:!text-gray-300">
+                        Cancelar
+                    </button>
+                    <button type="button" wire:click="confirmModifiers"
+                            style="padding:10px 22px; background:#10b981; color:white; border:0; border-radius:8px; font-weight:700; cursor:pointer;">
+                        ✓ Agregar a la cuenta
+                    </button>
+                </div>
+            </div>
+        </div>
+    @endif
 </x-filament-panels::page>

@@ -77,6 +77,7 @@ class PermissionsCatalog
                 'restaurant.use' => 'Usar el POS de restaurante (tomar pedidos)',
                 'restaurant.kitchen' => 'Ver y operar la pantalla de cocina (KDS)',
                 'restaurant.tables.manage' => 'Configurar zonas, mesas e impresoras',
+                'restaurant.modifiers.manage' => 'Configurar grupos de modificadores',
                 'restaurant.delivery.manage' => 'Operar pedidos de delivery',
                 'restaurant.bill.split' => 'Dividir cuentas',
             ],
