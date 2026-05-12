@@ -203,7 +203,10 @@ class RestaurantOrderEngine
 
     public function recalculateTotals(Order $order): void
     {
-        $order->loadMissing('items');
+        // load(), no loadMissing(): si la coleccion ya estaba hidratada en memoria
+        // antes del addItem/cancel/update, loadMissing la deja stale y el sum() del
+        // total ignora el item recien creado.
+        $order->load('items');
         $activeItems = $order->items->reject(fn ($i) => $i->kitchen_status === OrderItem::KS_CANCELLED);
 
         $subtotal = (float) $activeItems->sum('subtotal');

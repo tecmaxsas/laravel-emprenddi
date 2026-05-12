@@ -169,18 +169,26 @@
                 </div>
 
                 {{-- Totales --}}
-                <div style="padding:12px; border-radius:8px; background:#f9fafb; display:flex; flex-direction:column; gap:4px; font-size:13px;"
-                     class="dark:!bg-gray-800">
-                    <div style="display:flex; justify-content:space-between;"><span>Subtotal</span><span>${{ number_format((float) $order->subtotal, 0, ',', '.') }}</span></div>
+                <div style="padding:12px; border-radius:8px; background:#ffffff; border:1px solid #d1d5db; display:flex; flex-direction:column; gap:6px; font-size:13px; color:#111827;">
+                    <div style="display:flex; justify-content:space-between; color:#374151;">
+                        <span>Subtotal</span>
+                        <span style="font-weight:600;">${{ number_format((float) $order->subtotal, 0, ',', '.') }}</span>
+                    </div>
                     @if ((float) $order->tax_total > 0)
-                        <div style="display:flex; justify-content:space-between;"><span>IVA</span><span>${{ number_format((float) $order->tax_total, 0, ',', '.') }}</span></div>
+                        <div style="display:flex; justify-content:space-between; color:#374151;">
+                            <span>IVA</span>
+                            <span style="font-weight:600;">${{ number_format((float) $order->tax_total, 0, ',', '.') }}</span>
+                        </div>
                     @endif
                     @if ((float) $order->tip_amount > 0)
-                        <div style="display:flex; justify-content:space-between;"><span>Propina</span><span>${{ number_format((float) $order->tip_amount, 0, ',', '.') }}</span></div>
+                        <div style="display:flex; justify-content:space-between; color:#374151;">
+                            <span>Propina</span>
+                            <span style="font-weight:600;">${{ number_format((float) $order->tip_amount, 0, ',', '.') }}</span>
+                        </div>
                     @endif
-                    <div style="display:flex; justify-content:space-between; padding-top:6px; border-top:1px solid #e5e7eb; font-size:16px; font-weight:700;"
-                         class="dark:!border-gray-700">
-                        <span>TOTAL</span><span style="color:#10b981;">${{ number_format((float) $order->total, 0, ',', '.') }}</span>
+                    <div style="display:flex; justify-content:space-between; padding-top:8px; margin-top:2px; border-top:1px solid #d1d5db; font-size:17px; font-weight:800; color:#111827;">
+                        <span>TOTAL</span>
+                        <span style="color:#059669;">${{ number_format((float) $order->total, 0, ',', '.') }}</span>
                     </div>
                 </div>
 
