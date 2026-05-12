@@ -321,13 +321,19 @@ class Settings extends Page implements HasForms
                 ->columns(2)
                 ->schema($toggles),
 
-            Forms\Components\Actions::make([
-                Forms\Components\Actions\Action::make('saveRestaurant')
-                    ->label('Guardar configuración Restaurante')
-                    ->icon('heroicon-o-check-circle')
-                    ->color('primary')
-                    ->action(fn () => $this->saveRestaurant()),
-            ])->alignEnd(),
+            // Bloque visual de "submit" — el botón real está fuera del form
+            // (ver settings.blade.php). El Filament Action dentro del tab no
+            // dispara saveRestaurant() de forma confiable.
+            Forms\Components\Placeholder::make('save_restaurant_hint')
+                ->label('')
+                ->content(new \Illuminate\Support\HtmlString(
+                    '<div style="display:flex; justify-content:flex-end; padding-top:8px;">'
+                    .'<button type="button" wire:click="saveRestaurant" '
+                    .'style="padding:10px 20px; background:#6366f1; color:white; border:0; border-radius:8px; font-weight:700; cursor:pointer; font-size:14px; display:inline-flex; align-items:center; gap:6px;">'
+                    .'<svg style="width:16px; height:16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>'
+                    .'Guardar configuración Restaurante'
+                    .'</button></div>'
+                )),
         ];
     }
 
