@@ -315,7 +315,34 @@
     @endphp
 
     <div class="fixed inset-0 flex flex-col bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100"
-         style="width:100vw; height:100vh; top:0; left:0; right:0; bottom:0; z-index:50;">
+         style="width:100vw; height:100vh; top:0; left:0; right:0; bottom:0; z-index:50;"
+         x-data="{
+            posHotkey(e) {
+                // No interceptar si el usuario está escribiendo en un input
+                const tag = e.target.tagName;
+                if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+                // No interceptar si hay un modal abierto (el modal maneja su propio teclado)
+                if (document.querySelector('.pos-modal-content')) return;
+
+                const map = {
+                    F1: () => $wire.openPayment('cash'),
+                    F2: () => $wire.openPayment('card'),
+                    F3: () => $wire.openPayment('transfer'),
+                    F4: () => $wire.openPayment('multi'),
+                    F5: () => $wire.openPayment('credit'),
+                    F6: () => $wire.set('showRecoverModal', true),
+                    F7: () => $wire.openRetentionsModal(),
+                    F8: () => $wire.openSuspendModal(),
+                    F9: () => $wire.set('showCustomerModal', true),
+                };
+                const fn = map[e.key];
+                if (fn) {
+                    e.preventDefault();
+                    fn();
+                }
+            }
+         }"
+         x-on:keydown.window="posHotkey($event)">
 
         {{-- ============================================================ --}}
         {{-- TOP BAR — theme-aware                                        --}}
@@ -345,6 +372,7 @@
                         class="relative px-3 py-1.5 text-xs font-medium rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition flex items-center gap-1.5">
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10v6a2 2 0 002 2h14a2 2 0 002-2v-6M3 10l9-7 9 7M3 10h18"/></svg>
                     Recuperar
+                    <kbd class="hidden lg:inline-block text-[9px] px-1 py-px rounded bg-amber-200 dark:bg-amber-900 text-amber-700 dark:text-amber-300 font-mono leading-none">F6</kbd>
                     @if ($this->suspendedSales->isNotEmpty())
                         <span class="ml-1 px-1.5 py-0.5 rounded-md bg-amber-500 text-white text-[10px] font-bold leading-none">{{ $this->suspendedSales->count() }}</span>
                     @endif
@@ -355,6 +383,7 @@
                         title="Aplicar retenciones (B2B con cliente agente retenedor)">
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
                     Retenciones
+                    <kbd class="hidden lg:inline-block text-[9px] px-1 py-px rounded bg-rose-200 dark:bg-rose-900 text-rose-700 dark:text-rose-300 font-mono leading-none">F7</kbd>
                     @if (! empty($retentions))
                         <span class="ml-1 px-1.5 py-0.5 rounded-md bg-rose-500 text-white text-[10px] font-bold leading-none">{{ count($retentions) }}</span>
                     @endif
