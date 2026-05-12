@@ -46,6 +46,7 @@ class KardexPage extends Page implements HasForms, HasTable
             'location_id' => null,
             'from' => now()->startOfMonth()->toDateString(),
             'to' => now()->endOfMonth()->toDateString(),
+            'types' => [],
         ];
         $this->form->fill($this->filters);
     }
@@ -94,6 +95,14 @@ class KardexPage extends Page implements HasForms, HasTable
 
                         Forms\Components\DatePicker::make('from')->label('Desde')->required()->live(),
                         Forms\Components\DatePicker::make('to')->label('Hasta')->required()->live(),
+
+                        Forms\Components\Select::make('types')
+                            ->label('Tipos de movimiento')
+                            ->multiple()
+                            ->placeholder('Todos')
+                            ->options(InventoryMovement::TYPES)
+                            ->live()
+                            ->columnSpan(4),
                     ]),
             ])
             ->statePath('filters');
@@ -115,6 +124,7 @@ class KardexPage extends Page implements HasForms, HasTable
                     ->where('location_id', $locationId)
                     ->whereDate('date', '>=', $this->filters['from'])
                     ->whereDate('date', '<=', $this->filters['to'])
+                    ->when(! empty($this->filters['types']), fn ($q) => $q->whereIn('type', $this->filters['types']))
                     ->with(['thirdParty', 'journalEntry'])
                     ->orderBy('date')
                     ->orderBy('id');
@@ -150,14 +160,30 @@ class KardexPage extends Page implements HasForms, HasTable
                     ->state(fn (InventoryMovement $r) => $r->isEntry() ? abs((float) $r->quantity) : null)
                     ->placeholder('—')
                     ->numeric(decimalPlaces: 2)
-                    ->alignEnd(),
+                    ->alignEnd()
+                    ->summarize(
+                        Tables\Columns\Summarizers\Summarizer::make()
+                            ->label('Total entradas')
+                            ->using(fn (Builder $query) => $query
+                                ->whereIn('type', InventoryMovement::ENTRY_TYPES)
+                                ->sum(\Illuminate\Support\Facades\DB::raw('ABS(quantity)')))
+                            ->numeric(decimalPlaces: 2)
+                    ),
 
                 Tables\Columns\TextColumn::make('quantity_out')
                     ->label('Salida')
                     ->state(fn (InventoryMovement $r) => $r->isExit() ? abs((float) $r->quantity) : null)
                     ->placeholder('—')
                     ->numeric(decimalPlaces: 2)
-                    ->alignEnd(),
+                    ->alignEnd()
+                    ->summarize(
+                        Tables\Columns\Summarizers\Summarizer::make()
+                            ->label('Total salidas')
+                            ->using(fn (Builder $query) => $query
+                                ->whereIn('type', InventoryMovement::EXIT_TYPES)
+                                ->sum(\Illuminate\Support\Facades\DB::raw('ABS(quantity)')))
+                            ->numeric(decimalPlaces: 2)
+                    ),
 
                 Tables\Columns\TextColumn::make('unit_cost')
                     ->label('Costo unit.')
