@@ -83,6 +83,7 @@ class PermissionsCatalog
                 'restaurant.bill.split' => 'Dividir cuentas',
                 'restaurant.order.close_without_invoice' => 'Cerrar orden sin facturar (casa invita)',
                 'restaurant.order.cancel' => 'Cancelar/anular orden sin cobrar',
+                'restaurant.menu.manage' => 'Crear y editar carta QR pública',
                 'restaurant.reports.view' => 'Ver reportes de restaurante (propinas, items, tiempos)',
             ],
             'Reportes' => [
@@ -163,6 +164,7 @@ class PermissionsCatalog
                 // Restaurant: el cajero/mesero usa el POS de mesas y la cocina
                 'restaurant.use', 'restaurant.kitchen', 'restaurant.bill.split',
                 'restaurant.delivery.manage', 'restaurant.reservations.manage',
+                'restaurant.menu.manage',
             ],
             // Contador externo del Portal Contador. Lectura amplia + edición
             // contable (postear, anular, ajustes). No puede crear ventas/POS

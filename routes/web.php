@@ -17,3 +17,8 @@ Route::middleware(['web', 'auth'])->group(function () {
 Route::get('/track/{token}', [DeliveryTrackController::class, 'show'])
     ->name('delivery.track')
     ->where('token', '[A-Za-z0-9]{32}');
+
+// Carta pública del restaurante — sin auth, slug humano (ej: mi-pizzeria).
+Route::get('/menu/{slug}', [\App\Http\Controllers\PublicMenuController::class, 'show'])
+    ->name('menu.public')
+    ->where('slug', '[a-z0-9-]+');

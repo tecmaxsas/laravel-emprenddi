@@ -63,6 +63,11 @@ class RestaurantSettings
             'description' => 'Pedidos a domicilio con dirección, repartidor (driver) y estados de despacho.',
             'default' => true,
         ],
+        'qr_menu' => [
+            'label' => 'Carta QR pública',
+            'description' => 'Permite armar una carta digital con diseño personalizado (colores, fuentes, imágenes) y publicarla via QR.',
+            'default' => true,
+        ],
         'kds' => [
             'label' => 'Pantalla de cocina (KDS)',
             'description' => 'Página Cocina (KDS) para que el cocinero administre items por estación.',
