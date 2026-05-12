@@ -94,6 +94,20 @@ class PosTerminal extends Page
         return (bool) auth()->user()?->can('pos.use');
     }
 
+    /**
+     * Si la empresa tiene el módulo restaurante activo, oculta el POS regular
+     * del sidebar para evitar confusión (el flujo principal es POS Restaurante).
+     * La página sigue siendo accesible vía URL directa por si alguien la necesita
+     * para una venta retail puntual.
+     */
+    public static function shouldRegisterNavigation(): bool
+    {
+        if (\App\Support\ModuleGate::active('restaurant')) {
+            return false;
+        }
+        return parent::shouldRegisterNavigation();
+    }
+
     public function mount(): void
     {
         $this->seller_user_id = Auth::id();
