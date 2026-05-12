@@ -113,6 +113,124 @@ class RestaurantOrderEngine
     }
 
     /**
+     * Abre una orden de domicilio (delivery). Sin mesa. Guarda direccion,
+     * telefono y notas del cliente en delivery_metadata. Estado inicial
+     * del delivery: 'preparing'.
+     */
+    public function openDeliveryOrder(
+        \App\Models\Location $location,
+        string $customerName,
+        string $address,
+        ?string $phone = null,
+        ?string $addressNotes = null,
+        float $deliveryFee = 0,
+        int $guests = 1,
+    ): Order {
+        if (! $location->active) {
+            throw new RuntimeException('La sede está inactiva.');
+        }
+        if (trim($customerName) === '') {
+            throw new RuntimeException('Nombre del cliente requerido.');
+        }
+        if (trim($address) === '') {
+            throw new RuntimeException('Dirección de entrega requerida.');
+        }
+
+        $session = CashSessionGate::requireOpenSession();
+        $company = Company::find($location->company_id);
+
+        $metadata = [
+            'customer_name' => $customerName,
+            'customer_phone' => $phone ?: null,
+            'address' => $address,
+            'address_notes' => $addressNotes ?: null,
+            'driver_id' => null,
+            'delivery_status' => Order::DELIVERY_PREPARING,
+            'dispatched_at' => null,
+            'delivered_at' => null,
+        ];
+
+        return DB::transaction(function () use ($location, $guests, $session, $company, $metadata, $deliveryFee, $customerName) {
+            return Order::create([
+                'company_id' => $location->company_id,
+                'location_id' => $location->id,
+                'cash_register_session_id' => $session->id,
+                'table_id' => null,
+                'zone_id' => null,
+                'is_delivery' => true,
+                'is_takeaway' => false,
+                'server_user_id' => Auth::id(),
+                'prefix' => 'ORD',
+                'number' => $this->numberer->next($company, 'ORD'),
+                'guests' => max(1, $guests),
+                'status' => Order::STATUS_OPEN,
+                'opened_at' => now(),
+                'delivery_fee' => max(0, round($deliveryFee, 2)),
+                'created_by_user_id' => Auth::id(),
+                'delivery_metadata' => $metadata,
+                'notes' => "Domicilio — {$customerName}",
+            ]);
+        });
+    }
+
+    /**
+     * Asigna o quita un driver al pedido de delivery. Pasar null para
+     * desasignar. Actualiza delivery_metadata.driver_id.
+     */
+    public function assignDeliveryDriver(Order $order, ?\App\Models\Restaurant\Driver $driver): Order
+    {
+        if (! $order->is_delivery) {
+            throw new RuntimeException('La orden no es de domicilio.');
+        }
+        $metadata = $order->delivery_metadata ?? [];
+        $metadata['driver_id'] = $driver?->id;
+        $metadata['driver_name'] = $driver?->name;
+        $order->update(['delivery_metadata' => $metadata]);
+        return $order->fresh();
+    }
+
+    /**
+     * Cambia el sub-estado del delivery. Estados validos:
+     *  preparing -> ready -> on_the_way -> delivered
+     * Marca timestamps relevantes (dispatched_at, delivered_at).
+     */
+    public function setDeliveryStatus(Order $order, string $status): Order
+    {
+        if (! $order->is_delivery) {
+            throw new RuntimeException('La orden no es de domicilio.');
+        }
+        if (! array_key_exists($status, Order::DELIVERY_STATUSES)) {
+            throw new RuntimeException('Estado de delivery inválido.');
+        }
+
+        $metadata = $order->delivery_metadata ?? [];
+        $metadata['delivery_status'] = $status;
+
+        if ($status === Order::DELIVERY_ON_THE_WAY && empty($metadata['dispatched_at'])) {
+            $metadata['dispatched_at'] = now()->toDateTimeString();
+        }
+        if ($status === Order::DELIVERY_DELIVERED && empty($metadata['delivered_at'])) {
+            $metadata['delivered_at'] = now()->toDateTimeString();
+        }
+
+        $order->update(['delivery_metadata' => $metadata]);
+        return $order->fresh();
+    }
+
+    /**
+     * Actualiza el delivery_fee de la orden y recalcula totales.
+     */
+    public function setDeliveryFee(Order $order, float $fee): Order
+    {
+        if (! $order->isOpen()) {
+            throw new RuntimeException('Solo se puede ajustar el delivery fee en órdenes abiertas.');
+        }
+        $order->update(['delivery_fee' => max(0, round($fee, 2))]);
+        $this->recalculateTotals($order);
+        return $order->fresh();
+    }
+
+    /**
      * Cambia el modo de servicio de una orden (comer aquí / para llevar).
      * Solo metadata: no toca mesa ni libera nada. Afecta como se imprime
      * la comanda y, en el futuro, qué tasa de IVA se aplica.

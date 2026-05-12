@@ -58,6 +58,11 @@ class RestaurantSettings
             'description' => 'CRUD de reservas y strip de próximas reservas en el POS.',
             'default' => true,
         ],
+        'delivery' => [
+            'label' => 'Domicilios',
+            'description' => 'Pedidos a domicilio con dirección, repartidor (driver) y estados de despacho.',
+            'default' => true,
+        ],
         'kds' => [
             'label' => 'Pantalla de cocina (KDS)',
             'description' => 'Página Cocina (KDS) para que el cocinero administre items por estación.',

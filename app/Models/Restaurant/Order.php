@@ -35,6 +35,26 @@ class Order extends Model
         self::STATUS_CANCELLED => 'Anulada',
     ];
 
+    // Sub-estados de delivery (guardados en delivery_metadata.delivery_status)
+    public const DELIVERY_PREPARING = 'preparing';
+    public const DELIVERY_READY = 'ready';
+    public const DELIVERY_ON_THE_WAY = 'on_the_way';
+    public const DELIVERY_DELIVERED = 'delivered';
+
+    public const DELIVERY_STATUSES = [
+        self::DELIVERY_PREPARING => 'Preparando',
+        self::DELIVERY_READY => 'Listo para despachar',
+        self::DELIVERY_ON_THE_WAY => 'En camino',
+        self::DELIVERY_DELIVERED => 'Entregado',
+    ];
+
+    public const DELIVERY_STATUS_COLORS = [
+        self::DELIVERY_PREPARING => ['bg' => '#fef3c7', 'fg' => '#92400e'],
+        self::DELIVERY_READY => ['bg' => '#dbeafe', 'fg' => '#1e40af'],
+        self::DELIVERY_ON_THE_WAY => ['bg' => '#e0e7ff', 'fg' => '#3730a3'],
+        self::DELIVERY_DELIVERED => ['bg' => '#dcfce7', 'fg' => '#166534'],
+    ];
+
     protected $fillable = [
         'company_id',
         'location_id',

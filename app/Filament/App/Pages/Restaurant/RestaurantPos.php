@@ -79,6 +79,14 @@ class RestaurantPos extends Page
     public bool $takeawayModalOpen = false;
     public string $takeawayCustomerName = '';
 
+    // Modal "nuevo domicilio"
+    public bool $deliveryModalOpen = false;
+    public string $deliveryCustomerName = '';
+    public string $deliveryCustomerPhone = '';
+    public string $deliveryAddress = '';
+    public string $deliveryAddressNotes = '';
+    public string $deliveryFee = '0';
+
     // Cobro / facturación
     public string $customTipAmount = '';        // input manual de propina ($)
     public string $splitMode = 'none';          // 'none' | 'by_item'
@@ -662,6 +670,85 @@ class RestaurantPos extends Page
         } catch (\Throwable $e) {
             Notification::make()->title('Error')->body($e->getMessage())->danger()->send();
         }
+    }
+
+    // ============ DOMICILIOS ============
+
+    public function openDeliveryPrompt(): void
+    {
+        if (! $this->locationId) {
+            Notification::make()->title('Selecciona una sede primero')->danger()->send();
+            return;
+        }
+        $this->deliveryModalOpen = true;
+        $this->deliveryCustomerName = '';
+        $this->deliveryCustomerPhone = '';
+        $this->deliveryAddress = '';
+        $this->deliveryAddressNotes = '';
+        $this->deliveryFee = '0';
+    }
+
+    public function closeDeliveryPrompt(): void
+    {
+        $this->deliveryModalOpen = false;
+    }
+
+    public function createDelivery(): void
+    {
+        if (! $this->locationId) return;
+
+        $location = Location::find($this->locationId);
+        if (! $location) {
+            Notification::make()->title('Sede inválida')->danger()->send();
+            return;
+        }
+
+        $name = trim($this->deliveryCustomerName);
+        $address = trim($this->deliveryAddress);
+        if ($name === '' || $address === '') {
+            Notification::make()->title('Faltan datos')->body('Nombre y dirección son obligatorios.')->danger()->send();
+            return;
+        }
+
+        $fee = (float) str_replace([',', '.'], ['', '.'], $this->deliveryFee);
+
+        try {
+            $order = app(RestaurantOrderEngine::class)->openDeliveryOrder(
+                $location,
+                $name,
+                $address,
+                trim($this->deliveryCustomerPhone) ?: null,
+                trim($this->deliveryAddressNotes) ?: null,
+                max(0, $fee),
+            );
+
+            $this->activeOrderId = $order->id;
+            $this->closeDeliveryPrompt();
+
+            Notification::make()
+                ->title('Domicilio abierto')
+                ->body("Cliente: {$name}. Agrega items, asigna repartidor y envía.")
+                ->success()
+                ->send();
+        } catch (\Throwable $e) {
+            Notification::make()->title('Error al abrir')->body($e->getMessage())->danger()->send();
+        }
+    }
+
+    /**
+     * Lista de domicilios activos para mostrar como cards arriba del mapa.
+     */
+    public function getDeliveryOrdersProperty()
+    {
+        if (! $this->locationId) return collect();
+
+        return Order::query()
+            ->whereIn('status', [Order::STATUS_OPEN, Order::STATUS_IN_KITCHEN, Order::STATUS_SERVED, Order::STATUS_BILLING])
+            ->where('location_id', $this->locationId)
+            ->where('is_delivery', true)
+            ->with('items')
+            ->orderBy('opened_at')
+            ->get();
     }
 
     /**

@@ -79,7 +79,7 @@ class PermissionsCatalog
                 'restaurant.tables.manage' => 'Configurar zonas, mesas e impresoras',
                 'restaurant.modifiers.manage' => 'Configurar grupos de modificadores',
                 'restaurant.reservations.manage' => 'Crear y gestionar reservaciones',
-                'restaurant.delivery.manage' => 'Operar pedidos de delivery',
+                'restaurant.delivery.manage' => 'Operar pedidos de delivery (despacho, asignar drivers)',
                 'restaurant.bill.split' => 'Dividir cuentas',
                 'restaurant.order.close_without_invoice' => 'Cerrar orden sin facturar (casa invita)',
                 'restaurant.order.cancel' => 'Cancelar/anular orden sin cobrar',

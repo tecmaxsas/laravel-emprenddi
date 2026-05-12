@@ -60,12 +60,20 @@
                         </button>
                     @endforeach
 
-                    @if ($rs['takeaway'])
-                        <button type="button" wire:click="openTakeawayPrompt"
-                                style="margin-left:auto; padding:8px 16px; border-radius:8px; background:#ea580c; color:white; border:0; font-weight:700; cursor:pointer; font-size:13px; box-shadow:0 2px 4px rgba(0,0,0,0.1);">
-                            🥡 Nueva para llevar
-                        </button>
-                    @endif
+                    <div style="margin-left:auto; display:flex; gap:6px;">
+                        @if ($rs['takeaway'])
+                            <button type="button" wire:click="openTakeawayPrompt"
+                                    style="padding:8px 16px; border-radius:8px; background:#ea580c; color:white; border:0; font-weight:700; cursor:pointer; font-size:13px; box-shadow:0 2px 4px rgba(0,0,0,0.1);">
+                                🥡 Nueva para llevar
+                            </button>
+                        @endif
+                        @if ($rs['delivery'])
+                            <button type="button" wire:click="openDeliveryPrompt"
+                                    style="padding:8px 16px; border-radius:8px; background:#7c3aed; color:white; border:0; font-weight:700; cursor:pointer; font-size:13px; box-shadow:0 2px 4px rgba(0,0,0,0.1);">
+                                🛵 Nuevo domicilio
+                            </button>
+                        @endif
+                    </div>
                 </div>
             </div>
 
@@ -127,6 +135,41 @@
                                     </button>
                                 </div>
                             </div>
+                        @endforeach
+                    </div>
+                </div>
+            @endif
+
+            {{-- Domicilios activos --}}
+            @php $deliveryList = $rs['delivery'] ? $this->deliveryOrders : collect(); @endphp
+            @if ($deliveryList->isNotEmpty())
+                <div class="rpos-card" style="margin-bottom:14px; background:#f5f3ff; border-color:#c4b5fd;">
+                    <div style="font-size:11px; color:#5b21b6; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">
+                        🛵 Domicilios activos ({{ $deliveryList->count() }})
+                    </div>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                        @foreach ($deliveryList as $do)
+                            @php
+                                $dmeta = $do->delivery_metadata ?? [];
+                                $dCust = $dmeta['customer_name'] ?? '—';
+                                $dStatus = $dmeta['delivery_status'] ?? 'preparing';
+                                $dStatusLabel = \App\Models\Restaurant\Order::DELIVERY_STATUSES[$dStatus] ?? $dStatus;
+                                $dStatusColor = \App\Models\Restaurant\Order::DELIVERY_STATUS_COLORS[$dStatus] ?? ['bg' => '#e5e7eb', 'fg' => '#374151'];
+                                $isActiveD = $order && $order->id === $do->id;
+                                $itemsCountD = $do->items->reject(fn ($i) => $i->kitchen_status === 'cancelled')->count();
+                            @endphp
+                            <button type="button" wire:click="$set('activeOrderId', {{ $do->id }})"
+                                    style="padding:8px 12px; border-radius:8px; background:{{ $isActiveD ? '#7c3aed' : '#ffffff' }}; color:{{ $isActiveD ? '#ffffff' : '#111827' }}; border:2px solid {{ $isActiveD ? '#7c3aed' : '#c4b5fd' }}; cursor:pointer; font-size:12px; text-align:left; min-width:170px;">
+                                <div style="display:flex; justify-content:space-between; align-items:baseline; gap:6px;">
+                                    <span style="font-weight:700; font-size:13px;">{{ $dCust }}</span>
+                                    <span style="background:{{ $dStatusColor['bg'] }}; color:{{ $dStatusColor['fg'] }}; font-size:9px; font-weight:700; padding:1px 6px; border-radius:999px; white-space:nowrap;">
+                                        {{ $dStatusLabel }}
+                                    </span>
+                                </div>
+                                <div style="font-size:10px; opacity:0.85; margin-top:2px;">
+                                    {{ $itemsCountD }} item(s) · ${{ number_format((float) $do->total, 0, ',', '.') }}
+                                </div>
+                            </button>
                         @endforeach
                     </div>
                 </div>
@@ -200,21 +243,50 @@
         @if ($order)
             <div class="rpos-card" style="display:flex; flex-direction:column; gap:14px; max-height: calc(100vh - 160px); overflow-y:auto;">
                 {{-- Header de la orden --}}
-                <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:12px; border-bottom:1px solid #e5e7eb;" class="dark:!border-gray-800">
-                    <div>
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:12px; border-bottom:1px solid #e5e7eb;" class="dark:!border-gray-800">
+                    <div style="flex:1; min-width:0;">
                         @php
                             $headerTitle = $order->table?->code
                                 ?? ($order->delivery_metadata['customer_name'] ?? null)
-                                ?? ($order->is_takeaway ? '🥡 Para llevar' : 'Delivery');
+                                ?? ($order->is_takeaway ? '🥡 Para llevar' : ($order->is_delivery ? '🛵 Delivery' : 'Orden'));
+                            $deliveryIcon = $order->is_delivery ? '🛵 ' : '';
                         @endphp
-                        <div style="font-size:18px; font-weight:700;">{{ $headerTitle }}</div>
+                        <div style="font-size:18px; font-weight:700;">{{ $deliveryIcon }}{{ $headerTitle }}</div>
                         <div style="font-size:11px; color:#6b7280;" class="dark:!text-gray-400">
                             {{ $order->fullNumber() }} · {{ $order->guests }} pers · {{ $order->opened_at->diffForHumans() }}
                         </div>
+                        @if ($order->is_delivery)
+                            @php $dmeta = $order->delivery_metadata ?? []; @endphp
+                            <div style="font-size:11px; color:#5b21b6; background:#f5f3ff; border-radius:6px; padding:6px 8px; margin-top:6px; line-height:1.4;">
+                                @if (! empty($dmeta['customer_phone']))
+                                    <div>📞 {{ $dmeta['customer_phone'] }}</div>
+                                @endif
+                                @if (! empty($dmeta['address']))
+                                    <div>📍 {{ $dmeta['address'] }}</div>
+                                @endif
+                                @if (! empty($dmeta['address_notes']))
+                                    <div style="font-style:italic; opacity:0.85;">{{ $dmeta['address_notes'] }}</div>
+                                @endif
+                                @if (! empty($dmeta['driver_name']))
+                                    <div style="margin-top:2px;">🛵 Driver: <strong>{{ $dmeta['driver_name'] }}</strong></div>
+                                @endif
+                                @if (! empty($dmeta['delivery_status']))
+                                    @php $dColor = \App\Models\Restaurant\Order::DELIVERY_STATUS_COLORS[$dmeta['delivery_status']] ?? ['bg' => '#e5e7eb', 'fg' => '#374151']; @endphp
+                                    <div style="margin-top:4px;">
+                                        <span style="background:{{ $dColor['bg'] }}; color:{{ $dColor['fg'] }}; font-size:10px; font-weight:700; padding:2px 8px; border-radius:999px;">
+                                            {{ \App\Models\Restaurant\Order::DELIVERY_STATUSES[$dmeta['delivery_status']] ?? $dmeta['delivery_status'] }}
+                                        </span>
+                                    </div>
+                                @endif
+                                @if ((float) $order->delivery_fee > 0)
+                                    <div style="margin-top:4px;">Costo envío: <strong>${{ number_format((float) $order->delivery_fee, 0, ',', '.') }}</strong></div>
+                                @endif
+                            </div>
+                        @endif
                     </div>
                     <button type="button" wire:click="closeOrderPanel"
                             title="Cerrar panel (la orden queda guardada)"
-                            style="width:36px; height:36px; border-radius:8px; background:#ef4444; color:#ffffff; border:0; cursor:pointer; font-size:20px; font-weight:700; line-height:1; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 2px 4px rgba(0,0,0,0.15);">×</button>
+                            style="width:36px; height:36px; border-radius:8px; background:#ef4444; color:#ffffff; border:0; cursor:pointer; font-size:20px; font-weight:700; line-height:1; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 2px 4px rgba(0,0,0,0.15); flex-shrink:0;">×</button>
                 </div>
 
                 {{-- Modo de servicio --}}
@@ -1057,6 +1129,94 @@
                     <button type="button" wire:click="createTakeaway"
                             style="padding:10px 22px; background:#ea580c; color:white; border:0; border-radius:8px; font-weight:700; cursor:pointer;">
                         ✓ Abrir orden
+                    </button>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    {{-- ============ MODAL NUEVO DOMICILIO ============ --}}
+    @if ($rs['delivery'] && $deliveryModalOpen)
+        <div
+            style="position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:9999; padding:20px;"
+            wire:click.self="closeDeliveryPrompt"
+            wire:keydown.escape.window="closeDeliveryPrompt"
+        >
+            <div style="background:#ffffff; border-radius:14px; max-width:520px; width:100%; max-height:92vh; overflow:auto; box-shadow:0 25px 50px rgba(0,0,0,0.4);">
+                <div style="padding:18px 22px; border-bottom:1px solid #e5e7eb; background:#f5f3ff; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <h2 style="margin:0; font-size:18px; font-weight:700; color:#5b21b6;">🛵 Nuevo domicilio</h2>
+                        <div style="font-size:12px; color:#6b7280; margin-top:2px;">
+                            Pedido sin mesa — entrega a domicilio
+                        </div>
+                    </div>
+                    <button type="button" wire:click="closeDeliveryPrompt"
+                            style="background:transparent; border:0; cursor:pointer; padding:6px; font-size:24px; color:#6b7280; line-height:1;">×</button>
+                </div>
+
+                <div style="padding:18px 22px; color:#111827; display:flex; flex-direction:column; gap:12px;">
+                    <div>
+                        <label style="display:block; font-size:13px; font-weight:700; color:#111827; margin-bottom:6px;">
+                            Nombre del cliente <span style="color:#dc2626;">*</span>
+                        </label>
+                        <input type="text" wire:model.live="deliveryCustomerName"
+                               placeholder="Ej: Juan Pérez"
+                               autofocus
+                               style="width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; color:#111827; background:#ffffff;" />
+                    </div>
+
+                    <div>
+                        <label style="display:block; font-size:13px; font-weight:700; color:#111827; margin-bottom:6px;">
+                            Teléfono
+                        </label>
+                        <input type="tel" wire:model.live="deliveryCustomerPhone"
+                               placeholder="3001234567"
+                               style="width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; color:#111827; background:#ffffff;" />
+                    </div>
+
+                    <div>
+                        <label style="display:block; font-size:13px; font-weight:700; color:#111827; margin-bottom:6px;">
+                            Dirección <span style="color:#dc2626;">*</span>
+                        </label>
+                        <textarea wire:model.live="deliveryAddress"
+                                  placeholder="Ej: Calle 10 #25-15, Barrio Centro"
+                                  rows="2"
+                                  style="width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; color:#111827; background:#ffffff; resize:vertical;"></textarea>
+                    </div>
+
+                    <div>
+                        <label style="display:block; font-size:13px; font-weight:700; color:#111827; margin-bottom:6px;">
+                            Notas / referencias (opcional)
+                        </label>
+                        <input type="text" wire:model.live="deliveryAddressNotes"
+                               placeholder="Ej: Torre 2, apto 405, portería marca al 301"
+                               style="width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; color:#111827; background:#ffffff;" />
+                    </div>
+
+                    <div>
+                        <label style="display:block; font-size:13px; font-weight:700; color:#111827; margin-bottom:6px;">
+                            Costo de envío
+                        </label>
+                        <div style="position:relative;">
+                            <span style="position:absolute; left:10px; top:50%; transform:translateY(-50%); color:#6b7280;">$</span>
+                            <input type="number" step="500" min="0" wire:model.live="deliveryFee"
+                                   placeholder="0"
+                                   style="width:100%; padding:10px 12px 10px 24px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; color:#111827; background:#ffffff;" />
+                        </div>
+                        <div style="font-size:11px; color:#6b7280; margin-top:4px;">
+                            Se suma al total. Si la entrega es gratis, dejá 0.
+                        </div>
+                    </div>
+                </div>
+
+                <div style="padding:14px 22px; border-top:1px solid #e5e7eb; background:#fafafa; display:flex; gap:10px; justify-content:flex-end;">
+                    <button type="button" wire:click="closeDeliveryPrompt"
+                            style="padding:10px 18px; background:transparent; color:#6b7280; border:1px solid #d1d5db; border-radius:8px; font-weight:600; cursor:pointer;">
+                        Cancelar
+                    </button>
+                    <button type="button" wire:click="createDelivery"
+                            style="padding:10px 22px; background:#7c3aed; color:white; border:0; border-radius:8px; font-weight:700; cursor:pointer;">
+                        ✓ Abrir domicilio
                     </button>
                 </div>
             </div>

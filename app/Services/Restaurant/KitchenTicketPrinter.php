@@ -94,11 +94,24 @@ class KitchenTicketPrinter
         $b->alignCenter()->bold(true)->size(2, 2)
             ->line($printer->name);
 
-        // Si es para llevar, banderazo grande arriba del numero de mesa
+        // Si es para llevar / delivery, banderazo grande arriba del numero de mesa
         if ($order->is_takeaway) {
             $b->size(2, 3)->line('** PARA LLEVAR **');
         } elseif ($order->is_delivery) {
             $b->size(2, 3)->line('** DELIVERY **');
+            // Direccion y telefono para que el cocinero los vea al empacar
+            $meta = $order->delivery_metadata ?? [];
+            $b->size(1, 1)->bold(false);
+            if (! empty($meta['address'])) {
+                $b->line('Dir: '.$meta['address']);
+            }
+            if (! empty($meta['address_notes'])) {
+                $b->line('Ref: '.$meta['address_notes']);
+            }
+            if (! empty($meta['customer_phone'])) {
+                $b->line('Tel: '.$meta['customer_phone']);
+            }
+            $b->bold(true);
         }
 
         $b->size(3, 3)->line("MESA {$tableLabel}");
