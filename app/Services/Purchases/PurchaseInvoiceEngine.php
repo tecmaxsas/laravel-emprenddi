@@ -10,6 +10,7 @@ use App\Models\Payment;
 use App\Models\PurchaseInvoice;
 use App\Services\Accounting\JournalEntryNumberer;
 use App\Services\Inventory\InventoryEngine;
+use App\Support\CashSessionGate;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -98,6 +99,10 @@ class PurchaseInvoiceEngine
             throw new RuntimeException('Solo se pueden registrar pagos sobre facturas contabilizadas.');
         }
 
+        // Egreso real de caja: requiere un turno abierto para que el cierre
+        // de caja del cajero refleje este pago. Mismo principio que ventas.
+        $session = CashSessionGate::requireOpenSession();
+
         $amount = (float) $data['amount'];
         if ($amount <= 0) {
             throw new RuntimeException('El monto del pago debe ser mayor a 0.');
@@ -112,7 +117,7 @@ class PurchaseInvoiceEngine
             ));
         }
 
-        return DB::transaction(function () use ($invoice, $data, $amount) {
+        return DB::transaction(function () use ($invoice, $data, $amount, $session) {
             $cashAccountId = $data['account_id'];
             $payableAccountId = $invoice->supplier?->default_payable_account_id
                 ?? Account::withoutGlobalScopes()
@@ -135,7 +140,8 @@ class PurchaseInvoiceEngine
                 $data['reference'] ?? null,
             );
 
-            // 2. Payment record
+            // 2. Payment record — atado a la sesión actual del cajero
+            // para que CashSessionSummary lo cuente como egreso del turno.
             $payment = Payment::create([
                 'company_id' => $invoice->company_id,
                 'paymentable_type' => PurchaseInvoice::class,
@@ -145,6 +151,7 @@ class PurchaseInvoiceEngine
                 'amount' => $amount,
                 'payment_method' => $data['payment_method'],
                 'account_id' => $cashAccountId,
+                'cash_register_session_id' => $session->id,
                 'reference' => $data['reference'] ?? null,
                 'description' => $data['description'] ?? null,
                 'journal_entry_id' => $entry->id,

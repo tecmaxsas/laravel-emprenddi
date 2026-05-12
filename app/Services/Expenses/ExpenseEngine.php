@@ -6,6 +6,7 @@ use App\Models\Expense;
 use App\Models\JournalEntry;
 use App\Models\JournalEntryLine;
 use App\Services\Accounting\JournalEntryNumberer;
+use App\Support\CashSessionGate;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -38,13 +39,19 @@ class ExpenseEngine
             throw new RuntimeException('El gasto debe tener un total mayor a cero.');
         }
 
-        return DB::transaction(function () use ($expense) {
+        // El egreso ocurre AHORA, no cuando se creó el draft. Re-bindeamos
+        // la sesión actual para que el cuadre del turno que efectivamente
+        // postea el gasto refleje el egreso.
+        $session = CashSessionGate::requireOpenSession();
+
+        return DB::transaction(function () use ($expense, $session) {
             $this->recalculateTotals($expense);
 
             $entry = $this->createJournalEntry($expense);
 
             $expense->update([
                 'status' => Expense::STATUS_POSTED,
+                'cash_register_session_id' => $session->id,
                 'journal_entry_id' => $entry->id,
                 'posted_by_user_id' => Auth::id(),
                 'posted_at' => now(),

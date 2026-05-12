@@ -7,6 +7,7 @@ use App\Models\Payment;
 use App\Models\PaymentMethod;
 use App\Models\PurchaseInvoice;
 use App\Services\Purchases\PurchaseInvoiceEngine;
+use App\Support\CashSessionGate;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -135,12 +136,16 @@ class PaymentsRelationManager extends RelationManager
             ])
             ->headerActions([
                 Tables\Actions\Action::make('addPayment')
-                    ->label('Registrar pago')
+                    ->label(fn () => CashSessionGate::hasOpenSession() ? 'Registrar pago' : 'Abre caja para pagar')
                     ->icon('heroicon-o-banknotes')
-                    ->color('success')
+                    ->color(fn () => CashSessionGate::hasOpenSession() ? 'success' : 'gray')
                     ->visible(fn () => $this->getOwnerRecord()->isPosted()
                         && ! $this->getOwnerRecord()->isFullyPaid()
                         && auth()->user()?->can('purchases.pay'))
+                    ->disabled(fn () => ! CashSessionGate::hasOpenSession())
+                    ->tooltip(fn () => CashSessionGate::hasOpenSession()
+                        ? null
+                        : 'Necesitas abrir una caja registradora desde el POS antes de registrar el pago.')
                     ->modalHeading('Registrar pago')
                     ->modalSubmitActionLabel('Registrar')
                     ->form(fn () => $this->paymentFormSchema())
