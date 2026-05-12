@@ -2,7 +2,6 @@
 
 namespace App\Filament\SuperAdmin\Resources\AccountantResource\RelationManagers;
 
-use App\Models\Company;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -38,7 +37,7 @@ class ManagedCompaniesRelationManager extends RelationManager
                     ->sortable()
                     ->wrap(),
 
-                Tables\Columns\TextColumn::make('document_number')
+                Tables\Columns\TextColumn::make('nit')
                     ->label('NIT')
                     ->fontFamily('mono')
                     ->toggleable(),
@@ -61,7 +60,7 @@ class ManagedCompaniesRelationManager extends RelationManager
             ->headerActions([
                 Tables\Actions\AttachAction::make()
                     ->label('Vincular empresa')
-                    ->recordSelectSearchColumns(['legal_name', 'document_number'])
+                    ->recordSelectSearchColumns(['legal_name', 'nit'])
                     ->preloadRecordSelect()
                     ->form(fn (Tables\Actions\AttachAction $action) => [
                         $action->getRecordSelect(),
