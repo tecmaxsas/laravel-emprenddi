@@ -320,13 +320,14 @@ class RestaurantOrderEngine
         $lineNumber = ((int) $order->items()->max('line_number')) + 1;
 
         // Determinar impresora destino (la primera que maneje la categoría).
+        // Incluye impresoras 'browser' (QZ Tray) — el ruteo es agnóstico al
+        // tipo de conexión; la impresión real la resuelve KitchenTicketPrinter.
         $printerId = null;
         if ($product->category_id) {
             $printer = Printer::query()
                 ->where('company_id', $order->company_id)
                 ->where('location_id', $order->location_id)
                 ->where('active', true)
-                ->where('connection_type', '!=', 'browser')
                 ->get()
                 ->first(fn (Printer $p) => $p->handlesCategory((int) $product->category_id));
             $printerId = $printer?->id;
@@ -424,14 +425,13 @@ class RestaurantOrderEngine
 
         $lineNumber = ((int) $order->items()->max('line_number')) + 1;
 
-        // Printer del producto principal (su categoria)
+        // Printer del producto principal (su categoria). Incluye browser/QZ Tray.
         $printerId = null;
         if ($mainProduct->category_id) {
             $printer = Printer::query()
                 ->where('company_id', $order->company_id)
                 ->where('location_id', $order->location_id)
                 ->where('active', true)
-                ->where('connection_type', '!=', 'browser')
                 ->get()
                 ->first(fn (Printer $p) => $p->handlesCategory((int) $mainProduct->category_id));
             $printerId = $printer?->id;
