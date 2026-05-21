@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * Endpoints para la firma de peticiones de QZ Tray.
@@ -18,19 +17,30 @@ use Illuminate\Support\Facades\Storage;
  *
  * Si no hay certificado/clave configurados, /qz/certificate devuelve
  * vacío y el bridge JS cae a modo sin firmar automáticamente.
+ *
+ * Las rutas de config son relativas a storage/app/ — usamos storage_path()
+ * directo (no Storage::disk('local'), cuya raíz en Laravel 12 es
+ * storage/app/private).
  */
 class QzSigningController extends Controller
 {
+    protected function resolvePath(?string $relative): ?string
+    {
+        if (! $relative) return null;
+        $full = storage_path('app/'.ltrim($relative, '/'));
+        return is_file($full) ? $full : null;
+    }
+
     public function certificate(): Response
     {
-        $path = config('qz.certificate_path');
+        $path = $this->resolvePath(config('qz.certificate_path'));
 
-        if (! $path || ! Storage::disk('local')->exists($path)) {
+        if (! $path) {
             // Sin certificado configurado → respuesta vacía → bridge usa unsigned.
             return response('', 200)->header('Content-Type', 'text/plain');
         }
 
-        return response(Storage::disk('local')->get($path), 200)
+        return response((string) file_get_contents($path), 200)
             ->header('Content-Type', 'text/plain');
     }
 
@@ -41,15 +51,15 @@ class QzSigningController extends Controller
             return response()->json(['signature' => '']);
         }
 
-        $keyPath = config('qz.private_key_path');
-        if (! $keyPath || ! Storage::disk('local')->exists($keyPath)) {
+        $keyPath = $this->resolvePath(config('qz.private_key_path'));
+        if (! $keyPath) {
             return response()->json([
                 'signature' => '',
                 'error' => 'QZ no configurado (sin clave privada).',
             ], 200);
         }
 
-        $privateKey = openssl_pkey_get_private(Storage::disk('local')->get($keyPath));
+        $privateKey = openssl_pkey_get_private((string) file_get_contents($keyPath));
         if (! $privateKey) {
             return response()->json([
                 'signature' => '',
