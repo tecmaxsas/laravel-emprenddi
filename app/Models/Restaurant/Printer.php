@@ -36,6 +36,7 @@ class Printer extends Model
         'host',
         'port',
         'cups_queue',
+        'printer_name',
         'category_ids',
         'columns',
         'open_cash_drawer',

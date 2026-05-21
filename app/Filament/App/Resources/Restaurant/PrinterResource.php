@@ -106,6 +106,14 @@ class PrinterResource extends Resource
                         ->required(fn (Forms\Get $get) => $get('connection_type') === 'cups')
                         ->columnSpan(2),
 
+                    Forms\Components\TextInput::make('printer_name')
+                        ->label('Nombre de la impresora en Windows')
+                        ->placeholder('Digital POS e200i')
+                        ->visible(fn (Forms\Get $get) => $get('connection_type') === 'browser')
+                        ->required(fn (Forms\Get $get) => $get('connection_type') === 'browser')
+                        ->helperText('El nombre EXACTO como aparece en Windows → Configuración → Impresoras. Requiere QZ Tray instalado en la PC del cajero.')
+                        ->columnSpan(2),
+
                     Forms\Components\TextInput::make('columns')
                         ->label('Ancho papel (columnas)')
                         ->numeric()
@@ -189,6 +197,44 @@ class PrinterResource extends Resource
                 Tables\Filters\SelectFilter::make('purpose')->label('Propósito')->options(Printer::PURPOSES),
             ])
             ->actions([
+                Tables\Actions\Action::make('test')
+                    ->label('Probar')
+                    ->icon('heroicon-o-printer')
+                    ->color('info')
+                    ->action(function (Printer $record, $livewire) {
+                        $result = app(\App\Services\Restaurant\PrinterTester::class)->test($record);
+
+                        if ($result['mode'] === 'browser') {
+                            if (! $result['ok']) {
+                                \Filament\Notifications\Notification::make()
+                                    ->title('No se pudo preparar la prueba')
+                                    ->body($result['message'])
+                                    ->danger()->send();
+                                return;
+                            }
+                            // Despachar el job a QZ Tray via el bridge JS.
+                            $jobs = app(\App\Services\Restaurant\BrowserPrintQueue::class)->flush();
+                            $livewire->dispatch('qz-print-jobs', jobs: $jobs);
+                            \Filament\Notifications\Notification::make()
+                                ->title('Prueba enviada a QZ Tray')
+                                ->body('Revisá la impresora. Si no sale nada, verificá que QZ Tray esté corriendo.')
+                                ->success()->send();
+                            return;
+                        }
+
+                        // network / cups: resultado server-side directo
+                        if ($result['ok']) {
+                            \Filament\Notifications\Notification::make()
+                                ->title('Impresión de prueba OK')
+                                ->body('Revisá la impresora.')
+                                ->success()->send();
+                        } else {
+                            \Filament\Notifications\Notification::make()
+                                ->title('Falló la impresión')
+                                ->body($result['message'])
+                                ->danger()->send();
+                        }
+                    }),
                 Tables\Actions\EditAction::make(),
             ]);
     }

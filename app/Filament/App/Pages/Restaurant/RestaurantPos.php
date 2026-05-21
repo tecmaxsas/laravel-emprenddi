@@ -1228,6 +1228,7 @@ class RestaurantPos extends Page
                 ->success()
                 ->send();
 
+            $this->flushBrowserPrintJobs();
             $this->billingModalOpen = false;
             $this->closeOrderPanel();
         } catch (\Throwable $e) {
@@ -1267,6 +1268,18 @@ class RestaurantPos extends Page
     }
 
     /**
+     * Vacía la cola de impresión browser (QZ Tray) y la despacha al front.
+     * Llamar después de cualquier acción que pueda generar tickets/recibos.
+     */
+    protected function flushBrowserPrintJobs(): void
+    {
+        $jobs = app(\App\Services\Restaurant\BrowserPrintQueue::class)->flush();
+        if (! empty($jobs)) {
+            $this->dispatch('qz-print-jobs', jobs: $jobs);
+        }
+    }
+
+    /**
      * @param  int|null  $course  Si se pasa, solo envía items pendientes de ese curso.
      */
     public function sendToKitchen(?int $course = null): void
@@ -1288,6 +1301,8 @@ class RestaurantPos extends Page
                     : "Items marcados como enviados (sin impresora asignada).")
                 ->success()
                 ->send();
+
+            $this->flushBrowserPrintJobs();
         } catch (\Throwable $e) {
             Notification::make()
                 ->title('Error al enviar')

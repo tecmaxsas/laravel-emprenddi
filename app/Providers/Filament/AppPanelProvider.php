@@ -71,6 +71,11 @@ class AppPanelProvider extends PanelProvider
                 PanelsRenderHook::TOPBAR_END,
                 fn (): string => view('filament.app.topbar.pos-button')->render(),
             )
+            // Puente QZ Tray — impresión ESC/POS en impresoras locales del cajero.
+            ->renderHook(
+                PanelsRenderHook::BODY_END,
+                fn (): string => view('filament.qz-bridge')->render(),
+            )
             // Reemplaza el chevron del botón de colapso del sidebar por
             // un icono hamburguesa. El bundle de Filament no expone forma
             // declarativa de cambiar ese icono — usamos CSS con mask para

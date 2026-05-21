@@ -42,14 +42,23 @@ class KitchenTicketPrinter
             return false;
         }
 
-        if ($printer->connection_type === 'browser') {
-            // Modo browser: no imprimimos server-side. Dejamos el ticket
-            // como printed (válido) y el front-end (QZ Tray) lo recoge.
-            return true;
-        }
-
         try {
             $payload = $this->buildPayload($ticket, $printer);
+
+            if ($printer->connection_type === 'browser') {
+                // Modo browser: no imprime server-side. Encola el job para
+                // que la página Livewire lo despache al navegador (QZ Tray).
+                if (! $printer->printer_name) {
+                    $this->markFailed($ticket, 'Impresora browser sin nombre configurado.');
+                    return false;
+                }
+                app(BrowserPrintQueue::class)->push(
+                    $printer->printer_name,
+                    $payload,
+                    'Comanda '.($ticket->order?->fullNumber() ?? ''),
+                );
+                return true;
+            }
 
             if ($printer->connection_type === 'network') {
                 $this->sendTcp($printer->host, (int) $printer->port, $payload);

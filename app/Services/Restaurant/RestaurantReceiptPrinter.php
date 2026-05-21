@@ -46,6 +46,21 @@ class RestaurantReceiptPrinter
 
         try {
             $payload = $this->buildPayload($invoice, $order, $printer, $tipShare, $payments, $tabLabel);
+
+            // Modo browser: encolar para QZ Tray en vez de imprimir server-side.
+            if ($printer->connection_type === 'browser') {
+                if (! $printer->printer_name) {
+                    Log::warning('Receipt browser printer sin printer_name', ['printer' => $printer->name]);
+                    return false;
+                }
+                app(BrowserPrintQueue::class)->push(
+                    $printer->printer_name,
+                    $payload,
+                    'Factura '.$invoice->fullNumber(),
+                );
+                return true;
+            }
+
             return $this->dispatchToPrinter($printer, $payload);
         } catch (\Throwable $e) {
             Log::warning('Restaurant receipt print failed', [
