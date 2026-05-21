@@ -70,6 +70,20 @@ class TaxResource extends Resource
                         ->maxValue(100)
                         ->step(0.0001)
                         ->suffix('%'),
+
+                    Forms\Components\Select::make('takeaway_tax_id')
+                        ->label('Impuesto alternativo "para llevar" (restaurante)')
+                        ->helperText('Solo aplica al módulo restaurante. Si una orden es para llevar/domicilio, el sistema usa este impuesto en vez del actual. Ej: INC 8% (comer aquí) → IVA 19% (para llevar). Dejar vacío si la tasa no cambia.')
+                        ->options(fn ($record) => \App\Models\Tax::query()
+                            ->where('is_active', true)
+                            ->when($record, fn ($q) => $q->whereKeyNot($record->getKey()))
+                            ->orderBy('name')
+                            ->get()
+                            ->mapWithKeys(fn ($t) => [$t->id => $t->code.' — '.$t->name.' ('.rtrim(rtrim((string) $t->rate, '0'), '.').'%)'])
+                            ->all())
+                        ->searchable()
+                        ->native(false)
+                        ->columnSpanFull(),
                 ]),
 
             Forms\Components\Section::make('Cuentas contables')

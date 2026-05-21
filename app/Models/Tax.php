@@ -33,6 +33,7 @@ class Tax extends Model
         'name',
         'type',
         'rate',
+        'takeaway_tax_id',
         'sale_account_id',
         'purchase_account_id',
         'minimum_base',
@@ -59,6 +60,14 @@ class Tax extends Model
     public function saleAccount(): BelongsTo
     {
         return $this->belongsTo(Account::class, 'sale_account_id');
+    }
+
+    /**
+     * Impuesto a usar cuando la orden es "para llevar" / delivery.
+     */
+    public function takeawayTax(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'takeaway_tax_id');
     }
 
     public function purchaseAccount(): BelongsTo

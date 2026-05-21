@@ -237,8 +237,9 @@ class RestaurantOrderEngine
 
     /**
      * Cambia el modo de servicio de una orden (comer aquí / para llevar).
-     * Solo metadata: no toca mesa ni libera nada. Afecta como se imprime
-     * la comanda y, en el futuro, qué tasa de IVA se aplica.
+     * Afecta cómo se imprime la comanda y la tasa de IVA: al cambiar de
+     * modo se recalculan los impuestos de todos los items vivos (IVA
+     * diferencial — ver resolveTaxForMode).
      */
     public function setServiceMode(Order $order, string $mode): Order
     {
@@ -254,7 +255,60 @@ class RestaurantOrderEngine
             'is_delivery' => false,
         ]);
 
+        $this->reapplyTaxesForMode($order->fresh());
+
         return $order->fresh();
+    }
+
+    /**
+     * Devuelve el impuesto a aplicar según el modo de servicio de la orden.
+     * Si la orden es para llevar / delivery y el impuesto base tiene un
+     * takeaway_tax_id configurado, retorna esa alternativa.
+     */
+    public function resolveTaxForMode(?Tax $baseTax, Order $order): ?Tax
+    {
+        if (! $baseTax) return null;
+
+        $isTakeawayMode = $order->is_takeaway || $order->is_delivery;
+        if ($isTakeawayMode && $baseTax->takeaway_tax_id) {
+            return Tax::find($baseTax->takeaway_tax_id) ?? $baseTax;
+        }
+
+        return $baseTax;
+    }
+
+    /**
+     * Recalcula los impuestos de todos los items vivos de la orden según
+     * el modo de servicio actual. Se dispara al cambiar comer aquí ↔ llevar.
+     * Re-deriva el impuesto base desde el producto de cada item.
+     */
+    public function reapplyTaxesForMode(Order $order): void
+    {
+        $order->load('items');
+
+        foreach ($order->items as $item) {
+            if ($item->kitchen_status === OrderItem::KS_CANCELLED) continue;
+            if (! $item->product_id) continue;
+
+            $product = Product::find($item->product_id);
+            if (! $product) continue;
+
+            $baseTax = $product->default_sale_tax_id ? Tax::find($product->default_sale_tax_id) : null;
+            $tax = $this->resolveTaxForMode($baseTax, $order);
+            $rate = $tax ? (float) $tax->rate : 0.0;
+
+            // subtotal no cambia (ya incluye modificadores); solo recalcula IVA.
+            $taxAmount = round((float) $item->subtotal * $rate / 100, 2);
+
+            $item->update([
+                'tax_id' => $tax?->id,
+                'tax_rate' => $rate,
+                'tax_amount' => $taxAmount,
+                'total' => round((float) $item->subtotal + $taxAmount, 2),
+            ]);
+        }
+
+        $this->recalculateTotals($order);
     }
 
     /**
@@ -281,6 +335,9 @@ class RestaurantOrderEngine
         $tax = $product->default_sale_tax_id
             ? Tax::find($product->default_sale_tax_id)
             : null;
+        // IVA diferencial: si la orden es para llevar/delivery y el impuesto
+        // tiene una alternativa configurada, se usa esa.
+        $tax = $this->resolveTaxForMode($tax, $order);
         $taxRate = $tax ? (float) $tax->rate : 0.0;
 
         // priceForLocation() respeta override por sede; cae a default_sale_price.
@@ -388,10 +445,17 @@ class RestaurantOrderEngine
         $location = $order->location_id ? \App\Models\Location::find($order->location_id) : null;
 
         // Normalizar precios a "base" (sin IVA) si el flag dice que el precio
-        // ya incluia el impuesto. Tomamos la tasa de cada producto para
-        // desnormalizar correctamente cada mitad.
-        $taxARate = $a->default_sale_tax_id ? (float) (Tax::find($a->default_sale_tax_id)?->rate ?? 0) : 0;
-        $taxBRate = $b->default_sale_tax_id ? (float) (Tax::find($b->default_sale_tax_id)?->rate ?? 0) : 0;
+        // ya incluia el impuesto. La tasa respeta el modo (para llevar).
+        $taxAResolved = $this->resolveTaxForMode(
+            $a->default_sale_tax_id ? Tax::find($a->default_sale_tax_id) : null,
+            $order,
+        );
+        $taxBResolved = $this->resolveTaxForMode(
+            $b->default_sale_tax_id ? Tax::find($b->default_sale_tax_id) : null,
+            $order,
+        );
+        $taxARate = $taxAResolved ? (float) $taxAResolved->rate : 0;
+        $taxBRate = $taxBResolved ? (float) $taxBResolved->rate : 0;
 
         $rawA = (float) $a->priceForLocation($location);
         $rawB = (float) $b->priceForLocation($location);
@@ -408,7 +472,10 @@ class RestaurantOrderEngine
         // Producto "principal" = el mas caro (atribucion en reportes + tax + printer)
         $mainProduct = $priceA >= $priceB ? $a : $b;
 
-        $tax = $mainProduct->default_sale_tax_id ? Tax::find($mainProduct->default_sale_tax_id) : null;
+        $tax = $this->resolveTaxForMode(
+            $mainProduct->default_sale_tax_id ? Tax::find($mainProduct->default_sale_tax_id) : null,
+            $order,
+        );
         $taxRate = $tax ? (float) $tax->rate : 0.0;
 
         $quantity = 1.0;
