@@ -37,32 +37,41 @@
         if (window.__qzConfigured || !qzReady()) return;
         window.__qzConfigured = true;
 
+        // Algoritmo de firma (QZ Tray 2.1+). Debe setearse ANTES del cert.
+        if (qz.security.setSignatureAlgorithm) {
+            qz.security.setSignatureAlgorithm(SIGN_ALGO);
+            console.log('[QZ] Algoritmo de firma:', SIGN_ALGO);
+        } else {
+            console.warn('[QZ] setSignatureAlgorithm no disponible en esta versión');
+        }
+
         // Certificado: el server decide si hay firma o no.
         qz.security.setCertificatePromise(function (resolve, reject) {
-            fetch(CERT_URL, { headers: { 'Accept': 'text/plain' } })
+            console.log('[QZ] Pidiendo certificado a', CERT_URL);
+            fetch(CERT_URL, { headers: { 'Accept': 'text/plain' }, credentials: 'same-origin' })
                 .then(function (r) { return r.text(); })
                 .then(function (cert) {
                     window.__qzSigned = !!(cert && cert.trim().length > 0);
+                    console.log('[QZ] Certificado recibido. Modo firmado:', window.__qzSigned,
+                                '— largo:', (cert || '').length);
                     resolve(cert || '');
                 })
-                .catch(function () {
+                .catch(function (e) {
                     window.__qzSigned = false;
+                    console.error('[QZ] Falló fetch del certificado', e);
                     resolve('');
                 });
         });
-
-        // Algoritmo de firma (QZ Tray 2.1+).
-        if (qz.security.setSignatureAlgorithm) {
-            qz.security.setSignatureAlgorithm(SIGN_ALGO);
-        }
 
         // Firma: si hay certificado, firma server-side; sino, unsigned.
         qz.security.setSignaturePromise(function (toSign) {
             return function (resolve, reject) {
                 if (!window.__qzSigned) {
+                    console.log('[QZ] Sin certificado — firma vacía (unsigned)');
                     resolve(); // modo sin firmar
                     return;
                 }
+                console.log('[QZ] Pidiendo firma al server...');
                 fetch(SIGN_URL, {
                     method: 'POST',
                     headers: {
@@ -70,11 +79,19 @@
                         'X-CSRF-TOKEN': CSRF,
                         'Accept': 'application/json',
                     },
+                    credentials: 'same-origin',
                     body: JSON.stringify({ request: toSign }),
                 })
                     .then(function (r) { return r.json(); })
-                    .then(function (d) { resolve(d.signature || ''); })
-                    .catch(function () { resolve(''); });
+                    .then(function (d) {
+                        if (d.error) console.error('[QZ] Error de firma server:', d.error);
+                        console.log('[QZ] Firma recibida — largo:', (d.signature || '').length);
+                        resolve(d.signature || '');
+                    })
+                    .catch(function (e) {
+                        console.error('[QZ] Falló fetch de firma', e);
+                        resolve('');
+                    });
             };
         });
     }
