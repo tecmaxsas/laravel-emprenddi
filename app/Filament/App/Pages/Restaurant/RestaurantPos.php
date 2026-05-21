@@ -202,6 +202,10 @@ class RestaurantPos extends Page
         $this->activeOrderId = null;
         $this->productSearch = '';
         $this->activeCategoryId = null;
+        // Limpiar el cache de la computed property: si activeOrder ya se
+        // accedió en este request quedó memoizada con la orden vieja y el
+        // panel seguiría mostrándola tras cancelar/cerrar.
+        unset($this->activeOrder);
     }
 
     public function addProduct(int $productId): void
@@ -302,6 +306,9 @@ class RestaurantPos extends Page
         $this->modifierProductId = null;
         $this->modifierSelections = [];
         $this->modifierItemNote = '';
+        // Limpiar cache de la computed property — sin esto el modal sigue
+        // abierto tras "Agregar a la cuenta" (modifierProduct quedó memoizado).
+        unset($this->modifierProduct);
     }
 
     public function confirmModifiers(): void
