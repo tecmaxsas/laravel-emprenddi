@@ -62,11 +62,16 @@ class Printer extends Model
 
     /**
      * ¿Esta impresora maneja productos de esta categoría?
+     *
+     * category_ids viene del jsonb y sus elementos pueden ser strings
+     * (["1","3"]) según cómo los guardó el form. Normalizamos a int en
+     * ambos lados — sin esto, la comparación estricta 3 !== "3" hacía
+     * que NINGÚN producto ruteara a una impresora.
      */
     public function handlesCategory(int $categoryId): bool
     {
         $ids = $this->category_ids ?? [];
         if (empty($ids)) return false;
-        return in_array($categoryId, $ids, true);
+        return in_array($categoryId, array_map('intval', $ids), true);
     }
 }
