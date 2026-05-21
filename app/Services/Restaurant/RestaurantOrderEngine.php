@@ -840,9 +840,13 @@ class RestaurantOrderEngine
         $numberer = app(SaleInvoiceNumberer::class);
         $company = Company::find($order->company_id);
 
-        return DB::transaction(function () use (
+        // Jobs de impresión de recibo — se ejecutan DESPUÉS del commit para
+        // no demorar la transacción si la impresora está lenta/apagada.
+        $receiptJobs = [];
+
+        $invoices = DB::transaction(function () use (
             $order, $tabs, $activeItems, $orderSubtotal, $orderTip,
-            $invoiceEngine, $numberer, $company, $thirdPartyId
+            $invoiceEngine, $numberer, $company, $thirdPartyId, &$receiptJobs
         ) {
             $invoices = [];
 
@@ -962,7 +966,16 @@ class RestaurantOrderEngine
                     }
                 }
 
-                $invoices[] = $invoice->fresh();
+                $invoice = $invoice->fresh();
+                $invoices[] = $invoice;
+
+                // Encolar impresión del recibo (se ejecuta tras el commit)
+                $receiptJobs[] = [
+                    'invoice' => $invoice,
+                    'tip' => $tipShare,
+                    'payments' => $payments,
+                    'tab_label' => $tabLabel,
+                ];
             }
 
             // Marcar todos los items como servidos (los que estaban pendientes
@@ -994,6 +1007,21 @@ class RestaurantOrderEngine
 
             return $invoices;
         });
+
+        // Imprimir recibos POR ESC/POS tras el commit. Si falla (impresora
+        // apagada, sin impresora de caja), no aborta — la venta ya está hecha.
+        $receiptPrinter = app(RestaurantReceiptPrinter::class);
+        foreach ($receiptJobs as $job) {
+            $receiptPrinter->printReceipt(
+                $job['invoice'],
+                $order,
+                (float) $job['tip'],
+                $job['payments'] ?? [],
+                $job['tab_label'] ?? null,
+            );
+        }
+
+        return $invoices;
     }
 
     public function markItemPreparing(OrderItem $item): void

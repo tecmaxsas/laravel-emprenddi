@@ -3,8 +3,8 @@
 namespace App\Services\Restaurant;
 
 use App\Models\Restaurant\KitchenTicket;
-use App\Models\Restaurant\Order;
 use App\Models\Restaurant\Printer;
+use App\Services\Restaurant\Concerns\SendsEscPos;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -22,6 +22,8 @@ use Illuminate\Support\Facades\Log;
  */
 class KitchenTicketPrinter
 {
+    use SendsEscPos;
+
     /**
      * Imprime un ticket. Actualiza ticket->status y error_message
      * según resultado. NO lanza excepción para no abortar el flujo
@@ -181,69 +183,6 @@ class KitchenTicketPrinter
             ->cut();
 
         return $b->getBytes();
-    }
-
-    /**
-     * Envía bytes a una impresora TCP (raw ESC/POS, puerto 9100 típico).
-     */
-    protected function sendTcp(string $host, int $port, string $payload): void
-    {
-        if (! $host) {
-            throw new \RuntimeException('Host de impresora vacío.');
-        }
-
-        $errno = 0;
-        $errstr = '';
-        // Timeout 3s para no colgar el flujo si la impresora está apagada
-        $fp = @fsockopen($host, $port ?: 9100, $errno, $errstr, 3);
-
-        if (! $fp) {
-            throw new \RuntimeException("No se pudo conectar a {$host}:{$port} — {$errstr}");
-        }
-
-        // No bloqueante para escritura
-        stream_set_timeout($fp, 3);
-        $written = @fwrite($fp, $payload);
-        fclose($fp);
-
-        if ($written === false || $written < 1) {
-            throw new \RuntimeException('La impresora rechazó la escritura.');
-        }
-    }
-
-    /**
-     * Envía a una cola CUPS local. Requiere binario `lp` en el container.
-     * Soporta containers Alpine con cups-client instalado.
-     */
-    protected function sendCups(?string $queue, string $payload): void
-    {
-        if (! $queue) {
-            throw new \RuntimeException('Cola CUPS no configurada.');
-        }
-        if (! function_exists('proc_open')) {
-            throw new \RuntimeException('proc_open no disponible — no se puede usar CUPS.');
-        }
-
-        $cmd = ['lp', '-d', $queue, '-o', 'raw', '-'];
-        $proc = @proc_open($cmd, [
-            0 => ['pipe', 'r'],
-            1 => ['pipe', 'w'],
-            2 => ['pipe', 'w'],
-        ], $pipes);
-
-        if (! is_resource($proc)) {
-            throw new \RuntimeException('No se pudo lanzar `lp` (CUPS).');
-        }
-
-        fwrite($pipes[0], $payload);
-        fclose($pipes[0]);
-        $stdout = stream_get_contents($pipes[1]); fclose($pipes[1]);
-        $stderr = stream_get_contents($pipes[2]); fclose($pipes[2]);
-        $exit = proc_close($proc);
-
-        if ($exit !== 0) {
-            throw new \RuntimeException("CUPS lp falló (exit {$exit}): {$stderr}");
-        }
     }
 
     protected function markFailed(KitchenTicket $ticket, string $error): void

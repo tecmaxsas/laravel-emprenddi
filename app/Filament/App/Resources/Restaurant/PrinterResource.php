@@ -116,7 +116,7 @@ class PrinterResource extends Resource
                 ]),
 
             Forms\Components\Section::make('Routing — qué categorías imprime esta impresora')
-                ->description('Marca las categorías cuyos productos deben llegar acá. Una orden con productos de varias categorías genera una comanda separada por impresora.')
+                ->description('Marca las categorías cuyos productos deben llegar acá. Una orden con productos de varias categorías genera una comanda separada por impresora. Aplica a impresoras de Cocina/Barra; las de Caja imprimen el recibo del cliente y no usan este routing.')
                 ->schema([
                     Forms\Components\Select::make('category_ids')
                         ->label('Categorías')
@@ -128,7 +128,7 @@ class PrinterResource extends Resource
                             ->orderBy('name')
                             ->pluck('name', 'id')
                             ->all())
-                        ->helperText('Si está vacío, esta impresora recibe TODOS los productos que no estén asignados a otra impresora (fallback general).'),
+                        ->helperText('Marca TODAS las categorías que esta impresora debe imprimir. ⚠ Si la dejas vacía, esta impresora NO recibe ninguna comanda. Un producto cuya categoría no esté en ninguna impresora se marca enviado pero no imprime — asigná cada categoría explícitamente.'),
                 ]),
 
             Forms\Components\Section::make('Comportamiento')
