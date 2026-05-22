@@ -43,14 +43,8 @@ class AppPanelProvider extends PanelProvider
             ->pages([
                 Pages\Dashboard::class,
             ])
-            ->discoverWidgets(in: app_path('Filament/App/Widgets'), for: 'App\\Filament\\App\\Widgets')
             ->widgets([
-                Widgets\AccountWidget::class,
-                \App\Filament\App\Widgets\KpiCardsWidget::class,
-                \App\Filament\App\Widgets\PurchasesKpiWidget::class,
-                \App\Filament\App\Widgets\RestaurantPulseWidget::class,
-                \App\Filament\App\Widgets\PayrollKpiWidget::class,
-                \App\Filament\App\Widgets\RecentActivityWidget::class,
+                \App\Filament\App\Widgets\DashboardOverviewWidget::class,
             ])
             ->middleware([
                 EncryptCookies::class,
