@@ -97,6 +97,9 @@ class PermissionsCatalog
             'Nómina' => [
                 'payroll.employees.view' => 'Ver empleados y contratos',
                 'payroll.employees.manage' => 'Crear / editar empleados y contratos',
+                'payroll.periods.view' => 'Ver liquidaciones de nómina',
+                'payroll.periods.manage' => 'Crear y liquidar nómina',
+                'payroll.parameters.manage' => 'Configurar parámetros de nómina',
             ],
             'Reportes' => [
                 'reports.journal_book' => 'Ver Libro Diario',
@@ -169,6 +172,7 @@ class PermissionsCatalog
                 'reports.sales', 'reports.accounts_receivable', 'reports.cash_closings',
                 'exogena.view', 'exogena.manage',
                 'payroll.employees.view', 'payroll.employees.manage',
+                'payroll.periods.view', 'payroll.periods.manage', 'payroll.parameters.manage',
                 'inventory.view',
                 'products.view', 'categories.view',
             ],
@@ -203,6 +207,7 @@ class PermissionsCatalog
                 'reports.sales', 'reports.accounts_receivable', 'reports.cash_closings',
                 'exogena.view', 'exogena.manage',
                 'payroll.employees.view', 'payroll.employees.manage',
+                'payroll.periods.view', 'payroll.periods.manage', 'payroll.parameters.manage',
                 'inventory.view',
                 'products.view', 'categories.view',
             ],
