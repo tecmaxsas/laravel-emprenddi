@@ -151,6 +151,30 @@ class EmployeeResource extends Resource
                         ->maxLength(100),
                 ]),
 
+            Forms\Components\Section::make('Deducciones para retención en la fuente')
+                ->description('Deducciones que el trabajador certifica. La liquidación las aplica al calcular la retención (procedimiento 1).')
+                ->columns(3)
+                ->schema([
+                    Forms\Components\TextInput::make('housing_interest_deduction')
+                        ->label('Intereses de vivienda (mensual)')
+                        ->numeric()
+                        ->minValue(0)
+                        ->prefix('$')
+                        ->helperText('Interés mensual del crédito de vivienda. Tope legal: 100 UVT.'),
+
+                    Forms\Components\TextInput::make('prepaid_health_deduction')
+                        ->label('Medicina prepagada (mensual)')
+                        ->numeric()
+                        ->minValue(0)
+                        ->prefix('$')
+                        ->helperText('Pago mensual de medicina prepagada o seguros de salud. Tope: 16 UVT.'),
+
+                    Forms\Components\Toggle::make('has_dependents')
+                        ->label('Tiene dependientes a cargo')
+                        ->inline(false)
+                        ->helperText('Aplica la deducción del 10% del ingreso, con tope de 32 UVT.'),
+                ]),
+
             Forms\Components\Section::make('Vinculación')
                 ->columns(3)
                 ->schema([

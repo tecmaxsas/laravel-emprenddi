@@ -65,6 +65,9 @@ class Employee extends Model
         'pension_fund_name',
         'arl_name',
         'compensation_fund_name',
+        'housing_interest_deduction',
+        'prepaid_health_deduction',
+        'has_dependents',
         'hire_date',
         'status',
         'notes',
@@ -75,6 +78,9 @@ class Employee extends Model
         return [
             'birth_date' => 'date',
             'hire_date' => 'date',
+            'housing_interest_deduction' => 'decimal:2',
+            'prepaid_health_deduction' => 'decimal:2',
+            'has_dependents' => 'boolean',
         ];
     }
 

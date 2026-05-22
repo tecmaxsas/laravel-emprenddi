@@ -167,6 +167,9 @@ class PayrollEngine
                 $totalEarnings,
                 $health + $pension + $solidarity,
                 (float) $params->uvt,
+                (float) ($employee->housing_interest_deduction ?? 0),
+                (float) ($employee->prepaid_health_deduction ?? 0),
+                (bool) $employee->has_dependents,
             );
 
         $totalDeductions = round($health + $pension + $solidarity + $extraDeductions + $autoRetention, 2);
