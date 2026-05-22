@@ -41,6 +41,7 @@ class CreatePurchaseInvoice extends CreateRecord
         $session = CashSessionGate::requireOpenSession();
 
         $data['company_id'] = Auth::user()->company_id;
+        $data['kind'] = \App\Models\PurchaseInvoice::KIND_INVOICE;
         $data['cash_register_session_id'] = $session->id;
         $data['created_by_user_id'] = Auth::id();
         $data['status'] = 'draft';

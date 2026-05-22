@@ -2,10 +2,9 @@
 
 namespace App\Filament\App\Resources;
 
-use App\Filament\App\Resources\PurchaseInvoiceResource\Pages;
-use App\Filament\App\Resources\PurchaseInvoiceResource\RelationManagers;
+use App\Filament\App\Resources\PurchaseInvoiceResource\RelationManagers\PaymentsRelationManager;
+use App\Filament\App\Resources\SupportDocumentResource\Pages;
 use App\Filament\Concerns\ChecksPermission;
-use App\Models\Account;
 use App\Models\Location;
 use App\Models\Product;
 use App\Models\PurchaseInvoice;
@@ -18,36 +17,52 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
-class PurchaseInvoiceResource extends Resource
+/**
+ * Documento Soporte en adquisiciones. Comparte la tabla y la lógica
+ * contable de PurchaseInvoice (kind = support_document): se contabiliza
+ * con el mismo PurchaseInvoiceEngine. La transmisión electrónica a DIAN
+ * se cablea en una iteración posterior.
+ */
+class SupportDocumentResource extends Resource
 {
     use ChecksPermission;
 
-    protected static function viewPermission(): string { return 'purchases.view'; }
-    protected static function managePermission(): string { return 'purchases.create'; }
+    protected static function viewPermission(): string { return 'support_documents.view'; }
+    protected static function managePermission(): string { return 'support_documents.create'; }
 
     protected static ?string $model = PurchaseInvoice::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-shopping-bag';
+    protected static ?string $navigationIcon = 'heroicon-o-document-text';
 
-    protected static ?string $navigationLabel = 'Facturas de Compra';
+    protected static ?string $navigationLabel = 'Documentos Soporte';
 
-    protected static ?string $modelLabel = 'Factura de Compra';
+    protected static ?string $modelLabel = 'Documento Soporte';
 
-    protected static ?string $pluralModelLabel = 'Facturas de Compra';
+    protected static ?string $pluralModelLabel = 'Documentos Soporte';
 
     protected static ?string $navigationGroup = 'Compras';
 
-    protected static ?int $navigationSort = 10;
+    protected static ?int $navigationSort = 15;
+
+    /**
+     * Este resource solo opera los documentos soporte; las facturas de
+     * compra normales viven en PurchaseInvoiceResource.
+     */
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->where('kind', PurchaseInvoice::KIND_SUPPORT_DOCUMENT);
+    }
 
     public static function form(Form $form): Form
     {
         return $form->schema([
             Forms\Components\Section::make('Cabecera')
+                ->description('El documento soporte lo emite la empresa al comprar a un proveedor no obligado a facturar electrónicamente.')
                 ->columns(4)
                 ->schema([
                     Forms\Components\TextInput::make('prefix')
                         ->label('Prefijo')
-                        ->default('FC')
+                        ->default('DS')
                         ->maxLength(10)
                         ->required(),
 
@@ -56,21 +71,15 @@ class PurchaseInvoiceResource extends Resource
                         ->numeric()
                         ->disabled()
                         ->dehydrated()
-                        ->placeholder('Auto al guardar'),
-
-                    Forms\Components\TextInput::make('supplier_invoice_number')
-                        ->label('Número factura proveedor')
-                        ->maxLength(50)
-                        ->placeholder('FV-12345')
-                        ->columnSpan(2),
+                        ->placeholder('Auto al guardar')
+                        ->columnSpan(3),
 
                     Forms\Components\Select::make('third_party_id')
-                        ->label('Proveedor')
+                        ->label('Proveedor (no obligado a facturar)')
                         ->required()
                         ->live()
                         ->searchable()
                         ->getSearchResultsUsing(fn (string $search) => ThirdParty::query()
-                            ->where('is_supplier', true)
                             ->where('active', true)
                             ->where(function ($q) use ($search) {
                                 $q->where('document_number', 'ilike', "%{$search}%")
@@ -84,10 +93,11 @@ class PurchaseInvoiceResource extends Resource
                         ->getOptionLabelUsing(fn ($value) => ThirdParty::find($value)
                             ? ThirdParty::find($value)->document_number.' — '.ThirdParty::find($value)->name
                             : null)
+                        ->helperText('Cualquier tercero. Debe tener documento e identificación correctos para la DIAN.')
                         ->columnSpan(2),
 
                     Forms\Components\Select::make('location_id')
-                        ->label('Sede que recibe')
+                        ->label('Sede')
                         ->required()
                         ->options(fn () => Location::query()
                             ->where('active', true)
@@ -100,7 +110,7 @@ class PurchaseInvoiceResource extends Resource
                         ->columnSpan(2),
 
                     Forms\Components\DatePicker::make('date')
-                        ->label('Fecha factura')
+                        ->label('Fecha del documento')
                         ->required()
                         ->default(now())
                         ->live(),
@@ -128,14 +138,14 @@ class PurchaseInvoiceResource extends Resource
                         ->required(),
                 ]),
 
-            Forms\Components\Section::make('Líneas de la factura')
+            Forms\Components\Section::make('Líneas del documento')
                 ->schema([
                     Forms\Components\Repeater::make('lines')
                         ->relationship('lines')
                         ->label('')
                         ->schema([
                             Forms\Components\Select::make('product_id')
-                                ->label('Producto')
+                                ->label('Producto / servicio')
                                 ->searchable()
                                 ->live()
                                 ->getSearchResultsUsing(fn (string $search) => Product::query()
@@ -242,7 +252,8 @@ class PurchaseInvoiceResource extends Resource
                         ->defaultItems(1)
                         ->live()
                         ->addActionLabel('+ Añadir línea')
-                        ->reorderableWithButtons(),
+                        ->reorderableWithButtons()
+                        ->orderColumn('line_number'),
                 ]),
 
             Forms\Components\Section::make('Totales')
@@ -267,15 +278,15 @@ class PurchaseInvoiceResource extends Resource
                 ]),
 
             Forms\Components\Textarea::make('notes')
-                ->label('Notas internas')
+                ->label('Notas / concepto')
                 ->rows(2)
                 ->columnSpanFull(),
         ]);
     }
 
     /**
-     * Recalcula campos derivados de una línea (subtotal, descuento, tax_amount, total)
-     * sobre la base de quantity, unit_cost, discount_percentage, tax_id.
+     * Recalcula los campos derivados de una línea (subtotal, descuento,
+     * tax_amount, total) — misma fórmula que las facturas de compra.
      */
     protected static function recomputeLine(Forms\Set $set, Forms\Get $get): void
     {
@@ -315,8 +326,7 @@ class PurchaseInvoiceResource extends Resource
                     ->fontFamily('mono')
                     ->weight('semibold')
                     ->searchable(query: fn (Builder $query, string $search) => $query
-                        ->where('number', 'like', "%{$search}%")
-                        ->orWhere('supplier_invoice_number', 'ilike', "%{$search}%")),
+                        ->where('number', 'like', "%{$search}%")),
 
                 Tables\Columns\TextColumn::make('date')->label('Fecha')->date('Y-m-d')->sortable(),
                 Tables\Columns\TextColumn::make('due_date')->label('Vence')->date('Y-m-d')->placeholder('—')->toggleable(),
@@ -325,11 +335,6 @@ class PurchaseInvoiceResource extends Resource
                     ->label('Proveedor')
                     ->searchable()
                     ->wrap(),
-
-                Tables\Columns\TextColumn::make('supplier_invoice_number')
-                    ->label('N° prov.')
-                    ->placeholder('—')
-                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('location.name')->label('Sede')->toggleable(),
 
@@ -362,6 +367,7 @@ class PurchaseInvoiceResource extends Resource
                         'draft' => 'gray',
                         'posted' => 'success',
                         'cancelled' => 'danger',
+                        default => 'gray',
                     }),
             ])
             ->filters([
@@ -381,32 +387,25 @@ class PurchaseInvoiceResource extends Resource
             ->actions([
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make()->visible(fn (PurchaseInvoice $record) => $record->status === 'draft'),
-            ]);
+            ])
+            ->emptyStateHeading('Sin documentos soporte')
+            ->emptyStateDescription('Registrá las compras a proveedores no obligados a facturar electrónicamente.');
     }
 
     public static function getRelations(): array
     {
         return [
-            RelationManagers\PaymentsRelationManager::class,
+            PaymentsRelationManager::class,
         ];
     }
 
     public static function getPages(): array
     {
         return [
-            'index' => Pages\ListPurchaseInvoices::route('/'),
-            'create' => Pages\CreatePurchaseInvoice::route('/create'),
-            'view' => Pages\ViewPurchaseInvoice::route('/{record}'),
-            'edit' => Pages\EditPurchaseInvoice::route('/{record}/edit'),
+            'index' => Pages\ListSupportDocuments::route('/'),
+            'create' => Pages\CreateSupportDocument::route('/create'),
+            'view' => Pages\ViewSupportDocument::route('/{record}'),
+            'edit' => Pages\EditSupportDocument::route('/{record}/edit'),
         ];
-    }
-
-    /**
-     * Las facturas de compra y los documentos soporte comparten tabla;
-     * este resource solo lista las facturas (kind = invoice).
-     */
-    public static function getEloquentQuery(): Builder
-    {
-        return parent::getEloquentQuery()->where('kind', PurchaseInvoice::KIND_INVOICE);
     }
 }

@@ -14,6 +14,26 @@ class PurchaseInvoice extends Model
 {
     use HasFactory, BelongsToCompany, SoftDeletes;
 
+    public const KIND_INVOICE = 'invoice';
+    public const KIND_SUPPORT_DOCUMENT = 'support_document';
+
+    public const KINDS = [
+        self::KIND_INVOICE => 'Factura de compra',
+        self::KIND_SUPPORT_DOCUMENT => 'Documento soporte',
+    ];
+
+    public const DIAN_PENDING = 'pending';
+    public const DIAN_SENT = 'sent';
+    public const DIAN_ACCEPTED = 'accepted';
+    public const DIAN_REJECTED = 'rejected';
+
+    public const DIAN_STATUSES = [
+        self::DIAN_PENDING => 'Pendiente de envío',
+        self::DIAN_SENT => 'Enviado',
+        self::DIAN_ACCEPTED => 'Aceptado por DIAN',
+        self::DIAN_REJECTED => 'Rechazado',
+    ];
+
     public const STATUS_DRAFT = 'draft';
     public const STATUS_POSTED = 'posted';
     public const STATUS_CANCELLED = 'cancelled';
@@ -40,11 +60,13 @@ class PurchaseInvoice extends Model
 
     protected $fillable = [
         'company_id',
+        'kind',
         'location_id',
         'cash_register_session_id',
         'third_party_id',
         'prefix',
         'number',
+        'dian_resolution_id',
         'supplier_invoice_number',
         'date',
         'due_date',
@@ -64,6 +86,13 @@ class PurchaseInvoice extends Model
         'posted_at',
         'description',
         'notes',
+        'dian_status',
+        'dian_status_code',
+        'dian_sent_at',
+        'cufe',
+        'qr_url',
+        'dian_error_message',
+        'dian_response',
     ];
 
     protected function casts(): array
@@ -80,6 +109,8 @@ class PurchaseInvoice extends Model
             'exchange_rate' => 'decimal:6',
             'payment_terms_days' => 'integer',
             'number' => 'integer',
+            'dian_sent_at' => 'datetime',
+            'dian_response' => 'array',
         ];
     }
 
@@ -111,6 +142,11 @@ class PurchaseInvoice extends Model
     public function journalEntry(): BelongsTo
     {
         return $this->belongsTo(JournalEntry::class);
+    }
+
+    public function dianResolution(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\Dian\Resolution::class, 'dian_resolution_id');
     }
 
     public function createdBy(): BelongsTo
@@ -146,5 +182,15 @@ class PurchaseInvoice extends Model
     public function isFullyPaid(): bool
     {
         return $this->payment_status === self::PAYMENT_PAGADO;
+    }
+
+    public function isSupportDocument(): bool
+    {
+        return $this->kind === self::KIND_SUPPORT_DOCUMENT;
+    }
+
+    public function kindLabel(): string
+    {
+        return self::KINDS[$this->kind] ?? $this->kind;
     }
 }
