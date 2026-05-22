@@ -7,7 +7,6 @@ use App\Filament\Concerns\ChecksPermission;
 use App\Models\Category;
 use App\Models\Location;
 use App\Models\Restaurant\Printer;
-use App\Support\ModuleGate;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -18,8 +17,8 @@ class PrinterResource extends Resource
 {
     use ChecksPermission;
 
-    protected static function viewPermission(): string { return 'restaurant.tables.manage'; }
-    protected static function managePermission(): string { return 'restaurant.tables.manage'; }
+    protected static function viewPermission(): string { return 'printers.manage'; }
+    protected static function managePermission(): string { return 'printers.manage'; }
 
     protected static ?string $model = Printer::class;
 
@@ -31,13 +30,16 @@ class PrinterResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Impresoras';
 
-    protected static ?string $navigationGroup = 'Restaurante';
+    protected static ?string $navigationGroup = 'Operación';
 
     protected static ?int $navigationSort = 20;
 
+    /**
+     * La configuración de impresoras es transversal — sirve a restaurante,
+     * retail y cualquier negocio. No depende del módulo restaurante.
+     */
     public static function canAccess(): bool
     {
-        if (! ModuleGate::active('restaurant')) return false;
         if (! \App\Support\AccountantContext::ready()) return false;
         return (bool) auth()->user()?->can(static::viewPermission());
     }

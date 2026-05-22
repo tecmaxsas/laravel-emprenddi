@@ -28,6 +28,7 @@ class PermissionsCatalog
                 'locations.manage' => 'Crear / editar / borrar sedes',
                 'invoice_templates.view' => 'Ver plantillas de impresión',
                 'invoice_templates.manage' => 'Crear / editar / borrar plantillas de impresión',
+                'printers.manage' => 'Configurar impresoras térmicas (comandas y tickets)',
             ],
             'Contabilidad' => [
                 'accounts.view' => 'Ver Plan de Cuentas',
