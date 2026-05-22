@@ -36,21 +36,24 @@
                 </div>
             </div>
 
-            @if ($basis === 'manual')
-                <div style="padding:18px; font-size:13px; color:#92400e; background:#fffbeb;">
-                    ⚠ Este formato se diligencia <strong>manualmente</strong> con base en las declaraciones
-                    tributarias del año — no se deriva del libro contable. La captura asistida de este
-                    formato se agregará en una iteración posterior.
-                </div>
-            @elseif (empty($rows))
-                <div style="padding:22px 18px; font-size:13px; color:#475569; line-height:1.7;">
-                    <strong>No hay datos para mostrar.</strong> Verificá que:
-                    <ul style="margin:8px 0 0 18px;">
-                        <li>Mapeaste cuentas a los conceptos de este formato en
-                            <em>Contabilidad → Conceptos Exógena</em>.</li>
-                        <li>Hay asientos <em>contabilizados</em> con tercero en el año seleccionado.</li>
-                    </ul>
-                </div>
+            @if (empty($rows))
+                @if ($basis === 'manual')
+                    <div style="padding:22px 18px; font-size:13px; color:#475569; line-height:1.7;">
+                        <strong>No hay datos cargados para este formato.</strong>
+                        Cargá los valores en <em>Contabilidad → Exógena — Datos Manuales</em>.
+                        Los formatos 1004 y 1011 se diligencian con base en la resolución DIAN
+                        y la declaración de renta del año.
+                    </div>
+                @else
+                    <div style="padding:22px 18px; font-size:13px; color:#475569; line-height:1.7;">
+                        <strong>No hay datos para mostrar.</strong> Verificá que:
+                        <ul style="margin:8px 0 0 18px;">
+                            <li>Mapeaste cuentas a los conceptos de este formato en
+                                <em>Contabilidad → Conceptos Exógena</em>.</li>
+                            <li>Hay asientos <em>contabilizados</em> con tercero en el año seleccionado.</li>
+                        </ul>
+                    </div>
+                @endif
             @else
                 <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:12px 16px; background:#f8fafc; border-bottom:1px solid #e5e7eb;">
                     <label style="font-size:12px; font-weight:700; color:#475569;">

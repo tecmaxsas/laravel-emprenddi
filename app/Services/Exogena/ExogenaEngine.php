@@ -3,6 +3,7 @@
 namespace App\Services\Exogena;
 
 use App\Models\ExogenaAccountMapping;
+use App\Models\ExogenaManualEntry;
 use App\Models\JournalEntryLine;
 use App\Models\Partner;
 use App\Models\ThirdParty;
@@ -31,8 +32,40 @@ class ExogenaEngine
             'movements' => $this->buildFromMovements($formatCode, $format, $year),
             'balance' => $this->buildFromBalances($formatCode, $format, $year),
             'partners' => $this->buildFromPartners($formatCode, $year),
-            default => [], // manual — se diligencia por fuera del libro
+            'manual' => $this->buildFromManual($formatCode, $year),
+            default => [],
         };
+    }
+
+    /**
+     * Formatos de captura manual (1004, 1011) — desde exogena_manual_entries.
+     */
+    protected function buildFromManual(string $formatCode, int $year): array
+    {
+        $entries = ExogenaManualEntry::query()
+            ->where('format_code', $formatCode)
+            ->where('fiscal_year', $year)
+            ->orderBy('concept_code')
+            ->get();
+
+        $out = [];
+        foreach ($entries as $entry) {
+            $amount = round((float) $entry->amount, 2);
+            if ($amount == 0.0) {
+                continue;
+            }
+
+            $out[] = [
+                'third_party_id' => null,
+                'third_party' => '(Información de la empresa)',
+                'document_number' => '',
+                'concept_code' => (string) $entry->concept_code,
+                'concept_name' => (string) $entry->concept_name,
+                'amount' => $amount,
+            ];
+        }
+
+        return $out;
     }
 
     /**

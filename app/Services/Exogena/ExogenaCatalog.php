@@ -213,6 +213,19 @@ class ExogenaCatalog
         return $out;
     }
 
+    /** Opciones [code => label] solo de los formatos de captura manual. */
+    public static function manualFormatOptions(): array
+    {
+        $out = [];
+        foreach (self::formats() as $code => $f) {
+            if (($f['basis'] ?? null) === 'manual') {
+                $out[$code] = $code.' — '.$f['name'];
+            }
+        }
+
+        return $out;
+    }
+
     public static function concepts(string $formatCode): array
     {
         return self::formats()[$formatCode]['concepts'] ?? [];
