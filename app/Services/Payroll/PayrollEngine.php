@@ -4,23 +4,22 @@ namespace App\Services\Payroll;
 
 use App\Models\Employee;
 use App\Models\EmploymentContract;
+use App\Models\PayrollNovelty;
 use App\Models\PayrollParameter;
 use App\Models\PayrollPeriod;
 use App\Models\PayrollSlip;
 use App\Models\PayrollSlipLine;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 /**
  * Motor de liquidación de nómina.
  *
- * Liquida la nómina básica de cada empleado activo con contrato vigente:
- * salario, auxilio de transporte, deducciones de ley (salud, pensión,
- * fondo de solidaridad), aportes del empleador y provisiones de
- * prestaciones sociales.
- *
- * Las novedades (horas extra, bonificaciones, préstamos, incapacidades) y
- * la retención en la fuente se incorporan en una iteración posterior.
+ * Liquida la nómina de cada empleado activo con contrato vigente:
+ * salario, auxilio de transporte, novedades (devengados y deducciones),
+ * deducciones de ley (salud, pensión, fondo de solidaridad), aportes del
+ * empleador y provisiones de prestaciones sociales.
  */
 class PayrollEngine
 {
@@ -73,13 +72,24 @@ class PayrollEngine
             ->with('activeContract')
             ->get();
 
-        return DB::transaction(function () use ($period, $employees, $params) {
+        $noveltiesByEmployee = PayrollNovelty::query()
+            ->where('payroll_period_id', $period->id)
+            ->get()
+            ->groupBy('employee_id');
+
+        return DB::transaction(function () use ($period, $employees, $params, $noveltiesByEmployee) {
             // Re-liquidación: borra los desprendibles anteriores (cascade borra líneas).
             $period->slips()->get()->each(fn (PayrollSlip $slip) => $slip->delete());
 
             foreach ($employees as $employee) {
                 if ($employee->activeContract) {
-                    $this->buildSlip($period, $employee, $employee->activeContract, $params);
+                    $this->buildSlip(
+                        $period,
+                        $employee,
+                        $employee->activeContract,
+                        $params,
+                        $noveltiesByEmployee->get($employee->id) ?? collect(),
+                    );
                 }
             }
 
@@ -92,11 +102,15 @@ class PayrollEngine
         });
     }
 
+    /**
+     * @param  Collection<int,PayrollNovelty>  $novelties
+     */
     protected function buildSlip(
         PayrollPeriod $period,
         Employee $employee,
         EmploymentContract $contract,
         PayrollParameter $params,
+        Collection $novelties,
     ): void {
         $workedDays = 30;
         $smmlv = (float) $params->smmlv;
@@ -111,11 +125,28 @@ class PayrollEngine
             $transport = round((float) $params->transport_allowance / 30 * $workedDays, 2);
         }
 
-        $totalEarnings = round($salaryEarned + $transport, 2);
+        // Novedades: devengados y deducciones manuales del período.
+        $extraEarnings = 0.0;       // todos los devengados de novedad
+        $extraEarningsIbc = 0.0;    // solo los salariales (entran a IBC y prestaciones)
+        $extraDeductions = 0.0;
+        foreach ($novelties as $novelty) {
+            $amount = round((float) $novelty->amount, 2);
+            if ($novelty->isEarning()) {
+                $extraEarnings += $amount;
+                if ($novelty->affectsIbc()) {
+                    $extraEarningsIbc += $amount;
+                }
+            } else {
+                $extraDeductions += $amount;
+            }
+        }
+
+        $totalEarnings = round($salaryEarned + $transport + $extraEarnings, 2);
 
         // IBC — base de cotización. No incluye auxilio de transporte; el
-        // salario integral cotiza sobre el 70%.
-        $ibc = $integral ? round($salaryEarned * self::INTEGRAL_IBC_FACTOR, 2) : $salaryEarned;
+        // salario integral cotiza sobre el 70%. Suma los devengados salariales.
+        $ibcBase = $integral ? round($salaryEarned * self::INTEGRAL_IBC_FACTOR, 2) : $salaryEarned;
+        $ibc = round($ibcBase + $extraEarningsIbc, 2);
 
         $health = round($ibc * self::RATE_HEALTH_EMP, 2);
         $pension = round($ibc * self::RATE_PENSION_EMP, 2);
@@ -123,7 +154,7 @@ class PayrollEngine
             ? round($ibc * self::RATE_SOLIDARITY, 2)
             : 0.0;
 
-        $totalDeductions = round($health + $pension + $solidarity, 2);
+        $totalDeductions = round($health + $pension + $solidarity + $extraDeductions, 2);
         $netPay = round($totalEarnings - $totalDeductions, 2);
 
         // Exoneración Ley 1607: salario < 10 SMMLV exonera al empleador de
@@ -138,12 +169,13 @@ class PayrollEngine
         $erSena = $exempt ? 0.0 : round($ibc * self::RATE_SENA, 2);
         $erIcbf = $exempt ? 0.0 : round($ibc * self::RATE_ICBF, 2);
 
-        // Provisiones — cesantías y prima incluyen el auxilio; vacaciones no.
-        $provBase = $salaryEarned + $transport;
+        // Provisiones — base = salario + auxilio + devengados salariales;
+        // vacaciones excluye el auxilio de transporte.
+        $provBase = $salaryEarned + $transport + $extraEarningsIbc;
         $provCesantias = round($provBase * self::RATE_CESANTIAS, 2);
         $provInterest = round($provBase * self::RATE_INTEREST, 2);
         $provPrima = round($provBase * self::RATE_PRIMA, 2);
-        $provVacaciones = round($salaryEarned * self::RATE_VACACIONES, 2);
+        $provVacaciones = round(($salaryEarned + $extraEarningsIbc) * self::RATE_VACACIONES, 2);
 
         $slip = PayrollSlip::create([
             'company_id' => $period->company_id,
@@ -172,16 +204,41 @@ class PayrollEngine
             'prov_vacaciones' => $provVacaciones,
         ]);
 
+        // Líneas del desprendible.
         $lines = [
             [PayrollSlipLine::TYPE_EARNING, 'salario', 'Salario', $workedDays, $salaryEarned],
         ];
         if ($transport > 0) {
             $lines[] = [PayrollSlipLine::TYPE_EARNING, 'aux_transporte', 'Auxilio de transporte', null, $transport];
         }
+        // Devengados de novedad.
+        foreach ($novelties as $novelty) {
+            if ($novelty->isEarning()) {
+                $lines[] = [
+                    PayrollSlipLine::TYPE_EARNING,
+                    (string) $novelty->concept_code,
+                    $novelty->conceptName(),
+                    $novelty->quantity !== null ? (float) $novelty->quantity : null,
+                    round((float) $novelty->amount, 2),
+                ];
+            }
+        }
         $lines[] = [PayrollSlipLine::TYPE_DEDUCTION, 'salud', 'Salud (4%)', null, $health];
         $lines[] = [PayrollSlipLine::TYPE_DEDUCTION, 'pension', 'Pensión (4%)', null, $pension];
         if ($solidarity > 0) {
             $lines[] = [PayrollSlipLine::TYPE_DEDUCTION, 'fsp', 'Fondo de solidaridad pensional (1%)', null, $solidarity];
+        }
+        // Deducciones de novedad.
+        foreach ($novelties as $novelty) {
+            if (! $novelty->isEarning()) {
+                $lines[] = [
+                    PayrollSlipLine::TYPE_DEDUCTION,
+                    (string) $novelty->concept_code,
+                    $novelty->conceptName(),
+                    $novelty->quantity !== null ? (float) $novelty->quantity : null,
+                    round((float) $novelty->amount, 2),
+                ];
+            }
         }
 
         foreach ($lines as [$type, $code, $name, $qty, $amount]) {

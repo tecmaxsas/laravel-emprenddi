@@ -3,6 +3,7 @@
 namespace App\Filament\App\Resources;
 
 use App\Filament\App\Resources\PayrollPeriodResource\Pages;
+use App\Filament\App\Resources\PayrollPeriodResource\RelationManagers\NoveltiesRelationManager;
 use App\Filament\App\Resources\PayrollPeriodResource\RelationManagers\SlipsRelationManager;
 use App\Filament\Concerns\ChecksPermission;
 use App\Models\PayrollPeriod;
@@ -136,6 +137,7 @@ class PayrollPeriodResource extends Resource
     public static function getRelations(): array
     {
         return [
+            NoveltiesRelationManager::class,
             SlipsRelationManager::class,
         ];
     }

@@ -58,6 +58,11 @@ class PayrollPeriod extends Model
         return $this->hasMany(PayrollSlip::class);
     }
 
+    public function novelties(): HasMany
+    {
+        return $this->hasMany(PayrollNovelty::class);
+    }
+
     public function journalEntry(): BelongsTo
     {
         return $this->belongsTo(JournalEntry::class);
