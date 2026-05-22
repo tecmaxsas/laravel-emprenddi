@@ -37,6 +37,59 @@
         .rpos-status-badge { font-size:10px; padding:2px 6px; border-radius:999px; font-weight:600; text-transform:uppercase; }
     </style>
 
+    @php $cashSession = $this->cashSession; @endphp
+
+    @if (! $cashSession)
+        {{-- ===================================================== --}}
+        {{-- SIN CAJA ABIERTA — bloquea el POS hasta abrir caja     --}}
+        {{-- ===================================================== --}}
+        <div style="max-width:460px; margin:48px auto; background:#ffffff; border:1px solid #e5e7eb; border-radius:16px; padding:32px; text-align:center; box-shadow:0 4px 16px rgba(0,0,0,0.06);">
+            <div style="font-size:52px; margin-bottom:10px;">🔒</div>
+            <h2 style="font-size:21px; font-weight:800; color:#111827; margin:0 0 6px;">Caja cerrada</h2>
+            <p style="font-size:14px; color:#6b7280; margin:0 0 22px; line-height:1.5;">
+                Para tomar pedidos y cobrar necesitás abrir una caja registradora.
+            </p>
+            <div style="text-align:left;">
+                <label style="font-size:11px; font-weight:700; color:#374151; text-transform:uppercase; letter-spacing:0.5px; display:block; margin-bottom:6px;">
+                    Monto de apertura (efectivo en caja)
+                </label>
+                <div style="position:relative; margin-bottom:16px;">
+                    <span style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#6b7280; font-weight:700;">$</span>
+                    <input type="number" step="1000" min="0" wire:model="openCajaAmount"
+                           style="width:100%; padding:12px 12px 12px 26px; border:1px solid #d1d5db; border-radius:8px; font-size:18px; font-weight:700; color:#111827; background:#ffffff;" />
+                </div>
+                <button type="button" wire:click="openCaja"
+                        style="width:100%; padding:14px; background:#10b981; color:white; border:0; border-radius:10px; font-weight:800; font-size:15px; cursor:pointer;">
+                    🔓 Abrir caja y empezar
+                </button>
+            </div>
+        </div>
+    @else
+        {{-- ===================================================== --}}
+        {{-- CAJA ABIERTA — strip de detalles + cerrar caja         --}}
+        {{-- ===================================================== --}}
+        @php $cashSummary = $this->cashSummary; @endphp
+        <div class="rpos-card" style="margin-bottom:14px; display:flex; flex-wrap:wrap; gap:14px 20px; align-items:center;">
+            <div>
+                <div style="font-size:10px; font-weight:700; color:#6b7280; text-transform:uppercase; letter-spacing:0.5px;">Caja</div>
+                <div style="font-size:14px; font-weight:700; color:#111827;">
+                    🟢 Abierta {{ $cashSession->opened_at?->format('d/m H:i') }}
+                    · Apertura ${{ number_format((float) $cashSession->opening_amount, 0, ',', '.') }}
+                </div>
+            </div>
+            @if ($cashSummary)
+                <div style="display:flex; gap:16px; font-size:12px; color:#374151; flex-wrap:wrap;">
+                    <span>Ventas: <strong>{{ $cashSummary['sales']['count'] }}</strong></span>
+                    <span>Total ventas: <strong>${{ number_format((float) $cashSummary['sales']['total'], 0, ',', '.') }}</strong></span>
+                    <span>Efectivo esperado: <strong style="color:#059669;">${{ number_format((float) $cashSummary['expected_cash'], 0, ',', '.') }}</strong></span>
+                </div>
+            @endif
+            <button type="button" wire:click="openCloseCajaModal"
+                    style="margin-left:auto; padding:8px 16px; background:#dc2626; color:white; border:0; border-radius:8px; font-weight:700; font-size:13px; cursor:pointer; white-space:nowrap;">
+                🔒 Cerrar caja
+            </button>
+        </div>
+
     <div class="{{ $order ? 'rpos-grid-split' : 'rpos-grid' }}">
         {{-- =================================================== --}}
         {{-- IZQUIERDA: MAPA / GRID DE MESAS                     --}}
@@ -753,6 +806,7 @@
             </div>
         @endif
     </div>
+    @endif {{-- fin: caja abierta --}}
 
     {{-- ============ MODAL DE MODIFICADORES ============ --}}
     @if ($this->modifierProduct)
@@ -1438,6 +1492,85 @@
                             style="padding:10px 22px; background:#10b981; color:white; border:0; border-radius:8px; font-weight:800; cursor:pointer;">
                         <span wire:loading.remove wire:target="confirmBilling">✓ Facturar y cerrar</span>
                         <span wire:loading wire:target="confirmBilling">Procesando...</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    {{-- ============ MODAL CERRAR CAJA ============ --}}
+    @if ($closeCajaModalOpen && $this->cashSession)
+        @php $cs = $this->cashSummary; @endphp
+        <div
+            style="position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:9999; padding:20px;"
+            wire:click.self="closeCajaModal"
+            wire:keydown.escape.window="closeCajaModal"
+        >
+            <div style="background:#ffffff; border-radius:14px; max-width:460px; width:100%; box-shadow:0 25px 50px rgba(0,0,0,0.4);">
+                <div style="padding:18px 22px; border-bottom:1px solid #e5e7eb; background:#fef2f2; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <h2 style="margin:0; font-size:18px; font-weight:700; color:#991b1b;">🔒 Cerrar caja</h2>
+                        <div style="font-size:12px; color:#6b7280; margin-top:2px;">
+                            Conteo de cierre del turno
+                        </div>
+                    </div>
+                    <button type="button" wire:click="closeCajaModal"
+                            style="background:transparent; border:0; cursor:pointer; padding:6px; font-size:24px; color:#6b7280; line-height:1;">×</button>
+                </div>
+
+                <div style="padding:18px 22px; color:#111827; display:flex; flex-direction:column; gap:12px;">
+                    @if ($cs)
+                        <div style="background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px; padding:12px; font-size:13px; display:flex; flex-direction:column; gap:5px;">
+                            <div style="display:flex; justify-content:space-between;">
+                                <span style="color:#6b7280;">Apertura</span>
+                                <span style="font-weight:600;">${{ number_format((float) $this->cashSession->opening_amount, 0, ',', '.') }}</span>
+                            </div>
+                            <div style="display:flex; justify-content:space-between;">
+                                <span style="color:#6b7280;">Ventas ({{ $cs['sales']['count'] }})</span>
+                                <span style="font-weight:600;">${{ number_format((float) $cs['sales']['total'], 0, ',', '.') }}</span>
+                            </div>
+                            @if (($cs['expenses']['total'] ?? 0) > 0)
+                                <div style="display:flex; justify-content:space-between;">
+                                    <span style="color:#6b7280;">Gastos</span>
+                                    <span style="font-weight:600; color:#dc2626;">-${{ number_format((float) $cs['expenses']['total'], 0, ',', '.') }}</span>
+                                </div>
+                            @endif
+                            <div style="display:flex; justify-content:space-between; padding-top:5px; border-top:1px dashed #d1d5db; font-weight:800;">
+                                <span>Efectivo esperado</span>
+                                <span style="color:#059669;">${{ number_format((float) $cs['expected_cash'], 0, ',', '.') }}</span>
+                            </div>
+                        </div>
+                    @endif
+
+                    <div>
+                        <label style="font-size:13px; font-weight:700; color:#111827; margin-bottom:6px; display:block;">
+                            Efectivo contado físicamente <span style="color:#dc2626;">*</span>
+                        </label>
+                        <div style="position:relative;">
+                            <span style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#6b7280; font-weight:700;">$</span>
+                            <input type="number" step="1000" min="0" wire:model="closeCajaCounted"
+                                   style="width:100%; padding:12px 12px 12px 26px; border:1px solid #d1d5db; border-radius:8px; font-size:18px; font-weight:700; color:#111827; background:#ffffff;" />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label style="font-size:13px; font-weight:600; color:#111827; margin-bottom:6px; display:block;">
+                            Notas de cierre (opcional)
+                        </label>
+                        <textarea wire:model="closeCajaNotes" rows="2"
+                                  placeholder="Observaciones del turno..."
+                                  style="width:100%; padding:8px 10px; border:1px solid #d1d5db; border-radius:8px; font-size:13px; color:#111827; background:#ffffff; resize:vertical;"></textarea>
+                    </div>
+                </div>
+
+                <div style="padding:14px 22px; border-top:1px solid #e5e7eb; background:#fafafa; display:flex; gap:10px; justify-content:flex-end;">
+                    <button type="button" wire:click="closeCajaModal"
+                            style="padding:10px 18px; background:transparent; color:#6b7280; border:1px solid #d1d5db; border-radius:8px; font-weight:600; cursor:pointer;">
+                        Cancelar
+                    </button>
+                    <button type="button" wire:click="closeCaja"
+                            style="padding:10px 22px; background:#dc2626; color:white; border:0; border-radius:8px; font-weight:700; cursor:pointer;">
+                        ✓ Cerrar caja
                     </button>
                 </div>
             </div>

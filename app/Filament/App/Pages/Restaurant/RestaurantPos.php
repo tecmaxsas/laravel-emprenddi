@@ -68,6 +68,12 @@ class RestaurantPos extends Page
     public ?int $halfBProductId = null;
     public string $halfNote = '';
 
+    // Caja registradora
+    public string $openCajaAmount = '0';
+    public bool $closeCajaModalOpen = false;
+    public string $closeCajaCounted = '0';
+    public string $closeCajaNotes = '';
+
     // Transferir / juntar mesas
     public bool $transferModalOpen = false;
     public ?int $transferTargetTableId = null;
@@ -110,6 +116,125 @@ class RestaurantPos extends Page
             ->where('active', true)
             ->where('is_main', true)
             ->value('id') ?? Location::query()->where('active', true)->value('id');
+    }
+
+    // ============ CAJA REGISTRADORA ============
+
+    /**
+     * Sesión de caja abierta del usuario actual (o null). El POS no opera
+     * sin caja abierta — la vista muestra el panel de apertura.
+     */
+    public function getCashSessionProperty(): ?\App\Models\CashRegisterSession
+    {
+        return \App\Support\CashSessionGate::currentOpenSession();
+    }
+
+    /**
+     * Resumen de la sesión (ventas, egresos, efectivo esperado).
+     */
+    public function getCashSummaryProperty(): ?array
+    {
+        $s = $this->cashSession;
+        return $s ? app(\App\Services\Cash\CashSessionSummary::class)->compute($s) : null;
+    }
+
+    public function openCaja(): void
+    {
+        if ($this->cashSession) {
+            Notification::make()->title('Ya tienes una caja abierta')->warning()->send();
+            return;
+        }
+        if (! $this->locationId) {
+            Notification::make()->title('Selecciona una sede')->danger()->send();
+            return;
+        }
+
+        \App\Models\CashRegisterSession::create([
+            'company_id' => Auth::user()->company_id,
+            'location_id' => $this->locationId,
+            'cashier_user_id' => Auth::id(),
+            'status' => \App\Models\CashRegisterSession::STATUS_OPEN,
+            'opened_at' => now(),
+            'opening_amount' => max(0, (float) $this->openCajaAmount),
+            'opening_notes' => null,
+        ]);
+
+        unset($this->cashSession);
+        $this->openCajaAmount = '0';
+        Notification::make()->title('Caja abierta')->success()->send();
+    }
+
+    public function openCloseCajaModal(): void
+    {
+        if (! $this->cashSession) return;
+        $this->closeCajaCounted = '0';
+        $this->closeCajaNotes = '';
+        $this->closeCajaModalOpen = true;
+    }
+
+    public function closeCajaModal(): void
+    {
+        $this->closeCajaModalOpen = false;
+    }
+
+    public function closeCaja(): void
+    {
+        $session = $this->cashSession;
+        if (! $session) return;
+
+        if (! Auth::user()?->can('pos.cash_close')) {
+            Notification::make()->title('Sin permiso para cerrar caja')->danger()->send();
+            return;
+        }
+
+        // Bloquear el cierre si quedan órdenes abiertas en esta caja.
+        $openOrders = Order::query()
+            ->where('cash_register_session_id', $session->id)
+            ->whereIn('status', [
+                Order::STATUS_OPEN, Order::STATUS_IN_KITCHEN,
+                Order::STATUS_SERVED, Order::STATUS_BILLING,
+            ])
+            ->count();
+        if ($openOrders > 0) {
+            Notification::make()
+                ->title('Hay órdenes abiertas')
+                ->body("Cobrá o cancelá las {$openOrders} órdenes activas antes de cerrar caja.")
+                ->danger()->send();
+            return;
+        }
+
+        $summary = app(\App\Services\Cash\CashSessionSummary::class)->compute($session);
+        $counted = (float) $this->closeCajaCounted;
+        $expected = (float) $summary['expected_cash'];
+        $difference = round($counted - $expected, 2);
+
+        $session->update([
+            'status' => \App\Models\CashRegisterSession::STATUS_CLOSED,
+            'closed_at' => now(),
+            'closed_by_user_id' => Auth::id(),
+            'closing_expected' => $expected,
+            'closing_counted' => $counted,
+            'closing_difference' => $difference,
+            'total_sales' => $summary['sales']['total'],
+            'invoice_count' => $summary['sales']['count'],
+            'payment_breakdown' => $summary['payment_breakdown'],
+            'closing_notes' => trim($this->closeCajaNotes) ?: null,
+        ]);
+
+        unset($this->cashSession);
+        $this->closeCajaModalOpen = false;
+        $this->closeOrderPanel();
+
+        Notification::make()
+            ->title('Caja cerrada')
+            ->body(sprintf(
+                'Esperado $%s · Contado $%s · Diferencia $%s',
+                number_format($expected, 0, ',', '.'),
+                number_format($counted, 0, ',', '.'),
+                number_format($difference, 0, ',', '.'),
+            ))
+            ->{$difference == 0.0 ? 'success' : 'warning'}()
+            ->send();
     }
 
     // ============ DATA ============
