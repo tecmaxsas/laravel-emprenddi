@@ -7,8 +7,11 @@ use App\Support\SimpleXlsxWriter;
 
 /**
  * Exporta un formato de información exógena a un archivo .xlsx con la
- * estructura estándar (identificación del tercero + valor), listo para
- * trabajar / cargar en el prevalidador DIAN.
+ * estructura estándar (identificación del tercero + columnas de valor),
+ * listo para revisar y cargar en el prevalidador DIAN.
+ *
+ * Los formatos 1001/1007 exportan varias columnas de valor (pago, IVA,
+ * retención / ingreso, devoluciones); el resto exporta una sola.
  *
  * Aplica la regla de cuantías mínimas: los terceros cuyo acumulado del
  * formato es menor al tope se agrupan en un registro "CUANTÍAS MENORES"
@@ -30,10 +33,11 @@ class ExogenaExcelExporter
         'die' => '42',
     ];
 
-    protected const HEADER = [
+    /** Columnas de identificación del tercero (fijas). */
+    protected const ID_HEADER = [
         'Formato', 'Concepto', 'Tipo documento (DIAN)', 'Número identificación', 'DV',
         'Primer apellido', 'Segundo apellido', 'Primer nombre', 'Otros nombres',
-        'Razón social', 'Dirección', 'Departamento', 'País', 'Valor',
+        'Razón social', 'Dirección', 'Departamento', 'País',
     ];
 
     /**
@@ -42,12 +46,13 @@ class ExogenaExcelExporter
     public function export(string $formatCode, int $year, float $threshold = 0): array
     {
         $engineRows = $this->engine->build($formatCode, $year);
+        $valueColumns = ExogenaCatalog::valueColumns($formatCode);
+        $columnCodes = array_keys($valueColumns);
 
         $partyIds = collect($engineRows)->pluck('third_party_id')->filter()->unique()->all();
         $parties = ThirdParty::query()->whereIn('id', $partyIds)->get()->keyBy('id');
 
-        // Cuantías mínimas: terceros cuyo acumulado (todos los conceptos)
-        // queda bajo el tope se reportan agrupados.
+        // Cuantías mínimas: terceros bajo el tope se reportan agrupados.
         $belowThreshold = [];
         if ($threshold > 0) {
             $totals = [];
@@ -67,35 +72,51 @@ class ExogenaExcelExporter
 
         foreach ($engineRows as $row) {
             if (isset($belowThreshold[$this->partyKey($row)])) {
-                $minorByConcept[$row['concept_code']] = [
-                    'name' => $row['concept_name'],
-                    'amount' => ($minorByConcept[$row['concept_code']]['amount'] ?? 0) + $row['amount'],
-                ];
+                $code = $row['concept_code'];
+                if (! isset($minorByConcept[$code])) {
+                    $minorByConcept[$code] = ['name' => $row['concept_name'], 'amounts' => []];
+                }
+                foreach (($row['amounts'] ?? []) as $col => $value) {
+                    $minorByConcept[$code]['amounts'][$col] = ($minorByConcept[$code]['amounts'][$col] ?? 0) + $value;
+                }
                 continue;
             }
 
             $party = $row['third_party_id'] ? $parties->get($row['third_party_id']) : null;
-            $dataRows[] = $this->buildRow($formatCode, $row, $party);
+            $dataRows[] = $this->buildRow($formatCode, $row, $party, $columnCodes);
         }
 
         // Registros agrupados de cuantías menores (uno por concepto).
         foreach ($minorByConcept as $conceptCode => $minor) {
-            if (round($minor['amount'], 2) == 0.0) {
+            $values = [];
+            $hasValue = false;
+            foreach ($columnCodes as $col) {
+                $value = round((float) ($minor['amounts'][$col] ?? 0), 2);
+                $values[] = $value;
+                if ($value != 0.0) {
+                    $hasValue = true;
+                }
+            }
+            if (! $hasValue) {
                 continue;
             }
-            $dataRows[] = [
+
+            $dataRows[] = array_merge([
                 $formatCode,
                 $conceptCode.' — '.$minor['name'],
                 '43', '222222222', '',
                 '', '', '', '',
                 'CUANTÍAS MENORES',
                 '', '', 'CO',
-                round($minor['amount'], 2),
-            ];
+            ], $values);
         }
 
-        $xlsxRows = array_merge([self::HEADER], $dataRows);
-        $content = SimpleXlsxWriter::build($xlsxRows, 'Formato '.$formatCode);
+        $header = array_merge(
+            self::ID_HEADER,
+            array_map(fn ($col) => $col['name'], array_values($valueColumns)),
+        );
+
+        $content = SimpleXlsxWriter::build(array_merge([$header], $dataRows), 'Formato '.$formatCode);
 
         return [
             'filename' => "exogena_{$formatCode}_{$year}.xlsx",
@@ -112,18 +133,18 @@ class ExogenaExcelExporter
     }
 
     /**
-     * Una fila del Excel: identificación del tercero + concepto + valor.
+     * Una fila del Excel: identificación del tercero + valores por columna.
      *
+     * @param  array<int,string>  $columnCodes
      * @return array<int,string|float>
      */
-    protected function buildRow(string $formatCode, array $row, ?ThirdParty $party): array
+    protected function buildRow(string $formatCode, array $row, ?ThirdParty $party, array $columnCodes): array
     {
         $concept = $row['concept_code'].' — '.$row['concept_name'];
 
         if ($party) {
             $isJuridica = $party->person_type === 'juridica';
-
-            return [
+            $id = [
                 $formatCode,
                 $concept,
                 self::DIAN_DOC_TYPES[$party->document_type] ?? '',
@@ -137,25 +158,29 @@ class ExogenaExcelExporter
                 (string) ($party->address ?? ''),
                 (string) ($party->department ?? ''),
                 (string) ($party->country ?: 'CO'),
-                (float) $row['amount'],
+            ];
+        } else {
+            $docType = isset($row['document_type'])
+                ? (self::DIAN_DOC_TYPES[$row['document_type']] ?? '')
+                : '';
+            $id = [
+                $formatCode,
+                $concept,
+                $docType,
+                (string) ($row['document_number'] ?? ''),
+                '',
+                '', '', '', '',
+                (string) $row['third_party'],
+                '', '', 'CO',
             ];
         }
 
-        // Sin ThirdParty enlazado (socios del formato 1010, o sin tercero).
-        $docType = isset($row['document_type'])
-            ? (self::DIAN_DOC_TYPES[$row['document_type']] ?? '')
-            : '';
+        $amounts = $row['amounts'] ?? ['base' => $row['amount'] ?? 0];
+        $values = [];
+        foreach ($columnCodes as $col) {
+            $values[] = round((float) ($amounts[$col] ?? 0), 2);
+        }
 
-        return [
-            $formatCode,
-            $concept,
-            $docType,
-            (string) ($row['document_number'] ?? ''),
-            '',
-            '', '', '', '',
-            (string) $row['third_party'],
-            '', '', 'CO',
-            (float) $row['amount'],
-        ];
+        return array_merge($id, $values);
     }
 }

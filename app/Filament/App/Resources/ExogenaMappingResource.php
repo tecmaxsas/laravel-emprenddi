@@ -64,6 +64,18 @@ class ExogenaMappingResource extends Resource
                         ->helperText('Elegí primero el formato.')
                         ->columnSpanFull(),
 
+                    Forms\Components\Select::make('value_column')
+                        ->label('Columna de valor')
+                        ->options(fn (Forms\Get $get) => collect(ExogenaCatalog::valueColumns((string) $get('format_code')))
+                            ->mapWithKeys(fn ($col, $code) => [$code => $col['name']])
+                            ->all())
+                        ->default('base')
+                        ->required()
+                        ->native(false)
+                        ->disabled(fn (Forms\Get $get) => ! $get('format_code'))
+                        ->helperText('En 1001/1007 indica si la cuenta alimenta la columna de pago, IVA o retención. El resto de formatos usa "Valor".')
+                        ->columnSpanFull(),
+
                     Forms\Components\Select::make('account_id')
                         ->label('Cuenta contable')
                         ->required()

@@ -8,18 +8,23 @@ use App\Models\JournalEntryLine;
 use App\Models\Partner;
 use App\Models\ThirdParty;
 use Carbon\Carbon;
+use Illuminate\Support\Collection;
 
 /**
  * Motor de información exógena: agrega los movimientos / saldos contables
  * del año por tercero y concepto, según el mapeo cuenta→concepto que el
  * contador configuró para cada formato.
+ *
+ * Cada fila trae las cantidades desglosadas por columna de valor
+ * ('amounts') y el total ('amount'). Los formatos 1001/1007 usan varias
+ * columnas (pago, IVA, retención); el resto usa solo 'base'.
  */
 class ExogenaEngine
 {
     /**
      * Construye las filas de un formato para un año gravable.
      *
-     * @return array<int,array{third_party_id:?int,third_party:string,document_number:string,concept_code:string,concept_name:string,amount:float}>
+     * @return array<int,array<string,mixed>>
      */
     public function build(string $formatCode, int $year): array
     {
@@ -29,8 +34,8 @@ class ExogenaEngine
         }
 
         return match ($format['basis']) {
-            'movements' => $this->buildFromMovements($formatCode, $format, $year),
-            'balance' => $this->buildFromBalances($formatCode, $format, $year),
+            'movements' => $this->buildFromMovements($formatCode, $year),
+            'balance' => $this->buildFromBalances($formatCode, $year),
             'partners' => $this->buildFromPartners($formatCode, $year),
             'manual' => $this->buildFromManual($formatCode, $year),
             default => [],
@@ -38,40 +43,9 @@ class ExogenaEngine
     }
 
     /**
-     * Formatos de captura manual (1004, 1011) — desde exogena_manual_entries.
-     */
-    protected function buildFromManual(string $formatCode, int $year): array
-    {
-        $entries = ExogenaManualEntry::query()
-            ->where('format_code', $formatCode)
-            ->where('fiscal_year', $year)
-            ->orderBy('concept_code')
-            ->get();
-
-        $out = [];
-        foreach ($entries as $entry) {
-            $amount = round((float) $entry->amount, 2);
-            if ($amount == 0.0) {
-                continue;
-            }
-
-            $out[] = [
-                'third_party_id' => null,
-                'third_party' => '(Información de la empresa)',
-                'document_number' => '',
-                'concept_code' => (string) $entry->concept_code,
-                'concept_name' => (string) $entry->concept_name,
-                'amount' => $amount,
-            ];
-        }
-
-        return $out;
-    }
-
-    /**
      * Suma de movimientos del año gravable (formatos 1001, 1003, 1005, 1006, 1007).
      */
-    protected function buildFromMovements(string $formatCode, array $format, int $year): array
+    protected function buildFromMovements(string $formatCode, int $year): array
     {
         $mappings = $this->mappingsFor($formatCode);
         if ($mappings->isEmpty()) {
@@ -88,13 +62,13 @@ class ExogenaEngine
                 .'SUM(journal_entry_lines.debit) AS d, SUM(journal_entry_lines.credit) AS c')
             ->get();
 
-        return $this->aggregate($rows, $mappings, $format['side'], $formatCode);
+        return $this->aggregate($rows, $mappings, $formatCode);
     }
 
     /**
      * Saldo de las cuentas al 31 de diciembre del año (formatos 1008, 1009, 1012).
      */
-    protected function buildFromBalances(string $formatCode, array $format, int $year): array
+    protected function buildFromBalances(string $formatCode, int $year): array
     {
         $mappings = $this->mappingsFor($formatCode);
         if ($mappings->isEmpty()) {
@@ -111,7 +85,7 @@ class ExogenaEngine
                 .'SUM(journal_entry_lines.debit) AS d, SUM(journal_entry_lines.credit) AS c')
             ->get();
 
-        return $this->aggregate($rows, $mappings, $format['side'], $formatCode);
+        return $this->aggregate($rows, $mappings, $formatCode);
     }
 
     /**
@@ -138,6 +112,7 @@ class ExogenaEngine
                 'document_number' => $partner->document_number ?: '',
                 'concept_code' => '1110',
                 'concept_name' => ExogenaCatalog::conceptName($formatCode, '1110') ?? '1110',
+                'amounts' => ['base' => $amount],
                 'amount' => $amount,
             ];
         }
@@ -147,27 +122,65 @@ class ExogenaEngine
         return $out;
     }
 
-    /** Mapeo [account_id => concept_code] del formato para la empresa actual. */
-    protected function mappingsFor(string $formatCode)
+    /**
+     * Formatos de captura manual (1004, 1011) — desde exogena_manual_entries.
+     */
+    protected function buildFromManual(string $formatCode, int $year): array
+    {
+        $entries = ExogenaManualEntry::query()
+            ->where('format_code', $formatCode)
+            ->where('fiscal_year', $year)
+            ->orderBy('concept_code')
+            ->get();
+
+        $out = [];
+        foreach ($entries as $entry) {
+            $amount = round((float) $entry->amount, 2);
+            if ($amount == 0.0) {
+                continue;
+            }
+
+            $out[] = [
+                'third_party_id' => null,
+                'third_party' => '(Información de la empresa)',
+                'document_number' => '',
+                'concept_code' => (string) $entry->concept_code,
+                'concept_name' => (string) $entry->concept_name,
+                'amounts' => ['base' => $amount],
+                'amount' => $amount,
+            ];
+        }
+
+        return $out;
+    }
+
+    /** Mapeo [account_id => ExogenaAccountMapping] del formato. */
+    protected function mappingsFor(string $formatCode): Collection
     {
         return ExogenaAccountMapping::query()
             ->where('format_code', $formatCode)
-            ->pluck('concept_code', 'account_id');
+            ->get(['account_id', 'concept_code', 'value_column'])
+            ->keyBy('account_id');
     }
 
     /**
      * Agrupa las filas crudas (tercero, cuenta, débito, crédito) por
-     * tercero + concepto y resuelve el nombre del tercero.
+     * tercero + concepto, repartiendo en las columnas de valor del formato.
      */
-    protected function aggregate($rows, $mappings, string $side, string $formatCode): array
+    protected function aggregate(Collection $rows, Collection $mappings, string $formatCode): array
     {
+        $columns = ExogenaCatalog::valueColumns($formatCode);
         $bucket = [];
 
         foreach ($rows as $r) {
-            $concept = $mappings[$r->account_id] ?? null;
-            if (! $concept) {
+            $map = $mappings->get($r->account_id);
+            if (! $map) {
                 continue;
             }
+
+            $concept = (string) $map->concept_code;
+            $column = $map->value_column ?: 'base';
+            $side = $columns[$column]['side'] ?? 'debit';
 
             $amount = $side === 'credit'
                 ? (float) $r->c - (float) $r->d
@@ -178,10 +191,10 @@ class ExogenaEngine
                 $bucket[$key] = [
                     'third_party_id' => $r->third_party_id,
                     'concept_code' => $concept,
-                    'amount' => 0.0,
+                    'amounts' => [],
                 ];
             }
-            $bucket[$key]['amount'] += $amount;
+            $bucket[$key]['amounts'][$column] = ($bucket[$key]['amounts'][$column] ?? 0.0) + $amount;
         }
 
         $tpIds = collect($bucket)->pluck('third_party_id')->filter()->unique()->all();
@@ -192,7 +205,8 @@ class ExogenaEngine
 
         $out = [];
         foreach ($bucket as $b) {
-            if (round($b['amount'], 2) == 0.0) {
+            $amounts = array_map(fn ($v) => round($v, 2), $b['amounts']);
+            if (empty(array_filter($amounts, fn ($v) => $v != 0.0))) {
                 continue;
             }
 
@@ -204,7 +218,8 @@ class ExogenaEngine
                 'document_number' => $party?->document_number ?: '',
                 'concept_code' => $b['concept_code'],
                 'concept_name' => ExogenaCatalog::conceptName($formatCode, $b['concept_code']) ?? $b['concept_code'],
-                'amount' => round($b['amount'], 2),
+                'amounts' => $amounts,
+                'amount' => round(array_sum($amounts), 2),
             ];
         }
 

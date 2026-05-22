@@ -30,6 +30,11 @@ class ExogenaCatalog
                 'description' => 'Pagos, costos y deducciones realizados a terceros durante el año gravable.',
                 'basis' => 'movements',
                 'side' => 'debit',
+                'columns' => [
+                    'base' => ['name' => 'Pago o abono en cuenta', 'side' => 'debit'],
+                    'iva' => ['name' => 'IVA descontable', 'side' => 'debit'],
+                    'retencion' => ['name' => 'Retención en la fuente practicada', 'side' => 'credit'],
+                ],
                 'concepts' => [
                     '5001' => 'Salarios, prestaciones sociales y demás pagos laborales',
                     '5002' => 'Honorarios',
@@ -113,6 +118,10 @@ class ExogenaCatalog
                 'description' => 'Ingresos recibidos durante el año gravable, por tercero y concepto.',
                 'basis' => 'movements',
                 'side' => 'credit',
+                'columns' => [
+                    'base' => ['name' => 'Ingreso bruto recibido', 'side' => 'credit'],
+                    'devolucion' => ['name' => 'Devoluciones, rebajas y descuentos', 'side' => 'debit'],
+                ],
                 'concepts' => [
                     '4001' => 'Ingresos brutos de actividades ordinarias (operacionales)',
                     '4002' => 'Ingresos financieros',
@@ -224,6 +233,31 @@ class ExogenaCatalog
         }
 
         return $out;
+    }
+
+    /**
+     * Columnas de valor de un formato. Los formatos 1001/1007 separan
+     * el valor en varias columnas (pago, IVA, retención); el resto usa
+     * una sola columna 'base'.
+     *
+     * @return array<string,array{name:string,side:string}>
+     */
+    public static function valueColumns(string $code): array
+    {
+        $f = self::format($code);
+        if (! $f) {
+            return ['base' => ['name' => 'Valor', 'side' => 'debit']];
+        }
+        if (! empty($f['columns'])) {
+            return $f['columns'];
+        }
+
+        return ['base' => ['name' => 'Valor', 'side' => $f['side'] ?? 'debit']];
+    }
+
+    public static function hasMultipleColumns(string $code): bool
+    {
+        return count(self::valueColumns($code)) > 1;
     }
 
     public static function concepts(string $formatCode): array

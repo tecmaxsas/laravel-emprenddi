@@ -21,6 +21,7 @@ class ExogenaAccountMapping extends Model
         'company_id',
         'format_code',
         'concept_code',
+        'value_column',
         'account_id',
         'notes',
     ];
