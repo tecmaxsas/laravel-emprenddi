@@ -29,6 +29,8 @@ class JournalEntry extends Model
         'payroll' => 'Nómina',
         'depreciation' => 'Depreciación',
         'reversal' => 'Reversión',
+        'cogs' => 'Costo de ventas',
+        'cogs_reversal' => 'Reversión costo de ventas',
     ];
 
     public const STATUSES = [
