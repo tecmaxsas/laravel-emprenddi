@@ -5,6 +5,7 @@ namespace App\Filament\App\Resources\PayrollPeriodResource\Pages;
 use App\Filament\App\Resources\PayrollPeriodResource;
 use App\Models\PayrollPeriod;
 use App\Services\Payroll\PayrollEngine;
+use App\Services\Payroll\PayrollPostingService;
 use Filament\Actions;
 use Filament\Infolists;
 use Filament\Infolists\Infolist;
@@ -49,6 +50,35 @@ class ViewPayrollPeriod extends ViewRecord
                         Notification::make()
                             ->danger()
                             ->title('No se pudo liquidar')
+                            ->body($e->getMessage())
+                            ->persistent()
+                            ->send();
+                    }
+                }),
+
+            Actions\Action::make('post')
+                ->label('Contabilizar')
+                ->icon('heroicon-o-check-circle')
+                ->color('primary')
+                ->visible(fn (PayrollPeriod $record) => $record->isLiquidated()
+                    && auth()->user()?->can('payroll.periods.manage'))
+                ->requiresConfirmation()
+                ->modalHeading('Contabilizar la nómina')
+                ->modalDescription('Se generará el asiento contable del período con base en el mapeo de cuentas de nómina. No podrás re-liquidar después.')
+                ->modalSubmitActionLabel('Contabilizar')
+                ->action(function (PayrollPeriod $record) {
+                    try {
+                        $period = app(PayrollPostingService::class)->post($record);
+                        Notification::make()
+                            ->success()
+                            ->title('Nómina contabilizada')
+                            ->body('Asiento '.$period->journalEntry?->fullNumber().' creado.')
+                            ->send();
+                        $this->refreshFormData(['status', 'journal_entry_id']);
+                    } catch (\Throwable $e) {
+                        Notification::make()
+                            ->danger()
+                            ->title('No se pudo contabilizar')
                             ->body($e->getMessage())
                             ->persistent()
                             ->send();
@@ -100,6 +130,17 @@ class ViewPayrollPeriod extends ViewRecord
                         ->state(fn (PayrollPeriod $record) => $record->slips()->sum('net_pay'))
                         ->money('COP')
                         ->weight('bold'),
+                ]),
+
+            Infolists\Components\Section::make('Asiento contable')
+                ->visible(fn (PayrollPeriod $record) => $record->journal_entry_id !== null)
+                ->schema([
+                    Infolists\Components\TextEntry::make('journalEntry.full_number')
+                        ->label('Asiento')
+                        ->state(fn (PayrollPeriod $record) => $record->journalEntry?->fullNumber())
+                        ->url(fn (PayrollPeriod $record) => $record->journalEntry
+                            ? route('filament.app.resources.journal-entries.view', $record->journalEntry)
+                            : null),
                 ]),
         ]);
     }
