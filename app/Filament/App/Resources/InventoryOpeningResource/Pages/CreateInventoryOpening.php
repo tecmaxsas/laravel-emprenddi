@@ -22,11 +22,8 @@ class CreateInventoryOpening extends CreateRecord
         $prefix = $data['prefix'] ?? 'SI';
         $data['number'] = app(InventoryOpeningNumberer::class)->next($company, $prefix);
 
-        $lineNum = 1;
-        $data['lines'] = collect($data['lines'] ?? [])->map(function ($line) use (&$lineNum) {
-            $line['line_number'] = $lineNum++;
-            return $line;
-        })->all();
+        // El line_number de las líneas lo asigna Filament vía orderColumn
+        // en el Repeater (->relationship('lines')->orderColumn('line_number')).
 
         return $data;
     }
