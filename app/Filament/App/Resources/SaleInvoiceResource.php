@@ -501,9 +501,9 @@ class SaleInvoiceResource extends Resource
 
                 Tables\Columns\TextColumn::make('dian_status')
                     ->label('DIAN')
-                    ->formatStateUsing(fn (?string $s) => $s ? (SaleInvoice::DIAN_STATUSES[$s] ?? $s) : '—')
+                    ->formatStateUsing(fn (?string $state) => $state ? (SaleInvoice::DIAN_STATUSES[$state] ?? $state) : '—')
                     ->badge()
-                    ->color(fn (?string $s) => match ($s) {
+                    ->color(fn (?string $state) => match ($state) {
                         'accepted' => 'success',
                         'sent' => 'info',
                         'pending' => 'gray',
