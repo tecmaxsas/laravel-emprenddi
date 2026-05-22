@@ -14,6 +14,14 @@ class Resolution extends Model
 
     protected $table = 'dian_resolutions';
 
+    public const KIND_ELECTRONIC = 'electronic';
+    public const KIND_POS = 'pos';
+
+    public const KINDS = [
+        self::KIND_ELECTRONIC => 'Facturación Electrónica (DIAN)',
+        self::KIND_POS => 'POS (sin transmisión a DIAN)',
+    ];
+
     public const DOCUMENT_TYPES = [
         1 => 'Factura Electrónica',
         2 => 'Nota Crédito',
@@ -25,6 +33,7 @@ class Resolution extends Model
 
     protected $fillable = [
         'company_id',
+        'kind',
         'document_type_id',
         'document_type_name',
         'prefix',
@@ -49,6 +58,16 @@ class Resolution extends Model
             'range_to' => 'integer',
             'active' => 'boolean',
         ];
+    }
+
+    public function isPos(): bool
+    {
+        return $this->kind === self::KIND_POS;
+    }
+
+    public function isElectronic(): bool
+    {
+        return $this->kind === self::KIND_ELECTRONIC;
     }
 
     public function company(): BelongsTo

@@ -49,4 +49,30 @@ class LocationResolution extends Model
             return $current;
         });
     }
+
+    /**
+     * Reserva el siguiente consecutivo validando que esté dentro del rango
+     * autorizado de la resolución. Lanza RuntimeException si la resolución
+     * se agotó. Atómico — el lock cubre la lectura, validación e incremento.
+     */
+    public function reserveNextNumberInRange(): int
+    {
+        return \DB::transaction(function () {
+            $row = self::where('id', $this->id)->lockForUpdate()->with('resolution')->first();
+            $resolution = $row->resolution;
+            $current = (int) $row->current_consecutive;
+
+            if ($resolution && $current > (int) $resolution->range_to) {
+                throw new \RuntimeException(
+                    "La resolución {$resolution->prefix} se agotó "
+                    ."(rango {$resolution->range_from} – {$resolution->range_to}). "
+                    .'Carga una resolución nueva.'
+                );
+            }
+
+            $row->update(['current_consecutive' => $current + 1]);
+
+            return $current;
+        });
+    }
 }
