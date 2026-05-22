@@ -81,6 +81,12 @@
                 <div style="display:flex; gap:16px; font-size:12px; color:#374151; flex-wrap:wrap;">
                     <span>Ventas: <strong>{{ $cashSummary['sales']['count'] }}</strong></span>
                     <span>Total ventas: <strong>${{ number_format((float) $cashSummary['sales']['total'], 0, ',', '.') }}</strong></span>
+                    @if (($cashSummary['purchases']['count'] ?? 0) > 0)
+                        <span>Compras: <strong style="color:#dc2626;">-${{ number_format((float) $cashSummary['purchases']['total'], 0, ',', '.') }}</strong></span>
+                    @endif
+                    @if (($cashSummary['expenses']['count'] ?? 0) > 0)
+                        <span>Gastos: <strong style="color:#dc2626;">-${{ number_format((float) $cashSummary['expenses']['total'], 0, ',', '.') }}</strong></span>
+                    @endif
                     <span>Efectivo esperado: <strong style="color:#059669;">${{ number_format((float) $cashSummary['expected_cash'], 0, ',', '.') }}</strong></span>
                 </div>
             @endif
@@ -1520,24 +1526,63 @@
 
                 <div style="padding:18px 22px; color:#111827; display:flex; flex-direction:column; gap:12px;">
                     @if ($cs)
+                        @php $pmLabels = \App\Models\Payment::PAYMENT_METHODS; @endphp
                         <div style="background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px; padding:12px; font-size:13px; display:flex; flex-direction:column; gap:5px;">
+                            {{-- Apertura --}}
                             <div style="display:flex; justify-content:space-between;">
-                                <span style="color:#6b7280;">Apertura</span>
+                                <span style="color:#6b7280;">Apertura (efectivo)</span>
                                 <span style="font-weight:600;">${{ number_format((float) $this->cashSession->opening_amount, 0, ',', '.') }}</span>
                             </div>
-                            <div style="display:flex; justify-content:space-between;">
-                                <span style="color:#6b7280;">Ventas ({{ $cs['sales']['count'] }})</span>
-                                <span style="font-weight:600;">${{ number_format((float) $cs['sales']['total'], 0, ',', '.') }}</span>
+
+                            {{-- Ventas + desglose por método --}}
+                            <div style="display:flex; justify-content:space-between; padding-top:6px; border-top:1px dashed #e5e7eb;">
+                                <span style="font-weight:700; color:#111827;">Ventas ({{ $cs['sales']['count'] }})</span>
+                                <span style="font-weight:700; color:#059669;">${{ number_format((float) $cs['sales']['total'], 0, ',', '.') }}</span>
                             </div>
-                            @if (($cs['expenses']['total'] ?? 0) > 0)
-                                <div style="display:flex; justify-content:space-between;">
-                                    <span style="color:#6b7280;">Gastos</span>
-                                    <span style="font-weight:600; color:#dc2626;">-${{ number_format((float) $cs['expenses']['total'], 0, ',', '.') }}</span>
+                            @forelse ($cs['sales']['by_method'] as $method => $amount)
+                                <div style="display:flex; justify-content:space-between; padding-left:12px;">
+                                    <span style="color:#6b7280;">{{ $pmLabels[$method] ?? ucfirst($method) }}</span>
+                                    <span style="font-weight:600;">${{ number_format((float) $amount, 0, ',', '.') }}</span>
                                 </div>
+                            @empty
+                                <div style="padding-left:12px; color:#9ca3af; font-size:12px;">Sin ventas en el turno</div>
+                            @endforelse
+
+                            {{-- Compras pagadas en el turno --}}
+                            @if (($cs['purchases']['count'] ?? 0) > 0)
+                                <div style="display:flex; justify-content:space-between; padding-top:6px; border-top:1px dashed #e5e7eb;">
+                                    <span style="font-weight:700; color:#111827;">Compras pagadas ({{ $cs['purchases']['count'] }})</span>
+                                    <span style="font-weight:700; color:#dc2626;">-${{ number_format((float) $cs['purchases']['total'], 0, ',', '.') }}</span>
+                                </div>
+                                @foreach ($cs['purchases']['by_method'] as $method => $amount)
+                                    <div style="display:flex; justify-content:space-between; padding-left:12px;">
+                                        <span style="color:#6b7280;">{{ $pmLabels[$method] ?? ucfirst($method) }}</span>
+                                        <span style="font-weight:600; color:#dc2626;">-${{ number_format((float) $amount, 0, ',', '.') }}</span>
+                                    </div>
+                                @endforeach
                             @endif
-                            <div style="display:flex; justify-content:space-between; padding-top:5px; border-top:1px dashed #d1d5db; font-weight:800;">
-                                <span>Efectivo esperado</span>
+
+                            {{-- Gastos posteados en el turno --}}
+                            @if (($cs['expenses']['count'] ?? 0) > 0)
+                                <div style="display:flex; justify-content:space-between; padding-top:6px; border-top:1px dashed #e5e7eb;">
+                                    <span style="font-weight:700; color:#111827;">Gastos ({{ $cs['expenses']['count'] }})</span>
+                                    <span style="font-weight:700; color:#dc2626;">-${{ number_format((float) $cs['expenses']['total'], 0, ',', '.') }}</span>
+                                </div>
+                                @foreach ($cs['expenses']['by_method'] as $method => $amount)
+                                    <div style="display:flex; justify-content:space-between; padding-left:12px;">
+                                        <span style="color:#6b7280;">{{ $pmLabels[$method] ?? ucfirst($method) }}</span>
+                                        <span style="font-weight:600; color:#dc2626;">-${{ number_format((float) $amount, 0, ',', '.') }}</span>
+                                    </div>
+                                @endforeach
+                            @endif
+
+                            {{-- Efectivo esperado en el cajón --}}
+                            <div style="display:flex; justify-content:space-between; padding-top:7px; margin-top:2px; border-top:2px solid #d1d5db; font-weight:800; font-size:14px;">
+                                <span>Efectivo esperado en caja</span>
                                 <span style="color:#059669;">${{ number_format((float) $cs['expected_cash'], 0, ',', '.') }}</span>
+                            </div>
+                            <div style="font-size:11px; color:#9ca3af; margin-top:-2px;">
+                                Solo el efectivo afecta la caja física. Transferencias y tarjetas se muestran como referencia.
                             </div>
                         </div>
                     @endif
