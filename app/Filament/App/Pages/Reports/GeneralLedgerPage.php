@@ -22,11 +22,11 @@ class GeneralLedgerPage extends Page implements HasForms, HasTable
 
     protected static ?string $navigationIcon = 'heroicon-o-book-open';
 
-    protected static ?string $navigationLabel = 'Libro Mayor';
+    protected static ?string $navigationLabel = 'Libro Mayor y Auxiliar';
 
     protected static ?string $navigationGroup = 'Reportes';
 
-    protected static ?string $title = 'Libro Mayor';
+    protected static ?string $title = 'Libro Mayor y Auxiliar de Cuentas';
 
     protected static ?int $navigationSort = 20;
 
@@ -44,6 +44,7 @@ class GeneralLedgerPage extends Page implements HasForms, HasTable
     {
         $this->filters = [
             'account_id' => null,
+            'third_party_id' => null,
             'cost_center_id' => null,
             'from' => now()->startOfMonth()->toDateString(),
             'to' => now()->endOfMonth()->toDateString(),
@@ -109,6 +110,31 @@ class GeneralLedgerPage extends Page implements HasForms, HasTable
                             ->getOptionLabelUsing(fn ($v) => \App\Models\CostCenter::find($v)?->fullName())
                             ->columnSpan(2),
 
+                        Forms\Components\Select::make('third_party_id')
+                            ->label('Tercero (opcional)')
+                            ->placeholder('Todos los terceros')
+                            ->helperText('Filtra el auxiliar por un cliente / proveedor específico.')
+                            ->searchable()
+                            ->live()
+                            ->getSearchResultsUsing(fn (string $search) => \App\Models\ThirdParty::query()
+                                ->where(function ($q) use ($search) {
+                                    $q->where('name', 'ilike', "%{$search}%")
+                                      ->orWhere('document_number', 'like', "%{$search}%");
+                                })
+                                ->orderBy('name')
+                                ->limit(50)
+                                ->get()
+                                ->mapWithKeys(fn ($tp) => [
+                                    $tp->id => trim(($tp->document_number ? $tp->document_number.' — ' : '').$tp->name),
+                                ])
+                                ->all())
+                            ->getOptionLabelUsing(function ($value) {
+                                $tp = \App\Models\ThirdParty::find($value);
+
+                                return $tp ? trim(($tp->document_number ? $tp->document_number.' — ' : '').$tp->name) : null;
+                            })
+                            ->columnSpan(2),
+
                         Forms\Components\Placeholder::make('initial_balance_display')
                             ->label('Saldo inicial')
                             ->content(fn () => '$ '.number_format($this->initialBalance(), 2)),
@@ -137,6 +163,7 @@ class GeneralLedgerPage extends Page implements HasForms, HasTable
         $accountId = $this->filters['account_id'] ?? null;
         $from = $this->filters['from'] ?? null;
         $costCenterId = $this->filters['cost_center_id'] ?? null;
+        $thirdPartyId = $this->filters['third_party_id'] ?? null;
 
         if (! $accountId || ! $from) {
             return 0;
@@ -145,6 +172,7 @@ class GeneralLedgerPage extends Page implements HasForms, HasTable
         return (float) JournalEntryLine::query()
             ->where('account_id', $accountId)
             ->when($costCenterId, fn ($q) => $q->where('cost_center_id', $costCenterId))
+            ->when($thirdPartyId, fn ($q) => $q->where('third_party_id', $thirdPartyId))
             ->whereHas('entry', fn ($q) => $q
                 ->where('status', 'posted')
                 ->whereDate('date', '<', $from))
@@ -156,6 +184,7 @@ class GeneralLedgerPage extends Page implements HasForms, HasTable
     {
         $accountId = $this->filters['account_id'] ?? null;
         $costCenterId = $this->filters['cost_center_id'] ?? null;
+        $thirdPartyId = $this->filters['third_party_id'] ?? null;
 
         if (! $accountId) {
             return 0;
@@ -164,6 +193,7 @@ class GeneralLedgerPage extends Page implements HasForms, HasTable
         return (float) JournalEntryLine::query()
             ->where('account_id', $accountId)
             ->when($costCenterId, fn ($q) => $q->where('cost_center_id', $costCenterId))
+            ->when($thirdPartyId, fn ($q) => $q->where('third_party_id', $thirdPartyId))
             ->whereHas('entry', fn ($q) => $q
                 ->where('status', 'posted')
                 ->whereDate('date', '>=', $this->filters['from'])
@@ -179,6 +209,7 @@ class GeneralLedgerPage extends Page implements HasForms, HasTable
             ->query(function () use ($initial) {
                 $accountId = $this->filters['account_id'] ?? null;
                 $costCenterId = $this->filters['cost_center_id'] ?? null;
+                $thirdPartyId = $this->filters['third_party_id'] ?? null;
                 if (! $accountId) {
                     return JournalEntryLine::query()->whereRaw('1 = 0');
                 }
@@ -191,6 +222,7 @@ class GeneralLedgerPage extends Page implements HasForms, HasTable
                     ->join('journal_entries', 'journal_entries.id', '=', 'journal_entry_lines.journal_entry_id')
                     ->where('account_id', $accountId)
                     ->when($costCenterId, fn ($q) => $q->where('journal_entry_lines.cost_center_id', $costCenterId))
+                    ->when($thirdPartyId, fn ($q) => $q->where('journal_entry_lines.third_party_id', $thirdPartyId))
                     ->where('journal_entries.status', 'posted')
                     ->whereDate('journal_entries.date', '>=', $this->filters['from'])
                     ->whereDate('journal_entries.date', '<=', $this->filters['to'])
