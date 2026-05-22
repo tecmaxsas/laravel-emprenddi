@@ -44,6 +44,7 @@ class PermissionsCatalog
                 'journal_entries.post' => 'Contabilizar (postear) asientos',
                 'partners.view' => 'Ver libro de socios',
                 'partners.manage' => 'Registrar socios y movimientos de capital',
+                'exogena.manage' => 'Configurar conceptos de información exógena',
             ],
             'Inventario' => [
                 'inventory.view' => 'Ver Kardex y stock',
@@ -101,6 +102,7 @@ class PermissionsCatalog
                 'reports.sales' => 'Ver Reporte de Ventas por Período',
                 'reports.accounts_receivable' => 'Ver Cartera (Cuentas por Cobrar)',
                 'reports.cash_closings' => 'Ver Cierres de Caja Históricos',
+                'exogena.view' => 'Ver y generar Información Exógena',
             ],
             'Administración' => [
                 'users.view' => 'Ver usuarios de la empresa',
@@ -161,6 +163,7 @@ class PermissionsCatalog
                 'credit_debit_notes.view', 'credit_debit_notes.create', 'credit_debit_notes.post', 'credit_debit_notes.send_dian',
                 'reports.journal_book', 'reports.general_ledger', 'reports.trial_balance', 'reports.kardex',
                 'reports.sales', 'reports.accounts_receivable', 'reports.cash_closings',
+                'exogena.view', 'exogena.manage',
                 'inventory.view',
                 'products.view', 'categories.view',
             ],
@@ -193,6 +196,7 @@ class PermissionsCatalog
                 'credit_debit_notes.view', 'credit_debit_notes.create', 'credit_debit_notes.post', 'credit_debit_notes.send_dian',
                 'reports.journal_book', 'reports.general_ledger', 'reports.trial_balance', 'reports.kardex',
                 'reports.sales', 'reports.accounts_receivable', 'reports.cash_closings',
+                'exogena.view', 'exogena.manage',
                 'inventory.view',
                 'products.view', 'categories.view',
             ],
