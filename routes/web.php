@@ -28,3 +28,8 @@ Route::get('/track/{token}', [DeliveryTrackController::class, 'show'])
 Route::get('/menu/{slug}', [\App\Http\Controllers\PublicMenuController::class, 'show'])
     ->name('menu.public')
     ->where('slug', '[a-z0-9-]+');
+
+// Páginas legales — términos y política de privacidad (públicas).
+Route::get('/legal/{doc}', fn (string $doc) => view('legal.policy', ['doc' => $doc]))
+    ->name('legal.policy')
+    ->where('doc', 'terminos|privacidad');

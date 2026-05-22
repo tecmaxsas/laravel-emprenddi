@@ -28,7 +28,7 @@ class ContadorPanelProvider extends PanelProvider
         return $panel
             ->id('contador')
             ->path('contador')
-            ->login()
+            ->login(\App\Filament\Auth\Login::class)
             ->registration(AccountantRegister::class)
             ->brandName('Portal Contador')
             ->colors([

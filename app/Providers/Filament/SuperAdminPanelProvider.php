@@ -25,7 +25,7 @@ class SuperAdminPanelProvider extends PanelProvider
         return $panel
             ->id('super-admin')
             ->path('super-admin')
-            ->login()
+            ->login(\App\Filament\Auth\Login::class)
             ->brandName('Emprenddi · SuperAdmin')
             ->colors([
                 'primary' => Color::Rose,

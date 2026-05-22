@@ -6,6 +6,7 @@ use App\Models\User;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Form;
 use Filament\Pages\Auth\Register as BaseRegister;
+use Filament\Support\Enums\MaxWidth;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
@@ -13,6 +14,13 @@ use Spatie\Permission\PermissionRegistrar;
 
 class AccountantRegister extends BaseRegister
 {
+    protected static string $view = 'filament.auth.register';
+
+    public function getMaxWidth(): MaxWidth | string | null
+    {
+        return MaxWidth::FourExtraLarge;
+    }
+
     public function form(Form $form): Form
     {
         return $form->schema([

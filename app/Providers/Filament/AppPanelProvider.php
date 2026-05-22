@@ -29,7 +29,7 @@ class AppPanelProvider extends PanelProvider
             ->default()
             ->id('app')
             ->path('app')
-            ->login()
+            ->login(\App\Filament\Auth\Login::class)
             ->registration(Register::class)
             ->brandName('Emprenddi')
             ->colors([

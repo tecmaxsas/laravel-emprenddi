@@ -31,6 +31,8 @@ use Illuminate\Validation\Rules\Password;
 
 class Register extends BaseRegister
 {
+    protected static string $view = 'filament.auth.register';
+
     public function form(Form $form): Form
     {
         return $form
@@ -431,7 +433,7 @@ class Register extends BaseRegister
 
     public function getMaxWidth(): MaxWidth | string | null
     {
-        return MaxWidth::FourExtraLarge;
+        return MaxWidth::FiveExtraLarge;
     }
 
     public function getTitle(): string
