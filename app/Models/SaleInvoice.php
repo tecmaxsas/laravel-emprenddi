@@ -56,6 +56,7 @@ class SaleInvoice extends Model
         'third_party_id',
         'prefix',
         'number',
+        'invoice_kind',
         'date',
         'due_date',
         'payment_terms_days',
@@ -121,8 +122,20 @@ class SaleInvoice extends Model
         return $this->dian_status === self::DIAN_ACCEPTED;
     }
 
+    /**
+     * Las facturas POS NO se transmiten a DIAN — solo las electrónicas.
+     * invoice_kind null se trata como electrónica (facturas legacy).
+     */
+    public function isPosInvoice(): bool
+    {
+        return $this->invoice_kind === 'pos';
+    }
+
     public function canResendToDian(): bool
     {
+        if ($this->isPosInvoice()) {
+            return false;
+        }
         return $this->isPosted() && $this->dian_status !== self::DIAN_ACCEPTED;
     }
 

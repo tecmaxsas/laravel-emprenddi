@@ -85,6 +85,7 @@ class PosTerminal extends Page
     public bool $showRecoverModal = false;
     public bool $showRetentionsModal = false;
     public string $paymentMode = 'multi'; // multi | cash | card | transfer | credit
+    public string $invoiceKind = 'pos';   // pos | electronic — tipo de factura a emitir
     public string $newCustomerName = '';
     public string $newCustomerDocument = '';
     public string $suspendName = '';
@@ -633,8 +634,19 @@ class PosTerminal extends Page
             return;
         }
 
+        // Reservar consecutivo de la resolución (POS o Electrónica) ANTES
+        // de abrir la transacción. Si la sede no tiene resolución del tipo
+        // elegido, esto lanza y abortamos con mensaje claro.
         try {
-            $invoice = DB::transaction(function () use ($totals) {
+            $doc = app(\App\Services\Sales\DocumentNumberer::class)
+                ->reserveForLocation((int) $this->location_id, $this->invoiceKind);
+        } catch (\Throwable $e) {
+            $this->paymentError = $e->getMessage();
+            return;
+        }
+
+        try {
+            $invoice = DB::transaction(function () use ($totals, $doc) {
                 $companyId = Auth::user()->company_id;
                 $company = Company::find($companyId);
 
@@ -642,8 +654,10 @@ class PosTerminal extends Page
                     'company_id' => $companyId,
                     'location_id' => $this->location_id,
                     'third_party_id' => $this->customer_id,
-                    'prefix' => 'POS',
-                    'number' => app(SaleInvoiceNumberer::class)->next($company, 'POS'),
+                    'prefix' => $doc['prefix'],
+                    'number' => $doc['number'],
+                    'invoice_kind' => $doc['kind'],
+                    'dian_resolution_id' => $doc['resolution_id'],
                     'date' => now()->toDateString(),
                     'currency' => 'COP',
                     'status' => 'draft',

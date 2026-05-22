@@ -1392,6 +1392,23 @@
                         </div>
                     @endforeach
 
+                    {{-- Tipo de factura --}}
+                    <div>
+                        <label style="font-size:12px; font-weight:700; color:#374151; margin-bottom:4px; display:block;">
+                            Tipo de factura
+                        </label>
+                        <div style="display:flex; gap:6px;">
+                            <button type="button" wire:click="$set('billingInvoiceKind', 'pos')"
+                                    style="flex:1; padding:8px; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; border:1px solid {{ $billingInvoiceKind === 'pos' ? '#10b981' : '#d1d5db' }}; background:{{ $billingInvoiceKind === 'pos' ? '#10b981' : '#ffffff' }}; color:{{ $billingInvoiceKind === 'pos' ? '#ffffff' : '#374151' }};">
+                                🧾 POS
+                            </button>
+                            <button type="button" wire:click="$set('billingInvoiceKind', 'electronic')"
+                                    style="flex:1; padding:8px; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; border:1px solid {{ $billingInvoiceKind === 'electronic' ? '#10b981' : '#d1d5db' }}; background:{{ $billingInvoiceKind === 'electronic' ? '#10b981' : '#ffffff' }}; color:{{ $billingInvoiceKind === 'electronic' ? '#ffffff' : '#374151' }};">
+                                📡 Electrónica (DIAN)
+                            </button>
+                        </div>
+                    </div>
+
                     {{-- Referencia común --}}
                     <div>
                         <label style="font-size:12px; font-weight:600; color:#374151; margin-bottom:4px; display:block;">

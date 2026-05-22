@@ -46,18 +46,24 @@ class SaleInvoiceResource extends Resource
             Forms\Components\Section::make('Cabecera')
                 ->columns(4)
                 ->schema([
-                    Forms\Components\TextInput::make('prefix')
-                        ->label('Prefijo')
-                        ->default('FV')
-                        ->maxLength(10)
-                        ->required(),
+                    Forms\Components\Select::make('invoice_kind')
+                        ->label('Tipo de factura')
+                        ->options([
+                            'electronic' => 'Electrónica (DIAN)',
+                            'pos' => 'POS (sin DIAN)',
+                        ])
+                        ->default('electronic')
+                        ->required()
+                        ->native(false)
+                        ->disabledOn('edit')
+                        ->helperText('Define de qué resolución sale el consecutivo.'),
 
                     Forms\Components\TextInput::make('number')
                         ->label('Número')
                         ->numeric()
                         ->disabled()
-                        ->dehydrated()
-                        ->placeholder('Auto al guardar'),
+                        ->dehydrated(false)
+                        ->placeholder('Auto: de la resolución'),
 
                     Forms\Components\Select::make('third_party_id')
                         ->label('Cliente')

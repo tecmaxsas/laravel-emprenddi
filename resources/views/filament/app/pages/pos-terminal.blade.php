@@ -815,6 +815,19 @@
                     @endif
                 </div>
 
+                {{-- Tipo de factura: POS o Electrónica --}}
+                <div style="display:flex; gap:8px; align-items:center; padding:10px 0; border-top:1px solid #e5e7eb;">
+                    <span style="font-size:13px; font-weight:600; color:#374151;">Tipo de factura:</span>
+                    <button type="button" wire:click="$set('invoiceKind', 'pos')"
+                            style="padding:6px 14px; border-radius:6px; font-size:13px; font-weight:700; cursor:pointer; border:1px solid {{ $invoiceKind === 'pos' ? '#6366f1' : '#d1d5db' }}; background:{{ $invoiceKind === 'pos' ? '#6366f1' : '#ffffff' }}; color:{{ $invoiceKind === 'pos' ? '#ffffff' : '#374151' }};">
+                        🧾 POS
+                    </button>
+                    <button type="button" wire:click="$set('invoiceKind', 'electronic')"
+                            style="padding:6px 14px; border-radius:6px; font-size:13px; font-weight:700; cursor:pointer; border:1px solid {{ $invoiceKind === 'electronic' ? '#6366f1' : '#d1d5db' }}; background:{{ $invoiceKind === 'electronic' ? '#6366f1' : '#ffffff' }}; color:{{ $invoiceKind === 'electronic' ? '#ffffff' : '#374151' }};">
+                        📡 Electrónica (DIAN)
+                    </button>
+                </div>
+
                 <div class="pos-modal-footer">
                     <button type="button" wire:click="closePaymentModal" class="pos-btn pos-btn-secondary">Cancelar</button>
                     <button type="button" wire:click="processSale" wire:loading.attr="disabled" class="pos-btn pos-btn-success">

@@ -3,8 +3,7 @@
 namespace App\Filament\App\Resources\SaleInvoiceResource\Pages;
 
 use App\Filament\App\Resources\SaleInvoiceResource;
-use App\Models\Company;
-use App\Services\Sales\SaleInvoiceNumberer;
+use App\Services\Sales\DocumentNumberer;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Support\Facades\Auth;
 
@@ -19,11 +18,16 @@ class CreateSaleInvoice extends CreateRecord
         $data['status'] = 'draft';
         $data['payment_status'] = 'pendiente';
 
-        // Auto-numeración. En Iter 2 esto cambia para tomar consecutivo de la
-        // resolución DIAN asignada a la sede cuando exista.
-        $company = Company::find($data['company_id']);
-        $prefix = $data['prefix'] ?? 'FV';
-        $data['number'] = app(SaleInvoiceNumberer::class)->next($company, $prefix);
+        // Consecutivo de la resolución (POS o Electrónica) de la sede.
+        $kind = $data['invoice_kind'] ?? 'electronic';
+        $doc = app(DocumentNumberer::class)->reserveForLocation(
+            (int) $data['location_id'],
+            $kind,
+        );
+        $data['prefix'] = $doc['prefix'];
+        $data['number'] = $doc['number'];
+        $data['invoice_kind'] = $doc['kind'];
+        $data['dian_resolution_id'] = $doc['resolution_id'];
 
         // Recompute totals desde las líneas (defensa por si las hidden no se llenaron)
         $subtotal = 0;

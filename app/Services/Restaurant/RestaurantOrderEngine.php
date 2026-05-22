@@ -864,7 +864,7 @@ class RestaurantOrderEngine
      *
      * @return SaleInvoice[]
      */
-    public function bill(Order $order, array $tabs, int $thirdPartyId): array
+    public function bill(Order $order, array $tabs, int $thirdPartyId, string $invoiceKind = 'pos'): array
     {
         if (! $order->isOpen()) {
             throw new RuntimeException('Solo se pueden cobrar órdenes abiertas.');
@@ -904,8 +904,7 @@ class RestaurantOrderEngine
         $orderTip = (float) $order->tip_amount;
 
         $invoiceEngine = app(SaleInvoiceEngine::class);
-        $numberer = app(SaleInvoiceNumberer::class);
-        $company = Company::find($order->company_id);
+        $documentNumberer = app(\App\Services\Sales\DocumentNumberer::class);
 
         // Jobs de impresión de recibo — se ejecutan DESPUÉS del commit para
         // no demorar la transacción si la impresora está lenta/apagada.
@@ -913,7 +912,7 @@ class RestaurantOrderEngine
 
         $invoices = DB::transaction(function () use (
             $order, $tabs, $activeItems, $orderSubtotal, $orderTip,
-            $invoiceEngine, $numberer, $company, $thirdPartyId, &$receiptJobs
+            $invoiceEngine, $documentNumberer, $thirdPartyId, $invoiceKind, &$receiptJobs
         ) {
             $invoices = [];
 
@@ -932,12 +931,20 @@ class RestaurantOrderEngine
                     .($tabLabel ? " — Tab {$tabLabel}" : '')
                     .($tipShare > 0 ? sprintf(' — Propina: $%s', number_format($tipShare, 0, ',', '.')) : '');
 
+                // Consecutivo de la resolución (POS o Electrónica) de la sede.
+                $doc = $documentNumberer->reserveForLocation(
+                    (int) $order->location_id,
+                    $invoiceKind,
+                );
+
                 $invoice = SaleInvoice::create([
                     'company_id' => $order->company_id,
                     'location_id' => $order->location_id,
                     'third_party_id' => $thirdPartyId,
-                    'prefix' => 'POS',
-                    'number' => $numberer->next($company, 'POS'),
+                    'prefix' => $doc['prefix'],
+                    'number' => $doc['number'],
+                    'invoice_kind' => $doc['kind'],
+                    'dian_resolution_id' => $doc['resolution_id'],
                     'date' => now()->toDateString(),
                     'currency' => 'COP',
                     'status' => 'draft',

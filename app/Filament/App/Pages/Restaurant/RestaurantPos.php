@@ -95,6 +95,7 @@ class RestaurantPos extends Page
     // [tabKey => [['method' => 'cash', 'account_id' => 5, 'amount' => '50000.00'], ...]]
     public array $billingPayments = [];
     public string $billingReference = '';
+    public string $billingInvoiceKind = 'pos';  // pos | electronic
 
     public static function canAccess(): bool
     {
@@ -1226,7 +1227,7 @@ class RestaurantPos extends Page
         }
 
         try {
-            $invoices = app(RestaurantOrderEngine::class)->bill($order, $payload, $thirdPartyId);
+            $invoices = app(RestaurantOrderEngine::class)->bill($order, $payload, $thirdPartyId, $this->billingInvoiceKind);
 
             $numbers = implode(', ', array_map(fn ($i) => $i->fullNumber(), $invoices));
             Notification::make()
