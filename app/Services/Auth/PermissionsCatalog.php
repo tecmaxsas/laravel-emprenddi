@@ -94,6 +94,10 @@ class PermissionsCatalog
                 'restaurant.menu.manage' => 'Crear y editar carta QR pública',
                 'restaurant.reports.view' => 'Ver reportes de restaurante (propinas, items, tiempos)',
             ],
+            'Nómina' => [
+                'payroll.employees.view' => 'Ver empleados y contratos',
+                'payroll.employees.manage' => 'Crear / editar empleados y contratos',
+            ],
             'Reportes' => [
                 'reports.journal_book' => 'Ver Libro Diario',
                 'reports.general_ledger' => 'Ver Libro Mayor',
@@ -164,6 +168,7 @@ class PermissionsCatalog
                 'reports.journal_book', 'reports.general_ledger', 'reports.trial_balance', 'reports.kardex',
                 'reports.sales', 'reports.accounts_receivable', 'reports.cash_closings',
                 'exogena.view', 'exogena.manage',
+                'payroll.employees.view', 'payroll.employees.manage',
                 'inventory.view',
                 'products.view', 'categories.view',
             ],
@@ -197,6 +202,7 @@ class PermissionsCatalog
                 'reports.journal_book', 'reports.general_ledger', 'reports.trial_balance', 'reports.kardex',
                 'reports.sales', 'reports.accounts_receivable', 'reports.cash_closings',
                 'exogena.view', 'exogena.manage',
+                'payroll.employees.view', 'payroll.employees.manage',
                 'inventory.view',
                 'products.view', 'categories.view',
             ],
