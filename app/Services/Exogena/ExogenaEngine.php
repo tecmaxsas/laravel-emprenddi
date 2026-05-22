@@ -101,7 +101,8 @@ class ExogenaEngine
             $out[] = [
                 'third_party_id' => null,
                 'third_party' => $partner->name,
-                'document_number' => $partner->document_number ?: '—',
+                'document_type' => $partner->document_type,
+                'document_number' => $partner->document_number ?: '',
                 'concept_code' => '1110',
                 'concept_name' => ExogenaCatalog::conceptName($formatCode, '1110') ?? '1110',
                 'amount' => $amount,
@@ -167,7 +168,7 @@ class ExogenaEngine
             $out[] = [
                 'third_party_id' => $b['third_party_id'],
                 'third_party' => $party?->name ?? '(Sin tercero identificado)',
-                'document_number' => $party?->document_number ?: '—',
+                'document_number' => $party?->document_number ?: '',
                 'concept_code' => $b['concept_code'],
                 'concept_name' => ExogenaCatalog::conceptName($formatCode, $b['concept_code']) ?? $b['concept_code'],
                 'amount' => round($b['amount'], 2),

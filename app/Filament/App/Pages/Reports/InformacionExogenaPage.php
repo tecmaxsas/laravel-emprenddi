@@ -4,6 +4,7 @@ namespace App\Filament\App\Pages\Reports;
 
 use App\Services\Exogena\ExogenaCatalog;
 use App\Services\Exogena\ExogenaEngine;
+use App\Services\Exogena\ExogenaExcelExporter;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
@@ -38,6 +39,9 @@ class InformacionExogenaPage extends Page implements HasForms
     public ?array $filters = [];
 
     public bool $generated = false;
+
+    /** Tope de cuantías mínimas para agrupar terceros menores al exportar. */
+    public string $exportThreshold = '0';
 
     public function mount(): void
     {
@@ -100,5 +104,23 @@ class InformacionExogenaPage extends Page implements HasForms
     public function getCurrentFormatProperty(): ?array
     {
         return ExogenaCatalog::format((string) ($this->filters['format_code'] ?? '1001'));
+    }
+
+    /**
+     * Descarga el formato seleccionado como .xlsx para el prevalidador DIAN.
+     */
+    public function exportExcel(): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        $formatCode = (string) ($this->filters['format_code'] ?? '1001');
+        $year = (int) ($this->filters['year'] ?? (now()->year - 1));
+        $threshold = (float) ($this->exportThreshold !== '' ? $this->exportThreshold : 0);
+
+        $result = app(ExogenaExcelExporter::class)->export($formatCode, $year, $threshold);
+
+        return response()->streamDownload(
+            fn () => print($result['content']),
+            $result['filename'],
+            ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+        );
     }
 }
