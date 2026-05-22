@@ -30,12 +30,14 @@ class PayrollSettlementService
             throw new RuntimeException('La liquidación no tiene valor a pagar.');
         }
 
-        // Componente → casilla de cuenta por pagar.
+        // Componente → casilla contable (prestaciones por pagar / gasto
+        // indemnización). Todas se debitan; la caja se acredita por el total.
         $components = array_filter([
             'payable_cesantias' => (float) $settlement->amount_cesantias,
             'payable_interest' => (float) $settlement->amount_interest,
             'payable_prima' => (float) $settlement->amount_prima,
             'payable_vacaciones' => (float) $settlement->amount_vacaciones,
+            'expense_severance' => (float) $settlement->amount_indemnizacion,
         ], fn ($amount) => $amount > 0);
 
         $accounts = PayrollAccountMapping::query()->pluck('account_id', 'slot');

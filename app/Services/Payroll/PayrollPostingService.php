@@ -38,7 +38,10 @@ class PayrollPostingService
         }
 
         $accounts = PayrollAccountMapping::query()->pluck('account_id', 'slot');
-        $missing = array_diff(PayrollAccountSlots::codes(), $accounts->keys()->all());
+        // 'expense_severance' solo lo usa la liquidación de prestaciones,
+        // no la nómina mensual.
+        $required = array_diff(PayrollAccountSlots::codes(), ['expense_severance']);
+        $missing = array_diff($required, $accounts->keys()->all());
         if (! empty($missing)) {
             $names = array_map(fn ($slot) => PayrollAccountSlots::name($slot), $missing);
             throw new RuntimeException(

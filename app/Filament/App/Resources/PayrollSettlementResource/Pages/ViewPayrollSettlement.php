@@ -118,12 +118,16 @@ class ViewPayrollSettlement extends ViewRecord
                 ]),
 
             Infolists\Components\Section::make('Componentes')
-                ->columns(5)
+                ->columns(3)
                 ->schema([
                     Infolists\Components\TextEntry::make('amount_cesantias')->label('Cesantías')->money('COP'),
                     Infolists\Components\TextEntry::make('amount_interest')->label('Intereses')->money('COP'),
                     Infolists\Components\TextEntry::make('amount_prima')->label('Prima')->money('COP'),
                     Infolists\Components\TextEntry::make('amount_vacaciones')->label('Vacaciones')->money('COP'),
+                    Infolists\Components\TextEntry::make('amount_indemnizacion')
+                        ->label('Indemnización')
+                        ->money('COP')
+                        ->visible(fn (PayrollSettlement $record) => (float) $record->amount_indemnizacion > 0),
                     Infolists\Components\TextEntry::make('amount')->label('TOTAL')->money('COP')->weight('bold'),
                 ]),
 

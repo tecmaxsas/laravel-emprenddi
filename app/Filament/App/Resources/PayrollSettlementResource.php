@@ -59,6 +59,7 @@ class PayrollSettlementResource extends Resource
                         ->options(PayrollSettlement::TYPES)
                         ->required()
                         ->native(false)
+                        ->live()
                         ->columnSpanFull(),
 
                     Forms\Components\DatePicker::make('period_start')
@@ -79,6 +80,16 @@ class PayrollSettlementResource extends Resource
                         ->minValue(0)
                         ->required()
                         ->helperText('Calculado con la convención de 360 días (mes de 30). Ajustable.'),
+
+                    Forms\Components\TextInput::make('amount_indemnizacion')
+                        ->label('Indemnización por despido')
+                        ->numeric()
+                        ->minValue(0)
+                        ->prefix('$')
+                        ->default(0)
+                        ->visible(fn (Forms\Get $get) => $get('type') === PayrollSettlement::TYPE_DEFINITIVA)
+                        ->helperText('Solo si hubo despido sin justa causa. Indefinido: 30 días de salario por el primer año + 20 por cada año adicional (salario inferior a 10 SMMLV). Dejar en 0 si fue renuncia o despido con justa causa.')
+                        ->columnSpanFull(),
 
                     Forms\Components\Textarea::make('notes')
                         ->label('Observaciones')

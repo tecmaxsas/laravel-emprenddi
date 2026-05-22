@@ -19,6 +19,7 @@ class PayrollAccountSlots
             'expense_overtime' => ['name' => 'Horas extra y otros devengados', 'group' => 'expense'],
             'expense_employer_contributions' => ['name' => 'Aportes patronales (salud, pensión, ARL, parafiscales)', 'group' => 'expense'],
             'expense_provisions' => ['name' => 'Provisión de prestaciones sociales', 'group' => 'expense'],
+            'expense_severance' => ['name' => 'Indemnizaciones laborales', 'group' => 'expense'],
 
             'payable_net_salary' => ['name' => 'Salarios por pagar (neto)', 'group' => 'payable'],
             'payable_health' => ['name' => 'Aportes a salud por pagar', 'group' => 'payable'],

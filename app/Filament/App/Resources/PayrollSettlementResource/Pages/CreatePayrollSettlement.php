@@ -47,6 +47,11 @@ class CreatePayrollSettlement extends CreateRecord
             (float) $params->transport_allowance,
         );
 
+        // La indemnización solo aplica a la liquidación definitiva.
+        $indemnizacion = $data['type'] === PayrollSettlement::TYPE_DEFINITIVA
+            ? (float) ($data['amount_indemnizacion'] ?? 0)
+            : 0.0;
+
         $data['company_id'] = Auth::user()->company_id;
         $data['employment_contract_id'] = $contract->id;
         $data['monthly_salary'] = $contract->salary;
@@ -55,7 +60,8 @@ class CreatePayrollSettlement extends CreateRecord
         $data['amount_interest'] = $calc['interest'];
         $data['amount_prima'] = $calc['prima'];
         $data['amount_vacaciones'] = $calc['vacaciones'];
-        $data['amount'] = $calc['total'];
+        $data['amount_indemnizacion'] = $indemnizacion;
+        $data['amount'] = round($calc['total'] + $indemnizacion, 2);
         $data['status'] = PayrollSettlement::STATUS_DRAFT;
 
         return $data;
