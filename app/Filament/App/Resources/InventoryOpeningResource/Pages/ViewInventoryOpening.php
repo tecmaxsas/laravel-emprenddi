@@ -88,12 +88,13 @@ class ViewInventoryOpening extends ViewRecord
                     Infolists\Components\TextEntry::make('location.name')->label('Sede'),
                     Infolists\Components\TextEntry::make('status')
                         ->label('Estado')
-                        ->formatStateUsing(fn (string $s) => InventoryOpening::STATUSES[$s] ?? $s)
+                        ->formatStateUsing(fn (string $state) => InventoryOpening::STATUSES[$state] ?? $state)
                         ->badge()
-                        ->color(fn (string $s) => match ($s) {
+                        ->color(fn (string $state) => match ($state) {
                             'draft' => 'gray',
                             'posted' => 'success',
                             'cancelled' => 'danger',
+                            default => 'gray',
                         }),
 
                     Infolists\Components\TextEntry::make('counterpartAccount')
