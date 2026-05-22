@@ -39,6 +39,9 @@
         box-shadow:0 30px 70px -28px rgba(30,27,75,.5) !important;
         animation:authCard .6s cubic-bezier(.22,1,.36,1) both;
     }
+    /* El encabezado propio de Filament se oculta: el diseño usa el suyo. */
+    .fi-simple-header { display:none !important; }
+    .fi-simple-page { padding:0 !important; }
 
     .auth-shell { display:flex; min-height:560px; }
     .auth-shell * { box-sizing:border-box; }
