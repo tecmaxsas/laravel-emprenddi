@@ -72,6 +72,7 @@ class PermissionsCatalog
                 'credit_debit_notes.send_dian' => 'Enviar NC/ND a DIAN',
                 'pos.use' => 'Usar el terminal POS',
                 'pos.cash_close' => 'Cerrar turno de caja',
+                'pos.resolutions.manage' => 'Configurar resoluciones POS y asignarlas a sedes',
             ],
             'Restaurante' => [
                 'restaurant.use' => 'Usar el POS de restaurante (tomar pedidos)',
