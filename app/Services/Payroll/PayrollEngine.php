@@ -49,6 +49,8 @@ class PayrollEngine
         'V' => 0.06960,
     ];
 
+    public function __construct(protected PayrollWithholdingCalculator $withholding) {}
+
     /**
      * Liquida un período: genera (o regenera) un desprendible por cada
      * empleado activo con contrato vigente.
@@ -154,7 +156,20 @@ class PayrollEngine
             ? round($ibc * self::RATE_SOLIDARITY, 2)
             : 0.0;
 
-        $totalDeductions = round($health + $pension + $solidarity + $extraDeductions, 2);
+        // Retención en la fuente: automática (Art. 383 ET), salvo que el
+        // empleado tenga una novedad manual de retención que la sustituya.
+        $hasManualRetention = $novelties->contains(
+            fn (PayrollNovelty $n) => ! $n->isEarning() && $n->concept_code === 'retencion_fuente'
+        );
+        $autoRetention = $hasManualRetention
+            ? 0.0
+            : $this->withholding->compute(
+                $totalEarnings,
+                $health + $pension + $solidarity,
+                (float) $params->uvt,
+            );
+
+        $totalDeductions = round($health + $pension + $solidarity + $extraDeductions + $autoRetention, 2);
         $netPay = round($totalEarnings - $totalDeductions, 2);
 
         // Exoneración Ley 1607: salario < 10 SMMLV exonera al empleador de
@@ -239,6 +254,10 @@ class PayrollEngine
                     round((float) $novelty->amount, 2),
                 ];
             }
+        }
+        // Retención en la fuente calculada automáticamente.
+        if ($autoRetention > 0) {
+            $lines[] = [PayrollSlipLine::TYPE_DEDUCTION, 'retencion_fuente', 'Retención en la fuente', null, $autoRetention];
         }
 
         foreach ($lines as [$type, $code, $name, $qty, $amount]) {
