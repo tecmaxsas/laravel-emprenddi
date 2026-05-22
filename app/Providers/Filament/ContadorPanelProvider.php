@@ -29,6 +29,7 @@ class ContadorPanelProvider extends PanelProvider
             ->id('contador')
             ->path('contador')
             ->login(\App\Filament\Auth\Login::class)
+            ->passwordReset(\App\Filament\Auth\RequestPasswordReset::class, \App\Filament\Auth\ResetPassword::class)
             ->registration(AccountantRegister::class)
             ->brandName('Portal Contador')
             ->colors([
