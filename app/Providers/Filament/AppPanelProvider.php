@@ -47,7 +47,9 @@ class AppPanelProvider extends PanelProvider
             ->widgets([
                 Widgets\AccountWidget::class,
                 \App\Filament\App\Widgets\KpiCardsWidget::class,
+                \App\Filament\App\Widgets\PurchasesKpiWidget::class,
                 \App\Filament\App\Widgets\RestaurantPulseWidget::class,
+                \App\Filament\App\Widgets\PayrollKpiWidget::class,
                 \App\Filament\App\Widgets\RecentActivityWidget::class,
             ])
             ->middleware([

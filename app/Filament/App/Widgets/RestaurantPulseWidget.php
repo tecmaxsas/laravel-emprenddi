@@ -21,7 +21,9 @@ class RestaurantPulseWidget extends BaseWidget
 
     public static function canView(): bool
     {
-        return (bool) auth()->user() && ModuleGate::active('restaurant');
+        return (bool) auth()->user()
+            && ModuleGate::active('restaurant')
+            && auth()->user()->can('restaurant.use');
     }
 
     protected function getStats(): array

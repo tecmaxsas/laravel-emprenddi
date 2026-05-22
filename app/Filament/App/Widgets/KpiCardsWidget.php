@@ -9,8 +9,8 @@ use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Cards de KPIs principales en el dashboard.
- * Cada card compara contra el periodo anterior (ej. hoy vs ayer).
+ * KPIs de ventas e inventario. Cada card se muestra solo si el usuario
+ * tiene el permiso correspondiente.
  */
 class KpiCardsWidget extends BaseWidget
 {
@@ -20,72 +20,84 @@ class KpiCardsWidget extends BaseWidget
 
     public static function canView(): bool
     {
-        return (bool) auth()->user();
+        $user = auth()->user();
+
+        return $user && ($user->can('sales.view') || $user->can('inventory.view'));
     }
 
     protected function getStats(): array
     {
         $companyId = app(CurrentCompany::class)->id() ?? auth()->user()?->company_id;
-        if (! $companyId) return [];
+        if (! $companyId) {
+            return [];
+        }
 
-        $today = now()->startOfDay();
-        $tomorrow = now()->endOfDay();
-        $yesterday = now()->subDay()->startOfDay();
-        $yesterdayEnd = now()->subDay()->endOfDay();
-        $monthStart = now()->startOfMonth();
+        $user = auth()->user();
+        $stats = [];
 
-        // Ventas hoy
+        if ($user?->can('sales.view')) {
+            $stats = array_merge($stats, $this->salesStats($companyId));
+        }
+
+        if ($user?->can('inventory.view')) {
+            $stats[] = $this->stockStat($companyId);
+        }
+
+        return $stats;
+    }
+
+    /**
+     * @return array<int,Stat>
+     */
+    protected function salesStats(int $companyId): array
+    {
+        $today = now()->startOfDay()->toDateString();
+        $tomorrow = now()->endOfDay()->toDateString();
+        $yesterday = now()->subDay()->startOfDay()->toDateString();
+        $yesterdayEnd = now()->subDay()->endOfDay()->toDateString();
+        $monthStart = now()->startOfMonth()->toDateString();
+
         $salesToday = (float) SaleInvoice::query()
             ->where('company_id', $companyId)
             ->where('status', '!=', 'cancelled')
-            ->whereBetween('date', [$today->toDateString(), $tomorrow->toDateString()])
+            ->whereBetween('date', [$today, $tomorrow])
             ->sum('total');
 
         $salesYesterday = (float) SaleInvoice::query()
             ->where('company_id', $companyId)
             ->where('status', '!=', 'cancelled')
-            ->whereBetween('date', [$yesterday->toDateString(), $yesterdayEnd->toDateString()])
+            ->whereBetween('date', [$yesterday, $yesterdayEnd])
             ->sum('total');
 
         $salesDelta = $salesYesterday > 0
             ? round(($salesToday - $salesYesterday) / $salesYesterday * 100, 1)
             : ($salesToday > 0 ? 100 : 0);
 
-        // Ventas del mes
         $salesMonth = (float) SaleInvoice::query()
             ->where('company_id', $companyId)
             ->where('status', '!=', 'cancelled')
-            ->where('date', '>=', $monthStart->toDateString())
+            ->where('date', '>=', $monthStart)
             ->sum('total');
 
         $invoicesMonth = (int) SaleInvoice::query()
             ->where('company_id', $companyId)
             ->where('status', '!=', 'cancelled')
-            ->where('date', '>=', $monthStart->toDateString())
+            ->where('date', '>=', $monthStart)
             ->count();
 
-        // Cuentas por cobrar (saldo pendiente)
         $receivables = (float) DB::table('sale_invoices')
             ->where('company_id', $companyId)
-            ->whereIn('payment_status', ['pendiente', 'parcial'])
+            ->whereIn('payment_status', ['pendiente', 'parcial', 'vencido'])
             ->where('status', '!=', 'cancelled')
             ->selectRaw('coalesce(sum(total - coalesce(paid_amount, 0)), 0) as balance')
             ->value('balance');
 
-        // Items en alerta de stock (min_stock superado o agotados con track_inventory)
-        $lowStockCount = $this->lowStockCount($companyId);
-
         return [
             Stat::make('Ventas hoy', '$'.number_format($salesToday, 0, ',', '.'))
-                ->description($salesDelta >= 0
-                    ? "↑ {$salesDelta}% vs ayer"
-                    : abs($salesDelta).'% vs ayer')
+                ->description($salesDelta >= 0 ? "↑ {$salesDelta}% vs ayer" : abs($salesDelta).'% vs ayer')
                 ->descriptionIcon($salesDelta >= 0 ? 'heroicon-m-arrow-trending-up' : 'heroicon-m-arrow-trending-down')
                 ->color($salesDelta >= 0 ? 'success' : 'danger')
-                ->chart([
-                    $salesYesterday,
-                    $salesToday,
-                ]),
+                ->chart([$salesYesterday, $salesToday]),
 
             Stat::make('Ventas del mes', '$'.number_format($salesMonth, 0, ',', '.'))
                 ->description("{$invoicesMonth} facturas posteadas")
@@ -96,19 +108,23 @@ class KpiCardsWidget extends BaseWidget
                 ->description($receivables > 0 ? 'Saldo pendiente' : 'Sin cartera ✓')
                 ->descriptionIcon('heroicon-m-currency-dollar')
                 ->color($receivables > 0 ? 'warning' : 'success'),
-
-            Stat::make('Alertas de stock', $lowStockCount)
-                ->description($lowStockCount > 0 ? 'Productos en mínimo o agotados' : 'Inventario en regla ✓')
-                ->descriptionIcon('heroicon-m-archive-box')
-                ->color($lowStockCount > 0 ? 'danger' : 'success')
-                ->url($lowStockCount > 0 ? '/app/inventory' : null),
         ];
     }
 
+    protected function stockStat(int $companyId): Stat
+    {
+        $lowStockCount = $this->lowStockCount($companyId);
+
+        return Stat::make('Alertas de stock', $lowStockCount)
+            ->description($lowStockCount > 0 ? 'Productos en mínimo o agotados' : 'Inventario en regla ✓')
+            ->descriptionIcon('heroicon-m-archive-box')
+            ->color($lowStockCount > 0 ? 'danger' : 'success')
+            ->url($lowStockCount > 0 ? '/app/inventory' : null);
+    }
+
     /**
-     * Cuenta product_locations con stock <= min_stock. Usa LATERAL join
-     * a inventory_movements para obtener balance_quantity_after del ultimo
-     * movimiento — barato comparado con sum() de toda la historia.
+     * Cuenta product_locations con stock <= min_stock vía LATERAL join al
+     * último inventory_movement.
      */
     protected function lowStockCount(int $companyId): int
     {
@@ -133,7 +149,7 @@ class KpiCardsWidget extends BaseWidget
                   and coalesce(latest.stock, 0) <= pl.min_stock
             ", [$companyId])[0]->c ?? 0;
         } catch (\Throwable $e) {
-            return 0; // si la query falla por estructura, no rompe el dashboard
+            return 0;
         }
     }
 }
