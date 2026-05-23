@@ -64,13 +64,17 @@
         animation:authFloat 11s ease-in-out infinite reverse;
     }
     .auth-brand-inner { position:relative; z-index:1; display:flex; flex-direction:column; height:100%; }
-    .auth-logo { display:block; margin-bottom:6px; }
+    /* El SVG del logo tiene viewBox 2:1 con whitespace interno;
+       transform:scale compensa el padding para que el contenido luzca grande. */
+    .auth-logo { display:block; margin:-12px 0 0 -18px; overflow:visible; }
     .auth-logo img {
-        height:108px; width:auto; max-width:100%; display:block;
+        height:140px; width:auto; max-width:none; display:block;
         object-fit:contain; object-position:left center;
+        transform:scale(1.25); transform-origin:left center;
     }
     @media (max-width:860px) {
-        .auth-logo img { height:78px; }
+        .auth-logo { margin:-8px 0 0 -12px; }
+        .auth-logo img { height:100px; transform:scale(1.2); }
     }
     .auth-tagline { font-size:1.7rem; font-weight:800; line-height:1.2; margin-top:38px; letter-spacing:-.02em; }
     .auth-desc { font-size:13.5px; line-height:1.65; color:rgba(255,255,255,.82); margin-top:12px; }
