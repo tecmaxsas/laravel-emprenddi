@@ -30,6 +30,7 @@ class ContadorPanelProvider extends PanelProvider
             ->path('contador')
             ->login(\App\Filament\Auth\Login::class)
             ->passwordReset(\App\Filament\Auth\RequestPasswordReset::class, \App\Filament\Auth\ResetPassword::class)
+            ->profile(\App\Filament\Auth\EditProfile::class, isSimple: false)
             ->registration(AccountantRegister::class)
             ->brandName('Portal Contador')
             ->brandLogo(asset('logos/logo_emprenddi.svg'))

@@ -28,6 +28,7 @@ class SuperAdminPanelProvider extends PanelProvider
             ->path('super-admin')
             ->login(\App\Filament\Auth\Login::class)
             ->passwordReset(\App\Filament\Auth\RequestPasswordReset::class, \App\Filament\Auth\ResetPassword::class)
+            ->profile(\App\Filament\Auth\EditProfile::class, isSimple: false)
             ->brandName('Emprenddi · SuperAdmin')
             ->brandLogo(asset('logos/logo_emprenddi.svg'))
             ->darkModeBrandLogo(asset('logos/logo_emprenddi_sin_fondo_blanco.png'))

@@ -30,6 +30,7 @@ class AppPanelProvider extends PanelProvider
             ->path('app')
             ->login(\App\Filament\Auth\Login::class)
             ->passwordReset(\App\Filament\Auth\RequestPasswordReset::class, \App\Filament\Auth\ResetPassword::class)
+            ->profile(\App\Filament\Auth\EditProfile::class, isSimple: false)
             ->registration(Register::class)
             ->brandName('Emprenddi')
             ->brandLogo(asset('logos/logo_emprenddi.svg'))

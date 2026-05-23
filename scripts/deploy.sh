@@ -155,6 +155,11 @@ fi
 $COMPOSE exec -T app chmod -R 775 storage bootstrap/cache || true
 $COMPOSE exec -T app chown -R www-data:www-data storage bootstrap/cache || true
 
+# ---- Symlink public/storage -> storage/app/public (para FileUpload, logos, etc.)
+# Idempotente: si ya existe el comando no hace nada. Sin || true para que
+# falle ruidoso si hubiera un fichero real en public/storage bloqueando.
+$COMPOSE exec -T app php artisan storage:link 2>/dev/null || true
+
 # ---- Base de datos ----------------------------------------------------------
 if [ "$NEEDS_MIGRATE" = true ]; then
     echo "==> Migraciones..."

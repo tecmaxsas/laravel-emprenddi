@@ -55,6 +55,7 @@ class Settings extends Page implements HasForms
 
         $this->data = [
             // Empresa
+            'logo_path' => $company->logo_path,
             'name' => $company->name,
             'legal_name' => $company->legal_name,
             'nit' => $company->nit,
@@ -125,6 +126,19 @@ class Settings extends Page implements HasForms
     protected function companyTabSchema(): array
     {
         return [
+            Forms\Components\Section::make('Identidad visual')
+                ->description('El logo aparece en los tickets de venta, facturas impresas, menú público y otros documentos.')
+                ->schema([
+                    Forms\Components\FileUpload::make('logo_path')
+                        ->label('Logo de la empresa')
+                        ->image()
+                        ->imageEditor()
+                        ->directory('companies/logos')
+                        ->visibility('public')
+                        ->maxSize(2048)
+                        ->helperText('PNG o JPG, máximo 2 MB. Se recomienda fondo transparente y proporción horizontal (ej. 600×200 px).'),
+                ]),
+
             Forms\Components\Section::make('Identificación')
                 ->columns(3)
                 ->schema([
@@ -262,6 +276,7 @@ class Settings extends Page implements HasForms
         $company = $this->getCompany();
 
         $company->update([
+            'logo_path' => $state['logo_path'] ?: null,
             'name' => $state['name'],
             'legal_name' => $state['legal_name'] ?: null,
             'nit' => $state['nit'],
