@@ -64,8 +64,11 @@
         animation:authFloat 11s ease-in-out infinite reverse;
     }
     .auth-brand-inner { position:relative; z-index:1; display:flex; flex-direction:column; height:100%; }
-    .auth-logo { display:inline-flex; align-items:center; }
-    .auth-logo img { height:42px; width:auto; display:block; }
+    .auth-logo { display:block; }
+    .auth-logo img {
+        height:72px; width:auto; max-width:100%; display:block;
+        object-fit:contain; object-position:left center;
+    }
     .auth-tagline { font-size:1.7rem; font-weight:800; line-height:1.2; margin-top:38px; letter-spacing:-.02em; }
     .auth-desc { font-size:13.5px; line-height:1.65; color:rgba(255,255,255,.82); margin-top:12px; }
     .auth-features { list-style:none; margin:26px 0 0; padding:0; display:flex; flex-direction:column; gap:12px; }
@@ -123,7 +126,7 @@
         <div class="auth-blob auth-blob-2"></div>
         <div class="auth-brand-inner">
             <div class="auth-logo">
-                <img src="{{ asset('logos/logo_emprenddi_blanco_sin_fondo.svg') }}" alt="{{ $brand }}">
+                <img src="{{ asset('logos/logo_emprenddi.svg') }}" alt="{{ $brand }}">
             </div>
             <div class="auth-tagline">{{ $t['tagline'] }}</div>
             <div class="auth-desc">{{ $t['desc'] }}</div>
