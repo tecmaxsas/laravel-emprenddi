@@ -144,6 +144,13 @@ class CompanyDataReset
                 $this->deleteEntry($entry, $company->id, $counts);
             }
             if ($withProducts) {
+                // Sweep defensivo: hay tablas (notablemente restaurant_order_items)
+                // con FK restrictOnDelete a products que bloquean el borrado
+                // si quedan refs huérfanas (items cuyos orders ya no existen,
+                // pivots de modifiers, etc). Aquí limpiamos cualquier fila que
+                // apunte a productos de esta empresa antes de intentar borrarlos.
+                $this->cleanupProductReferences($company->id, $counts);
+
                 foreach ($this->productTables() as $entry) {
                     $this->deleteEntry($entry, $company->id, $counts);
                 }
@@ -161,6 +168,46 @@ class CompanyDataReset
         ]);
 
         return $counts;
+    }
+
+    /**
+     * Tablas que tienen `product_id` apuntando a `products` y que NO
+     * permiten borrar el producto en cascada. Se limpian explícitamente
+     * justo antes de borrar `products` para evitar foreign key violations.
+     *
+     * - `restaurant_order_items.product_id` tiene restrictOnDelete: si queda
+     *   una sola ref, no podemos borrar el producto. La query original por
+     *   parent (orders) no atrapa items cuyos orders ya no existen.
+     * - `product_restaurant_modifier_group` (pivot) tiene cascadeOnDelete
+     *   pero por defensive programming lo limpiamos también — si en algún
+     *   momento se cambia a restrict, el código sigue funcionando.
+     * - `restaurant_menu_items.product_id` tiene nullOnDelete, así que NO
+     *   se borra: Postgres lo nullea automáticamente al borrar el producto.
+     *   Los menus quedan con items sin product_id (visualmente OK, el menú
+     *   sigue existiendo como catálogo).
+     */
+    protected function cleanupProductReferences(int $companyId, array &$counts): void
+    {
+        $productsSubquery = DB::table('products')
+            ->where('company_id', $companyId)
+            ->select('id');
+
+        $tables = [
+            'restaurant_order_items',
+            'product_restaurant_modifier_group',
+        ];
+
+        foreach ($tables as $table) {
+            if (! Schema::hasTable($table)) {
+                continue;
+            }
+            $rows = DB::table($table)
+                ->whereIn('product_id', clone $productsSubquery)
+                ->delete();
+            if ($rows > 0) {
+                $counts[$table.' (cleanup)'] = ($counts[$table.' (cleanup)'] ?? 0) + (int) $rows;
+            }
+        }
     }
 
     /**
