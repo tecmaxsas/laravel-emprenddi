@@ -45,6 +45,24 @@ class ProductResource extends Resource
                 Forms\Components\Tabs\Tab::make('General')
                     ->icon('heroicon-o-information-circle')
                     ->schema([
+                        Forms\Components\Section::make('Imagen del producto')
+                            ->description('Aparece en la grilla del POS y en el catálogo del menú público. Si no la cargas, se muestra un placeholder con icono.')
+                            ->collapsed(fn ($record) => $record !== null && empty($record->image_path))
+                            ->collapsible()
+                            ->schema([
+                                Forms\Components\FileUpload::make('image_path')
+                                    ->label('')
+                                    ->image()
+                                    ->imageEditor()
+                                    ->imageCropAspectRatio('1:1')
+                                    ->imageResizeTargetWidth('400')
+                                    ->imageResizeTargetHeight('400')
+                                    ->directory('products')
+                                    ->visibility('public')
+                                    ->maxSize(2048)
+                                    ->helperText('PNG o JPG, máx 2 MB. Se recomienda cuadrada (ej. 400×400 px); el editor te permite recortarla antes de guardar.'),
+                            ]),
+
                         Forms\Components\Group::make()->columns(3)->schema([
                             Forms\Components\TextInput::make('code')
                                 ->label('Código (SKU)')

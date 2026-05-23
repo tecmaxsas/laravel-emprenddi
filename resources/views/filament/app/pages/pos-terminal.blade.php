@@ -223,6 +223,112 @@
         :is(.dark) .pos-product-card:hover .pos-product-name { color: rgb(165, 180, 252); }
         .pos-product-price { margin-top: auto; padding-top: 3px; font-size: 13px; font-weight: 700; color: #111827; }
         :is(.dark) .pos-product-price { color: #ffffff; }
+
+        /* ============================================================
+           Línea compacta del carrito — densidad alta para ventas rápidas.
+           Una sola fila ~52px con miniatura + nombre + qty inline + total.
+           Panel expandible para precio/descuento (oculto por default).
+           ============================================================ */
+        .pos-cart-row {
+            border-bottom: 1px solid #f3f4f6;
+            animation: pos-slide-up 220ms cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        :is(.dark) .pos-cart-row { border-bottom-color: #1f2937; }
+        .pos-cart-row:hover { background: #f9fafb; }
+        :is(.dark) .pos-cart-row:hover { background: rgba(31, 41, 55, 0.4); }
+
+        .pos-cart-line {
+            display: flex; align-items: center; gap: 8px;
+            padding: 6px 10px;
+        }
+        .pos-cart-thumb {
+            width: 38px; height: 38px; flex-shrink: 0;
+            border-radius: 6px; overflow: hidden;
+            background: #f1f5f9;
+            display: flex; align-items: center; justify-content: center;
+            color: #94a3b8;
+        }
+        :is(.dark) .pos-cart-thumb { background: #1f2937; color: #475569; }
+        .pos-cart-thumb img { width: 100%; height: 100%; object-fit: cover; }
+
+        .pos-cart-info {
+            flex: 1; min-width: 0;
+            cursor: pointer;
+        }
+        .pos-cart-name {
+            font-size: 12.5px; font-weight: 500; line-height: 1.25;
+            color: #111827;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        :is(.dark) .pos-cart-name { color: #f3f4f6; }
+        .pos-cart-meta {
+            font-size: 10.5px; color: #6b7280; line-height: 1.25;
+            display: flex; gap: 6px; align-items: center; margin-top: 1px;
+        }
+        :is(.dark) .pos-cart-meta { color: #9ca3af; }
+        .pos-cart-meta .dto { color: #d97706; font-weight: 600; }
+
+        .pos-cart-qty { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+        .pos-cart-qty button {
+            width: 22px; height: 26px; flex-shrink: 0;
+            border-radius: 4px; background: #f3f4f6;
+            font-size: 13px; font-weight: 700; line-height: 1;
+            transition: all 150ms;
+        }
+        :is(.dark) .pos-cart-qty button { background: #1f2937; color: #f3f4f6; }
+        .pos-cart-qty button:hover { background: #e5e7eb; }
+        :is(.dark) .pos-cart-qty button:hover { background: #374151; }
+        .pos-cart-qty button:active { transform: scale(0.9); }
+        .pos-cart-qty input {
+            width: 42px; height: 26px; text-align: center;
+            font-size: 12px; font-weight: 600;
+            border: 1px solid #e5e7eb; border-radius: 4px;
+            background: #fff; outline: none;
+        }
+        :is(.dark) .pos-cart-qty input { background: #111827; border-color: #374151; color: #f3f4f6; }
+        .pos-cart-qty input:focus { border-color: rgb(99, 102, 241); box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2); }
+
+        .pos-cart-total {
+            min-width: 72px; text-align: right;
+            font-size: 14px; font-weight: 700; color: rgb(79, 70, 229);
+            white-space: nowrap; flex-shrink: 0;
+        }
+        :is(.dark) .pos-cart-total { color: rgb(165, 180, 252); }
+
+        .pos-cart-toggle, .pos-cart-x {
+            width: 22px; height: 22px; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            color: #9ca3af; border-radius: 4px;
+            transition: all 150ms;
+        }
+        .pos-cart-toggle:hover { color: #4f46e5; background: #eef2ff; }
+        :is(.dark) .pos-cart-toggle:hover { color: #a5b4fc; background: #1e1b4b; }
+        .pos-cart-x:hover { color: #ef4444; background: #fef2f2; }
+        :is(.dark) .pos-cart-x:hover { color: #f87171; background: #450a0a; }
+
+        /* Panel expandible: precio + descuento */
+        .pos-cart-expand {
+            padding: 6px 10px 10px 56px;
+            background: #f9fafb;
+            display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+            border-top: 1px dashed #e5e7eb;
+        }
+        :is(.dark) .pos-cart-expand { background: rgba(31, 41, 55, 0.4); border-top-color: #1f2937; }
+        .pos-cart-expand label {
+            display: block; font-size: 9.5px;
+            color: #6b7280; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.04em;
+            margin-bottom: 3px;
+        }
+        :is(.dark) .pos-cart-expand label { color: #9ca3af; }
+        .pos-cart-expand input {
+            width: 100%; height: 28px;
+            font-size: 12px; padding: 0 8px;
+            border: 1px solid #e5e7eb; border-radius: 4px;
+            background: #fff; outline: none; text-align: right;
+        }
+        :is(.dark) .pos-cart-expand input { background: #111827; border-color: #374151; color: #f3f4f6; }
+        .pos-cart-expand input:focus { border-color: rgb(99, 102, 241); box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2); }
     </style>
 
     @php
@@ -552,74 +658,79 @@
                             <div>Selecciona productos del catálogo</div>
                         </div>
                     @else
-                        <div class="divide-y divide-gray-100 dark:divide-gray-800">
+                        <div>
                             @foreach ($cart as $i => $line)
-                                <div class="pos-cart-item p-3 hover:bg-gray-50 dark:hover:bg-gray-800/40 transition" wire:key="cart-{{ $i }}-{{ $line['product_id'] }}">
-                                    <div class="flex items-start justify-between gap-2 mb-2">
-                                        <div class="min-w-0 flex-1">
-                                            <div class="text-sm font-medium leading-tight">{{ $line['description'] }}</div>
-                                            <div class="text-[11px] text-gray-500 dark:text-gray-400 font-mono mt-0.5">{{ $line['code'] ?? '—' }}</div>
-                                        </div>
-                                        <button type="button" wire:click="removeLine({{ $i }})"
-                                                class="text-gray-400 hover:text-red-500 transition"
-                                                title="Eliminar">
-                                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-                                        </button>
-                                    </div>
-                                    <div class="grid grid-cols-12 gap-2 items-end">
-                                        {{-- Cantidad: 4 cols, controles más grandes para touch --}}
-                                        <div class="col-span-4">
-                                            <div class="text-[10px] text-gray-400 mb-1 font-semibold uppercase tracking-wide">Cantidad</div>
-                                            <div class="flex items-center gap-1">
-                                                <button type="button" wire:click="decLine({{ $i }})"
-                                                        class="w-7 h-8 shrink-0 rounded-md bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-base font-bold transition active:scale-90">−</button>
-                                                <input type="number" step="0.01" min="0"
-                                                       wire:model.live.blur="cart.{{ $i }}.quantity"
-                                                       class="flex-1 min-w-0 text-center text-sm font-semibold rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-1 py-1.5 outline-none focus:ring-2 focus:ring-primary-500" />
-                                                <button type="button" wire:click="incLine({{ $i }})"
-                                                        class="w-7 h-8 shrink-0 rounded-md bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-base font-bold transition active:scale-90">+</button>
-                                            </div>
-                                        </div>
-
-                                        {{-- Precio: 3 cols --}}
-                                        <div class="col-span-3">
-                                            <div class="text-[10px] text-gray-400 mb-1 font-semibold uppercase tracking-wide">Precio</div>
-                                            @if ($posSettings['allow_price_modification'])
-                                                <input type="number" step="0.01" min="0"
-                                                       wire:model.live.blur="cart.{{ $i }}.unit_price"
-                                                       class="w-full text-right text-xs rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1.5 outline-none focus:ring-2 focus:ring-primary-500" />
+                                <div class="pos-cart-row" wire:key="cart-{{ $i }}-{{ $line['product_id'] }}"
+                                     x-data="{ open: false }">
+                                    <div class="pos-cart-line">
+                                        {{-- Miniatura del producto --}}
+                                        <div class="pos-cart-thumb">
+                                            @if (! empty($line['image_path']))
+                                                <img src="{{ \Illuminate\Support\Facades\Storage::url($line['image_path']) }}" alt="" />
                                             @else
-                                                <div class="w-full text-right text-xs px-2 py-1.5 text-gray-700 dark:text-gray-300 font-medium">
-                                                    ${{ number_format($line['unit_price'], 0, ',', '.') }}
-                                                </div>
+                                                <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
                                             @endif
                                         </div>
 
-                                        {{-- Descuento % por línea: 2 cols --}}
-                                        @if ($posSettings['allow_discount'])
-                                            <div class="col-span-2">
-                                                <div class="text-[10px] text-gray-400 mb-1 font-semibold uppercase tracking-wide" title="Descuento de esta línea (%)">Desc %</div>
-                                                <input type="number" step="0.5" min="0" max="100"
-                                                       value="{{ rtrim(rtrim(number_format((float) ($line['discount_percentage_manual'] ?? 0), 2, '.', ''), '0'), '.') ?: '0' }}"
-                                                       wire:change="setLineDiscountPct({{ $i }}, $event.target.value)"
-                                                       class="w-full text-right text-xs rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-1 py-1.5 outline-none focus:ring-2 focus:ring-amber-500"
-                                                       placeholder="0" />
+                                        {{-- Nombre + meta (clic para expandir) --}}
+                                        <div class="pos-cart-info" @click="open = !open" title="Toca para editar precio o descuento">
+                                            <div class="pos-cart-name">{{ $line['description'] }}</div>
+                                            <div class="pos-cart-meta">
+                                                <span>${{ number_format((float) $line['unit_price'], 0, ',', '.') }}</span>
+                                                @if (! empty($line['discount_amount']) && (float) $line['discount_amount'] > 0)
+                                                    <span class="dto">−${{ number_format((float) $line['discount_amount'], 0, ',', '.') }}</span>
+                                                @endif
+                                                @if (! empty($line['code']))
+                                                    <span style="font-family:monospace; opacity:.7;">· {{ $line['code'] }}</span>
+                                                @endif
                                             </div>
+                                        </div>
+
+                                        {{-- Cantidad inline (siempre visible — es lo más editado) --}}
+                                        <div class="pos-cart-qty">
+                                            <button type="button" wire:click="decLine({{ $i }})" title="Menos">−</button>
+                                            <input type="number" step="0.01" min="0"
+                                                   wire:model.live.blur="cart.{{ $i }}.quantity" />
+                                            <button type="button" wire:click="incLine({{ $i }})" title="Más">+</button>
+                                        </div>
+
+                                        {{-- Total destacado --}}
+                                        <div class="pos-cart-total">${{ number_format((float) $line['total'], 0, ',', '.') }}</div>
+
+                                        {{-- Toggle expandir (precio + descuento) --}}
+                                        @if ($posSettings['allow_price_modification'] || $posSettings['allow_discount'])
+                                            <button type="button" class="pos-cart-toggle"
+                                                    @click="open = !open" title="Editar precio o descuento">
+                                                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                                            </button>
                                         @endif
 
-                                        {{-- Subtotal: 3 cols, prominente --}}
-                                        <div class="{{ $posSettings['allow_discount'] ? 'col-span-3' : 'col-span-5' }} text-right">
-                                            <div class="text-[10px] text-gray-400 mb-1 font-semibold uppercase tracking-wide">Subtotal</div>
-                                            <div class="text-base font-bold text-primary-600 dark:text-primary-400 whitespace-nowrap py-1">
-                                                ${{ number_format($line['total'], 0, ',', '.') }}
-                                            </div>
-                                            @if (! empty($line['discount_amount']) && (float) $line['discount_amount'] > 0)
-                                                <div class="text-[10px] text-amber-600 leading-tight">
-                                                    −${{ number_format((float) $line['discount_amount'], 0, ',', '.') }} dto.
+                                        {{-- Eliminar --}}
+                                        <button type="button" class="pos-cart-x" wire:click="removeLine({{ $i }})" title="Eliminar línea">
+                                            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                        </button>
+                                    </div>
+
+                                    {{-- Panel expandible: precio + descuento (no editado usualmente) --}}
+                                    @if ($posSettings['allow_price_modification'] || $posSettings['allow_discount'])
+                                        <div class="pos-cart-expand" x-show="open" x-collapse style="display:none;">
+                                            @if ($posSettings['allow_price_modification'])
+                                                <div>
+                                                    <label>Precio unitario</label>
+                                                    <input type="number" step="0.01" min="0"
+                                                           wire:model.live.blur="cart.{{ $i }}.unit_price" />
+                                                </div>
+                                            @endif
+                                            @if ($posSettings['allow_discount'])
+                                                <div>
+                                                    <label>Descuento % línea</label>
+                                                    <input type="number" step="0.5" min="0" max="100"
+                                                           value="{{ rtrim(rtrim(number_format((float) ($line['discount_percentage_manual'] ?? 0), 2, '.', ''), '0'), '.') ?: '0' }}"
+                                                           wire:change="setLineDiscountPct({{ $i }}, $event.target.value)" />
                                                 </div>
                                             @endif
                                         </div>
-                                    </div>
+                                    @endif
                                 </div>
                             @endforeach
                         </div>
