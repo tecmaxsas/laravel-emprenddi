@@ -133,7 +133,7 @@
         <div class="auth-blob auth-blob-2"></div>
         <div class="auth-brand-inner">
             <div class="auth-logo">
-                <img src="{{ asset('logos/logo_emprenddi_blanco_sin_fondo.svg') }}" alt="{{ $brand }}">
+                <img src="{{ asset('logos/logo_emprenddi_sin_fondo_blanco.png') }}" alt="{{ $brand }}">
             </div>
             <div class="auth-tagline">{{ $t['tagline'] }}</div>
             <div class="auth-desc">{{ $t['desc'] }}</div>

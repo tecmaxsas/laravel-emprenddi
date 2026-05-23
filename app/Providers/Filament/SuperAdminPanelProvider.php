@@ -30,7 +30,7 @@ class SuperAdminPanelProvider extends PanelProvider
             ->passwordReset(\App\Filament\Auth\RequestPasswordReset::class, \App\Filament\Auth\ResetPassword::class)
             ->brandName('Emprenddi · SuperAdmin')
             ->brandLogo(asset('logos/logo_emprenddi.svg'))
-            ->darkModeBrandLogo(asset('logos/logo_emprenddi_blanco_sin_fondo.svg'))
+            ->darkModeBrandLogo(asset('logos/logo_emprenddi_sin_fondo_blanco.png'))
             ->brandLogoHeight('3.75rem')
             ->favicon(asset('logos/favicon_emprenddi.svg'))
             ->colors([

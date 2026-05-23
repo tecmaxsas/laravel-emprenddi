@@ -114,7 +114,7 @@
 <body>
     <header class="lg-hero">
         <div class="lg-brand">
-            <img src="{{ asset('logos/logo_emprenddi_blanco_sin_fondo.svg') }}" alt="{{ $co }}">
+            <img src="{{ asset('logos/logo_emprenddi_sin_fondo_blanco.png') }}" alt="{{ $co }}">
         </div>
         <h1 class="lg-title">{{ $current['title'] }}</h1>
         <div class="lg-updated">Última actualización: {{ config('legal.updated_at') }}</div>

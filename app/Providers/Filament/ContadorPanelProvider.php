@@ -33,7 +33,7 @@ class ContadorPanelProvider extends PanelProvider
             ->registration(AccountantRegister::class)
             ->brandName('Portal Contador')
             ->brandLogo(asset('logos/logo_emprenddi.svg'))
-            ->darkModeBrandLogo(asset('logos/logo_emprenddi_blanco_sin_fondo.svg'))
+            ->darkModeBrandLogo(asset('logos/logo_emprenddi_sin_fondo_blanco.png'))
             ->brandLogoHeight('3.75rem')
             ->favicon(asset('logos/favicon_emprenddi.svg'))
             ->colors([
