@@ -73,6 +73,19 @@ class CompanyResource extends Resource
                         ->required(),
                 ]),
 
+            Forms\Components\Section::make('Identidad visual')
+                ->description('Logo de la empresa — aparece en tickets POS, facturas y menú público cuando no se haya cargado uno específico.')
+                ->schema([
+                    Forms\Components\FileUpload::make('logo_path')
+                        ->label('Logo de la empresa')
+                        ->image()
+                        ->imageEditor()
+                        ->directory('companies/logos')
+                        ->visibility('public')
+                        ->maxSize(2048)
+                        ->helperText('PNG o JPG, máximo 2 MB. Recomendado fondo transparente y proporción horizontal (ej. 600×200 px).'),
+                ]),
+
             Forms\Components\Section::make('Configuración fiscal y operativa')
                 ->columns(3)
                 ->schema([

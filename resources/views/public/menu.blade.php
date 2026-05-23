@@ -254,8 +254,9 @@
         <div class="header">
             <div class="header-bg"></div>
             <div class="header-content">
-                @if ($menu->logo_path)
-                    <img src="{{ asset('storage/'.$menu->logo_path) }}" alt="Logo" class="logo">
+                @php $logoSrc = $menu->logo_path ?: $menu->company?->logo_path; @endphp
+                @if ($logoSrc)
+                    <img src="{{ asset('storage/'.$logoSrc) }}" alt="Logo" class="logo">
                 @endif
                 <div class="menu-title">{{ $menu->name }}</div>
                 @if ($menu->subtitle)

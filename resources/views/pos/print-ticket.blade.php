@@ -65,6 +65,10 @@
     <div class="ticket">
         {{-- HEADER --}}
         <div class="center">
+            @if ($get($h, 'show_logo', true) && $company->logo_path)
+                <img src="{{ asset('storage/'.$company->logo_path) }}" alt="{{ $company->name }}"
+                     style="max-width:{{ $isThermal ? '60mm' : '40mm' }}; max-height:18mm; object-fit:contain; margin:0 auto 4px;">
+            @endif
             @if ($get($h, 'show_business_name'))
                 <div class="bold upper">{{ $company->name ?: 'Empresa' }}</div>
             @endif
