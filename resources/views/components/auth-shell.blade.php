@@ -18,7 +18,7 @@
         'contador' => [
             'grad' => 'linear-gradient(155deg,#059669 0%,#0d9488 52%,#0f766e 100%)',
             'tagline' => 'Portal del contador',
-            'desc' => 'Gestioná la contabilidad de todos tus clientes desde un solo lugar.',
+            'desc' => 'Gestiona la contabilidad de todos tus clientes desde un solo lugar.',
             'features' => ['Multiempresa en un clic', 'Reportes y libros oficiales', 'Información exógena y nómina'],
         ],
     ];

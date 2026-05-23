@@ -1,8 +1,8 @@
 <x-filament-panels::page.simple>
     <x-auth-shell>
         <div class="auth-head">
-            <h1 class="auth-h1">Iniciá sesión</h1>
-            <p class="auth-sub">Ingresá a tu cuenta para continuar</p>
+            <h1 class="auth-h1">Inicia sesión</h1>
+            <p class="auth-sub">Ingresa a tu cuenta para continuar</p>
         </div>
 
         {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::AUTH_LOGIN_FORM_BEFORE, scopes: $this->getRenderHookScopes()) }}
@@ -20,12 +20,12 @@
 
         @if (filament()->hasRegistration())
             <p class="auth-alt">
-                ¿No tenés cuenta? {{ $this->registerAction }}
+                ¿No tienes cuenta? {{ $this->registerAction }}
             </p>
         @endif
 
         <p class="auth-policy">
-            Al continuar aceptás nuestros
+            Al continuar aceptas nuestros
             <a href="{{ url('/legal/terminos') }}" target="_blank" rel="noopener">Términos y condiciones</a>
             y la
             <a href="{{ url('/legal/privacidad') }}" target="_blank" rel="noopener">Política de privacidad</a>.

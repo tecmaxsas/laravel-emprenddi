@@ -116,7 +116,7 @@
         } catch (e) {
             console.error('[QZ] No se pudo conectar a QZ Tray', e);
             alert('No se pudo conectar con QZ Tray.\n\n' +
-                  'Verificá que QZ Tray esté instalado y corriendo en esta PC.\n' +
+                  'Verifica que QZ Tray esté instalado y corriendo en esta PC.\n' +
                   'Descarga: https://qz.io/download/');
             return;
         }

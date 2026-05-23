@@ -46,7 +46,7 @@
                     </div>
                 @else
                     <div style="padding:22px 18px; font-size:13px; color:#475569; line-height:1.7;">
-                        <strong>No hay datos para mostrar.</strong> Verificá que:
+                        <strong>No hay datos para mostrar.</strong> Verifica que:
                         <ul style="margin:8px 0 0 18px;">
                             <li>Mapeaste cuentas a los conceptos de este formato en
                                 <em>Contabilidad → Conceptos Exógena</em>.</li>
@@ -119,7 +119,7 @@
 
                 <div style="padding:12px 16px; font-size:11px; color:#94a3b8; border-top:1px solid #e5e7eb; line-height:1.6;">
                     El Excel exporta identificación del tercero + valor por concepto, listo para
-                    revisar y cargar en el prevalidador DIAN. Verificá los datos del tercero
+                    revisar y cargar en el prevalidador DIAN. Verifica los datos del tercero
                     (tipo y número de documento, DV, nombres) antes de presentar.
                 </div>
             @endif

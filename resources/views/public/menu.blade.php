@@ -341,7 +341,7 @@
                     @endif
                 </div>
             @empty
-                <div class="empty">La carta está vacía. Agregá secciones e items desde el panel.</div>
+                <div class="empty">La carta está vacía. Agrega secciones e items desde el panel.</div>
             @endforelse
         </div>
 

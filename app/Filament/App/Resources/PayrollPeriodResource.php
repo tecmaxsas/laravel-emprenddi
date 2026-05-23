@@ -131,7 +131,7 @@ class PayrollPeriodResource extends Resource
                     ->visible(fn (PayrollPeriod $record) => $record->isDraft()),
             ])
             ->emptyStateHeading('Sin períodos de nómina')
-            ->emptyStateDescription('Creá un período y liquidá la nómina de tus empleados.');
+            ->emptyStateDescription('Crea un período y liquida la nómina de tus empleados.');
     }
 
     public static function getRelations(): array

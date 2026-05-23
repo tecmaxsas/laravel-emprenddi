@@ -138,7 +138,7 @@ class PrinterResource extends Resource
                             ->orderBy('name')
                             ->pluck('name', 'id')
                             ->all())
-                        ->helperText('Marca TODAS las categorías que esta impresora debe imprimir. ⚠ Si la dejas vacía, esta impresora NO recibe ninguna comanda. Un producto cuya categoría no esté en ninguna impresora se marca enviado pero no imprime — asigná cada categoría explícitamente.'),
+                        ->helperText('Marca TODAS las categorías que esta impresora debe imprimir. ⚠ Si la dejas vacía, esta impresora NO recibe ninguna comanda. Un producto cuya categoría no esté en ninguna impresora se marca enviado pero no imprime — asigna cada categoría explícitamente.'),
                 ]),
 
             Forms\Components\Section::make('Comportamiento')
@@ -219,7 +219,7 @@ class PrinterResource extends Resource
                             $livewire->dispatch('qz-print-jobs', jobs: $jobs);
                             \Filament\Notifications\Notification::make()
                                 ->title('Prueba enviada a QZ Tray')
-                                ->body('Revisá la impresora. Si no sale nada, verificá que QZ Tray esté corriendo.')
+                                ->body('Revisa la impresora. Si no sale nada, verifica que QZ Tray esté corriendo.')
                                 ->success()->send();
                             return;
                         }

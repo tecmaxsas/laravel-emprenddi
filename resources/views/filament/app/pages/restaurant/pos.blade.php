@@ -47,7 +47,7 @@
             <div style="font-size:52px; margin-bottom:10px;">🔒</div>
             <h2 style="font-size:21px; font-weight:800; color:#111827; margin:0 0 6px;">Caja cerrada</h2>
             <p style="font-size:14px; color:#6b7280; margin:0 0 22px; line-height:1.5;">
-                Para tomar pedidos y cobrar necesitás abrir una caja registradora.
+                Para tomar pedidos y cobrar necesitas abrir una caja registradora.
             </p>
             <div style="text-align:left;">
                 <label style="font-size:11px; font-weight:700; color:#374151; text-transform:uppercase; letter-spacing:0.5px; display:block; margin-bottom:6px;">
@@ -1075,7 +1075,7 @@
                 <div style="padding:18px 22px; overflow-y:auto; flex:1; color:#111827;">
                     @if ($availableTables->isEmpty())
                         <div style="padding:20px; text-align:center; background:#fef3c7; border:1px solid #fde68a; border-radius:8px; color:#92400e; font-size:13px;">
-                            No hay mesas libres en esta sede. Libera una mesa o usa "Juntar mesas" si querés combinar con otra orden.
+                            No hay mesas libres en esta sede. Libera una mesa o usa "Juntar mesas" si quieres combinar con otra orden.
                         </div>
                     @else
                         <label style="display:block; font-size:13px; font-weight:700; color:#111827; margin-bottom:8px;">Mesa destino</label>
@@ -1290,7 +1290,7 @@
                                    style="width:100%; padding:10px 12px 10px 24px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; color:#111827; background:#ffffff;" />
                         </div>
                         <div style="font-size:11px; color:#6b7280; margin-top:4px;">
-                            Se suma al total. Si la entrega es gratis, dejá 0.
+                            Se suma al total. Si la entrega es gratis, deja 0.
                         </div>
                     </div>
                 </div>

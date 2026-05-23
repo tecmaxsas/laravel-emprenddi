@@ -198,7 +198,7 @@ class RestaurantPos extends Page
         if ($openOrders > 0) {
             Notification::make()
                 ->title('Hay órdenes abiertas')
-                ->body("Cobrá o cancelá las {$openOrders} órdenes activas antes de cerrar caja.")
+                ->body("Cobra o cancela las {$openOrders} órdenes activas antes de cerrar caja.")
                 ->danger()->send();
             return;
         }

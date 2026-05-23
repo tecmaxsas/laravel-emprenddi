@@ -23,12 +23,12 @@
 
         @if (filament()->hasLogin())
             <p class="auth-alt">
-                ¿Ya tenés cuenta? {{ $this->loginAction }}
+                ¿Ya tienes cuenta? {{ $this->loginAction }}
             </p>
         @endif
 
         <p class="auth-policy">
-            Al registrarte aceptás nuestros
+            Al registrarte aceptas nuestros
             <a href="{{ url('/legal/terminos') }}" target="_blank" rel="noopener">Términos y condiciones</a>
             y la
             <a href="{{ url('/legal/privacidad') }}" target="_blank" rel="noopener">Política de privacidad</a>.

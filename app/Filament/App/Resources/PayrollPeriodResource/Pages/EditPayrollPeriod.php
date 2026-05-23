@@ -24,7 +24,7 @@ class EditPayrollPeriod extends EditRecord
     {
         if (! $this->record->isDraft()) {
             throw ValidationException::withMessages([
-                'status' => 'Solo se puede editar un período en borrador. Re-liquidá si necesitás recalcular.',
+                'status' => 'Solo se puede editar un período en borrador. Vuelve a liquidar si necesitas recalcular.',
             ]);
         }
 
