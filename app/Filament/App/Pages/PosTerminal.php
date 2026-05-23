@@ -1093,7 +1093,21 @@ class PosTerminal extends Page
             // Si está desactivado, el cajero abre el ticket manualmente desde
             // la vista de la factura.
             if ($this->posSettings['print_after_sale'] ?? true) {
-                $this->dispatch('pos-print-ticket', invoiceId: $invoice->id);
+                // Preferimos ESC/POS a la impresora de caja configurada para
+                // la sede. Si hay impresora QZ Tray (browser), encolamos y
+                // disparamos qz-print-jobs (mismo bridge del restaurante).
+                // Si no hay impresora, fallback al HTML imprimible por navegador.
+                $printedNative = app(\App\Services\Sales\SaleReceiptPrinter::class)
+                    ->printReceipt($invoice, $this->payments);
+
+                if ($printedNative) {
+                    $jobs = app(\App\Services\Restaurant\BrowserPrintQueue::class)->flush();
+                    if (! empty($jobs)) {
+                        $this->dispatch('qz-print-jobs', jobs: $jobs);
+                    }
+                } else {
+                    $this->dispatch('pos-print-ticket', invoiceId: $invoice->id);
+                }
             }
 
             $this->resetCart();
