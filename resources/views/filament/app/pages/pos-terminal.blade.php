@@ -329,14 +329,18 @@
             margin-bottom: 3px;
         }
         :is(.dark) .pos-cart-expand label { color: #9ca3af; }
-        .pos-cart-expand input {
+        .pos-cart-expand input,
+        .pos-cart-expand select {
             width: 100%; height: 28px;
             font-size: 12px; padding: 0 8px;
             border: 1px solid #e5e7eb; border-radius: 4px;
             background: #fff; outline: none; text-align: right;
         }
-        :is(.dark) .pos-cart-expand input { background: #111827; border-color: #374151; color: #f3f4f6; }
-        .pos-cart-expand input:focus { border-color: rgb(99, 102, 241); box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2); }
+        .pos-cart-expand select { text-align: left; }
+        :is(.dark) .pos-cart-expand input,
+        :is(.dark) .pos-cart-expand select { background: #111827; border-color: #374151; color: #f3f4f6; }
+        .pos-cart-expand input:focus,
+        .pos-cart-expand select:focus { border-color: rgb(99, 102, 241); box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2); }
     </style>
 
     @php
@@ -705,10 +709,10 @@
                                         {{-- Total destacado --}}
                                         <div class="pos-cart-total">${{ number_format((float) $line['total'], 0, ',', '.') }}</div>
 
-                                        {{-- Toggle expandir (precio + descuento) --}}
-                                        @if ($posSettings['allow_price_modification'] || $posSettings['allow_discount'])
+                                        {{-- Toggle expandir (precio + descuento + impuesto) --}}
+                                        @if ($posSettings['allow_price_modification'] || $posSettings['allow_discount'] || $posSettings['allow_tax_modification'])
                                             <button type="button" class="pos-cart-toggle"
-                                                    @click="open = !open" title="Editar precio o descuento">
+                                                    @click="open = !open" title="Editar precio, descuento o impuesto">
                                                 <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
                                             </button>
                                         @endif
@@ -719,8 +723,8 @@
                                         </button>
                                     </div>
 
-                                    {{-- Panel expandible: precio + descuento (no editado usualmente) --}}
-                                    @if ($posSettings['allow_price_modification'] || $posSettings['allow_discount'])
+                                    {{-- Panel expandible: precio + descuento + impuesto (no editados usualmente) --}}
+                                    @if ($posSettings['allow_price_modification'] || $posSettings['allow_discount'] || $posSettings['allow_tax_modification'])
                                         <div class="pos-cart-expand" x-show="open" x-collapse style="display:none;">
                                             @if ($posSettings['allow_price_modification'])
                                                 <div>
@@ -735,6 +739,20 @@
                                                     <input type="number" step="0.5" min="0" max="100"
                                                            value="{{ rtrim(rtrim(number_format((float) ($line['discount_percentage_manual'] ?? 0), 2, '.', ''), '0'), '.') ?: '0' }}"
                                                            wire:change="setLineDiscountPct({{ $i }}, $event.target.value)" />
+                                                </div>
+                                            @endif
+                                            @if ($posSettings['allow_tax_modification'])
+                                                <div style="grid-column: span 2;">
+                                                    <label>Impuesto</label>
+                                                    <select wire:change="setLineTaxId({{ $i }}, $event.target.value)">
+                                                        <option value="">— Sin impuesto —</option>
+                                                        @foreach ($this->availableLineTaxes as $tax)
+                                                            <option value="{{ $tax->id }}"
+                                                                @selected((int) ($line['tax_id'] ?? 0) === $tax->id)>
+                                                                {{ $tax->code }} · {{ $tax->name }} ({{ rtrim(rtrim(number_format((float) $tax->rate, 2, '.', ''), '0'), '.') }}%)
+                                                            </option>
+                                                        @endforeach
+                                                    </select>
                                                 </div>
                                             @endif
                                         </div>

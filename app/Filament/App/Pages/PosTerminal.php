@@ -162,6 +162,7 @@ class PosTerminal extends Page
         return array_merge([
             'allow_price_modification' => true,
             'allow_discount' => true,
+            'allow_tax_modification' => true,
             'require_customer' => false,
             'print_after_sale' => true,
             'blind_cash_close' => false,
@@ -804,6 +805,46 @@ class PosTerminal extends Page
             ->orderBy('type')
             ->orderBy('code')
             ->get(['id', 'code', 'name', 'type', 'rate']);
+    }
+
+    /**
+     * Impuestos disponibles para asignar a una línea del carrito en el POS.
+     * Excluye las retenciones (esas se manejan en el modal de retenciones).
+     */
+    public function getAvailableLineTaxesProperty()
+    {
+        return Tax::query()
+            ->where('is_active', true)
+            ->whereIn('applies_to', ['sale', 'both'])
+            ->whereNotIn('type', ['income_withholding', 'vat_withholding', 'ica_withholding'])
+            ->orderBy('code')
+            ->get(['id', 'code', 'name', 'rate']);
+    }
+
+    /**
+     * Cambia el impuesto de una línea del carrito. taxId puede ser null
+     * (= sin impuesto). Recalcula la línea para refrescar tax_amount y total.
+     */
+    public function setLineTaxId(int $i, ?string $taxId): void
+    {
+        if (! $this->posSettings['allow_tax_modification']) {
+            Notification::make()
+                ->title('Modificación de impuestos deshabilitada')
+                ->warning()
+                ->send();
+            return;
+        }
+        if (! isset($this->cart[$i])) return;
+
+        $taxId = $taxId === '' || $taxId === null ? null : (int) $taxId;
+        $rate = 0.0;
+        if ($taxId) {
+            $rate = (float) (Tax::query()->whereKey($taxId)->value('rate') ?? 0);
+        }
+
+        $this->cart[$i]['tax_id'] = $taxId;
+        $this->cart[$i]['tax_rate'] = $rate;
+        $this->recomputeLine($i);
     }
 
     protected function defaultAccountForMethod(string $method): ?int

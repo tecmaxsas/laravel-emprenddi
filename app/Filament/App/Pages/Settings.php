@@ -85,6 +85,7 @@ class Settings extends Page implements HasForms
             'pos_allow_negative_stock' => (bool) data_get($settings, 'pos.allow_negative_stock', false),
             'pos_default_tip_percent' => (float) data_get($settings, 'pos.default_tip_percent', 0),
             'pos_discount_supervisor_threshold' => (float) data_get($settings, 'pos.discount_supervisor_threshold', 10),
+            'pos_allow_tax_modification' => (bool) data_get($settings, 'pos.allow_tax_modification', true),
         ];
 
         // Restaurant settings (settings.restaurant.enable_*) — uno por feature
@@ -244,6 +245,10 @@ class Settings extends Page implements HasForms
                         ->label('Permitir descuento por línea')
                         ->helperText('Cajero puede aplicar % de descuento a cada producto.'),
 
+                    Forms\Components\Toggle::make('pos_allow_tax_modification')
+                        ->label('Permitir modificar / agregar impuesto por línea')
+                        ->helperText('Cajero puede cambiar el impuesto que trae el producto, o asignarle uno si no tenía. Útil para productos con IVA variable según el cliente.'),
+
                     Forms\Components\Toggle::make('pos_require_customer')
                         ->label('Cliente obligatorio')
                         ->helperText('Bloquea procesar venta con "Consumidor Final" — exige seleccionar cliente real.'),
@@ -357,6 +362,7 @@ class Settings extends Page implements HasForms
             'allow_negative_stock' => (bool) ($state['pos_allow_negative_stock'] ?? false),
             'default_tip_percent' => (float) ($state['pos_default_tip_percent'] ?? 0),
             'discount_supervisor_threshold' => (float) ($state['pos_discount_supervisor_threshold'] ?? 10),
+            'allow_tax_modification' => (bool) ($state['pos_allow_tax_modification'] ?? true),
         ]);
 
         $company->update(['settings' => $settings]);
