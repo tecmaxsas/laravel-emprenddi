@@ -95,6 +95,12 @@ class SaleInvoiceEngine
                     'cost_at_sale' => $movement->unit_cost,
                 ]);
 
+                // Seriales: si el producto los maneja, marcar como sold y
+                // vincular a esta línea para que la garantía sea consultable.
+                if ($line->product->tracks_serials) {
+                    $this->markSerialsSoldForLine($invoice, $line);
+                }
+
                 $totalCogs += abs((float) $movement->quantity) * (float) $movement->unit_cost;
             }
 
@@ -601,6 +607,19 @@ class SaleInvoiceEngine
                         'description' => "Anulación venta {$invoice->fullNumber()}",
                     ]
                 );
+
+                // Libera seriales vendidos por esta línea: vuelven a in_stock
+                // y se desvinculan de la línea para poder vender de nuevo.
+                if ($line->product->tracks_serials) {
+                    \App\Models\ProductSerial::query()
+                        ->where('sale_invoice_line_id', $line->id)
+                        ->where('status', \App\Models\ProductSerial::STATUS_SOLD)
+                        ->update([
+                            'status' => \App\Models\ProductSerial::STATUS_IN_STOCK,
+                            'sale_invoice_line_id' => null,
+                            'sold_at' => null,
+                        ]);
+                }
             }
 
             // 2. Reversa del asiento de venta.
@@ -685,5 +704,59 @@ class SaleInvoiceEngine
         }
 
         return $reversal;
+    }
+
+    /**
+     * Marca como sold los seriales de una línea de venta. Valida que
+     * cada serial esté in_stock antes de pasarlo a sold y vincularlo
+     * con la línea (para que después se pueda buscar la garantía).
+     */
+    protected function markSerialsSoldForLine(SaleInvoice $invoice, \App\Models\SaleInvoiceLine $line): void
+    {
+        $raw = $line->serials ?? [];
+        $serials = array_values(array_unique(array_filter(array_map(
+            fn ($s) => trim((string) $s),
+            is_array($raw) ? $raw : [],
+        ))));
+
+        $qty = (int) round((float) $line->quantity);
+        if (count($serials) !== $qty) {
+            throw new RuntimeException(sprintf(
+                'Producto "%s": vendes %d unidades pero hay %d seriales asignados. Cada unidad debe tener su serial.',
+                $line->product?->name ?? 'producto',
+                $qty,
+                count($serials),
+            ));
+        }
+
+        $records = \App\Models\ProductSerial::query()
+            ->where('company_id', $invoice->company_id)
+            ->where('product_id', $line->product_id)
+            ->whereIn('serial_number', $serials)
+            ->get();
+
+        $found = $records->pluck('serial_number')->all();
+        $missing = array_diff($serials, $found);
+        if (! empty($missing)) {
+            throw new RuntimeException(
+                'No se encontraron estos seriales: '.implode(', ', $missing)
+            );
+        }
+
+        $notInStock = $records->where('status', '!=', \App\Models\ProductSerial::STATUS_IN_STOCK)
+            ->pluck('serial_number')->all();
+        if (! empty($notInStock)) {
+            throw new RuntimeException(
+                'Estos seriales no están disponibles para venta (ya vendidos o ajustados): '.implode(', ', $notInStock)
+            );
+        }
+
+        foreach ($records as $serial) {
+            $serial->update([
+                'status' => \App\Models\ProductSerial::STATUS_SOLD,
+                'sale_invoice_line_id' => $line->id,
+                'sold_at' => $invoice->date ?? now(),
+            ]);
+        }
     }
 }

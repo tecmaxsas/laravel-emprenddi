@@ -51,6 +51,7 @@ class Product extends Model
         'type',
         'unit_of_measure',
         'track_inventory',
+        'tracks_serials',
         'is_purchasable',
         'is_sellable',
         'default_purchase_price',
@@ -72,6 +73,7 @@ class Product extends Model
         return [
             'variant_attributes' => 'array',
             'track_inventory' => 'boolean',
+            'tracks_serials' => 'boolean',
             'is_purchasable' => 'boolean',
             'is_sellable' => 'boolean',
             'active' => 'boolean',
@@ -146,6 +148,16 @@ class Product extends Model
     public function productLocations(): HasMany
     {
         return $this->hasMany(ProductLocation::class);
+    }
+
+    public function serials(): HasMany
+    {
+        return $this->hasMany(ProductSerial::class);
+    }
+
+    public function serialsInStock(): HasMany
+    {
+        return $this->serials()->where('status', ProductSerial::STATUS_IN_STOCK);
     }
 
     public function locations(): BelongsToMany

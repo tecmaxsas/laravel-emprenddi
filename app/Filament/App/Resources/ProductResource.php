@@ -130,6 +130,12 @@ class ProductResource extends Resource
                                     ->default(true)
                                     ->helperText('Off para servicios.'),
 
+                                Forms\Components\Toggle::make('tracks_serials')
+                                    ->label('Maneja seriales')
+                                    ->default(false)
+                                    ->helperText('Cada unidad entra y sale con su número de serie. Útil para equipos con garantía.')
+                                    ->visible(fn () => \App\Support\SerialsSettings::enabled()),
+
                                 Forms\Components\Toggle::make('is_purchasable')
                                     ->label('Se compra')
                                     ->default(true),

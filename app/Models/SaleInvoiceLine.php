@@ -27,6 +27,7 @@ class SaleInvoiceLine extends Model
         'total',
         'account_id',
         'inventory_movement_id',
+        'serials',
     ];
 
     protected function casts(): array
@@ -42,7 +43,13 @@ class SaleInvoiceLine extends Model
             'tax_rate' => 'decimal:4',
             'tax_amount' => 'decimal:2',
             'total' => 'decimal:2',
+            'serials' => 'array',
         ];
+    }
+
+    public function productSerials(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(ProductSerial::class, 'sale_invoice_line_id');
     }
 
     public function invoice(): BelongsTo

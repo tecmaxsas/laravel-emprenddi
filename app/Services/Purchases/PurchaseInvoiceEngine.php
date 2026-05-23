@@ -72,6 +72,14 @@ class PurchaseInvoiceEngine
                 );
 
                 $line->update(['inventory_movement_id' => $movement->id]);
+
+                // Seriales: si el producto los maneja, crear un ProductSerial
+                // por cada string capturado en la línea. La validación
+                // qty == count(serials) se hace acá (no en el form) para que
+                // también atrape ediciones via API y la UI no pueda saltarla.
+                if ($line->product->tracks_serials) {
+                    $this->createSerialsForPurchaseLine($invoice, $line);
+                }
             }
 
             // 2. Journal entry: DR Inventario por línea + DR IVA descontable | CR CxP
@@ -406,6 +414,20 @@ class PurchaseInvoiceEngine
 
         $invoice->load(['lines.product', 'supplier', 'location', 'journalEntry.lines']);
 
+        // Bloqueo previo: si algún serial entrado por esta compra ya se vendió,
+        // no podemos anular sin dejar inconsistente la venta. El usuario debe
+        // anular las ventas primero (que restablecerán los seriales).
+        $soldSerials = \App\Models\ProductSerial::query()
+            ->whereIn('purchase_invoice_line_id', $invoice->lines->pluck('id'))
+            ->where('status', \App\Models\ProductSerial::STATUS_SOLD)
+            ->exists();
+        if ($soldSerials) {
+            throw new RuntimeException(
+                'No puedes anular: hay seriales entrados por esta compra que ya se vendieron. '
+                .'Anula primero esas ventas para liberar los seriales.'
+            );
+        }
+
         return DB::transaction(function () use ($invoice) {
             // 1. Devuelve el inventario (return_to_supplier — salida del stock).
             foreach ($invoice->lines as $line) {
@@ -427,6 +449,16 @@ class PurchaseInvoiceEngine
                         'description' => "Anulación compra {$invoice->fullNumber()}",
                     ]
                 );
+
+                // Soft-delete de los seriales que entraron por esta línea
+                // (todos están in_stock — los vendidos los bloquea el guard
+                // de arriba). Quedan en deleted_at para auditoría.
+                if ($line->product->tracks_serials) {
+                    \App\Models\ProductSerial::query()
+                        ->where('purchase_invoice_line_id', $line->id)
+                        ->where('status', \App\Models\ProductSerial::STATUS_IN_STOCK)
+                        ->delete();
+                }
             }
 
             // 2. Asiento de reversa contable.
@@ -487,5 +519,56 @@ class PurchaseInvoiceEngine
         }
 
         return $reversal;
+    }
+
+    /**
+     * Crea un ProductSerial in_stock por cada string de la línea. Valida
+     * cantidad y unicidad dentro de la empresa antes de insertar.
+     */
+    protected function createSerialsForPurchaseLine(PurchaseInvoice $invoice, PurchaseInvoiceLine $line): void
+    {
+        $raw = $line->serials ?? [];
+        $serials = array_values(array_unique(array_filter(array_map(
+            fn ($s) => trim((string) $s),
+            is_array($raw) ? $raw : [],
+        ))));
+
+        $qty = (int) round((float) $line->quantity);
+        if (count($serials) !== $qty) {
+            throw new RuntimeException(sprintf(
+                'La línea de "%s" tiene cantidad %d pero capturaste %d seriales. Deben coincidir.',
+                $line->product?->name ?? 'producto',
+                $qty,
+                count($serials),
+            ));
+        }
+
+        // Choque con seriales ya existentes en la empresa (otro producto u otra
+        // compra). El unique (company_id, serial_number) lo atrapa al insert
+        // pero damos un error más útil acá.
+        $existing = \App\Models\ProductSerial::query()
+            ->where('company_id', $invoice->company_id)
+            ->whereIn('serial_number', $serials)
+            ->pluck('serial_number')
+            ->all();
+        if (! empty($existing)) {
+            throw new RuntimeException(
+                'Los siguientes seriales ya existen en tu inventario y no pueden duplicarse: '
+                .implode(', ', $existing)
+            );
+        }
+
+        $now = now();
+        foreach ($serials as $serial) {
+            \App\Models\ProductSerial::create([
+                'company_id' => $invoice->company_id,
+                'product_id' => $line->product_id,
+                'location_id' => $invoice->location_id,
+                'serial_number' => $serial,
+                'status' => \App\Models\ProductSerial::STATUS_IN_STOCK,
+                'purchase_invoice_line_id' => $line->id,
+                'received_at' => $invoice->date ?? $now,
+            ]);
+        }
     }
 }

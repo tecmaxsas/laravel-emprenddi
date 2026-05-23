@@ -186,6 +186,19 @@ class InventoryAdjustmentResource extends Resource
                                 ->label('Notas de la línea')
                                 ->maxLength(200)
                                 ->columnSpanFull(),
+
+                            // Seriales: en entrada se capturan nuevos; en salida
+                            // se digitan los existentes que se retiran (defectuosos/perdidos).
+                            Forms\Components\TagsInput::make('serials')
+                                ->label(fn (Forms\Get $get) => $get('../../direction') === 'in'
+                                    ? 'Seriales que ingresan'
+                                    : 'Seriales que salen del inventario')
+                                ->placeholder('Escanea o pega un serial y presiona Enter')
+                                ->helperText(fn (Forms\Get $get) => 'Cantidad de seriales debe ser '.((int) ($get('quantity') ?? 0)).'.')
+                                ->visible(fn (Forms\Get $get) => \App\Support\SerialsSettings::enabled()
+                                    && ($pid = $get('product_id'))
+                                    && (bool) \App\Models\Product::query()->whereKey($pid)->value('tracks_serials'))
+                                ->columnSpanFull(),
                         ])
                         ->columns(12)
                         ->minItems(1)

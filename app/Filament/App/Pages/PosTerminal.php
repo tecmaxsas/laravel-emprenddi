@@ -240,6 +240,35 @@ class PosTerminal extends Page
         $code = trim($code);
         if ($code === '') return;
 
+        // 1. Si la feature de seriales está activa, primero probar si el
+        // código pistoleado es un serial in_stock. Esto permite que el cajero
+        // tenga UN solo input para barcode y serial — el sistema discrimina.
+        if (\App\Support\SerialsSettings::enabled()) {
+            $serial = \App\Models\ProductSerial::query()
+                ->where('serial_number', $code)
+                ->where('status', \App\Models\ProductSerial::STATUS_IN_STOCK)
+                ->with('product')
+                ->first();
+
+            if ($serial) {
+                // No permitir vender el mismo serial dos veces en la misma sesión
+                foreach ($this->cart as $line) {
+                    if (($line['serial_id'] ?? null) === $serial->id) {
+                        Notification::make()
+                            ->title('Serial ya está en el carrito')
+                            ->body("El serial {$serial->serial_number} ya fue agregado.")
+                            ->warning()
+                            ->send();
+                        return;
+                    }
+                }
+                $this->addProductBySerial($serial);
+                $this->productSearch = '';
+                return;
+            }
+        }
+
+        // 2. Fallback: búsqueda por barcode/code del producto
         $product = Product::query()
             ->where('active', true)
             ->where('is_sellable', true)
@@ -252,7 +281,18 @@ class PosTerminal extends Page
         if (! $product) {
             Notification::make()
                 ->title('Producto no encontrado')
-                ->body("Código '{$code}' no coincide con ningún producto activo.")
+                ->body("Código '{$code}' no coincide con ningún producto activo ni serial en stock.")
+                ->warning()
+                ->send();
+            return;
+        }
+
+        // 3. Si el producto encontrado MANEJA seriales, exigir scan por serial.
+        // No puedes vender un equipo serializado sin saber qué unidad sale.
+        if (\App\Support\SerialsSettings::enabled() && $product->tracks_serials) {
+            Notification::make()
+                ->title('Producto requiere número de serie')
+                ->body("'{$product->name}' se vende por serial. Escanea el serial específico de la unidad que sale.")
                 ->warning()
                 ->send();
             return;
@@ -262,6 +302,53 @@ class PosTerminal extends Page
         $this->productSearch = '';
     }
 
+    /**
+     * Agrega una unidad serializada al carrito como línea independiente
+     * (qty=1 fija). El serial_id viaja en la línea para que al postear
+     * el SaleInvoiceEngine pueda marcarlo como sold y vincular la garantía.
+     */
+    protected function addProductBySerial(\App\Models\ProductSerial $serial): void
+    {
+        $product = $serial->product;
+        if (! $product || ! $product->is_sellable) {
+            Notification::make()
+                ->title('No vendible')
+                ->body('Este producto no se puede vender por POS.')
+                ->warning()
+                ->send();
+            return;
+        }
+
+        $taxRate = 0;
+        if ($product->default_sale_tax_id) {
+            $taxRate = (float) Tax::find($product->default_sale_tax_id)?->rate;
+        }
+        $rawPrice = (float) $product->default_sale_price;
+        $unitPrice = ($product->sale_price_includes_tax && $taxRate > 0)
+            ? round($rawPrice / (1 + $taxRate / 100), 2)
+            : $rawPrice;
+
+        $this->cart[] = [
+            'product_id' => $product->id,
+            'code' => $product->code,
+            'description' => $product->name." · SN {$serial->serial_number}",
+            'quantity' => 1.0,
+            'unit_price' => $unitPrice,
+            'discount_percentage' => 0.0,
+            'discount_amount' => 0.0,
+            'tax_id' => $product->default_sale_tax_id,
+            'tax_rate' => $taxRate,
+            'tax_amount' => 0.0,
+            'subtotal' => 0.0,
+            'total' => 0.0,
+            'serial_id' => $serial->id,
+            'serial_number' => $serial->serial_number,
+        ];
+
+        $i = count($this->cart) - 1;
+        $this->recomputeLine($i);
+    }
+
     public function addProductToCart(int $productId): void
     {
         $product = Product::find($productId);
@@ -269,8 +356,23 @@ class PosTerminal extends Page
             return;
         }
 
+        // Si el producto maneja seriales, NO permitir tap directo desde el
+        // grid de productos — el cajero debe escanear el serial puntual.
+        if (\App\Support\SerialsSettings::enabled() && $product->tracks_serials) {
+            Notification::make()
+                ->title('Escanea el serial')
+                ->body("'{$product->name}' se vende por número de serie. Usa el lector para escanear la unidad específica.")
+                ->warning()
+                ->send();
+            return;
+        }
+
         // Si ya está en carrito, suma cantidad
         foreach ($this->cart as $i => $line) {
+            // Una línea con serial nunca se agrega cantidad: cada serial = línea
+            if (isset($line['serial_id'])) {
+                continue;
+            }
             if ($line['product_id'] === $productId) {
                 $this->cart[$i]['quantity']++;
                 $this->recomputeLine($i);
@@ -312,6 +414,15 @@ class PosTerminal extends Page
     public function incLine(int $i): void
     {
         if (! isset($this->cart[$i])) return;
+        // Una línea con serial vale 1 unidad fija (es esa unidad concreta).
+        if (isset($this->cart[$i]['serial_id'])) {
+            Notification::make()
+                ->title('Cada serial es una unidad')
+                ->body('Escanea el serial de otra unidad para venderla.')
+                ->warning()
+                ->send();
+            return;
+        }
         $this->cart[$i]['quantity']++;
         $this->recomputeLine($i);
     }
@@ -319,6 +430,11 @@ class PosTerminal extends Page
     public function decLine(int $i): void
     {
         if (! isset($this->cart[$i])) return;
+        // Líneas con serial sólo pueden quitarse (no decrementar bajo 1).
+        if (isset($this->cart[$i]['serial_id'])) {
+            $this->removeLine($i);
+            return;
+        }
         if ($this->cart[$i]['quantity'] <= 1) {
             $this->removeLine($i);
             return;
@@ -682,6 +798,12 @@ class PosTerminal extends Page
                         'tax_amount' => $line['tax_amount'],
                         'subtotal' => $line['subtotal'],
                         'total' => $line['total'],
+                        // Si la línea viene del scan de serial, se guarda en
+                        // la columna serials para que el engine vincule el
+                        // ProductSerial al postear.
+                        'serials' => isset($line['serial_number'])
+                            ? [$line['serial_number']]
+                            : null,
                     ]);
                 }
 
@@ -861,6 +983,12 @@ class PosTerminal extends Page
                         'tax_amount' => $line['tax_amount'],
                         'subtotal' => $line['subtotal'],
                         'total' => $line['total'],
+                        // Si la línea viene del scan de serial, se guarda en
+                        // la columna serials para que el engine vincule el
+                        // ProductSerial al postear.
+                        'serials' => isset($line['serial_number'])
+                            ? [$line['serial_number']]
+                            : null,
                     ]);
                 }
 

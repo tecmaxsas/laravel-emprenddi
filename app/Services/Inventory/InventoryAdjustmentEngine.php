@@ -89,6 +89,12 @@ class InventoryAdjustmentEngine
                     'inventory_movement_id' => $movement->id,
                 ]);
 
+                // Seriales: in → crea nuevos in_stock; out → marca como
+                // defective o returned los seriales seleccionados.
+                if ($product->tracks_serials) {
+                    $this->applySerialsForAdjustmentLine($adj, $line);
+                }
+
                 $lineCost = round($qty * $unitCost, 2);
                 $totalCost += $lineCost;
 
@@ -274,5 +280,93 @@ class InventoryAdjustmentEngine
             ->where('company_id', $companyId)
             ->where('code', '1435')
             ->value('id');
+    }
+
+    /**
+     * Crea (in) o consume (out) seriales para una línea de ajuste.
+     * En out, los seriales pasan a:
+     *   - defective  → reason damage
+     *   - returned   → cualquier otro reason (loss, count, expiration, other)
+     */
+    protected function applySerialsForAdjustmentLine(InventoryAdjustment $adj, \App\Models\InventoryAdjustmentLine $line): void
+    {
+        $raw = $line->serials ?? [];
+        $serials = array_values(array_unique(array_filter(array_map(
+            fn ($s) => trim((string) $s),
+            is_array($raw) ? $raw : [],
+        ))));
+
+        $qty = (int) round((float) $line->quantity);
+        if (count($serials) !== $qty) {
+            throw new RuntimeException(sprintf(
+                'Línea %d (%s): cantidad %d pero capturaste %d seriales. Deben coincidir.',
+                $line->line_number,
+                $line->product?->name ?? 'producto',
+                $qty,
+                count($serials),
+            ));
+        }
+
+        if ($adj->isEntry()) {
+            // Entrada: crear nuevos in_stock. Choque con existentes → error.
+            $existing = \App\Models\ProductSerial::query()
+                ->where('company_id', $adj->company_id)
+                ->whereIn('serial_number', $serials)
+                ->pluck('serial_number')
+                ->all();
+            if (! empty($existing)) {
+                throw new RuntimeException(
+                    'Estos seriales ya existen en tu inventario: '.implode(', ', $existing)
+                );
+            }
+
+            foreach ($serials as $serial) {
+                \App\Models\ProductSerial::create([
+                    'company_id' => $adj->company_id,
+                    'product_id' => $line->product_id,
+                    'location_id' => $adj->location_id,
+                    'serial_number' => $serial,
+                    'status' => \App\Models\ProductSerial::STATUS_IN_STOCK,
+                    'inventory_adjustment_line_id' => $line->id,
+                    'received_at' => $adj->date ?? now(),
+                ]);
+            }
+
+            return;
+        }
+
+        // Salida: los seriales digitados deben existir y estar in_stock.
+        $newStatus = $adj->reason_code === 'damage'
+            ? \App\Models\ProductSerial::STATUS_DEFECTIVE
+            : \App\Models\ProductSerial::STATUS_RETURNED;
+
+        $records = \App\Models\ProductSerial::query()
+            ->where('company_id', $adj->company_id)
+            ->where('product_id', $line->product_id)
+            ->whereIn('serial_number', $serials)
+            ->get();
+
+        $found = $records->pluck('serial_number')->all();
+        $missing = array_diff($serials, $found);
+        if (! empty($missing)) {
+            throw new RuntimeException(
+                'No se encontraron estos seriales en stock para el producto: '.implode(', ', $missing)
+            );
+        }
+
+        $notInStock = $records->where('status', '!=', \App\Models\ProductSerial::STATUS_IN_STOCK)
+            ->pluck('serial_number')->all();
+        if (! empty($notInStock)) {
+            throw new RuntimeException(
+                'Estos seriales no están en stock (ya fueron vendidos o ajustados): '.implode(', ', $notInStock)
+            );
+        }
+
+        foreach ($records as $serial) {
+            $serial->update([
+                'status' => $newStatus,
+                'inventory_adjustment_line_id' => $line->id,
+            ]);
+        }
     }
 }

@@ -70,6 +70,9 @@ class Settings extends Page implements HasForms
             'currency' => $company->currency,
             'timezone' => $company->timezone,
 
+            // Inventario / seriales (settings.serials.*)
+            'serials_enabled' => (bool) data_get($settings, 'serials.enabled', false),
+
             // POS settings (settings.pos.*)
             'pos_allow_price_modification' => (bool) data_get($settings, 'pos.allow_price_modification', true),
             'pos_allow_discount' => (bool) data_get($settings, 'pos.allow_discount', true),
@@ -196,6 +199,14 @@ class Settings extends Page implements HasForms
                         ->required(),
                 ]),
 
+            Forms\Components\Section::make('Inventario por seriales')
+                ->description('Para tiendas que venden equipos con número de serie (computadores, impresoras, cajones monederos, etc.). Cuando esté activo, cada producto puede marcarse como "maneja seriales": entrarán al inventario por número de serie en las compras y se podrán pistolear en el POS para vincular cada unidad vendida con su garantía.')
+                ->schema([
+                    Forms\Components\Toggle::make('serials_enabled')
+                        ->label('Activar gestión de seriales')
+                        ->helperText('Si lo desactivas no se borran los seriales existentes, solo se oculta la UI.'),
+                ]),
+
             Forms\Components\Actions::make([
                 Forms\Components\Actions\Action::make('saveCompany')
                     ->label('Guardar datos de empresa')
@@ -275,8 +286,14 @@ class Settings extends Page implements HasForms
         $state = $this->form->getState();
         $company = $this->getCompany();
 
+        $settings = $company->settings ?? [];
+        $settings['serials'] = array_merge($settings['serials'] ?? [], [
+            'enabled' => (bool) ($state['serials_enabled'] ?? false),
+        ]);
+
         $company->update([
             'logo_path' => $state['logo_path'] ?: null,
+            'settings' => $settings,
             'name' => $state['name'],
             'legal_name' => $state['legal_name'] ?: null,
             'nit' => $state['nit'],

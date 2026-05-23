@@ -50,6 +50,8 @@ class PermissionsCatalog
                 'inventory.view' => 'Ver Kardex y stock',
                 'inventory.adjust' => 'Hacer ajustes de inventario',
                 'inventory.transfer' => 'Trasladar entre sedes',
+                'serials.view' => 'Ver seriales (consulta para garantía)',
+                'serials.manage' => 'Editar / corregir seriales',
             ],
             'Compras' => [
                 'purchases.view' => 'Ver facturas de compra',
@@ -177,6 +179,7 @@ class PermissionsCatalog
                 'payroll.periods.view', 'payroll.periods.manage',
                 'payroll.parameters.manage', 'payroll.accounts.manage', 'payroll.settlements.manage',
                 'inventory.view',
+                'serials.view',
                 'products.view', 'categories.view',
             ],
             'cashier' => [
@@ -185,6 +188,7 @@ class PermissionsCatalog
                 'products.view', 'categories.view',
                 'third_parties.view', 'third_parties.manage',
                 'inventory.view',
+                'serials.view',
                 // Restaurant: el cajero/mesero usa el POS de mesas y la cocina
                 'restaurant.use', 'restaurant.kitchen', 'restaurant.bill.split',
                 'restaurant.delivery.manage', 'restaurant.reservations.manage',
@@ -213,6 +217,7 @@ class PermissionsCatalog
                 'payroll.periods.view', 'payroll.periods.manage',
                 'payroll.parameters.manage', 'payroll.accounts.manage', 'payroll.settlements.manage',
                 'inventory.view',
+                'serials.view',
                 'products.view', 'categories.view',
             ],
             'seller' => [
@@ -221,6 +226,7 @@ class PermissionsCatalog
                 'quotations.view', 'quotations.manage', 'quotations.convert',
                 'third_parties.view', 'third_parties.manage',
                 'inventory.view',
+                'serials.view',
             ],
             default => [],
         };

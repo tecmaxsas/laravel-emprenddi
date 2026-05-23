@@ -18,6 +18,7 @@ class InventoryAdjustmentLine extends Model
         'unit_cost',
         'inventory_movement_id',
         'notes',
+        'serials',
     ];
 
     protected function casts(): array
@@ -26,7 +27,13 @@ class InventoryAdjustmentLine extends Model
             'line_number' => 'integer',
             'quantity' => 'decimal:4',
             'unit_cost' => 'decimal:4',
+            'serials' => 'array',
         ];
+    }
+
+    public function productSerials(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(ProductSerial::class, 'inventory_adjustment_line_id');
     }
 
     public function adjustment(): BelongsTo

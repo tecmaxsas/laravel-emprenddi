@@ -237,6 +237,20 @@ class PurchaseInvoiceResource extends Resource
                             Forms\Components\Hidden::make('discount_amount')->default(0),
                             Forms\Components\Hidden::make('tax_rate')->default(0),
                             Forms\Components\Hidden::make('tax_amount')->default(0),
+
+                            // Seriales: solo visible si el producto seleccionado
+                            // tiene tracks_serials=true Y la feature global está
+                            // activa. Permite pegar listas (Excel, etc.). La
+                            // validación qty == count(serials) se hace al
+                            // postear en PurchaseInvoiceEngine.
+                            Forms\Components\TagsInput::make('serials')
+                                ->label('Números de serie')
+                                ->placeholder('Escanea o pega un serial y presiona Enter')
+                                ->helperText(fn (Forms\Get $get) => 'Debes capturar la misma cantidad de seriales que de unidades ('.((int) ($get('quantity') ?? 0)).').')
+                                ->visible(fn (Forms\Get $get) => \App\Support\SerialsSettings::enabled()
+                                    && ($pid = $get('product_id'))
+                                    && (bool) \App\Models\Product::query()->whereKey($pid)->value('tracks_serials'))
+                                ->columnSpanFull(),
                         ])
                         ->columns(16)
                         ->minItems(1)
