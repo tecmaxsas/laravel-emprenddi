@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <title>Conoce Emprenddi · Manual de Capacitación y Ventas</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        /* =====================  PRINT-OPTIMIZED CSS  ===================== */
+        @page {
+            size: A4;
+            margin: 18mm 16mm 18mm 16mm;
+        }
+        * { box-sizing: border-box; }
+        html, body { margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: #1f2937;
+            background: #f3f4f6;
+            line-height: 1.55;
+            -webkit-font-smoothing: antialiased;
+        }
+        .page {
+            max-width: 210mm;
+            margin: 8mm auto;
+            background: #ffffff;
+            padding: 22mm 20mm;
+            box-shadow: 0 6px 24px rgba(0, 0, 0, 0.08);
+            font-size: 11.5pt;
+        }
+        @media print {
+            body { background: #ffffff; }
+            .page { margin: 0; box-shadow: none; padding: 0; max-width: none; }
+            .no-print { display: none !important; }
+            .page-break { page-break-after: always; }
+            h1, h2, h3 { page-break-after: avoid; }
+            ul, ol, table, blockquote { page-break-inside: avoid; }
+        }
+
+        /* =====================  HEADINGS  ===================== */
+        h1 {
+            font-size: 28pt; font-weight: 900;
+            color: #4f46e5; letter-spacing: -0.02em;
+            margin: 0 0 4pt 0;
+        }
+        h1 .sub {
+            display: block; font-size: 13pt; font-weight: 500;
+            color: #6b7280; margin-top: 4pt; letter-spacing: 0;
+        }
+        h2 {
+            font-size: 17pt; font-weight: 800;
+            color: #111827; margin: 22pt 0 8pt 0;
+            padding-bottom: 5pt;
+            border-bottom: 2px solid #6366f1;
+            letter-spacing: -0.01em;
+        }
+        h3 {
+            font-size: 13.5pt; font-weight: 700;
+            color: #4338ca; margin: 16pt 0 6pt 0;
+        }
+        h4 {
+            font-size: 11.5pt; font-weight: 700;
+            color: #1f2937; margin: 10pt 0 4pt 0;
+        }
+
+        /* =====================  PARRAFOS Y LISTAS  ===================== */
+        p { margin: 0 0 8pt 0; }
+        ul, ol { margin: 4pt 0 10pt 0; padding-left: 22pt; }
+        li { margin-bottom: 3pt; }
+        ul li::marker { color: #6366f1; }
+        strong { color: #111827; font-weight: 700; }
+        em { color: #4338ca; font-style: normal; font-weight: 600; }
+
+        /* =====================  HERO COVER  ===================== */
+        .cover {
+            text-align: center;
+            padding: 60pt 0 40pt 0;
+            page-break-after: always;
+        }
+        .cover .badge {
+            display: inline-block;
+            padding: 6pt 14pt;
+            background: linear-gradient(135deg, #6366f1, #a855f7);
+            color: #fff;
+            border-radius: 999px;
+            font-size: 9pt;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            margin-bottom: 24pt;
+        }
+        .cover h1 {
+            font-size: 48pt;
+            font-weight: 900;
+            background: linear-gradient(135deg, #4f46e5 0%, #a855f7 60%, #2563eb 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin: 0;
+            border: 0;
+        }
+        .cover .tagline {
+            font-size: 16pt;
+            color: #4b5563;
+            font-weight: 500;
+            margin-top: 8pt;
+            line-height: 1.4;
+        }
+        .cover .audience {
+            margin-top: 80pt;
+            font-size: 12pt;
+            color: #6b7280;
+        }
+        .cover .audience strong {
+            display: block;
+            font-size: 14pt;
+            color: #111827;
+            margin-bottom: 4pt;
+        }
+        .cover .footer-cover {
+            position: absolute;
+            bottom: 30pt;
+            left: 0; right: 0;
+            text-align: center;
+            font-size: 9pt; color: #9ca3af;
+        }
+
+        /* =====================  CALLOUTS  ===================== */
+        blockquote {
+            margin: 12pt 0;
+            padding: 12pt 16pt;
+            background: #eef2ff;
+            border-left: 4pt solid #6366f1;
+            border-radius: 4pt;
+            font-style: normal;
+            font-size: 11pt;
+            color: #1e1b4b;
+        }
+        blockquote p:last-child { margin-bottom: 0; }
+
+        /* =====================  EMOJI ICON BLOCKS  ===================== */
+        .module-block {
+            background: #f9fafb;
+            border-radius: 8pt;
+            padding: 12pt 14pt;
+            margin: 8pt 0;
+        }
+        .module-block h3 {
+            margin-top: 0;
+            color: #4338ca;
+            font-size: 13pt;
+        }
+
+        /* =====================  TABLES  ===================== */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10pt 0;
+            font-size: 10.5pt;
+        }
+        th {
+            background: #6366f1;
+            color: #ffffff;
+            padding: 8pt 10pt;
+            text-align: left;
+            font-weight: 700;
+            font-size: 10pt;
+        }
+        td {
+            padding: 7pt 10pt;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        tr:nth-child(even) { background: #f9fafb; }
+
+        /* =====================  CASOS DE USO CARDS  ===================== */
+        .case {
+            background: linear-gradient(135deg, #f5f3ff 0%, #eff6ff 100%);
+            border: 1px solid #c7d2fe;
+            border-radius: 8pt;
+            padding: 12pt 16pt;
+            margin: 10pt 0;
+        }
+        .case h3 {
+            color: #4338ca;
+            margin-top: 0;
+            margin-bottom: 6pt;
+        }
+
+        /* =====================  CHECKLIST  ===================== */
+        ul.checklist {
+            list-style: none;
+            padding-left: 0;
+        }
+        ul.checklist li {
+            padding-left: 26pt;
+            position: relative;
+        }
+        ul.checklist li::before {
+            content: "✓";
+            position: absolute;
+            left: 4pt;
+            top: 0;
+            color: #10b981;
+            font-weight: 900;
+            font-size: 13pt;
+        }
+
+        /* =====================  TOC  ===================== */
+        .toc {
+            background: #f9fafb;
+            border-left: 4pt solid #6366f1;
+            padding: 14pt 18pt;
+            margin: 16pt 0;
+            border-radius: 4pt;
+            font-size: 11pt;
+        }
+        .toc h2 {
+            margin: 0 0 10pt 0;
+            font-size: 13pt;
+            border: 0;
+            color: #4f46e5;
+            padding: 0;
+        }
+        .toc ol { margin: 0; padding-left: 22pt; }
+        .toc li { margin-bottom: 4pt; }
+        .toc a { color: #374151; text-decoration: none; }
+
+        /* =====================  FOOTER  ===================== */
+        .doc-footer {
+            margin-top: 30pt;
+            padding-top: 18pt;
+            border-top: 1px solid #e5e7eb;
+            text-align: center;
+            font-size: 9.5pt;
+            color: #6b7280;
+        }
+        .doc-footer .brand {
+            font-weight: 800;
+            color: #4f46e5;
+            font-size: 11pt;
+        }
+
+        /* =====================  PRINT BUTTON  ===================== */
+        .print-button {
+            position: fixed;
+            top: 20px; right: 20px;
+            padding: 12px 20px;
+            background: #6366f1;
+            color: #ffffff;
+            border-radius: 999px;
+            border: 0;
+            font-weight: 700;
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+            z-index: 1000;
+        }
+        .print-button:hover { background: #4f46e5; }
+
+        /* Diviser */
+        hr { border: 0; border-top: 1px dashed #d1d5db; margin: 16pt 0; }
+
+        /* Pequeñas mejoras para legibilidad */
+        a { color: #4f46e5; text-decoration: none; }
+        code {
+            background: #f3f4f6;
+            padding: 2pt 4pt;
+            border-radius: 3pt;
+            font-family: ui-monospace, monospace;
+            font-size: 10pt;
+            color: #4338ca;
+        }
+    </style>
+</head>
+<body>
+
+<button onclick="window.print()" class="print-button no-print">📄 Imprimir / Guardar PDF</button>
+
+<div class="page">
+
+    <!-- =====================  COVER  ===================== -->
+    <div class="cover">
+        <span class="badge">Manual interno</span>
+        <h1>Conoce<br>Emprenddi</h1>
+        <p class="tagline">
+            Todo lo que un negocio colombiano necesita,<br>
+            en una sola plataforma.
+        </p>
+        <div class="audience">
+            <strong>Equipo de Capacitación y Ventas</strong>
+            Guía completa de funcionalidades, casos de uso y argumentario comercial
+        </div>
+        <div class="footer-cover">
+            Versión 1.0 · Mayo 2026 · Documento interno · Emprenddi
+        </div>
+    </div>
+
+    <!-- =====================  TOC  ===================== -->
+    <div class="toc">
+        <h2>📑 Contenido</h2>
+        <ol>
+            <li>¿Qué es Emprenddi?</li>
+            <li>¿Para quién está pensado?</li>
+            <li>¿Qué puede hacer? (todas las funcionalidades explicadas)</li>
+            <li>¿Cómo empieza un cliente nuevo?</li>
+            <li>Recorrido por el sistema (qué hay en cada menú)</li>
+            <li>Cómo se ve un día normal de trabajo</li>
+            <li>Casos de uso típicos por giro</li>
+            <li>Diferenciadores frente a la competencia</li>
+            <li>Preguntas frecuentes (FAQ)</li>
+            <li>Cómo presentar Emprenddi a un cliente</li>
+            <li>Lo que viene</li>
+            <li>Próximos pasos para implementar</li>
+        </ol>
+    </div>
+
+    <h2>¿Qué es Emprenddi?</h2>
+    <p><strong>Emprenddi es la plataforma todo-en-uno que un negocio en Colombia necesita para vender, llevar su inventario, controlar su caja, manejar su contabilidad y cumplir con la DIAN.</strong> Todo en una sola pantalla, sin instalar nada y desde cualquier dispositivo con internet.</p>
+    <p>Una caja registradora moderna, un contador disponible 24/7, un sistema de inventario en tiempo real, y un módulo para emitir factura electrónica — funcionando juntos sin esfuerzo.</p>
+
+    <h2>¿Para quién está pensado?</h2>
+    <p>Emprenddi está diseñado para <strong>pequeñas y medianas empresas</strong> que quieren dejar de pelear con Excel, cuadernos o sistemas viejos. Funciona especialmente bien para:</p>
+    <ul>
+        <li><strong>Tiendas y minimarkets</strong> — venta rápida con código de barras, control de inventario, cierre de caja diario.</li>
+        <li><strong>Restaurantes, cafeterías, bares, pizzerías</strong> — toma de pedidos por mesa, comandas a cocina y barra, división de cuenta, propinas, carta digital con código QR.</li>
+        <li><strong>Tiendas de electrónica y tecnología</strong> — control por número de serie, garantías, soporte técnico.</li>
+        <li><strong>Tiendas de ropa y calzado</strong> — productos con tallas y colores, descuentos, fidelización.</li>
+        <li><strong>Talleres y servicios técnicos</strong> — agenda de garantías, reparaciones, repuestos.</li>
+        <li><strong>Distribuidoras</strong> — múltiples sedes, transferencias entre bodegas, vendedores externos.</li>
+        <li><strong>Negocios mixtos</strong> — quien vende productos y servicios al mismo tiempo.</li>
+    </ul>
+    <p>Si el cliente tiene más de un punto de venta o una bodega, Emprenddi también lo cubre: maneja <em>varias sedes</em> con inventario independiente y reportes consolidados.</p>
+
+    <div class="page-break"></div>
+
+    <h2>¿Qué puede hacer Emprenddi?</h2>
+
+    <div class="module-block">
+        <h3>🛒 Vender</h3>
+        <ul>
+            <li><strong>Punto de venta moderno (POS)</strong> con pantalla táctil, lector de código de barras y catálogo con imágenes.</li>
+            <li><strong>Descuentos por línea o globales</strong>; cuando el descuento es muy alto, pide autorización del supervisor.</li>
+            <li><strong>Imprime el ticket</strong> automáticamente en impresora térmica.</li>
+            <li><strong>Métodos de pago combinables</strong>: efectivo, débito, crédito, transferencia, PSE, cheque, nota crédito o pago mixto.</li>
+            <li><strong>Sesiones de caja</strong>: el cajero abre con monto inicial y cierra cuadrando lo que cuenta físicamente.</li>
+            <li><strong>Suspender una venta</strong> y recuperarla después (útil cuando el cliente "ya vuelve").</li>
+            <li><strong>Modo restaurante</strong> con mesas, cursos, cocina y domicilios.</li>
+        </ul>
+    </div>
+
+    <div class="module-block">
+        <h3>📦 Controlar el inventario</h3>
+        <ul>
+            <li>Stock en tiempo real por <strong>sede o bodega</strong>.</li>
+            <li><strong>Promedio ponderado</strong> automático (cada vez que compras a distinto precio, el sistema recalcula).</li>
+            <li><strong>Ajustes</strong> por daño, pérdida, conteo físico, vencimiento.</li>
+            <li><strong>Transferencias</strong> entre sedes con doble validación (sale de origen, llega a destino).</li>
+            <li><strong>Apertura inicial</strong> para cargar lo que ya tienes el primer día.</li>
+            <li><strong>Alertas</strong> cuando un producto está por debajo del mínimo.</li>
+            <li><strong>Historial</strong> del producto: cada movimiento queda registrado para auditar.</li>
+        </ul>
+    </div>
+
+    <div class="module-block">
+        <h3>💼 Llevar la contabilidad</h3>
+        <ul>
+            <li><strong>Plan de Cuentas colombiano</strong> ya configurado.</li>
+            <li><strong>Asientos contables automáticos</strong>: cada venta, compra, pago y nómina genera el asiento correcto sin intervención del usuario.</li>
+            <li><strong>Libros oficiales</strong>: Diario, Mayor, Auxiliar, Balance de Prueba — exactamente como los pide la DIAN.</li>
+            <li><strong>Cierre de mes</strong> con bloqueo: una vez cierras un periodo, nadie puede modificar nada.</li>
+            <li><strong>Conciliación bancaria</strong>: cruza tu sistema con el extracto del banco.</li>
+            <li><strong>Cartera y cuentas por pagar</strong> organizadas por cliente y proveedor, con avisos de vencimiento.</li>
+            <li><strong>Centros de costo</strong> opcionales para saber qué línea de negocio es la más rentable.</li>
+        </ul>
+    </div>
+
+    <div class="module-block">
+        <h3>📑 Facturar a la DIAN</h3>
+        <ul>
+            <li><strong>Factura electrónica DIAN</strong> según las normas vigentes.</li>
+            <li><strong>Notas crédito y débito</strong> electrónicas.</li>
+            <li><strong>Documento equivalente POS</strong> (talonarios locales) para ventas que no requieren factura electrónica.</li>
+            <li><strong>Documento soporte</strong> para compras a no responsables de IVA.</li>
+            <li><strong>Información exógena anual</strong> generada automáticamente.</li>
+            <li><strong>Retenciones</strong> en la fuente, IVA e ICA bien calculadas.</li>
+        </ul>
+    </div>
+
+    <div class="module-block">
+        <h3>🛠 Comprar y pagar proveedores</h3>
+        <ul>
+            <li>Factura de compra → entra al inventario y genera asiento contable.</li>
+            <li>Pagos parciales o totales.</li>
+            <li>Cuentas por pagar al día.</li>
+            <li>Devoluciones a proveedor cuando llega mercancía con problemas.</li>
+        </ul>
+    </div>
+
+    <div class="module-block">
+        <h3>👥 Gestionar empleados y nómina</h3>
+        <ul>
+            <li><strong>Empleados con sus contratos</strong> (indefinido, fijo, obra labor, aprendizaje).</li>
+            <li><strong>Parámetros legales</strong> vigentes (salario mínimo, salud, pensión, parafiscales).</li>
+            <li><strong>Liquidación periódica</strong> (quincenal o mensual) con todas las deducciones.</li>
+            <li><strong>Liquidación de retiro</strong> que calcula cesantías, intereses, prima, vacaciones e indemnización si aplica.</li>
+            <li>Asiento contable automático al cerrar nómina.</li>
+        </ul>
+    </div>
+
+    <div class="module-block">
+        <h3>🏷️ Manejar números de serie (para tiendas de tecnología)</h3>
+        <ul>
+            <li>Cada computador, impresora o equipo entra con su número de serie individual.</li>
+            <li>En el POS, el cajero <strong>pistolea el serial</strong> y el sistema trae el producto correcto.</li>
+            <li>Quedan <strong>vinculados a la venta</strong>: si el cliente vuelve por garantía, encuentras el equipo al instante.</li>
+        </ul>
+    </div>
+
+    <div class="module-block">
+        <h3>🔧 Atender garantías y servicio técnico</h3>
+        <ul>
+            <li><strong>Buscar por número de serie o factura</strong> y crear un ticket de garantía.</li>
+            <li><strong>Estados del ticket</strong>: recibido → en revisión → en reparación → resuelto / reemplazado / rechazado → entregado.</li>
+            <li><strong>Asignar técnico</strong> y registrar comentarios en cada paso.</li>
+            <li><strong>Imprimir comprobante</strong> para que el cliente se lo lleve al dejar el equipo.</li>
+            <li><strong>Vencimiento de garantía</strong> calculado automáticamente según los días configurados por producto.</li>
+            <li><strong>Historial completo</strong> del equipo: cuándo entró, quién lo trabajó, qué se hizo.</li>
+        </ul>
+    </div>
+
+    <div class="module-block">
+        <h3>🍔 Funciones especiales para restaurante</h3>
+        <ul>
+            <li><strong>Mapa de mesas</strong> con zonas (salón, terraza, barra) y colores.</li>
+            <li><strong>Abrir cuenta por mesa</strong>, agregar productos a medida que el cliente pide.</li>
+            <li><strong>Enviar a cocina</strong> y a barra automáticamente según la categoría del producto.</li>
+            <li><strong>Pantalla de cocina</strong> donde el cocinero ve los pedidos en tiempo real.</li>
+            <li><strong>Modificadores</strong>: "sin queso", "con salsa extra", "punto de cocción".</li>
+            <li><strong>Cursos</strong>: servir entrada → fuerte → postre en orden.</li>
+            <li><strong>Dividir la cuenta</strong> entre comensales (por ítem o partes iguales).</li>
+            <li><strong>Propinas</strong> con porcentajes sugeridos.</li>
+            <li><strong>Domicilios</strong> con asignación de repartidor y seguimiento público para el cliente.</li>
+            <li><strong>Reservaciones</strong> con calendario y aviso al equipo.</li>
+            <li><strong>Carta digital con código QR</strong> que el cliente escanea desde su mesa.</li>
+        </ul>
+    </div>
+
+    <div class="module-block">
+        <h3>📊 Reportes y análisis</h3>
+        <ul>
+            <li><strong>Ventas</strong> por día, semana, mes, vendedor, categoría, sede.</li>
+            <li><strong>Cartera</strong> vencida y por vencer.</li>
+            <li><strong>Cuentas por pagar</strong> próximas.</li>
+            <li><strong>Cierres de caja</strong> históricos con diferencias.</li>
+            <li><strong>Historial detallado por producto</strong>.</li>
+            <li><strong>Stock por sede</strong> consolidado.</li>
+            <li><strong>Balance de prueba</strong> y libros oficiales.</li>
+        </ul>
+    </div>
+
+    <div class="module-block">
+        <h3>⚙️ Configuración por empresa</h3>
+        <ul>
+            <li><strong>Multi-sede</strong>: cada tienda con su inventario, sus consecutivos, su impresora.</li>
+            <li><strong>Multi-usuario</strong>: invita a tu equipo y asígnale el rol adecuado.</li>
+            <li><strong>Roles predefinidos</strong>: dueño/administrador, gerente, contador, cajero, vendedor.</li>
+            <li><strong>Logo de la empresa</strong> que aparece en facturas y tickets.</li>
+            <li><strong>Plantillas de impresión</strong> personalizables (térmica 80mm, carta, A5).</li>
+            <li><strong>Impresión local</strong> sin drivers complicados, con instalación de un solo programa pequeño.</li>
+        </ul>
+    </div>
+
+    <div class="page-break"></div>
+
+    <h2>¿Cómo empieza un cliente nuevo?</h2>
+    <p>Esta es la magia de Emprenddi: <strong>el cliente se registra y queda listo para vender en menos de 5 minutos</strong>.</p>
+
+    <h3>Paso 1: Registro</h3>
+    <p>El cliente entra a <code>pos.emprenddi.com/app/register</code> y completa un formulario corto:</p>
+    <ol>
+        <li><strong>Datos de la empresa</strong>: nombre, NIT, dirección, régimen tributario.</li>
+        <li><strong>Datos del administrador</strong>: nombre, email, contraseña.</li>
+        <li><strong>Confirmación y aceptación de términos</strong>.</li>
+    </ol>
+
+    <h3>Paso 2: Listo (automáticamente)</h3>
+    <p>En cuanto da clic en <strong>Crear cuenta</strong>, en segundos el sistema le configura:</p>
+    <ul class="checklist">
+        <li>Su Plan de Cuentas colombiano completo</li>
+        <li>Los impuestos vigentes (IVA 19%, IVA 5%, INC, retenciones)</li>
+        <li>Las monedas (peso, dólar, euro)</li>
+        <li>Los 8 métodos de pago más usados</li>
+        <li>Su sede principal con dirección</li>
+        <li>El cliente "Consumidor Final" para ventas de mostrador</li>
+        <li>Dos plantillas de impresión (ticket térmico y factura carta)</li>
+    </ul>
+    <p>El cliente puede entrar al POS y vender <strong>inmediatamente</strong>. No necesita esperar a un asesor.</p>
+
+    <h3>Paso 3: Personalización con un asesor (recomendado)</h3>
+    <p>Aunque arranca solo, recomendamos a todo cliente nuevo una sesión de 2 horas con un asesor para ajustar:</p>
+    <ul>
+        <li>Cargar <strong>logo de la empresa</strong></li>
+        <li>Crear los <strong>productos</strong> del negocio (con fotos)</li>
+        <li>Cargar los <strong>clientes y proveedores</strong> más frecuentes</li>
+        <li>Si tiene impresora térmica, <strong>instalarla y conectarla</strong></li>
+        <li>Si maneja <strong>facturación electrónica DIAN</strong>, configurar la resolución</li>
+        <li>Cargar el <strong>inventario inicial</strong> (lo que tiene en bodega hoy)</li>
+        <li>Cargar los <strong>saldos contables</strong> del último balance (si viene de otro sistema)</li>
+    </ul>
+    <p>Con eso, el cliente queda 100% operativo y su contabilidad arranca limpia.</p>
+
+    <div class="page-break"></div>
+
+    <h2>Recorrido por el sistema</h2>
+    <p>Cuando el cliente entra al panel, ve un <strong>menú lateral</strong> organizado por áreas. Vamos por cada una.</p>
+
+    <h3>🏠 Escritorio</h3>
+    <p>Pantalla de bienvenida con resumen del día: ventas, caja abierta, alertas y accesos directos.</p>
+
+    <h3>💰 Ventas</h3>
+    <ul>
+        <li><strong>POS — Punto de Venta</strong>: la caja registradora touch.</li>
+        <li><strong>Cotizaciones</strong>: presupuestos para enviar al cliente.</li>
+        <li><strong>Remisiones</strong>: salida de mercancía sin facturar todavía.</li>
+        <li><strong>Facturas de Venta</strong>: documentos oficiales (electrónicas o POS).</li>
+        <li><strong>Notas Crédito / Débito</strong>: modificaciones a facturas ya emitidas.</li>
+        <li><strong>Sesiones de Caja</strong>: histórico de aperturas y cierres.</li>
+        <li><strong>Resoluciones POS</strong>: numeración autorizada por DIAN.</li>
+    </ul>
+
+    <h3>🍔 Restaurante (si activado)</h3>
+    <ul>
+        <li><strong>POS Restaurante</strong>: pantalla de mesas y comandas.</li>
+        <li><strong>Reservaciones</strong>: agenda.</li>
+        <li><strong>Cocina</strong>: vista del cocinero.</li>
+        <li><strong>Despacho domicilios</strong>: panel del despachador.</li>
+        <li><strong>Zonas de atención</strong>: configurar salones.</li>
+        <li><strong>Carta QR</strong>: menú público.</li>
+        <li><strong>Modificadores</strong>: opciones de personalización.</li>
+        <li><strong>Repartidores</strong>: lista de domiciliarios.</li>
+    </ul>
+
+    <h3>📦 Inventario</h3>
+    <ul>
+        <li><strong>Productos</strong>: catálogo.</li>
+        <li><strong>Categorías</strong>: organizar productos.</li>
+        <li><strong>Ajustes</strong>: entradas o salidas manuales.</li>
+        <li><strong>Transferencias</strong>: entre sedes.</li>
+        <li><strong>Aperturas</strong>: stock inicial.</li>
+        <li><strong>Historial por producto</strong>: cada movimiento registrado.</li>
+        <li><strong>Seriales</strong>: lista de unidades con número de serie (si activado).</li>
+    </ul>
+
+    <h3>🛠 Servicio (si activado)</h3>
+    <ul>
+        <li><strong>Garantías</strong>: tickets de soporte técnico.</li>
+    </ul>
+
+    <h3>🛒 Compras</h3>
+    <ul>
+        <li><strong>Facturas de Compra</strong>: facturas de proveedor.</li>
+        <li><strong>Documento Soporte</strong>: para compras a no responsables IVA.</li>
+        <li><strong>Devoluciones a Proveedor</strong>: cuando llega mercancía con problemas.</li>
+        <li><strong>Pagos</strong>: historial.</li>
+    </ul>
+
+    <h3>👥 Terceros</h3>
+    <p><strong>Clientes, Proveedores, Empleados, Socios</strong>: todos los terceros con quien la empresa opera.</p>
+
+    <h3>💼 Contabilidad</h3>
+    <ul>
+        <li><strong>Plan de Cuentas</strong>: ver y editar cuentas.</li>
+        <li><strong>Asientos contables</strong>: manuales y automáticos.</li>
+        <li><strong>Centros de costo</strong>: opcional.</li>
+        <li><strong>Periodos fiscales</strong>: abrir y cerrar.</li>
+        <li><strong>Activos fijos</strong>: maquinaria, equipos, vehículos propios.</li>
+        <li><strong>Reportes</strong>: Libro Diario, Mayor, Auxiliar, Balance, Cartera, Cuentas por pagar, Cierres.</li>
+        <li><strong>Información Exógena</strong>: reportes anuales DIAN.</li>
+        <li><strong>Conciliación bancaria</strong>.</li>
+    </ul>
+
+    <h3>👨‍💼 Nómina</h3>
+    <ul>
+        <li><strong>Empleados</strong>: lista.</li>
+        <li><strong>Contratos</strong>: laborales.</li>
+        <li><strong>Parámetros</strong>: salario mínimo, tarifas legales.</li>
+        <li><strong>Periodos</strong>: liquidaciones quincenales o mensuales.</li>
+        <li><strong>Liquidaciones definitivas</strong>: retiros.</li>
+    </ul>
+
+    <h3>⚙️ Administración</h3>
+    <ul>
+        <li><strong>Usuarios</strong>: invitar al equipo.</li>
+        <li><strong>Roles</strong>: definir qué puede hacer cada uno.</li>
+        <li><strong>Sedes</strong>: tiendas y bodegas.</li>
+        <li><strong>Impresoras</strong>: configurar térmicas locales.</li>
+        <li><strong>Plantillas de impresión</strong>: personalizar tickets.</li>
+        <li><strong>Configuraciones</strong>: empresa, POS, restaurante.</li>
+        <li><strong>Mi perfil</strong>: nombre, contraseña.</li>
+    </ul>
+
+    <div class="page-break"></div>
+
+    <h2>Cómo se ve trabajando un día normal</h2>
+
+    <h3>Mañana — abrir el negocio</h3>
+    <ol>
+        <li>El <strong>cajero</strong> entra al POS, abre la caja con el monto inicial.</li>
+        <li>Si hubo ventas suspendidas, las puede recuperar.</li>
+        <li>El <strong>dueño o gerente</strong> revisa el dashboard: cómo va el mes, qué falta cobrar, qué hay que pagar.</li>
+    </ol>
+
+    <h3>Durante el día</h3>
+    <ol>
+        <li>El cajero <strong>vende</strong>: busca el producto, escanea, agrega al carrito, cobra, imprime ticket.</li>
+        <li>Si es electrónica: <strong>pistolea el serial</strong> del equipo y queda vinculado a la venta.</li>
+        <li>Si es restaurante: <strong>mesero toma pedido en mesa</strong>, comanda sale en cocina, cocinero marca listo, mesero entrega y cierra cuenta.</li>
+        <li>Si llega un proveedor con factura: se digita o se sube, se postea, entra al inventario y queda el asiento contable.</li>
+        <li>Si llega un cliente con garantía: buscar por serial, crear ticket, imprimir comprobante, asignar técnico.</li>
+    </ol>
+
+    <h3>Final del día</h3>
+    <ol>
+        <li>El cajero <strong>cierra caja</strong>: digita lo que cuenta físicamente.</li>
+        <li>Imprime cierre.</li>
+        <li>El gerente revisa el resumen del día.</li>
+    </ol>
+
+    <h3>Cada semana</h3>
+    <ul>
+        <li>El contador revisa los asientos generados.</li>
+        <li>Concilia bancos con extractos.</li>
+        <li>Programa pagos a proveedores.</li>
+    </ul>
+
+    <h3>Cada mes</h3>
+    <ul>
+        <li><strong>Liquida nómina</strong> del personal.</li>
+        <li>Genera IVA bimestral si aplica.</li>
+        <li>Revisa retenciones del mes.</li>
+        <li><strong>Cierra el mes contable</strong>.</li>
+    </ul>
+
+    <h3>Cada año</h3>
+    <ul>
+        <li>Genera <strong>Información Exógena</strong> para la DIAN.</li>
+        <li>Prepara declaración de renta con el contador.</li>
+        <li>Abre nuevo periodo fiscal.</li>
+    </ul>
+
+    <div class="page-break"></div>
+
+    <h2>Casos de uso típicos</h2>
+
+    <div class="case">
+        <h3>Caso 1 — Tienda de barrio</h3>
+        <p><strong>Cliente típico</strong>: minimarket, droguería, tienda de víveres.</p>
+        <p><strong>Configuración mínima</strong>: una sede, un cajero más el dueño como administrador, catálogo de 200 a 2.000 productos con código de barras, impresora térmica.</p>
+        <p><strong>Uso diario</strong>: POS rápido con escaneo de barras, cierres de caja cada noche, inventario actualizado, reporte semanal al dueño.</p>
+        <blockquote>"Deja Excel atrás. El sistema te dice cuánto vendiste, cuánto debes a proveedores y cuánto stock tienes — sin que tengas que sumar nada."</blockquote>
+    </div>
+
+    <div class="case">
+        <h3>Caso 2 — Restaurante / pizzería</h3>
+        <p><strong>Cliente típico</strong>: restaurante de 10-20 mesas, comida casual.</p>
+        <p><strong>Configuración mínima</strong>: una sede con zonas (salón, terraza), mesas configuradas, mesero, cocinero, cajero, administrador, impresora de tickets en caja más impresora de comandas en cocina, carta con código QR.</p>
+        <p><strong>Uso diario</strong>: mesero toma pedido en cada mesa, comanda sale en cocina al instante, cocinero marca listo, mesero cobra y libera la mesa.</p>
+        <blockquote>"Tus meseros no van más a cocina con papelitos. La comanda sale impresa al instante con todo claro. Y al final del día sabes cuánto vendiste de cada plato."</blockquote>
+    </div>
+
+    <div class="case">
+        <h3>Caso 3 — Tienda de electrónica / tecnología</h3>
+        <p><strong>Cliente típico</strong>: tienda de computadores, celulares, impresoras.</p>
+        <p><strong>Configuración mínima</strong>: activar gestión de seriales y garantías, productos con días de garantía configurados.</p>
+        <p><strong>Uso diario</strong>: en cada compra a proveedor se cargan los seriales; en el POS el cajero pistolea el serial; cuando llega un cliente con falla se busca por serial y se abre ticket de garantía.</p>
+        <blockquote>"Nunca más perderás un cliente porque no encuentras su factura. Buscas por número de serie y aparece todo: cuándo lo compró, qué garantía tiene, qué reparaciones hizo antes."</blockquote>
+    </div>
+
+    <div class="case">
+        <h3>Caso 4 — Tienda con varias sedes</h3>
+        <p><strong>Cliente típico</strong>: cadena de 3-10 tiendas, mismo dueño.</p>
+        <p><strong>Configuración mínima</strong>: una sede por tienda física más una bodega central si la hay, cajeros locales por sede, administrador centralizado, transferencias habilitadas.</p>
+        <p><strong>Uso diario</strong>: cada tienda vende con su propio cajero y stock, bodega central despacha con transferencias, reportes consolidados o por sede.</p>
+        <blockquote>"Manejas todas tus tiendas desde un solo lugar. Sabes en tiempo real cuál vende más, qué se está agotando, y mueves stock entre sedes con un clic."</blockquote>
+    </div>
+
+    <div class="case">
+        <h3>Caso 5 — Negocio que arranca de cero</h3>
+        <p><strong>Cliente típico</strong>: emprendedor que abre su primera tienda.</p>
+        <p><strong>Configuración mínima</strong>: plan free-trial 30 días, capacitación inicial de 2 horas, configuración básica con 50 productos.</p>
+        <blockquote>"No necesitas saber de contabilidad. El sistema lleva los libros por ti. Cuando vayas con tu contador a fin de año, todo está listo."</blockquote>
+    </div>
+
+    <div class="page-break"></div>
+
+    <h2>Diferenciadores frente a la competencia</h2>
+    <p>Cuando el cliente compare con otras opciones (cuadernos, Excel, otros software), estos son los puntos fuertes:</p>
+
+    <h3>1. Todo en uno</h3>
+    <p>Otros sistemas hacen una parte (solo POS, solo contabilidad, solo inventario). Emprenddi cubre todo y los módulos hablan entre sí: una venta actualiza inventario, genera asiento y, si aplica, va a DIAN — sin doble digitación.</p>
+
+    <h3>2. Funciona desde cualquier dispositivo</h3>
+    <p>No hay que instalar nada. Computador, tablet o celular con navegador. Cambia de sede o de empleado sin reinstalar.</p>
+
+    <h3>3. Configuración automática</h3>
+    <p>El cliente se registra y queda con todo listo: plan de cuentas, impuestos, métodos de pago, sede. <strong>No hay que esperar al asesor para vender.</strong></p>
+
+    <h3>4. Pensado para Colombia</h3>
+    <ul>
+        <li>Plan de Cuentas colombiano de fábrica.</li>
+        <li>Cálculo correcto de IVA, INC, retenciones.</li>
+        <li>Facturación electrónica DIAN integrada.</li>
+        <li>Información exógena anual lista.</li>
+        <li>Nómina con prestaciones legales colombianas.</li>
+    </ul>
+
+    <h3>5. Imprime en cualquier térmica</h3>
+    <p>Una sola configuración y la térmica imprime sin drivers ni complicaciones.</p>
+
+    <h3>6. Multi-sede de verdad</h3>
+    <p>No solo "varias tiendas" — cada sede tiene su propio inventario, consecutivos, impresora y reportes. Y se transfiere stock entre ellas con asiento contable correcto.</p>
+
+    <h3>7. Portal del contador externo</h3>
+    <p>El contador del cliente entra a su propio panel (no comparte clave con el dueño), maneja varias empresas desde un solo lugar, y solo ve lo contable.</p>
+
+    <h3>8. Soporte cercano</h3>
+    <p>Equipo en Colombia, respuesta en español, capacitación incluida.</p>
+
+    <div class="page-break"></div>
+
+    <h2>Preguntas frecuentes (FAQ para ventas)</h2>
+
+    <h4>¿Funciona si se cae el internet?</h4>
+    <p>El sistema requiere conexión para vender. Recomendamos plan de internet con respaldo (4G del celular). Para sectores con internet inestable, hay opciones futuras de modo sin conexión.</p>
+
+    <h4>¿Mis datos están seguros?</h4>
+    <p>Sí. Servidores en Google Cloud, respaldos diarios automáticos, conexión cifrada. Cada empresa tiene sus datos aislados — nadie ve la información de otra.</p>
+
+    <h4>¿Puedo migrar desde otro sistema?</h4>
+    <p>Sí. Cargamos los saldos contables iniciales con un asiento de apertura y el inventario inicial. La capacitación incluye esta migración.</p>
+
+    <h4>¿Cuánto tarda la implementación?</h4>
+    <p>Una sesión de configuración (2 horas) más una sesión de capacitación (2 horas). El cliente empieza a vender el mismo día.</p>
+
+    <h4>¿Cuántos usuarios puedo tener?</h4>
+    <p>Depende del plan contratado. El plan Pro incluye múltiples usuarios.</p>
+
+    <h4>¿Qué pasa al terminar el periodo de prueba?</h4>
+    <p>El cliente puede contratar uno de los planes pagos para seguir usando. Los datos se conservan.</p>
+
+    <h4>¿Puedo facturar a la DIAN desde el día 1?</h4>
+    <p>La factura electrónica DIAN requiere que el cliente tenga ya su resolución aprobada y su certificado digital. Una vez los tenga, lo configuramos en 30 minutos.</p>
+
+    <h4>¿Funciona para mi negocio en particular?</h4>
+    <p>Si vende productos, servicios o ambos, sí. Tenemos clientes en retail, restaurantes, electrónica, ropa, talleres, distribuidores. Si tiene un caso muy especial, agenda una demo y validamos.</p>
+
+    <h4>¿Cuánto cuesta?</h4>
+    <p>Hay tres planes pagos según tamaño: <strong>Starter</strong> (microempresas), <strong>Pro</strong> (PyMEs con varios usuarios y sedes), <strong>Enterprise</strong> (empresas medianas). Todos incluyen contabilidad, POS, inventario y DIAN. El precio cambia según volumen y soporte.</p>
+
+    <h4>¿Funciona con mi impresora térmica?</h4>
+    <p>Sí. Cualquier impresora térmica que tu computador reconozca funciona con Emprenddi (Epson, Star, Citizen, genéricas).</p>
+
+    <h4>¿Tienen contador incluido?</h4>
+    <p>No. Emprenddi es el software. El contador es una persona aparte que recomendamos a quien no tenga. Ofrecemos también un <strong>Portal Contador</strong> para que el contador entre sin necesidad de compartir clave del dueño.</p>
+
+    <div class="page-break"></div>
+
+    <h2>Cómo presentar Emprenddi a un cliente</h2>
+
+    <h3>El argumento maestro (10 segundos)</h3>
+    <blockquote>"Emprenddi es la plataforma con la que vendes, manejas tu inventario, llevas tu contabilidad y facturas a la DIAN en un solo lugar. Desde el celular, la tablet o el computador. Sin instalar nada. Y al registrarte ya queda todo configurado, listo para que vendas en 5 minutos."</blockquote>
+
+    <h3>Cuando pregunte el precio</h3>
+    <blockquote>"Tenemos un plan de prueba 30 días gratis. Mientras tanto te capacitamos, cargamos tus datos, y al final decides si lo quieres seguir usando. Los planes pagos van desde [X] dependiendo del tamaño del negocio."</blockquote>
+
+    <h3>Cuando le preocupe migrar</h3>
+    <blockquote>"Nosotros te ayudamos. Te tomamos los saldos contables iniciales, te cargamos los productos, te enseñamos a tu equipo. En una semana estás operando como si siempre hubieras usado Emprenddi."</blockquote>
+
+    <h3>Cuando dude por la contabilidad</h3>
+    <blockquote>"El sistema genera los asientos contables automáticamente. Tú solo vendes y compras como siempre — los libros se llevan solos. Cuando vaya tu contador, encuentra todo cuadrado."</blockquote>
+
+    <h3>Cuando compare con competencia</h3>
+    <blockquote>"Otros sistemas hacen una parte. Emprenddi hace todo, y las partes hablan entre sí. Una venta actualiza inventario, genera asiento y va a DIAN — sin tener que digitar tres veces."</blockquote>
+
+    <h2>Lo que viene</h2>
+    <p>Estamos trabajando en mejoras continuas. En los próximos meses:</p>
+    <ul>
+        <li>Nómina electrónica DIAN (envío directo).</li>
+        <li>PDF de facturas descargables para enviar por correo.</li>
+        <li>Notificaciones por WhatsApp para garantías y cobros.</li>
+        <li>Aplicación móvil dedicada para tablet y celular.</li>
+        <li>Programa de fidelización de clientes con puntos.</li>
+        <li>Promociones y cupones con códigos.</li>
+    </ul>
+
+    <h2>Próximos pasos para implementar a un cliente</h2>
+    <p>Cuando el cliente decide contratar, este es el flujo:</p>
+    <ol>
+        <li>Confirmar plan y datos básicos (NIT, sede, cantidad de usuarios).</li>
+        <li>Registrar la cuenta (lo hace el cliente o el asesor).</li>
+        <li>Agendar sesión de configuración (2 horas): personalizar logo, cargar productos, terceros, impresora, resolución DIAN si aplica.</li>
+        <li>Agendar sesión de capacitación (2 horas por rol): cajeros, administrativo, contador.</li>
+        <li>Cargar saldos iniciales (inventario más balance contable).</li>
+        <li>Acompañamiento las primeras 2 semanas.</li>
+        <li>Seguimiento mensual durante los primeros 3 meses.</li>
+    </ol>
+    <p>Después de eso, el cliente ya es autónomo y solo nos contacta por soporte puntual o nuevas funcionalidades.</p>
+
+    <div class="doc-footer">
+        <div class="brand">Emprenddi</div>
+        Hecho en Colombia para los negocios que están creciendo.<br>
+        <span style="font-size: 9pt; color: #9ca3af;">Manual interno de Capacitación y Ventas · Versión 1.0 · Mayo 2026</span>
+    </div>
+
+</div>
+
+</body>
+</html>
