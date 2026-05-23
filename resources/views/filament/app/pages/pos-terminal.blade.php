@@ -280,10 +280,18 @@
         :is(.dark) .pos-cart-qty button:hover { background: #374151; }
         .pos-cart-qty button:active { transform: scale(0.9); }
         .pos-cart-qty input {
-            width: 42px; height: 26px; text-align: center;
-            font-size: 12px; font-weight: 600;
+            width: 52px; height: 26px; text-align: center;
+            font-size: 13px; font-weight: 600;
+            padding: 0 2px;
             border: 1px solid #e5e7eb; border-radius: 4px;
             background: #fff; outline: none;
+            -moz-appearance: textfield;
+        }
+        /* Oculta los spinners de type=number en WebKit (Chrome/Edge/Safari) y Firefox
+           para no robar ancho útil al número dentro del cajón. */
+        .pos-cart-qty input::-webkit-outer-spin-button,
+        .pos-cart-qty input::-webkit-inner-spin-button {
+            -webkit-appearance: none; margin: 0;
         }
         :is(.dark) .pos-cart-qty input { background: #111827; border-color: #374151; color: #f3f4f6; }
         .pos-cart-qty input:focus { border-color: rgb(99, 102, 241); box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2); }
