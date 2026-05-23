@@ -3,7 +3,10 @@
 namespace App\Filament\App\Resources\ProductSerialResource\Pages;
 
 use App\Filament\App\Resources\ProductSerialResource;
+use App\Filament\App\Resources\WarrantyResource;
 use App\Models\ProductSerial;
+use App\Support\WarrantiesSettings;
+use Filament\Actions;
 use Filament\Infolists;
 use Filament\Infolists\Infolist;
 use Filament\Resources\Pages\ViewRecord;
@@ -20,6 +23,24 @@ class ViewProductSerial extends ViewRecord
     public function getTitle(): string
     {
         return 'Serial '.$this->record->serial_number;
+    }
+
+    protected function getHeaderActions(): array
+    {
+        $record = $this->record;
+
+        return [
+            // Atajo a crear ticket de garantía precargando este serial.
+            // Solo aparece si la feature está activa y el serial está sold.
+            Actions\Action::make('createWarranty')
+                ->label('Crear garantía')
+                ->icon('heroicon-o-shield-check')
+                ->color('warning')
+                ->visible(fn () => WarrantiesSettings::enabled()
+                    && $record->status === ProductSerial::STATUS_SOLD
+                    && auth()->user()?->can('warranties.create'))
+                ->url(fn () => WarrantyResource::getUrl('create').'?serial='.$record->id),
+        ];
     }
 
     public function infolist(Infolist $infolist): Infolist

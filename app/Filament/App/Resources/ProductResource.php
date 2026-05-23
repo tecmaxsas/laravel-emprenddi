@@ -136,6 +136,15 @@ class ProductResource extends Resource
                                     ->helperText('Cada unidad entra y sale con su número de serie. Útil para equipos con garantía.')
                                     ->visible(fn () => \App\Support\SerialsSettings::enabled()),
 
+                                Forms\Components\TextInput::make('warranty_days')
+                                    ->label('Días de garantía')
+                                    ->numeric()
+                                    ->minValue(0)
+                                    ->maxValue(3650)
+                                    ->default(0)
+                                    ->helperText('0 = sin garantía. Se usa para calcular fecha de vencimiento al crear tickets.')
+                                    ->visible(fn () => \App\Support\WarrantiesSettings::enabled()),
+
                                 Forms\Components\Toggle::make('is_purchasable')
                                     ->label('Se compra')
                                     ->default(true),

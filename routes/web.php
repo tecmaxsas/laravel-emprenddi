@@ -12,6 +12,10 @@ Route::middleware(['web', 'auth'])->group(function () {
     Route::get('/app/pos/print/{invoice}', [PosPrintController::class, 'show'])
         ->name('pos.print');
 
+    // Comprobante imprimible de garantía (constancia de recepción)
+    Route::get('/app/warranties/{warranty}/print', [\App\Http\Controllers\WarrantyPrintController::class, 'show'])
+        ->name('warranties.print');
+
     // Firma de peticiones QZ Tray (impresión local).
     Route::get('/qz/certificate', [\App\Http\Controllers\QzSigningController::class, 'certificate'])
         ->name('qz.certificate');

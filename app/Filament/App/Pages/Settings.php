@@ -73,6 +73,9 @@ class Settings extends Page implements HasForms
             // Inventario / seriales (settings.serials.*)
             'serials_enabled' => (bool) data_get($settings, 'serials.enabled', false),
 
+            // Garantías (settings.warranties.*)
+            'warranties_enabled' => (bool) data_get($settings, 'warranties.enabled', false),
+
             // POS settings (settings.pos.*)
             'pos_allow_price_modification' => (bool) data_get($settings, 'pos.allow_price_modification', true),
             'pos_allow_discount' => (bool) data_get($settings, 'pos.allow_discount', true),
@@ -208,6 +211,14 @@ class Settings extends Page implements HasForms
                         ->helperText('Si lo desactivas no se borran los seriales existentes, solo se oculta la UI.'),
                 ]),
 
+            Forms\Components\Section::make('Garantías')
+                ->description('Gestiona reclamaciones de garantía / RMA: cuando un cliente trae un equipo, se crea un ticket vinculado a su factura o serial, se asigna a un técnico y se hace seguimiento de estado (recibida → en reparación → resuelta / reemplazada / rechazada → entregada). El plazo se calcula por producto (campo "Días de garantía" en cada SKU).')
+                ->schema([
+                    Forms\Components\Toggle::make('warranties_enabled')
+                        ->label('Activar módulo de garantías')
+                        ->helperText('Si lo desactivas no se borran los tickets existentes, solo se oculta el menú.'),
+                ]),
+
             Forms\Components\Actions::make([
                 Forms\Components\Actions\Action::make('saveCompany')
                     ->label('Guardar datos de empresa')
@@ -299,6 +310,9 @@ class Settings extends Page implements HasForms
         $settings = $company->settings ?? [];
         $settings['serials'] = array_merge($settings['serials'] ?? [], [
             'enabled' => (bool) ($state['serials_enabled'] ?? false),
+        ]);
+        $settings['warranties'] = array_merge($settings['warranties'] ?? [], [
+            'enabled' => (bool) ($state['warranties_enabled'] ?? false),
         ]);
 
         $company->update([

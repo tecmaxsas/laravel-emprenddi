@@ -53,6 +53,11 @@ class PermissionsCatalog
                 'serials.view' => 'Ver seriales (consulta para garantía)',
                 'serials.manage' => 'Editar / corregir seriales',
             ],
+            'Garantías' => [
+                'warranties.view' => 'Ver tickets de garantía',
+                'warranties.create' => 'Crear tickets de garantía',
+                'warranties.manage' => 'Cambiar estado, asignar técnico y resolver garantías',
+            ],
             'Compras' => [
                 'purchases.view' => 'Ver facturas de compra',
                 'purchases.create' => 'Crear facturas de compra (borrador)',
@@ -190,6 +195,7 @@ class PermissionsCatalog
                 'third_parties.view', 'third_parties.manage',
                 'inventory.view',
                 'serials.view',
+                'warranties.view', 'warranties.create',
                 // Restaurant: el cajero/mesero usa el POS de mesas y la cocina
                 'restaurant.use', 'restaurant.kitchen', 'restaurant.bill.split',
                 'restaurant.delivery.manage', 'restaurant.reservations.manage',
