@@ -25,10 +25,26 @@
         .rpos-table:hover { transform:translateY(-3px); box-shadow:0 8px 16px rgba(0,0,0,0.2); }
         .rpos-table-code { font-size:18px; line-height:1; }
         .rpos-table-meta { font-size:11px; opacity:0.95; margin-top:4px; }
-        .rpos-catalog-btn { padding:10px 12px; border-radius:8px; background:#ffffff; border:1px solid #e5e7eb; cursor:pointer; text-align:left; font-size:13px; transition:all 120ms; }
+        .rpos-catalog-btn { padding:6px; border-radius:8px; background:#ffffff; border:1px solid #e5e7eb; cursor:pointer; text-align:left; font-size:13px; transition:all 120ms; display:flex; flex-direction:column; }
         :is(.dark) .rpos-catalog-btn { background:rgb(31,41,55); border-color:rgb(55,65,81); color:rgb(229,231,235); }
         .rpos-catalog-btn:hover { background:rgb(238,242,255); border-color:rgb(99,102,241); }
         :is(.dark) .rpos-catalog-btn:hover { background:rgb(30,27,75); }
+        .rpos-catalog-img {
+            width:100%; aspect-ratio:1/1; max-height:80px;
+            border-radius:6px; overflow:hidden;
+            background:#f1f5f9; display:flex; align-items:center; justify-content:center;
+            color:#94a3b8; margin-bottom:5px;
+        }
+        :is(.dark) .rpos-catalog-img { background:rgb(17,24,39); color:rgb(75,85,99); }
+        .rpos-catalog-img img { width:100%; height:100%; object-fit:cover; }
+        /* Sticky del catálogo para que siempre se vea al hacer scroll de items */
+        .rpos-catalog-sticky {
+            position:sticky; top:0; z-index:5;
+            background:#ffffff; padding:10px; margin:-10px -10px 14px; border-radius:10px;
+            border:1px solid #e5e7eb;
+            box-shadow:0 2px 4px rgba(0,0,0,0.04);
+        }
+        :is(.dark) .rpos-catalog-sticky { background:rgb(17,24,39); border-color:rgb(31,41,55); }
         .rpos-item-row { display:flex; gap:8px; padding:8px 10px; border-radius:8px; align-items:center; }
         .rpos-item-row:hover { background:#f9fafb; }
         :is(.dark) .rpos-item-row:hover { background:rgb(31,41,55); }
@@ -372,6 +388,64 @@
                     <button type="button" wire:click="closeOrderPanel"
                             title="Cerrar panel (la orden queda guardada)"
                             style="width:36px; height:36px; border-radius:8px; background:#ef4444; color:#ffffff; border:0; cursor:pointer; font-size:20px; font-weight:700; line-height:1; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 2px 4px rgba(0,0,0,0.15); flex-shrink:0;">×</button>
+                </div>
+
+                {{-- Catálogo de productos: arriba para venta rápida sin scroll.
+                     Buscador + categorías + grid con imágenes. --}}
+                <div class="rpos-catalog-sticky">
+                    <div style="display:flex; gap:6px; margin-bottom:8px;">
+                        <input type="text" wire:model.live.debounce.300ms="productSearch"
+                               placeholder="Buscar por nombre / código / barcode"
+                               style="flex:1; padding:8px 10px; border-radius:8px; border:1px solid #d1d5db; font-size:13px;"
+                               class="dark:!bg-gray-800 dark:!border-gray-700 dark:!text-gray-100" />
+
+                        @if ($rs['half_and_half'])
+                            <button type="button" wire:click="openHalfModal"
+                                    title="Pizza/pasta con dos sabores"
+                                    style="padding:8px 14px; border-radius:8px; background:#a855f7; color:white; border:0; font-weight:700; cursor:pointer; font-size:13px; white-space:nowrap;">
+                                🍕 1/2 + 1/2
+                            </button>
+                        @endif
+                    </div>
+
+                    {{-- Tabs de categoría --}}
+                    <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:10px;">
+                        <button type="button" wire:click="$set('activeCategoryId', null)"
+                                style="padding:4px 10px; font-size:11px; border-radius:6px; background:{{ $this->activeCategoryId === null ? 'rgb(99,102,241)' : '#f3f4f6' }}; color:{{ $this->activeCategoryId === null ? 'white' : '#374151' }}; border:0; cursor:pointer; font-weight:600;"
+                                class="@if($this->activeCategoryId !== null) dark:!bg-gray-800 dark:!text-gray-300 @endif">
+                            Todas
+                        </button>
+                        @foreach ($categories as $cat)
+                            <button type="button" wire:click="$set('activeCategoryId', {{ $cat->id }})"
+                                    style="padding:4px 10px; font-size:11px; border-radius:6px; background:{{ $this->activeCategoryId === $cat->id ? 'rgb(99,102,241)' : '#f3f4f6' }}; color:{{ $this->activeCategoryId === $cat->id ? 'white' : '#374151' }}; border:0; cursor:pointer; font-weight:600;"
+                                    class="@if($this->activeCategoryId !== $cat->id) dark:!bg-gray-800 dark:!text-gray-300 @endif">
+                                {{ $cat->name }}
+                            </button>
+                        @endforeach
+                    </div>
+
+                    {{-- Grid de productos con imagen --}}
+                    <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap:6px; max-height:340px; overflow-y:auto;">
+                        @forelse ($catalog as $p)
+                            <button type="button" wire:click="addProduct({{ $p->id }})" class="rpos-catalog-btn">
+                                <div class="rpos-catalog-img">
+                                    @if ($p->image_path)
+                                        <img src="{{ \Illuminate\Support\Facades\Storage::url($p->image_path) }}" alt="" loading="lazy" />
+                                    @else
+                                        <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+                                    @endif
+                                </div>
+                                <div style="font-weight:600; font-size:11.5px; line-height:1.25; padding:0 2px;">{{ $p->name }}</div>
+                                <div style="font-size:11px; color:#10b981; font-weight:700; margin-top:2px; padding:0 2px;">
+                                    ${{ number_format((float) $p->default_sale_price, 0, ',', '.') }}
+                                </div>
+                            </button>
+                        @empty
+                            <div style="grid-column: 1/-1; padding:20px; text-align:center; color:#9ca3af; font-size:13px;">
+                                Sin productos. Verifica que tengas productos con <code>is_sellable=true</code>.
+                            </div>
+                        @endforelse
+                    </div>
                 </div>
 
                 {{-- Modo de servicio --}}
@@ -760,55 +834,6 @@
                     </div>
                 </div>
 
-                {{-- Catálogo de productos --}}
-                <div style="border-top:2px dashed #e5e7eb; padding-top:14px;" class="dark:!border-gray-700">
-                    <div style="display:flex; gap:6px; margin-bottom:8px;">
-                        <input type="text" wire:model.live.debounce.300ms="productSearch"
-                               placeholder="Buscar por nombre / código / barcode"
-                               style="flex:1; padding:8px 10px; border-radius:8px; border:1px solid #d1d5db; font-size:13px;"
-                               class="dark:!bg-gray-800 dark:!border-gray-700 dark:!text-gray-100" />
-
-                        @if ($rs['half_and_half'])
-                            <button type="button" wire:click="openHalfModal"
-                                    title="Pizza/pasta con dos sabores"
-                                    style="padding:8px 14px; border-radius:8px; background:#a855f7; color:white; border:0; font-weight:700; cursor:pointer; font-size:13px; white-space:nowrap;">
-                                🍕 1/2 + 1/2
-                            </button>
-                        @endif
-                    </div>
-
-                    {{-- Tabs de categoría --}}
-                    <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:10px;">
-                        <button type="button" wire:click="$set('activeCategoryId', null)"
-                                style="padding:4px 10px; font-size:11px; border-radius:6px; background:{{ $this->activeCategoryId === null ? 'rgb(99,102,241)' : '#f3f4f6' }}; color:{{ $this->activeCategoryId === null ? 'white' : '#374151' }}; border:0; cursor:pointer; font-weight:600;"
-                                class="@if($this->activeCategoryId !== null) dark:!bg-gray-800 dark:!text-gray-300 @endif">
-                            Todas
-                        </button>
-                        @foreach ($categories as $cat)
-                            <button type="button" wire:click="$set('activeCategoryId', {{ $cat->id }})"
-                                    style="padding:4px 10px; font-size:11px; border-radius:6px; background:{{ $this->activeCategoryId === $cat->id ? 'rgb(99,102,241)' : '#f3f4f6' }}; color:{{ $this->activeCategoryId === $cat->id ? 'white' : '#374151' }}; border:0; cursor:pointer; font-weight:600;"
-                                    class="@if($this->activeCategoryId !== $cat->id) dark:!bg-gray-800 dark:!text-gray-300 @endif">
-                                {{ $cat->name }}
-                            </button>
-                        @endforeach
-                    </div>
-
-                    {{-- Grid de productos --}}
-                    <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap:6px; max-height:300px; overflow-y:auto;">
-                        @forelse ($catalog as $p)
-                            <button type="button" wire:click="addProduct({{ $p->id }})" class="rpos-catalog-btn">
-                                <div style="font-weight:600; font-size:12px; line-height:1.3;">{{ $p->name }}</div>
-                                <div style="font-size:11px; color:#10b981; font-weight:700; margin-top:2px;">
-                                    ${{ number_format((float) $p->default_sale_price, 0, ',', '.') }}
-                                </div>
-                            </button>
-                        @empty
-                            <div style="grid-column: 1/-1; padding:20px; text-align:center; color:#9ca3af; font-size:13px;">
-                                Sin productos. Verifica que tengas productos con <code>is_sellable=true</code>.
-                            </div>
-                        @endforelse
-                    </div>
-                </div>
             </div>
         @endif
     </div>
