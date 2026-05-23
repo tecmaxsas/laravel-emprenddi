@@ -33,8 +33,8 @@ class AppPanelProvider extends PanelProvider
             ->registration(Register::class)
             ->brandName('Emprenddi')
             ->brandLogo(asset('logos/logo_emprenddi.svg'))
-            ->darkModeBrandLogo(asset('logos/logo_emprenddi_blanco_fondo_oscuro.svg'))
-            ->brandLogoHeight('4.5rem')
+            ->darkModeBrandLogo(asset('logos/logo_emprenddi_blanco_sin_fondo.svg'))
+            ->brandLogoHeight('3.75rem')
             ->favicon(asset('logos/favicon_emprenddi.svg'))
             ->colors([
                 'primary' => Color::Indigo,

@@ -7,12 +7,12 @@
     /* Topbar (modo sidebar colapsado / mobile) — alto para acomodar el logo */
     .fi-topbar nav,
     .fi-topbar > nav {
-        min-height: 5.5rem;
+        min-height: 5rem;
     }
 
     /* Header del sidebar (donde vive el logo en desktop) */
     .fi-sidebar-header {
-        min-height: 5.5rem !important;
+        min-height: 5rem !important;
         padding-top: 0.5rem;
         padding-bottom: 0.5rem;
         overflow: visible;
@@ -32,12 +32,12 @@
     .fi-topbar img.fi-logo,
     .fi-topbar a img,
     .fi-sidebar-header a img {
-        height: 4.5rem !important;
-        max-height: 4.5rem !important;
+        height: 3.75rem !important;
+        max-height: 3.75rem !important;
         width: auto !important;
         max-width: none !important;
         object-fit: contain;
-        transform: scale(1.35);
+        transform: scale(1.25);
         transform-origin: left center;
     }
 </style>
