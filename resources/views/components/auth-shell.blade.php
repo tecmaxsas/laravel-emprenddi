@@ -64,10 +64,13 @@
         animation:authFloat 11s ease-in-out infinite reverse;
     }
     .auth-brand-inner { position:relative; z-index:1; display:flex; flex-direction:column; height:100%; }
-    .auth-logo { display:block; }
+    .auth-logo { display:block; margin-bottom:6px; }
     .auth-logo img {
-        height:72px; width:auto; max-width:100%; display:block;
+        height:108px; width:auto; max-width:100%; display:block;
         object-fit:contain; object-position:left center;
+    }
+    @media (max-width:860px) {
+        .auth-logo img { height:78px; }
     }
     .auth-tagline { font-size:1.7rem; font-weight:800; line-height:1.2; margin-top:38px; letter-spacing:-.02em; }
     .auth-desc { font-size:13.5px; line-height:1.65; color:rgba(255,255,255,.82); margin-top:12px; }

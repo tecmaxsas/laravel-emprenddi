@@ -34,7 +34,7 @@ class ContadorPanelProvider extends PanelProvider
             ->brandName('Portal Contador')
             ->brandLogo(asset('logos/logo_emprenddi.svg'))
             ->darkModeBrandLogo(asset('logos/logo_emprenddi_blanco_fondo_oscuro.svg'))
-            ->brandLogoHeight('3rem')
+            ->brandLogoHeight('3.25rem')
             ->favicon(asset('logos/favicon_emprenddi.svg'))
             ->colors([
                 'primary' => Color::Emerald,
@@ -70,6 +70,10 @@ class ContadorPanelProvider extends PanelProvider
             ->renderHook(
                 PanelsRenderHook::TOPBAR_END,
                 fn (): string => view('filament.contador.topbar.active-company')->render(),
+            )
+            ->renderHook(
+                PanelsRenderHook::HEAD_END,
+                fn (): string => view('partials.filament-brand-styles')->render(),
             );
     }
 }

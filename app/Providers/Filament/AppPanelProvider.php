@@ -34,7 +34,7 @@ class AppPanelProvider extends PanelProvider
             ->brandName('Emprenddi')
             ->brandLogo(asset('logos/logo_emprenddi.svg'))
             ->darkModeBrandLogo(asset('logos/logo_emprenddi_blanco_fondo_oscuro.svg'))
-            ->brandLogoHeight('3rem')
+            ->brandLogoHeight('3.25rem')
             ->favicon(asset('logos/favicon_emprenddi.svg'))
             ->colors([
                 'primary' => Color::Indigo,
@@ -80,6 +80,10 @@ class AppPanelProvider extends PanelProvider
             // un icono hamburguesa. El bundle de Filament no expone forma
             // declarativa de cambiar ese icono — usamos CSS con mask para
             // ocultar el SVG original y dibujar el burger.
+            ->renderHook(
+                PanelsRenderHook::HEAD_END,
+                fn (): string => view('partials.filament-brand-styles')->render(),
+            )
             ->renderHook(
                 PanelsRenderHook::HEAD_END,
                 fn (): string => <<<'HTML'

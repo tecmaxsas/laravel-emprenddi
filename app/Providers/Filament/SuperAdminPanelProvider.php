@@ -10,6 +10,7 @@ use Filament\Pages;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
+use Filament\View\PanelsRenderHook;
 use Filament\Widgets;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
@@ -30,7 +31,7 @@ class SuperAdminPanelProvider extends PanelProvider
             ->brandName('Emprenddi · SuperAdmin')
             ->brandLogo(asset('logos/logo_emprenddi.svg'))
             ->darkModeBrandLogo(asset('logos/logo_emprenddi_blanco_fondo_oscuro.svg'))
-            ->brandLogoHeight('3rem')
+            ->brandLogoHeight('3.25rem')
             ->favicon(asset('logos/favicon_emprenddi.svg'))
             ->colors([
                 'primary' => Color::Rose,
@@ -57,6 +58,10 @@ class SuperAdminPanelProvider extends PanelProvider
             ])
             ->authMiddleware([
                 Authenticate::class,
-            ]);
+            ])
+            ->renderHook(
+                PanelsRenderHook::HEAD_END,
+                fn (): string => view('partials.filament-brand-styles')->render(),
+            );
     }
 }
