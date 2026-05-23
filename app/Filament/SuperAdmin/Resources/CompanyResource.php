@@ -263,7 +263,124 @@ class CompanyResource extends Resource
                             ->body("Se crearon {$created} impuestos nuevos en {$record->name}.")
                             ->send();
                     }),
+
+                Tables\Actions\ActionGroup::make([
+                    self::resetDataAction(withProducts: false),
+                    self::resetDataAction(withProducts: true),
+                ])
+                    ->label('Resetear datos')
+                    ->icon('heroicon-o-exclamation-triangle')
+                    ->color('danger')
+                    ->button(),
             ]);
+    }
+
+    /**
+     * Acción destructiva: borra los datos transaccionales de la empresa.
+     * - $withProducts=false  → conserva products y product_locations (stock queda en 0 al borrar inventory_movements).
+     * - $withProducts=true   → borra TODO incluyendo productos.
+     *
+     * Doble salvaguarda: el usuario debe escribir el NIT EXACTO en un input
+     * antes de poder confirmar (anti error humano). Solo super-admin puede
+     * ver/ejecutar la acción.
+     */
+    protected static function resetDataAction(bool $withProducts): Tables\Actions\Action
+    {
+        $modeKey = $withProducts ? 'full' : 'preserve';
+        $modeLabel = $withProducts
+            ? 'Borrar TODO (incluso productos)'
+            : 'Borrar datos (mantener productos)';
+
+        return Tables\Actions\Action::make('reset_'.$modeKey)
+            ->label($modeLabel)
+            ->icon($withProducts ? 'heroicon-o-trash' : 'heroicon-o-archive-box-x-mark')
+            ->color('danger')
+            ->visible(fn () => (bool) auth()->user()?->is_super_admin)
+            ->modalIcon('heroicon-o-exclamation-triangle')
+            ->modalIconColor('danger')
+            ->modalHeading($modeLabel)
+            ->modalWidth('xl')
+            ->modalDescription(function (Company $record) use ($withProducts) {
+                $preview = app(\App\Services\Maintenance\CompanyDataReset::class)
+                    ->preview($record, withProducts: $withProducts);
+                $total = array_sum($preview);
+
+                $msg = sprintf(
+                    'Vas a borrar todos los datos transaccionales de "%s" (NIT %s). ',
+                    $record->name,
+                    $record->nit,
+                );
+                $msg .= $withProducts
+                    ? 'Esto incluye los PRODUCTOS y todo su histórico. '
+                    : 'Los productos se mantienen pero su inventario queda en 0. ';
+                $msg .= 'NO se borran usuarios, clientes, proveedores, sedes, PUC, impuestos, plantillas ni catálogos del restaurante. ';
+                $msg .= 'La operación es IRREVERSIBLE.';
+
+                if ($total === 0) {
+                    $msg .= "\n\nLa empresa no tiene datos transaccionales — no hay nada para borrar.";
+                } else {
+                    $msg .= "\n\nSe borrarán {$total} registros distribuidos así:";
+                    arsort($preview);
+                    $top = array_slice($preview, 0, 8, true);
+                    foreach ($top as $table => $count) {
+                        $msg .= "\n  · {$table}: ".number_format($count);
+                    }
+                    if (count($preview) > 8) {
+                        $msg .= "\n  · ... y ".(count($preview) - 8).' tabla(s) más';
+                    }
+                }
+
+                return $msg;
+            })
+            ->form([
+                \Filament\Forms\Components\TextInput::make('confirm_nit')
+                    ->label('Escribe el NIT de la empresa para confirmar')
+                    ->placeholder('NIT exacto sin puntos ni guiones')
+                    ->required()
+                    ->autocomplete('off')
+                    ->helperText('Esta acción no se puede deshacer. Validamos el NIT para evitar borrar la empresa equivocada.'),
+            ])
+            ->modalSubmitActionLabel('Borrar definitivamente')
+            ->action(function (Company $record, array $data) use ($withProducts) {
+                if (trim((string) ($data['confirm_nit'] ?? '')) !== (string) $record->nit) {
+                    Notification::make()
+                        ->danger()
+                        ->title('NIT no coincide')
+                        ->body('El NIT digitado no coincide con el de la empresa. No se borró nada.')
+                        ->persistent()
+                        ->send();
+                    return;
+                }
+
+                try {
+                    $service = app(\App\Services\Maintenance\CompanyDataReset::class);
+                    $counts = $withProducts
+                        ? $service->resetTransactional($record)
+                        : $service->resetTransactionalKeepingProducts($record);
+
+                    $total = array_sum($counts);
+                    Notification::make()
+                        ->success()
+                        ->title('Reset completado')
+                        ->body(sprintf(
+                            'Se borraron %s registros de "%s". %s',
+                            number_format($total),
+                            $record->name,
+                            $withProducts
+                                ? 'Productos eliminados.'
+                                : 'Productos conservados (inventario en 0).',
+                        ))
+                        ->persistent()
+                        ->send();
+                } catch (\Throwable $e) {
+                    Notification::make()
+                        ->danger()
+                        ->title('Error en el reset')
+                        ->body($e->getMessage())
+                        ->persistent()
+                        ->send();
+                }
+            });
     }
 
     public static function getRelations(): array
