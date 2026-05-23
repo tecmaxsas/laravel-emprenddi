@@ -56,7 +56,7 @@
                 ['Cookies', 'Utilizamos cookies necesarias para el funcionamiento, la sesión y la seguridad de la plataforma. Puedes gestionarlas desde la configuración de tu navegador.'],
                 ['Autoridad de control', 'La Superintendencia de Industria y Comercio (SIC) es la autoridad de control en materia de protección de datos personales en Colombia.'],
                 ['Vigencia y cambios', 'Esta política rige desde su publicación. Podemos actualizarla; las modificaciones se publicarán en esta misma página.'],
-                ['Contacto', 'Para solicitudes relacionadas con tus datos personales, escribinos a '.$email.'.'],
+                ['Contacto', 'Para solicitudes relacionadas con tus datos personales, escríbenos a '.$email.'.'],
             ],
         ],
     ];
@@ -68,6 +68,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ $current['title'] }} · {{ $co }}</title>
+    <link rel="icon" type="image/svg+xml" href="{{ asset('logos/favicon_emprenddi.svg') }}">
+    <link rel="icon" type="image/png" href="{{ asset('logos/favicon_emprenddi.png') }}">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
     <style>
         * { box-sizing:border-box; margin:0; padding:0; }
@@ -81,7 +83,8 @@
             background:radial-gradient(circle,rgba(255,255,255,.18),transparent 70%);
             top:-120px; right:-60px;
         }
-        .lg-brand { font-size:.95rem; font-weight:800; letter-spacing:.02em; opacity:.85; }
+        .lg-brand { display:inline-flex; align-items:center; justify-content:center; }
+        .lg-brand img { height:40px; width:auto; display:block; }
         .lg-title { font-size:clamp(1.6rem,4vw,2.3rem); font-weight:800; margin-top:10px; letter-spacing:-.02em; }
         .lg-updated { font-size:.8rem; opacity:.7; margin-top:10px; }
         .lg-wrap { max-width:760px; margin:-34px auto 0; padding:0 20px 70px; position:relative; }
@@ -110,7 +113,9 @@
 </head>
 <body>
     <header class="lg-hero">
-        <div class="lg-brand">✦ {{ mb_strtoupper($co) }}</div>
+        <div class="lg-brand">
+            <img src="{{ asset('logos/logo_emprenddi_blanco_sin_fondo.svg') }}" alt="{{ $co }}">
+        </div>
         <h1 class="lg-title">{{ $current['title'] }}</h1>
         <div class="lg-updated">Última actualización: {{ config('legal.updated_at') }}</div>
     </header>
