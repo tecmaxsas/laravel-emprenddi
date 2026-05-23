@@ -15,7 +15,7 @@ class EditDeliveryNote extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
-            Actions\DeleteAction::make()->visible(fn (DeliveryNote $r) => $r->isDraft()),
+            Actions\DeleteAction::make()->visible(fn (DeliveryNote $record) => $record->isDraft()),
         ];
     }
 

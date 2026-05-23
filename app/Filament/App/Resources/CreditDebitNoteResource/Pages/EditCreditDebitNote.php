@@ -15,7 +15,7 @@ class EditCreditDebitNote extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
-            Actions\DeleteAction::make()->visible(fn (CreditDebitNote $r) => $r->isDraft()),
+            Actions\DeleteAction::make()->visible(fn (CreditDebitNote $record) => $record->isDraft()),
         ];
     }
 

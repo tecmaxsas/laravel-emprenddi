@@ -92,6 +92,7 @@ class InventoryTransferResource extends Resource
                 ->schema([
                     Forms\Components\Repeater::make('lines')
                         ->relationship('lines')
+                        ->orderColumn('line_number')
                         ->label('')
                         ->schema([
                             Forms\Components\Select::make('product_id')
