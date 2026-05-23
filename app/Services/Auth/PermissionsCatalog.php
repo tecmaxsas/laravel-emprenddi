@@ -82,6 +82,7 @@ class PermissionsCatalog
                 'pos.use' => 'Usar el terminal POS',
                 'pos.cash_close' => 'Cerrar turno de caja',
                 'pos.resolutions.manage' => 'Configurar resoluciones POS y asignarlas a sedes',
+                'pos.discount.approve' => 'Aprobar descuentos del POS que exceden el umbral',
             ],
             'Restaurante' => [
                 'restaurant.use' => 'Usar el POS de restaurante (tomar pedidos)',

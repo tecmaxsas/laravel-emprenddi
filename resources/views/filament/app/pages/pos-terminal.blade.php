@@ -567,17 +567,17 @@
                                         </button>
                                     </div>
                                     <div class="grid grid-cols-12 gap-2 items-end">
-                                        {{-- Cantidad: 5 cols, controles más grandes para touch --}}
-                                        <div class="col-span-5">
+                                        {{-- Cantidad: 4 cols, controles más grandes para touch --}}
+                                        <div class="col-span-4">
                                             <div class="text-[10px] text-gray-400 mb-1 font-semibold uppercase tracking-wide">Cantidad</div>
                                             <div class="flex items-center gap-1">
                                                 <button type="button" wire:click="decLine({{ $i }})"
-                                                        class="w-8 h-8 shrink-0 rounded-md bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-base font-bold transition active:scale-90">−</button>
+                                                        class="w-7 h-8 shrink-0 rounded-md bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-base font-bold transition active:scale-90">−</button>
                                                 <input type="number" step="0.01" min="0"
                                                        wire:model.live.blur="cart.{{ $i }}.quantity"
                                                        class="flex-1 min-w-0 text-center text-sm font-semibold rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-1 py-1.5 outline-none focus:ring-2 focus:ring-primary-500" />
                                                 <button type="button" wire:click="incLine({{ $i }})"
-                                                        class="w-8 h-8 shrink-0 rounded-md bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-base font-bold transition active:scale-90">+</button>
+                                                        class="w-7 h-8 shrink-0 rounded-md bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-base font-bold transition active:scale-90">+</button>
                                             </div>
                                         </div>
 
@@ -595,12 +595,29 @@
                                             @endif
                                         </div>
 
-                                        {{-- Subtotal: 4 cols, prominente --}}
-                                        <div class="col-span-4 text-right">
+                                        {{-- Descuento % por línea: 2 cols --}}
+                                        @if ($posSettings['allow_discount'])
+                                            <div class="col-span-2">
+                                                <div class="text-[10px] text-gray-400 mb-1 font-semibold uppercase tracking-wide" title="Descuento de esta línea (%)">Desc %</div>
+                                                <input type="number" step="0.5" min="0" max="100"
+                                                       value="{{ rtrim(rtrim(number_format((float) ($line['discount_percentage_manual'] ?? 0), 2, '.', ''), '0'), '.') ?: '0' }}"
+                                                       wire:change="setLineDiscountPct({{ $i }}, $event.target.value)"
+                                                       class="w-full text-right text-xs rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-1 py-1.5 outline-none focus:ring-2 focus:ring-amber-500"
+                                                       placeholder="0" />
+                                            </div>
+                                        @endif
+
+                                        {{-- Subtotal: 3 cols, prominente --}}
+                                        <div class="{{ $posSettings['allow_discount'] ? 'col-span-3' : 'col-span-5' }} text-right">
                                             <div class="text-[10px] text-gray-400 mb-1 font-semibold uppercase tracking-wide">Subtotal</div>
                                             <div class="text-base font-bold text-primary-600 dark:text-primary-400 whitespace-nowrap py-1">
                                                 ${{ number_format($line['total'], 0, ',', '.') }}
                                             </div>
+                                            @if (! empty($line['discount_amount']) && (float) $line['discount_amount'] > 0)
+                                                <div class="text-[10px] text-amber-600 leading-tight">
+                                                    −${{ number_format((float) $line['discount_amount'], 0, ',', '.') }} dto.
+                                                </div>
+                                            @endif
                                         </div>
                                     </div>
                                 </div>
@@ -608,6 +625,45 @@
                         </div>
                     @endif
                 </div>
+
+                {{-- Descuento global — visible solo si la feature está habilitada y hay carrito --}}
+                @if ($posSettings['allow_discount'] && ! empty($cart))
+                    <div class="shrink-0 border-t border-gray-200 dark:border-gray-800 bg-amber-50 dark:bg-amber-950/30">
+                        <div class="px-4 py-2.5">
+                            <div class="flex items-center justify-between mb-1.5">
+                                <div class="text-[10px] text-amber-700 dark:text-amber-400 font-semibold uppercase tracking-wide">Descuento global</div>
+                                @if ($cartDiscountPct > 0)
+                                    <button type="button" wire:click="clearCartDiscount"
+                                            class="text-[10px] text-amber-700 dark:text-amber-400 hover:underline">Quitar</button>
+                                @endif
+                            </div>
+                            <div class="flex items-center gap-1">
+                                <div class="flex rounded-md border border-amber-300 dark:border-amber-700 overflow-hidden text-xs font-semibold">
+                                    <button type="button"
+                                            wire:click="$set('cartDiscountMode', 'pct')"
+                                            class="px-2 py-1 {{ $cartDiscountMode === 'pct' ? 'bg-amber-500 text-white' : 'bg-white dark:bg-gray-900 text-amber-700 dark:text-amber-400' }}">%</button>
+                                    <button type="button"
+                                            wire:click="$set('cartDiscountMode', 'amount')"
+                                            class="px-2 py-1 {{ $cartDiscountMode === 'amount' ? 'bg-amber-500 text-white' : 'bg-white dark:bg-gray-900 text-amber-700 dark:text-amber-400' }}">$</button>
+                                </div>
+                                <input type="number" step="0.01" min="0"
+                                       wire:change="setCartDiscount('{{ $cartDiscountMode }}', $event.target.value)"
+                                       value="{{ $cartDiscountMode === 'pct'
+                                           ? (rtrim(rtrim(number_format($cartDiscountPct, 2, '.', ''), '0'), '.') ?: '0')
+                                           : (int) $cartDiscountAmount }}"
+                                       class="flex-1 text-right text-xs rounded-md border border-amber-300 dark:border-amber-700 bg-white dark:bg-gray-900 px-2 py-1.5 outline-none focus:ring-2 focus:ring-amber-500"
+                                       placeholder="0" />
+                                <div class="flex gap-1">
+                                    @foreach ([5, 10, 20] as $quick)
+                                        <button type="button"
+                                                wire:click="setCartDiscount('pct', {{ $quick }})"
+                                                class="px-2 py-1.5 text-[10px] font-semibold rounded-md bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/60 transition">{{ $quick }}%</button>
+                                    @endforeach
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                @endif
 
                 {{-- Totales — shrink-0 para que SIEMPRE se vean al fondo del cart --}}
                 <div class="shrink-0 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950">
@@ -622,7 +678,7 @@
                         </div>
                         @if ($totals['discount'] > 0)
                             <div class="flex justify-between text-amber-600">
-                                <span>Descuento</span>
+                                <span>Descuento{{ $cartDiscountPct > 0 ? ' (incl. '.rtrim(rtrim(number_format($cartDiscountPct, 2, '.', ''), '0'), '.').'% global)' : '' }}</span>
                                 <span class="font-medium">−${{ number_format($totals['discount'], 0, ',', '.') }}</span>
                             </div>
                         @endif
@@ -1256,6 +1312,46 @@
                 <div class="pos-modal-footer">
                     <button type="button" wire:click="$set('showCustomerModal', false)" class="pos-btn pos-btn-secondary">Cancelar</button>
                     <button type="button" wire:click="createQuickCustomer" class="pos-btn pos-btn-primary">Crear y usar</button>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    {{-- Modal PIN supervisor para descuento que excede umbral --}}
+    @if ($showSupervisorPinModal)
+        <div class="fixed inset-0 flex items-center justify-center p-4 pos-modal-overlay"
+             style="z-index: 110;"
+             wire:click.self="cancelSupervisorPin">
+            <div class="pos-modal-content" style="max-width: 26rem;">
+                <div class="pos-modal-header" style="background:#fef3c7; color:#92400e;">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+                    <h2 class="text-base font-semibold flex-1">Aprobación de supervisor</h2>
+                    <button type="button" wire:click="cancelSupervisorPin" class="pos-modal-close">×</button>
+                </div>
+                <div class="pos-modal-body">
+                    <div class="text-sm text-gray-700 dark:text-gray-300">
+                        @if ($pendingDiscount)
+                            El descuento {{ $pendingDiscount['type'] === 'cart' ? 'global de la venta' : 'de la línea' }}
+                            (<strong>{{ rtrim(rtrim(number_format((float) $pendingDiscount['pct'], 2, '.', ''), '0'), '.') }}%</strong>)
+                            excede el límite permitido.
+                        @endif
+                        <div class="mt-1 text-xs text-gray-500">Ingresa la contraseña de un usuario con permiso para aprobar descuentos.</div>
+                    </div>
+                    <div>
+                        <label class="pos-label">Contraseña del supervisor</label>
+                        <input type="password"
+                               wire:model="supervisorPin"
+                               wire:keydown.enter="approveDiscountWithPin"
+                               autofocus
+                               class="pos-input" />
+                        @if ($supervisorPinError)
+                            <div class="text-xs text-rose-600 dark:text-rose-400 mt-1.5">{{ $supervisorPinError }}</div>
+                        @endif
+                    </div>
+                </div>
+                <div class="pos-modal-footer">
+                    <button type="button" wire:click="cancelSupervisorPin" class="pos-btn pos-btn-secondary">Cancelar</button>
+                    <button type="button" wire:click="approveDiscountWithPin" class="pos-btn pos-btn-primary">Aprobar</button>
                 </div>
             </div>
         </div>

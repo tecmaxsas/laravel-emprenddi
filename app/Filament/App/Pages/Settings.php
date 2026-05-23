@@ -81,6 +81,7 @@ class Settings extends Page implements HasForms
             'pos_blind_cash_close' => (bool) data_get($settings, 'pos.blind_cash_close', false),
             'pos_allow_negative_stock' => (bool) data_get($settings, 'pos.allow_negative_stock', false),
             'pos_default_tip_percent' => (float) data_get($settings, 'pos.default_tip_percent', 0),
+            'pos_discount_supervisor_threshold' => (float) data_get($settings, 'pos.discount_supervisor_threshold', 10),
         ];
 
         // Restaurant settings (settings.restaurant.enable_*) — uno por feature
@@ -256,6 +257,15 @@ class Settings extends Page implements HasForms
                         ->step(0.5)
                         ->default(0)
                         ->helperText('0 = sin propina sugerida. Aplica a establecimientos como restaurantes.'),
+
+                    Forms\Components\TextInput::make('pos_discount_supervisor_threshold')
+                        ->label('Umbral % para pedir aprobación de supervisor')
+                        ->numeric()
+                        ->minValue(0)
+                        ->maxValue(100)
+                        ->step(0.5)
+                        ->default(10)
+                        ->helperText('Si el cajero aplica un descuento mayor a este %, el POS pide la contraseña de un usuario con permiso "Aprobar descuentos". Usa 0 para no pedir nunca aprobación.'),
                 ]),
 
             Forms\Components\Section::make('Sesiones de caja')
@@ -332,6 +342,7 @@ class Settings extends Page implements HasForms
             'blind_cash_close' => (bool) ($state['pos_blind_cash_close'] ?? false),
             'allow_negative_stock' => (bool) ($state['pos_allow_negative_stock'] ?? false),
             'default_tip_percent' => (float) ($state['pos_default_tip_percent'] ?? 0),
+            'discount_supervisor_threshold' => (float) ($state['pos_discount_supervisor_threshold'] ?? 10),
         ]);
 
         $company->update(['settings' => $settings]);

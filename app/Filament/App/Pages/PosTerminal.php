@@ -90,6 +90,21 @@ class PosTerminal extends Page
     public string $newCustomerDocument = '';
     public string $suspendName = '';
 
+    // Descuento global de la venta. Se distribuye sumándose proporcionalmente
+    // al descuento manual de cada línea en recomputeLine() para que el IVA
+    // se calcule sobre la base correcta y no requiera líneas negativas.
+    public float $cartDiscountPct = 0.0;
+    public float $cartDiscountAmount = 0.0;
+    public string $cartDiscountMode = 'pct'; // pct | amount
+
+    // Modal de aprobación por supervisor para descuentos que exceden umbral.
+    // pendingDiscount estructura: ['type' => 'line'|'cart', 'index' => int|null,
+    // 'pct' => float, 'mode' => 'pct'|'amount', 'value' => float]
+    public bool $showSupervisorPinModal = false;
+    public ?array $pendingDiscount = null;
+    public string $supervisorPin = '';
+    public ?string $supervisorPinError = null;
+
     public static function canAccess(): bool
     {
         return (bool) auth()->user()?->can('pos.use');
@@ -152,6 +167,8 @@ class PosTerminal extends Page
             'blind_cash_close' => false,
             'allow_negative_stock' => false,
             'default_tip_percent' => 0,
+            // % a partir del cual se exige PIN de supervisor. 0 = nunca exigir.
+            'discount_supervisor_threshold' => 10.0,
         ], $settings['pos'] ?? []);
     }
 
@@ -464,19 +481,191 @@ class PosTerminal extends Page
         $line = &$this->cart[$i];
         $qty = (float) ($line['quantity'] ?? 0);
         $unitPrice = (float) ($line['unit_price'] ?? 0);
-        $discountPct = (float) ($line['discount_percentage'] ?? 0);
+        $manualPct = (float) ($line['discount_percentage_manual'] ?? $line['discount_percentage'] ?? 0);
+
+        // El descuento global se suma al manual de la línea para que el IVA
+        // se calcule sobre la base correcta sin necesidad de líneas negativas.
+        $effectivePct = min(100, $manualPct + $this->cartDiscountPct);
 
         $subtotal = round($qty * $unitPrice, 2);
-        $discountAmount = round($subtotal * ($discountPct / 100), 2);
+        $discountAmount = round($subtotal * ($effectivePct / 100), 2);
         $taxable = $subtotal - $discountAmount;
 
         $taxRate = (float) ($line['tax_rate'] ?? 0);
         $taxAmount = round($taxable * ($taxRate / 100), 2);
 
+        $line['discount_percentage_manual'] = $manualPct;
+        $line['discount_percentage'] = $effectivePct;
         $line['subtotal'] = $subtotal;
         $line['discount_amount'] = $discountAmount;
         $line['tax_amount'] = $taxAmount;
         $line['total'] = $taxable + $taxAmount;
+    }
+
+    // ================================================================
+    // DESCUENTOS — manual por línea + global + flujo de aprobación
+    // ================================================================
+
+    /**
+     * Devuelve true si el usuario actual puede aprobar cualquier descuento
+     * (skip del PIN). Lo tienen admin/manager por defecto.
+     */
+    public function getCanApproveDiscountsProperty(): bool
+    {
+        return (bool) Auth::user()?->can('pos.discount.approve');
+    }
+
+    /**
+     * Umbral % a partir del cual se exige PIN supervisor.
+     * 0 = nunca; permitir todo descuento sin aprobación.
+     */
+    protected function discountThreshold(): float
+    {
+        return (float) ($this->posSettings['discount_supervisor_threshold'] ?? 10);
+    }
+
+    /**
+     * Descuento por línea. $pct se intercepta y si excede umbral lanza
+     * el modal de PIN; el cambio sólo se aplica tras aprobación.
+     */
+    public function setLineDiscountPct(int $i, float $pct): void
+    {
+        if (! $this->posSettings['allow_discount']) {
+            Notification::make()->title('Descuentos deshabilitados en este POS')->warning()->send();
+            return;
+        }
+        if (! isset($this->cart[$i])) return;
+
+        $pct = max(0, min(100, (float) $pct));
+
+        if ($this->needsApproval($pct)) {
+            $this->pendingDiscount = ['type' => 'line', 'index' => $i, 'pct' => $pct];
+            $this->showSupervisorPinModal = true;
+            $this->supervisorPin = '';
+            $this->supervisorPinError = null;
+            return;
+        }
+
+        $this->applyLineDiscount($i, $pct);
+    }
+
+    protected function applyLineDiscount(int $i, float $pct): void
+    {
+        $this->cart[$i]['discount_percentage_manual'] = $pct;
+        $this->recomputeLine($i);
+    }
+
+    /**
+     * Descuento global. Soporta % o monto fijo. El monto se convierte a %
+     * sobre el subtotal actual para ser consistente con la línea.
+     */
+    public function setCartDiscount(string $mode, float $value): void
+    {
+        if (! $this->posSettings['allow_discount']) {
+            Notification::make()->title('Descuentos deshabilitados en este POS')->warning()->send();
+            return;
+        }
+
+        $value = max(0, (float) $value);
+        $pct = $value;
+        if ($mode === 'amount') {
+            $subtotal = collect($this->cart)->sum(fn ($l) => (float) ($l['subtotal'] ?? 0));
+            $pct = $subtotal > 0 ? min(100, round(($value / $subtotal) * 100, 2)) : 0;
+        }
+        $pct = min(100, max(0, $pct));
+
+        if ($this->needsApproval($pct)) {
+            $this->pendingDiscount = ['type' => 'cart', 'mode' => $mode, 'value' => $value, 'pct' => $pct];
+            $this->showSupervisorPinModal = true;
+            $this->supervisorPin = '';
+            $this->supervisorPinError = null;
+            return;
+        }
+
+        $this->applyCartDiscount($mode, $value, $pct);
+    }
+
+    protected function applyCartDiscount(string $mode, float $value, float $pct): void
+    {
+        $this->cartDiscountMode = $mode;
+        $this->cartDiscountAmount = $mode === 'amount' ? $value : 0;
+        $this->cartDiscountPct = $pct;
+        foreach (array_keys($this->cart) as $i) {
+            $this->recomputeLine($i);
+        }
+    }
+
+    public function clearCartDiscount(): void
+    {
+        $this->applyCartDiscount('pct', 0, 0);
+    }
+
+    protected function needsApproval(float $pct): bool
+    {
+        $threshold = $this->discountThreshold();
+        if ($threshold <= 0) return false;        // umbral=0 → nunca exigir
+        if ($pct <= $threshold) return false;     // dentro del límite
+        return ! $this->canApproveDiscounts;      // si user ya puede, omitir
+    }
+
+    /**
+     * Valida el PIN (= contraseña) de un user con permiso pos.discount.approve
+     * de la misma empresa. Si OK aplica el descuento pendiente.
+     */
+    public function approveDiscountWithPin(): void
+    {
+        $this->supervisorPinError = null;
+
+        if (! $this->pendingDiscount) {
+            $this->showSupervisorPinModal = false;
+            return;
+        }
+        if (trim($this->supervisorPin) === '') {
+            $this->supervisorPinError = 'Ingresa la contraseña del supervisor.';
+            return;
+        }
+
+        $supervisors = \App\Models\User::query()
+            ->where('company_id', Auth::user()->company_id)
+            ->where('active', true)
+            ->permission('pos.discount.approve')
+            ->get();
+
+        $ok = false;
+        foreach ($supervisors as $sup) {
+            if (\Illuminate\Support\Facades\Hash::check($this->supervisorPin, $sup->password)) {
+                $ok = true;
+                break;
+            }
+        }
+
+        if (! $ok) {
+            $this->supervisorPinError = 'Contraseña no coincide con ningún supervisor con permiso de aprobación.';
+            $this->supervisorPin = '';
+            return;
+        }
+
+        // Aplicar el descuento pendiente
+        $d = $this->pendingDiscount;
+        if ($d['type'] === 'line') {
+            $this->applyLineDiscount($d['index'], $d['pct']);
+        } else {
+            $this->applyCartDiscount($d['mode'] ?? 'pct', $d['value'] ?? $d['pct'], $d['pct']);
+        }
+
+        $this->pendingDiscount = null;
+        $this->supervisorPin = '';
+        $this->supervisorPinError = null;
+        $this->showSupervisorPinModal = false;
+        Notification::make()->title('Descuento aprobado por supervisor')->success()->send();
+    }
+
+    public function cancelSupervisorPin(): void
+    {
+        $this->pendingDiscount = null;
+        $this->supervisorPin = '';
+        $this->supervisorPinError = null;
+        $this->showSupervisorPinModal = false;
     }
 
     // ================================================================
