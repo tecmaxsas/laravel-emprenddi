@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * Empleado de la empresa. Los datos contractuales (cargo, salario,
@@ -16,7 +17,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  */
 class Employee extends Model
 {
-    use HasFactory, BelongsToCompany;
+    use HasFactory, BelongsToCompany, SoftDeletes;
 
     public const STATUS_ACTIVE = 'active';
     public const STATUS_INACTIVE = 'inactive';
