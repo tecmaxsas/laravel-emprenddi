@@ -21,7 +21,9 @@ use RuntimeException;
  *    COGS + descarga de inventario), reserva consecutivo DIAN si la sede
  *    tiene resolución activa, marca posted.
  *  - addPayment(): comprobante de ingreso (DR Caja/Banco | CR CxC).
- *  - cancel(): TODO próxima iteración.
+ *  - cancel(): devuelve inventario, reversa el asiento de ventas y el de
+ *    COGS si aplica. Bloqueada si la factura tiene pagos o ya fue enviada
+ *    a la DIAN (en ese caso se debe emitir una nota crédito).
  */
 class SaleInvoiceEngine
 {
@@ -541,5 +543,147 @@ class SaleInvoiceEngine
     {
         // No-op para mantener el tipo de retorno cuando faltan cuentas COGS.
         return new JournalEntry();
+    }
+
+    /**
+     * Anula una factura de venta contabilizada: devuelve el inventario,
+     * crea asiento de reversa de la venta y, si hubo COGS, también
+     * reversa el asiento de costo de ventas.
+     *
+     * Bloqueada si la factura tiene pagos registrados o si ya fue
+     * enviada o aceptada por la DIAN (en ese caso debe usarse una
+     * nota crédito).
+     */
+    public function cancel(SaleInvoice $invoice): SaleInvoice
+    {
+        if ($invoice->status !== SaleInvoice::STATUS_POSTED) {
+            throw new RuntimeException('Solo puedes anular una factura contabilizada.');
+        }
+        if ($invoice->status === SaleInvoice::STATUS_CANCELLED) {
+            throw new RuntimeException('Esta factura ya está anulada.');
+        }
+        if ((float) $invoice->paid_amount > 0) {
+            throw new RuntimeException(
+                'No puedes anular una factura con pagos registrados. Reversa primero los pagos.'
+            );
+        }
+        if (in_array($invoice->dian_status, [SaleInvoice::DIAN_SENT, SaleInvoice::DIAN_ACCEPTED], true)) {
+            throw new RuntimeException(
+                $invoice->dian_status === SaleInvoice::DIAN_ACCEPTED
+                    ? 'Esta factura ya fue aceptada por la DIAN. Para anularla emite una nota crédito en su lugar.'
+                    : 'Esta factura fue enviada a la DIAN y está pendiente de respuesta. No puedes anularla hasta recibir el resultado.'
+            );
+        }
+
+        $invoice->load(['lines.product', 'customer', 'location', 'journalEntry.lines']);
+
+        return DB::transaction(function () use ($invoice) {
+            // 1. Devuelve el inventario (return_from_customer — entra al stock).
+            foreach ($invoice->lines as $line) {
+                if (! $line->product_id || ! $line->product?->track_inventory) {
+                    continue;
+                }
+                if (! $line->inventory_movement_id) {
+                    continue; // No salió inventario al postear.
+                }
+                $this->inventory->addMovement(
+                    $line->product,
+                    $invoice->location,
+                    [
+                        'type' => 'return_from_customer',
+                        'quantity' => (float) $line->quantity,
+                        'unit_cost' => (float) ($line->cost_at_sale ?? 0),
+                        'date' => now(),
+                        'reference_type' => SaleInvoice::class,
+                        'reference_id' => $invoice->id,
+                        'reference_number' => 'ANUL-'.$invoice->fullNumber(),
+                        'third_party_id' => $invoice->third_party_id,
+                        'description' => "Anulación venta {$invoice->fullNumber()}",
+                    ]
+                );
+            }
+
+            // 2. Reversa del asiento de venta.
+            $this->createReversalFrom(
+                $invoice,
+                $invoice->journalEntry,
+                'reversal',
+                "Anulación venta {$invoice->fullNumber()} — {$invoice->customer->name}",
+            );
+
+            // 3. Reversa del asiento de COGS si existe (se busca por type+reference).
+            $cogsEntry = JournalEntry::query()
+                ->where('company_id', $invoice->company_id)
+                ->where('type', 'cogs')
+                ->where('reference', $invoice->fullNumber())
+                ->with('lines')
+                ->first();
+            if ($cogsEntry) {
+                $this->createReversalFrom(
+                    $invoice,
+                    $cogsEntry,
+                    'cogs_reversal',
+                    "Reversa COGS de venta {$invoice->fullNumber()}",
+                );
+            }
+
+            // 4. Marca la factura como anulada.
+            $invoice->update([
+                'status' => SaleInvoice::STATUS_CANCELLED,
+                'payment_status' => SaleInvoice::PAYMENT_CANCELADA,
+            ]);
+
+            return $invoice->fresh();
+        });
+    }
+
+    /**
+     * Construye un asiento de reversa a partir de uno existente:
+     * intercambia débito y crédito de cada línea para anular el efecto.
+     */
+    protected function createReversalFrom(
+        SaleInvoice $invoice,
+        ?JournalEntry $original,
+        string $type,
+        string $description,
+    ): JournalEntry {
+        if (! $original) {
+            throw new RuntimeException('No se encontró el asiento original a reversar.');
+        }
+
+        $company = Company::find($invoice->company_id);
+        $number = $this->numberer->next($company, 'AS');
+
+        $reversal = JournalEntry::create([
+            'company_id' => $invoice->company_id,
+            'prefix' => 'AS',
+            'number' => $number,
+            'date' => now()->toDateString(),
+            'type' => $type,
+            'reference' => 'ANUL-'.$invoice->fullNumber(),
+            'third_party_id' => $invoice->third_party_id,
+            'description' => $description,
+            'status' => 'posted',
+            'posted_at' => now(),
+            'posted_by_user_id' => Auth::id(),
+            'created_by_user_id' => Auth::id(),
+            'total_debit' => $original->total_credit,
+            'total_credit' => $original->total_debit,
+        ]);
+
+        $line = 1;
+        foreach ($original->lines as $origLine) {
+            JournalEntryLine::create([
+                'journal_entry_id' => $reversal->id,
+                'line_number' => $line++,
+                'account_id' => $origLine->account_id,
+                'third_party_id' => $origLine->third_party_id,
+                'description' => "Reversa: {$origLine->description}",
+                'debit' => $origLine->credit,
+                'credit' => $origLine->debit,
+            ]);
+        }
+
+        return $reversal;
     }
 }

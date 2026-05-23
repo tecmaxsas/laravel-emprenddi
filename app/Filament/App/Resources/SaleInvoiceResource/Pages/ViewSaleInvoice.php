@@ -109,21 +109,54 @@ class ViewSaleInvoice extends ViewRecord
                     }
                 }),
 
+            Actions\Action::make('cancel')
+                ->label('Anular factura')
+                ->icon('heroicon-o-x-circle')
+                ->color('danger')
+                ->visible(fn (SaleInvoice $record) => $record->status === SaleInvoice::STATUS_POSTED
+                    && ! in_array($record->dian_status, [SaleInvoice::DIAN_SENT, SaleInvoice::DIAN_ACCEPTED], true)
+                    && auth()->user()?->can('sales.post'))
+                ->requiresConfirmation()
+                ->modalHeading('Anular factura de venta')
+                ->modalDescription(fn (SaleInvoice $record) => sprintf(
+                    'Vas a anular la factura %s. Se devuelve el inventario al stock, se reversa el asiento de venta y el de costo de ventas. No se puede anular si tiene pagos registrados ni si ya fue enviada o aceptada por la DIAN (en ese caso usa una nota crédito).',
+                    $record->fullNumber(),
+                ))
+                ->modalSubmitActionLabel('Anular')
+                ->action(function (SaleInvoice $record) {
+                    try {
+                        app(SaleInvoiceEngine::class)->cancel($record);
+                        Notification::make()
+                            ->success()
+                            ->title('Factura anulada')
+                            ->body('Se reversaron inventario y asientos contables.')
+                            ->send();
+                        $this->refreshFormData(['status', 'payment_status']);
+                    } catch (\Throwable $e) {
+                        Notification::make()
+                            ->danger()
+                            ->title('No se pudo anular')
+                            ->body($e->getMessage())
+                            ->persistent()
+                            ->send();
+                    }
+                }),
+
             Actions\Action::make('createCreditNote')
                 ->label('Crear Nota Crédito')
                 ->icon('heroicon-o-arrow-uturn-left')
                 ->color('warning')
-                ->visible(fn (SaleInvoice $r) => $r->isPosted()
+                ->visible(fn (SaleInvoice $record) => $record->isPosted()
                     && auth()->user()?->can('credit_debit_notes.create'))
-                ->action(fn (SaleInvoice $r) => $this->createNoteFromInvoice($r, 'credit')),
+                ->action(fn (SaleInvoice $record) => $this->createNoteFromInvoice($record, 'credit')),
 
             Actions\Action::make('createDebitNote')
                 ->label('Crear Nota Débito')
                 ->icon('heroicon-o-arrow-uturn-right')
                 ->color('info')
-                ->visible(fn (SaleInvoice $r) => $r->isPosted()
+                ->visible(fn (SaleInvoice $record) => $record->isPosted()
                     && auth()->user()?->can('credit_debit_notes.create'))
-                ->action(fn (SaleInvoice $r) => $this->createNoteFromInvoice($r, 'debit')),
+                ->action(fn (SaleInvoice $record) => $this->createNoteFromInvoice($record, 'debit')),
         ];
     }
 

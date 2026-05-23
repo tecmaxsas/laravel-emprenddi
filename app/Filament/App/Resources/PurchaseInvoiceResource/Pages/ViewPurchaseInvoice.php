@@ -58,6 +58,38 @@ class ViewPurchaseInvoice extends ViewRecord
                             ->send();
                     }
                 }),
+
+            Actions\Action::make('cancel')
+                ->label('Anular factura')
+                ->icon('heroicon-o-x-circle')
+                ->color('danger')
+                ->visible(fn (PurchaseInvoice $record) => $record->status === 'posted'
+                    && auth()->user()?->can('purchases.post'))
+                ->requiresConfirmation()
+                ->modalHeading('Anular factura de compra')
+                ->modalDescription(fn (PurchaseInvoice $record) => sprintf(
+                    'Vas a anular la factura %s. Se devuelve el inventario al proveedor y se crea un asiento de reversa que neutraliza el efecto contable. No se puede anular si tiene pagos registrados.',
+                    $record->fullNumber(),
+                ))
+                ->modalSubmitActionLabel('Anular')
+                ->action(function (PurchaseInvoice $record) {
+                    try {
+                        app(PurchaseInvoiceEngine::class)->cancel($record);
+                        Notification::make()
+                            ->success()
+                            ->title('Factura anulada')
+                            ->body("Se reversaron inventario y asiento contable.")
+                            ->send();
+                        $this->refreshFormData(['status', 'payment_status']);
+                    } catch (\Throwable $e) {
+                        Notification::make()
+                            ->danger()
+                            ->title('No se pudo anular')
+                            ->body($e->getMessage())
+                            ->persistent()
+                            ->send();
+                    }
+                }),
         ];
     }
 

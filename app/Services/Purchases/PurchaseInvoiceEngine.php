@@ -19,7 +19,7 @@ use RuntimeException;
  * Motor de Facturas de Compra:
  *  - post(): genera InventoryMovements + JournalEntry, marca posted
  *  - addPayment(): crea Payment + JournalEntry, recalcula payment_status
- *  - cancel(): reversa todo (TODO en próxima iteración)
+ *  - cancel(): devuelve inventario y crea asiento de reversa
  *
  * Patrón replicable después para SalesInvoice (Fase 3).
  */
@@ -382,5 +382,110 @@ class PurchaseInvoiceEngine
         ]);
 
         return $entry;
+    }
+
+    /**
+     * Anula una factura contabilizada: devuelve el inventario al
+     * proveedor y crea un asiento de reversa que invierte el efecto
+     * contable del original. Bloqueada si la factura tiene pagos
+     * registrados — los pagos deben reversarse primero.
+     */
+    public function cancel(PurchaseInvoice $invoice): PurchaseInvoice
+    {
+        if (! $invoice->isPosted()) {
+            throw new RuntimeException('Solo puedes anular una factura contabilizada.');
+        }
+        if ($invoice->isCancelled()) {
+            throw new RuntimeException('Esta factura ya está anulada.');
+        }
+        if ((float) $invoice->paid_amount > 0) {
+            throw new RuntimeException(
+                'No puedes anular una factura con pagos registrados. Reversa primero los pagos.'
+            );
+        }
+
+        $invoice->load(['lines.product', 'supplier', 'location', 'journalEntry.lines']);
+
+        return DB::transaction(function () use ($invoice) {
+            // 1. Devuelve el inventario (return_to_supplier — salida del stock).
+            foreach ($invoice->lines as $line) {
+                if (! $line->product_id || ! $line->product?->track_inventory) {
+                    continue;
+                }
+                $this->inventory->addMovement(
+                    $line->product,
+                    $invoice->location,
+                    [
+                        'type' => 'return_to_supplier',
+                        'quantity' => (float) $line->quantity,
+                        'unit_cost' => (float) $line->unit_cost,
+                        'date' => now(),
+                        'reference_type' => PurchaseInvoice::class,
+                        'reference_id' => $invoice->id,
+                        'reference_number' => 'ANUL-'.$invoice->fullNumber(),
+                        'third_party_id' => $invoice->third_party_id,
+                        'description' => "Anulación compra {$invoice->fullNumber()}",
+                    ]
+                );
+            }
+
+            // 2. Asiento de reversa contable.
+            $this->createReversalJournalEntry($invoice);
+
+            // 3. Marca la factura como anulada.
+            $invoice->update([
+                'status' => PurchaseInvoice::STATUS_CANCELLED,
+                'payment_status' => PurchaseInvoice::PAYMENT_CANCELADA,
+            ]);
+
+            return $invoice->fresh();
+        });
+    }
+
+    /**
+     * Crea un asiento de reversa: intercambia débito y crédito del
+     * asiento original para que el efecto contable neto sea cero.
+     */
+    protected function createReversalJournalEntry(PurchaseInvoice $invoice): JournalEntry
+    {
+        $original = $invoice->journalEntry;
+        if (! $original) {
+            throw new RuntimeException('La factura no tiene asiento contable que reversar.');
+        }
+
+        $company = Company::find($invoice->company_id);
+        $number = $this->numberer->next($company, 'AS');
+
+        $reversal = JournalEntry::create([
+            'company_id' => $invoice->company_id,
+            'prefix' => 'AS',
+            'number' => $number,
+            'date' => now()->toDateString(),
+            'type' => 'reversal',
+            'reference' => 'ANUL-'.$invoice->fullNumber(),
+            'third_party_id' => $invoice->third_party_id,
+            'description' => "Anulación compra {$invoice->fullNumber()} — {$invoice->supplier->name}",
+            'status' => 'posted',
+            'posted_at' => now(),
+            'posted_by_user_id' => Auth::id(),
+            'created_by_user_id' => Auth::id(),
+            'total_debit' => $invoice->total,
+            'total_credit' => $invoice->total,
+        ]);
+
+        $line = 1;
+        foreach ($original->lines as $origLine) {
+            JournalEntryLine::create([
+                'journal_entry_id' => $reversal->id,
+                'line_number' => $line++,
+                'account_id' => $origLine->account_id,
+                'third_party_id' => $origLine->third_party_id,
+                'description' => "Reversa: {$origLine->description}",
+                'debit' => $origLine->credit,
+                'credit' => $origLine->debit,
+            ]);
+        }
+
+        return $reversal;
     }
 }
