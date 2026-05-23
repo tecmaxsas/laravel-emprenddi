@@ -3,12 +3,9 @@
 namespace App\Filament\App\Pages\Auth;
 
 use App\Models\Company;
-use App\Models\Location;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\User;
-use App\Services\Accounting\PucProvisioner;
-use App\Services\Accounting\TaxesProvisioner;
 use App\Support\DianDvCalculator;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\Group;
@@ -379,24 +376,11 @@ class Register extends BaseRegister
                 ]);
             }
 
-            app(PucProvisioner::class)->provision($company);
-            app(TaxesProvisioner::class)->provision($company);
-
-            Location::create([
-                'company_id' => $company->id,
-                'code' => 'PRINCIPAL',
-                'name' => 'Sede Principal',
-                'type' => 'mixed',
-                'is_main' => true,
-                'address' => $data['address'] ?? null,
-                'city' => $data['city'] ?? null,
-                'department' => $data['department'] ?? null,
-                'country' => 'CO',
-                'phone' => $data['phone'] ?? null,
-                'currency' => $data['currency'] ?? 'COP',
-                'timezone' => 'America/Bogota',
-                'active' => true,
-            ]);
+            // Provisionamiento de catálogos por defecto: PUC, impuestos,
+            // monedas, métodos de pago, sede principal, Consumidor Final
+            // y plantillas de impresión. Todo en CompanyOnboarding para
+            // mantener Register.php enfocado solo en cuenta/usuario/plan.
+            app(\App\Services\Onboarding\CompanyOnboarding::class)->bootstrap($company);
 
             Notification::make()
                 ->success()
