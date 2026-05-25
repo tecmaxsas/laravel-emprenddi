@@ -107,6 +107,12 @@ class PosTerminal extends Page
 
     public static function canAccess(): bool
     {
+        // Si la empresa tiene el modulo restaurante activo, su flujo de venta
+        // es el POS Restaurante. Ocultamos el POS tradicional del sidebar y
+        // bloqueamos su acceso directo via URL para evitar dos POS paralelos.
+        if (\App\Support\ModuleGate::active('restaurant')) {
+            return false;
+        }
         return (bool) auth()->user()?->can('pos.use');
     }
 
