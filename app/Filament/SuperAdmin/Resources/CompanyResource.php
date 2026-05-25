@@ -388,6 +388,7 @@ class CompanyResource extends Resource
         return [
             RelationManagers\SubscriptionsRelationManager::class,
             RelationManagers\UsersRelationManager::class,
+            RelationManagers\LocationsRelationManager::class,
         ];
     }
 
