@@ -355,60 +355,85 @@
 
     {{-- ============================================================ --}}
     {{-- APERTURA DE CAJA — bloquea POS si no hay sesión abierta       --}}
+    {{-- Diseño tipo card centrada, gran iconografia visual e instructiva. --}}
+    {{-- Mantiene 3 campos clave (sede, monto, notas) pero con jerarquia  --}}
+    {{-- visual mejor: monto destacado, sede primero, notas plegable.    --}}
     {{-- ============================================================ --}}
     @if (! $hasSession)
-        <div class="fixed inset-0 flex items-center justify-center bg-gray-50 dark:bg-gray-950 p-6"
-             style="width:100vw; height:100vh;">
-            <div class="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 max-w-md w-full overflow-hidden">
-                <div class="px-6 py-5 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
-                    <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-700 text-white flex items-center justify-center shadow-lg">
-                        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>
-                    </div>
-                    <div>
-                        <h2 class="text-lg font-bold">Apertura de caja</h2>
-                        <p class="text-xs text-gray-500 dark:text-gray-400">Abre tu turno antes de empezar a vender.</p>
-                    </div>
+        <div class="fixed inset-0 flex items-center justify-center p-4 overflow-y-auto"
+             style="width:100vw; height:100vh; background: linear-gradient(135deg, #f9fafb 0%, #eef2ff 100%);">
+            <div class="dark:!bg-gradient-to-br dark:!from-gray-950 dark:!to-indigo-950 absolute inset-0 -z-10"></div>
+
+            <div class="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 w-full overflow-hidden"
+                 style="max-width: 480px;">
+
+                {{-- Cabecera con icono grande y mensaje claro --}}
+                <div class="px-8 pt-8 pb-6 text-center border-b border-gray-100 dark:border-gray-800">
+                    <div class="text-6xl mb-3 leading-none">🔒</div>
+                    <h2 class="text-2xl font-extrabold text-gray-900 dark:text-gray-100 mb-1">Caja cerrada</h2>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 max-w-xs mx-auto leading-relaxed">
+                        Para tomar pedidos y cobrar necesitas abrir una caja registradora.
+                    </p>
                 </div>
 
-                <form wire:submit.prevent="openCashSession" class="p-6 space-y-4">
+                <form wire:submit.prevent="openCashSession" class="px-8 py-6 space-y-5">
+
+                    {{-- SEDE — Primer campo, dropdown limpio --}}
                     <div>
-                        <label class="text-xs font-semibold uppercase tracking-wider text-gray-500">Sede</label>
+                        <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 mb-1.5">
+                            Sede
+                        </label>
                         <select wire:model.live="openingLocationId" required
-                                class="w-full mt-1 px-3 py-2.5 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 outline-none focus:ring-2 focus:ring-emerald-500">
-                            <option value="">— Selecciona —</option>
+                                class="w-full px-4 py-3 text-sm font-medium rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 dark:focus:ring-emerald-900/30 transition">
+                            <option value="">— Selecciona la sede —</option>
                             @foreach (\App\Models\Location::query()->where('active', true)->orderByDesc('is_main')->orderBy('name')->get() as $loc)
                                 <option value="{{ $loc->id }}">{{ $loc->fullName() }}</option>
                             @endforeach
                         </select>
-                        <p class="text-[11px] text-gray-500 mt-1">La sede determina el inventario y catálogo de productos disponibles en este turno.</p>
+                        <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-1.5 leading-snug">
+                            Determina el inventario y catálogo disponible en este turno.
+                        </p>
                     </div>
 
+                    {{-- MONTO DE APERTURA — Campo grande y destacado --}}
                     <div>
-                        <label class="text-xs font-semibold uppercase tracking-wider text-gray-500">Valor de apertura</label>
-                        <div class="relative mt-1">
-                            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
-                            <input type="number" step="0.01" min="0"
+                        <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 mb-1.5">
+                            Monto de apertura (efectivo en caja)
+                        </label>
+                        <div class="relative">
+                            <span class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 text-xl font-bold">$</span>
+                            <input type="number" step="1000" min="0"
                                    wire:model="openingAmount" placeholder="0"
-                                   class="w-full pl-7 pr-3 py-2.5 text-base font-semibold rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 outline-none focus:ring-2 focus:ring-emerald-500" />
+                                   class="w-full pl-9 pr-4 py-4 text-2xl font-extrabold text-gray-900 dark:text-gray-100 rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 dark:focus:ring-emerald-900/30 transition" />
                         </div>
-                        <p class="text-[11px] text-gray-500 mt-1">Efectivo que ya está en la caja al iniciar el turno.</p>
+                        <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-1.5 leading-snug">
+                            Efectivo que ya está físicamente en la caja al iniciar el turno.
+                        </p>
                     </div>
 
+                    {{-- NOTAS — Compacto, opcional --}}
                     <div>
-                        <label class="text-xs font-semibold uppercase tracking-wider text-gray-500">Notas (opcional)</label>
+                        <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 mb-1.5">
+                            Notas <span class="text-gray-400 normal-case font-normal">(opcional)</span>
+                        </label>
                         <textarea wire:model="openingNotes" rows="2" placeholder="Cambio recibido, observaciones..."
-                                  class="w-full mt-1 px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 outline-none focus:ring-2 focus:ring-emerald-500"></textarea>
+                                  class="w-full px-4 py-2.5 text-sm rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 dark:focus:ring-emerald-900/30 transition resize-none"></textarea>
                     </div>
 
-                    <div class="flex justify-end gap-2 pt-2">
+                    {{-- Botón principal — grande, verde, llamativo --}}
+                    <button type="submit"
+                            class="w-full px-6 py-4 text-base font-extrabold rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white shadow-lg shadow-emerald-600/30 hover:shadow-xl hover:shadow-emerald-600/40 transition-all duration-150 flex items-center justify-center gap-2">
+                        <span class="text-xl">🔓</span>
+                        <span>Abrir caja y empezar</span>
+                    </button>
+
+                    {{-- Cancelar — link discreto debajo --}}
+                    <div class="text-center pt-1">
                         <a href="{{ url('/app') }}"
-                           class="px-5 py-2.5 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition">
-                            Cancelar
+                           class="inline-flex items-center gap-1 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition">
+                            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
+                            Volver al panel
                         </a>
-                        <button type="submit"
-                                class="px-6 py-2.5 text-sm font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-md transition">
-                            Abrir caja
-                        </button>
                     </div>
                 </form>
             </div>
