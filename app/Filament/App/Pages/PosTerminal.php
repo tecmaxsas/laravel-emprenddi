@@ -116,19 +116,14 @@ class PosTerminal extends Page
         // no es su flujo de venta — redirigimos al POS Restaurante. El item
         // del sidebar 'POS — Punto de Venta' sigue visible para no esconder
         // la seccion 'Ventas', pero al clickearlo lleva al POS correcto.
+        // Importante: usar $this->redirect() (Livewire) en vez de redirect()->send()
+        // — el segundo corta la respuesta en mount() y genera error 500.
         if (\App\Support\ModuleGate::active('restaurant')) {
             $user = auth()->user();
-            if ($user?->can('restaurant.use')) {
-                redirect()->route('filament.app.pages.restaurant-pos')->send();
-                return;
-            }
-            // Cajero sin 'restaurant.use' en empresa restaurante — caso raro.
-            Notification::make()
-                ->title('POS Restaurante requerido')
-                ->body('Esta empresa usa POS Restaurante. Necesitas el permiso "restaurant.use" para acceder.')
-                ->warning()
-                ->send();
-            redirect()->route('filament.app.pages.dashboard')->send();
+            $target = $user?->can('restaurant.use')
+                ? route('filament.app.pages.restaurant-pos')
+                : route('filament.app.pages.dashboard');
+            $this->redirect($target);
             return;
         }
 
