@@ -72,6 +72,12 @@ class AppPanelProvider extends PanelProvider
                 PanelsRenderHook::TOPBAR_END,
                 fn (): string => view('filament.app.topbar.pos-button')->render(),
             )
+            // Botón "Ayuda" en el topbar — abre emprenddi.com/docs/ en nueva
+            // pestaña. order:-1 lo deja junto al boton POS.
+            ->renderHook(
+                PanelsRenderHook::TOPBAR_END,
+                fn (): string => view('filament.app.topbar.docs-button')->render(),
+            )
             // Puente QZ Tray — impresión ESC/POS en impresoras locales del cajero.
             ->renderHook(
                 PanelsRenderHook::BODY_END,

@@ -72,6 +72,12 @@ class ContadorPanelProvider extends PanelProvider
                 PanelsRenderHook::TOPBAR_END,
                 fn (): string => view('filament.contador.topbar.active-company')->render(),
             )
+            // Botón "Ayuda" en el topbar — abre emprenddi.com/docs/ en nueva
+            // pestaña. Reutiliza la misma vista del panel App.
+            ->renderHook(
+                PanelsRenderHook::TOPBAR_END,
+                fn (): string => view('filament.app.topbar.docs-button')->render(),
+            )
             ->renderHook(
                 PanelsRenderHook::HEAD_END,
                 fn (): string => view('partials.filament-brand-styles')->render(),
