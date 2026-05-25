@@ -355,84 +355,99 @@
 
     {{-- ============================================================ --}}
     {{-- APERTURA DE CAJA — bloquea POS si no hay sesión abierta       --}}
-    {{-- Diseño tipo card centrada, gran iconografia visual e instructiva. --}}
-    {{-- Mantiene 3 campos clave (sede, monto, notas) pero con jerarquia  --}}
-    {{-- visual mejor: monto destacado, sede primero, notas plegable.    --}}
+    {{-- IMPORTANTE: Filament Pages no compila clases avanzadas de    --}}
+    {{-- Tailwind (shadow-color/30, focus:ring-*, etc) — usamos CSS    --}}
+    {{-- inline puro como hace el POS Restaurante.                     --}}
     {{-- ============================================================ --}}
     @if (! $hasSession)
-        <div class="fixed inset-0 flex items-center justify-center p-4 overflow-y-auto"
-             style="width:100vw; height:100vh; background: linear-gradient(135deg, #f9fafb 0%, #eef2ff 100%);">
-            <div class="dark:!bg-gradient-to-br dark:!from-gray-950 dark:!to-indigo-950 absolute inset-0 -z-10"></div>
+        <div style="position:fixed; inset:0; width:100vw; height:100vh; padding:24px; overflow-y:auto; display:flex; align-items:center; justify-content:center; background:#f9fafb;"
+             class="dark:!bg-gray-950">
 
-            <div class="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 w-full overflow-hidden"
-                 style="max-width: 480px;">
+            <div style="width:100%; max-width:460px; background:#ffffff; border:1px solid #e5e7eb; border-radius:16px; box-shadow:0 10px 40px rgba(0,0,0,0.08); overflow:hidden;"
+                 class="dark:!bg-gray-900 dark:!border-gray-800">
 
                 {{-- Cabecera con icono grande y mensaje claro --}}
-                <div class="px-8 pt-8 pb-6 text-center border-b border-gray-100 dark:border-gray-800">
-                    <div class="text-6xl mb-3 leading-none">🔒</div>
-                    <h2 class="text-2xl font-extrabold text-gray-900 dark:text-gray-100 mb-1">Caja cerrada</h2>
-                    <p class="text-sm text-gray-500 dark:text-gray-400 max-w-xs mx-auto leading-relaxed">
+                <div style="padding:32px 32px 24px; text-align:center;">
+                    <div style="font-size:56px; line-height:1; margin-bottom:12px;">🔒</div>
+                    <h2 style="font-size:22px; font-weight:800; color:#111827; margin:0 0 6px;" class="dark:!text-gray-100">
+                        Caja cerrada
+                    </h2>
+                    <p style="font-size:14px; color:#6b7280; margin:0; line-height:1.5; max-width:300px; margin:0 auto;" class="dark:!text-gray-400">
                         Para tomar pedidos y cobrar necesitas abrir una caja registradora.
                     </p>
                 </div>
 
-                <form wire:submit.prevent="openCashSession" class="px-8 py-6 space-y-5">
+                <form wire:submit.prevent="openCashSession" style="padding:8px 32px 28px;">
 
-                    {{-- SEDE — Primer campo, dropdown limpio --}}
-                    <div>
-                        <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 mb-1.5">
+                    {{-- SEDE --}}
+                    <div style="margin-bottom:18px;">
+                        <label style="display:block; font-size:11px; font-weight:700; color:#374151; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;" class="dark:!text-gray-300">
                             Sede
                         </label>
                         <select wire:model.live="openingLocationId" required
-                                class="w-full px-4 py-3 text-sm font-medium rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 dark:focus:ring-emerald-900/30 transition">
+                                style="width:100%; padding:11px 14px; font-size:14px; font-weight:500; color:#111827; background:#ffffff; border:1px solid #d1d5db; border-radius:10px; outline:none; transition:border-color 150ms;"
+                                class="dark:!bg-gray-900 dark:!text-gray-100 dark:!border-gray-700"
+                                onfocus="this.style.borderColor='#10b981'"
+                                onblur="this.style.borderColor=''">
                             <option value="">— Selecciona la sede —</option>
                             @foreach (\App\Models\Location::query()->where('active', true)->orderByDesc('is_main')->orderBy('name')->get() as $loc)
                                 <option value="{{ $loc->id }}">{{ $loc->fullName() }}</option>
                             @endforeach
                         </select>
-                        <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-1.5 leading-snug">
+                        <p style="font-size:11px; color:#6b7280; margin:6px 0 0; line-height:1.4;" class="dark:!text-gray-400">
                             Determina el inventario y catálogo disponible en este turno.
                         </p>
                     </div>
 
-                    {{-- MONTO DE APERTURA — Campo grande y destacado --}}
-                    <div>
-                        <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 mb-1.5">
+                    {{-- MONTO DE APERTURA — campo destacado --}}
+                    <div style="margin-bottom:18px;">
+                        <label style="display:block; font-size:11px; font-weight:700; color:#374151; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;" class="dark:!text-gray-300">
                             Monto de apertura (efectivo en caja)
                         </label>
-                        <div class="relative">
-                            <span class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 text-xl font-bold">$</span>
+                        <div style="position:relative;">
+                            <span style="position:absolute; left:14px; top:50%; transform:translateY(-50%); color:#6b7280; font-size:18px; font-weight:700;" class="dark:!text-gray-400">$</span>
                             <input type="number" step="1000" min="0"
                                    wire:model="openingAmount" placeholder="0"
-                                   class="w-full pl-9 pr-4 py-4 text-2xl font-extrabold text-gray-900 dark:text-gray-100 rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 dark:focus:ring-emerald-900/30 transition" />
+                                   style="width:100%; padding:14px 14px 14px 32px; font-size:20px; font-weight:800; color:#111827; background:#ffffff; border:1px solid #d1d5db; border-radius:10px; outline:none; transition:border-color 150ms;"
+                                   class="dark:!bg-gray-900 dark:!text-gray-100 dark:!border-gray-700"
+                                   onfocus="this.style.borderColor='#10b981'"
+                                   onblur="this.style.borderColor=''" />
                         </div>
-                        <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-1.5 leading-snug">
+                        <p style="font-size:11px; color:#6b7280; margin:6px 0 0; line-height:1.4;" class="dark:!text-gray-400">
                             Efectivo que ya está físicamente en la caja al iniciar el turno.
                         </p>
                     </div>
 
-                    {{-- NOTAS — Compacto, opcional --}}
-                    <div>
-                        <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 mb-1.5">
-                            Notas <span class="text-gray-400 normal-case font-normal">(opcional)</span>
+                    {{-- NOTAS --}}
+                    <div style="margin-bottom:22px;">
+                        <label style="display:block; font-size:11px; font-weight:700; color:#374151; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;" class="dark:!text-gray-300">
+                            Notas <span style="color:#9ca3af; font-weight:400; text-transform:none; letter-spacing:0;">(opcional)</span>
                         </label>
                         <textarea wire:model="openingNotes" rows="2" placeholder="Cambio recibido, observaciones..."
-                                  class="w-full px-4 py-2.5 text-sm rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 dark:focus:ring-emerald-900/30 transition resize-none"></textarea>
+                                  style="width:100%; padding:11px 14px; font-size:14px; color:#111827; background:#ffffff; border:1px solid #d1d5db; border-radius:10px; outline:none; resize:none; font-family:inherit; transition:border-color 150ms;"
+                                  class="dark:!bg-gray-900 dark:!text-gray-100 dark:!border-gray-700"
+                                  onfocus="this.style.borderColor='#10b981'"
+                                  onblur="this.style.borderColor=''"></textarea>
                     </div>
 
                     {{-- Botón principal — grande, verde, llamativo --}}
                     <button type="submit"
-                            class="w-full px-6 py-4 text-base font-extrabold rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white shadow-lg shadow-emerald-600/30 hover:shadow-xl hover:shadow-emerald-600/40 transition-all duration-150 flex items-center justify-center gap-2">
-                        <span class="text-xl">🔓</span>
-                        <span>Abrir caja y empezar</span>
+                            style="width:100%; padding:15px; font-size:15px; font-weight:800; color:#ffffff; background:#10b981; border:0; border-radius:12px; cursor:pointer; box-shadow:0 4px 12px rgba(16,185,129,0.35); transition:background 150ms, transform 100ms;"
+                            onmouseover="this.style.background='#059669'"
+                            onmouseout="this.style.background='#10b981'"
+                            onmousedown="this.style.transform='scale(0.98)'"
+                            onmouseup="this.style.transform='scale(1)'">
+                        🔓 &nbsp;Abrir caja y empezar
                     </button>
 
                     {{-- Cancelar — link discreto debajo --}}
-                    <div class="text-center pt-1">
+                    <div style="text-align:center; margin-top:14px;">
                         <a href="{{ url('/app') }}"
-                           class="inline-flex items-center gap-1 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition">
-                            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
-                            Volver al panel
+                           style="display:inline-flex; align-items:center; gap:4px; font-size:12px; font-weight:500; color:#6b7280; text-decoration:none; transition:color 150ms;"
+                           class="dark:!text-gray-400"
+                           onmouseover="this.style.color='#374151'"
+                           onmouseout="this.style.color=''">
+                            ← Volver al panel
                         </a>
                     </div>
                 </form>
