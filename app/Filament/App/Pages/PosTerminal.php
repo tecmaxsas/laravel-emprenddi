@@ -107,17 +107,31 @@ class PosTerminal extends Page
 
     public static function canAccess(): bool
     {
-        // Si la empresa tiene el modulo restaurante activo, su flujo de venta
-        // es el POS Restaurante. Ocultamos el POS tradicional del sidebar y
-        // bloqueamos su acceso directo via URL para evitar dos POS paralelos.
-        if (\App\Support\ModuleGate::active('restaurant')) {
-            return false;
-        }
         return (bool) auth()->user()?->can('pos.use');
     }
 
     public function mount(): void
     {
+        // Si la empresa tiene el modulo 'restaurant' activo, el POS tradicional
+        // no es su flujo de venta — redirigimos al POS Restaurante. El item
+        // del sidebar 'POS — Punto de Venta' sigue visible para no esconder
+        // la seccion 'Ventas', pero al clickearlo lleva al POS correcto.
+        if (\App\Support\ModuleGate::active('restaurant')) {
+            $user = auth()->user();
+            if ($user?->can('restaurant.use')) {
+                redirect()->route('filament.app.pages.restaurant-pos')->send();
+                return;
+            }
+            // Cajero sin 'restaurant.use' en empresa restaurante — caso raro.
+            Notification::make()
+                ->title('POS Restaurante requerido')
+                ->body('Esta empresa usa POS Restaurante. Necesitas el permiso "restaurant.use" para acceder.')
+                ->warning()
+                ->send();
+            redirect()->route('filament.app.pages.dashboard')->send();
+            return;
+        }
+
         $this->seller_user_id = Auth::id();
 
         $session = $this->openSession();

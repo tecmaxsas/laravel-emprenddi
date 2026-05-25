@@ -5,13 +5,9 @@
     //  - Si no, al POS regular ('pos.use').
     //  - Si el usuario no puede usar NINGÚN POS, no rendereamos nada.
     $user = auth()->user();
-    $restaurantActive = \App\Support\ModuleGate::active('restaurant');
-    $canRestaurant = $restaurantActive && $user?->can('restaurant.use');
-    // Si la empresa tiene restaurant activo, su POS es el restaurante — el
-    // POS tradicional queda oculto (canAccess() en PosTerminal tambien lo
-    // bloquea). Asi un cajero sin 'restaurant.use' en empresa restaurante
-    // simplemente no ve el boton (no lo mandamos a una pagina 403).
-    $canRegular = ! $restaurantActive && $user?->can('pos.use');
+    $canRestaurant = \App\Support\ModuleGate::active('restaurant')
+        && $user?->can('restaurant.use');
+    $canRegular = $user?->can('pos.use');
 
     if ($canRestaurant) {
         $href = route('filament.app.pages.restaurant-pos');
