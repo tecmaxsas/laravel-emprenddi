@@ -955,6 +955,28 @@ class RestaurantOrderEngine
                     'notes' => $notes,
                 ]);
 
+                // Si el tab trae extra_discount (descuento por promociones
+                // calculado en POS), lo distribuimos proporcionalmente entre
+                // las lineas del tab sumandolo a discount_amount. SaleInvoice
+                // Engine recalcula totales basado en estos valores.
+                $extraDiscount = (float) ($tab['extra_discount'] ?? 0);
+                $lineDiscounts = [];
+                if ($extraDiscount > 0 && $tabSubtotal > 0) {
+                    $effectiveDiscount = min($extraDiscount, $tabSubtotal);
+                    $distributed = 0.0;
+                    $itemsList = $items->all();
+                    $lastIdx = array_key_last($itemsList);
+                    foreach ($itemsList as $idx => $item) {
+                        if ($idx === $lastIdx) {
+                            $share = round($effectiveDiscount - $distributed, 2);
+                        } else {
+                            $share = round($effectiveDiscount * ((float) $item->subtotal / $tabSubtotal), 2);
+                        }
+                        $lineDiscounts[$item->id] = $share;
+                        $distributed += $share;
+                    }
+                }
+
                 $lineNum = 1;
                 foreach ($items as $item) {
                     // unit_price efectivo incluye delta de modificadores
@@ -963,19 +985,32 @@ class RestaurantOrderEngine
                         ? round((float) $item->subtotal / (float) $item->quantity, 2)
                         : 0;
 
+                    $itemSubtotal = (float) $item->subtotal;
+                    $itemDiscount = (float) ($lineDiscounts[$item->id] ?? 0);
+                    $itemTaxable = max(0, $itemSubtotal - $itemDiscount);
+                    $itemTaxRate = (float) $item->tax_rate;
+                    // Recalcular impuesto sobre la base con descuento aplicado
+                    $itemTax = $itemDiscount > 0
+                        ? round($itemTaxable * ($itemTaxRate / 100), 2)
+                        : (float) $item->tax_amount;
+                    $itemTotal = $itemTaxable + $itemTax;
+                    $itemDiscountPct = $itemSubtotal > 0 && $itemDiscount > 0
+                        ? round(($itemDiscount / $itemSubtotal) * 100, 2)
+                        : 0;
+
                     $invoice->lines()->create([
                         'line_number' => $lineNum++,
                         'product_id' => $item->product_id,
                         'description' => $item->description,
                         'quantity' => $item->quantity,
                         'unit_price' => $effUnit,
-                        'discount_percentage' => 0,
-                        'discount_amount' => 0,
+                        'discount_percentage' => $itemDiscountPct,
+                        'discount_amount' => $itemDiscount,
                         'tax_id' => $item->tax_id,
-                        'tax_rate' => $item->tax_rate,
-                        'tax_amount' => $item->tax_amount,
-                        'subtotal' => $item->subtotal,
-                        'total' => $item->total,
+                        'tax_rate' => $itemTaxRate,
+                        'tax_amount' => $itemTax,
+                        'subtotal' => $itemSubtotal,
+                        'total' => $itemTotal,
                     ]);
                 }
 

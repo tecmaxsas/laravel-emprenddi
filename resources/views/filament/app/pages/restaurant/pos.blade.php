@@ -722,6 +722,58 @@
                             </div>
                         @endif
 
+                        {{-- =============================================== --}}
+                        {{-- PROMOCIONES (modulo opcional)                    --}}
+                        {{-- =============================================== --}}
+                        @if (\App\Support\PromotionsSettings::moduleActive())
+                            @php
+                                // Reevaluar promociones cada render para tener estado actualizado
+                                $this->evaluatePromotions();
+                            @endphp
+                            <div style="padding:10px 12px; border-radius:8px; background:#eef2ff; border:1px solid #c7d2fe; margin-top:8px;">
+                                @if (! empty($appliedPromotions))
+                                    <div style="display:flex; flex-direction:column; gap:4px; margin-bottom:8px;">
+                                        @foreach ($appliedPromotions as $promo)
+                                            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:5px 8px; border-radius:6px; background:#dcfce7; color:#166534; font-size:12px;">
+                                                <div style="display:flex; align-items:center; gap:4px; min-width:0;">
+                                                    <span>🎟️</span>
+                                                    <span style="font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ $promo['name'] }}</span>
+                                                    @if ($promo['code'])
+                                                        <span style="font-family:monospace; font-size:10px; opacity:0.7;">({{ $promo['code'] }})</span>
+                                                    @endif
+                                                </div>
+                                                <span style="font-weight:700; white-space:nowrap;">−${{ number_format($promo['discount'], 0, ',', '.') }}</span>
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                @endif
+
+                                <div style="display:flex; gap:4px;">
+                                    <input type="text" wire:model="couponCode" wire:keydown.enter="applyCoupon"
+                                           placeholder="Código de cupón"
+                                           style="flex:1; padding:6px 10px; font-size:12px; border:1px solid #c7d2fe; border-radius:6px; outline:none; text-transform:uppercase; font-family:monospace;" />
+                                    <button type="button" wire:click="applyCoupon"
+                                            style="padding:6px 12px; font-size:12px; font-weight:600; background:#6366f1; color:white; border:0; border-radius:6px; cursor:pointer;">
+                                        Aplicar
+                                    </button>
+                                    @if (! empty($appliedPromotions))
+                                        <button type="button" wire:click="removeCoupon"
+                                                title="Quitar cupón"
+                                                style="padding:6px 10px; font-size:12px; background:#e5e7eb; color:#374151; border:0; border-radius:6px; cursor:pointer;">
+                                            ✕
+                                        </button>
+                                    @endif
+                                </div>
+
+                                @if ($promotionsDiscountAmount > 0)
+                                    <div style="margin-top:6px; padding-top:6px; border-top:1px dashed #c7d2fe; display:flex; justify-content:space-between; font-size:11px; color:#4338ca; font-weight:700;">
+                                        <span>Descuento total promociones</span>
+                                        <span>−${{ number_format($promotionsDiscountAmount, 0, ',', '.') }}</span>
+                                    </div>
+                                @endif
+                            </div>
+                        @endif
+
                         <button type="button" wire:click="openBillingModal"
                                 @disabled($order->items->reject(fn ($i) => $i->kitchen_status === 'cancelled')->isEmpty())
                                 style="padding:14px; border-radius:8px; background:#10b981; color:white; border:0; font-weight:800; cursor:pointer; font-size:15px; margin-top:6px; box-shadow:0 2px 4px rgba(16,185,129,0.3);">
@@ -1399,9 +1451,19 @@
                                     </div>
                                 @endif
                                 <div style="display:flex; justify-content:space-between; font-weight:700; padding-top:3px; border-top:1px dashed #d1d5db;">
-                                    <span>Factura (sin propina)</span>
+                                    <span>Factura bruta</span>
                                     <span style="color:#1e40af;">${{ number_format($t['invoice_total'], 0, ',', '.') }}</span>
                                 </div>
+                                @if (($t['promo_discount'] ?? 0) > 0)
+                                    <div style="display:flex; justify-content:space-between; color:#15803d; font-weight:700;">
+                                        <span>− Promociones</span>
+                                        <span>−${{ number_format($t['promo_discount'], 0, ',', '.') }}</span>
+                                    </div>
+                                    <div style="display:flex; justify-content:space-between; font-weight:800; padding-top:3px; border-top:1px dashed #d1d5db;">
+                                        <span>Factura final</span>
+                                        <span style="color:#1e40af;">${{ number_format($t['payable_amount'], 0, ',', '.') }}</span>
+                                    </div>
+                                @endif
                                 @if ($t['tip_share'] > 0)
                                     <div style="display:flex; justify-content:space-between; color:#92400e;">
                                         <span>+ Propina (no facturada)</span>
@@ -1418,7 +1480,8 @@
                             @php
                                 $tabPayments = $billingPayments[$t['key']] ?? [];
                                 $paymentsSum = collect($tabPayments)->sum(fn ($p) => (float) ($p['amount'] ?? 0));
-                                $paymentsRemaining = round((float) $t['invoice_total'] - $paymentsSum, 2);
+                                $paymentsTarget = (float) ($t['payable_amount'] ?? $t['invoice_total']);
+                                $paymentsRemaining = round($paymentsTarget - $paymentsSum, 2);
                             @endphp
                             <div>
                                 <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px;">

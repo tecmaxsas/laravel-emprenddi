@@ -103,6 +103,19 @@ class RestaurantPos extends Page
     public string $billingReference = '';
     public string $billingInvoiceKind = 'pos';  // pos | electronic
 
+    // ----------------------------------------------------------------
+    // PROMOCIONES (modulo opcional — ver PromotionsSettings)
+    // ----------------------------------------------------------------
+    // Codigo de cupon ingresado manualmente. Si esta vacio, solo se aplican
+    // promociones automaticas (sin codigo).
+    public string $couponCode = '';
+    // Log de promociones aplicadas a la orden actual.
+    // Cada item: ['promotion_id', 'name', 'code', 'discount']
+    public array $appliedPromotions = [];
+    // Total descontado por promociones — se distribuye proporcionalmente
+    // entre las lineas de cada tab al facturar.
+    public float $promotionsDiscountAmount = 0.0;
+
     public static function canAccess(): bool
     {
         if (! ModuleGate::active('restaurant')) return false;
@@ -332,6 +345,10 @@ class RestaurantPos extends Page
         // accedió en este request quedó memoizada con la orden vieja y el
         // panel seguiría mostrándola tras cancelar/cerrar.
         unset($this->activeOrder);
+        // Limpiar estado de promociones (la siguiente orden empieza limpia)
+        $this->couponCode = '';
+        $this->appliedPromotions = [];
+        $this->promotionsDiscountAmount = 0.0;
     }
 
     public function addProduct(int $productId): void
@@ -1114,11 +1131,14 @@ class RestaurantPos extends Page
         $items = $order->items->reject(fn ($i) => $i->kitchen_status === OrderItem::KS_CANCELLED);
         $orderSubtotal = (float) $items->sum('subtotal');
         $orderTip = (float) $order->tip_amount;
+        $totalPromosDiscount = (float) $this->promotionsDiscountAmount;
 
         if ($this->splitMode === 'none') {
             $taxSum = (float) $items->sum('tax_amount');
             $totalSum = (float) $items->sum('total');
             $tipShare = $orderTip;
+            $promoDiscount = $totalPromosDiscount;
+            $payable = max(0, $totalSum - $promoDiscount);
             return [[
                 'key' => 'main',
                 'label' => null,
@@ -1126,14 +1146,17 @@ class RestaurantPos extends Page
                 'subtotal' => $orderSubtotal,
                 'tax' => $taxSum,
                 'tip_share' => $tipShare,
-                'invoice_total' => $totalSum,        // lo que va a la factura
-                'grand_total' => $totalSum + $tipShare, // con propina
+                'invoice_total' => $totalSum,           // total bruto antes de promos
+                'promo_discount' => $promoDiscount,     // descuento por promos del tab
+                'payable_amount' => $payable,           // lo que el cajero debe cubrir en pagos (sin propina)
+                'grand_total' => $payable + $tipShare,  // con propina
             ]];
         }
 
-        // by_item
+        // by_item: prorrateo de descuento de promos por invoice_total del tab
         $grouped = $items->groupBy(fn ($i) => $i->split_tab ?: '—');
         $tabs = [];
+        $tabTotals = []; // para prorratear despues
         foreach ($grouped as $label => $group) {
             $sub = (float) $group->sum('subtotal');
             $tax = (float) $group->sum('tax_amount');
@@ -1149,10 +1172,28 @@ class RestaurantPos extends Page
                 'tax' => $tax,
                 'tip_share' => $tipShare,
                 'invoice_total' => $total,
-                'grand_total' => $total + $tipShare,
                 'unassigned' => $label === '—',
             ];
+            $tabTotals[] = $total;
         }
+        // Prorratear el descuento total de promociones entre tabs
+        $totalSumAll = (float) array_sum($tabTotals);
+        $distributed = 0.0;
+        $lastIdx = array_key_last($tabs);
+        foreach ($tabs as $idx => &$tab) {
+            if ($totalPromosDiscount <= 0 || $totalSumAll <= 0) {
+                $tab['promo_discount'] = 0;
+            } elseif ($idx === $lastIdx) {
+                $tab['promo_discount'] = round(min($totalPromosDiscount, $totalSumAll) - $distributed, 2);
+            } else {
+                $share = round($totalPromosDiscount * ($tab['invoice_total'] / $totalSumAll), 2);
+                $tab['promo_discount'] = $share;
+                $distributed += $share;
+            }
+            $tab['payable_amount'] = max(0, $tab['invoice_total'] - $tab['promo_discount']);
+            $tab['grand_total'] = $tab['payable_amount'] + $tab['tip_share'];
+        }
+        unset($tab);
         return $tabs;
     }
 
@@ -1227,13 +1268,15 @@ class RestaurantPos extends Page
 
         $defaultAccount = $this->defaultCashAccountId('cash');
 
-        // Inicializar pagos: un solo pago en efectivo por el total del tab
+        // Inicializar pagos: un solo pago en efectivo por payable_amount
+        // (invoice_total menos descuento de promociones del tab)
         $this->billingPayments = [];
         foreach ($tabs as $t) {
+            $payable = (float) ($t['payable_amount'] ?? $t['invoice_total']);
             $this->billingPayments[$t['key']] = [[
                 'method' => 'cash',
                 'account_id' => $defaultAccount,
-                'amount' => number_format((float) $t['invoice_total'], 2, '.', ''),
+                'amount' => number_format($payable, 2, '.', ''),
             ]];
         }
         $this->billingReference = '';
@@ -1257,7 +1300,8 @@ class RestaurantPos extends Page
 
         $current = collect($this->billingPayments[$tabKey] ?? [])
             ->sum(fn ($p) => (float) ($p['amount'] ?? 0));
-        $remaining = max(0, round((float) $tab['invoice_total'] - $current, 2));
+        $target = (float) ($tab['payable_amount'] ?? $tab['invoice_total']);
+        $remaining = max(0, round($target - $current, 2));
 
         $this->billingPayments[$tabKey][] = [
             'method' => 'cash',
@@ -1296,7 +1340,13 @@ class RestaurantPos extends Page
         $tabs = $this->billingTabs;
         if (empty($tabs)) return;
 
-        // Validar cada pago por tab: metodo, cuenta, monto > 0 y suma = invoice_total
+        // Distribuir el descuento por promociones entre los tabs ANTES de
+        // validar los pagos: el cajero debe cubrir el invoice_total MENOS
+        // su share del descuento.
+        $promoShares = $this->distributePromotionsAcrossTabs($tabs);
+
+        // Validar cada pago por tab: metodo, cuenta, monto > 0 y suma =
+        // invoice_total (descontado el share de promociones)
         foreach ($tabs as $t) {
             $payments = $this->billingPayments[$t['key']] ?? [];
             if (empty($payments)) {
@@ -1323,12 +1373,17 @@ class RestaurantPos extends Page
                 }
                 $sum += $amount;
             }
-            $diff = round((float) $t['invoice_total'] - $sum, 2);
+            $extraDiscount = (float) ($promoShares[$t['key']] ?? 0);
+            $target = max(0, (float) $t['invoice_total'] - $extraDiscount);
+            $diff = round($target - $sum, 2);
             if (abs($diff) > 0.01) {
                 $tabName = $t['label'] ?: 'principal';
+                $hint = $extraDiscount > 0
+                    ? sprintf(' (descontando $%s por promociones)', number_format($extraDiscount, 0, ',', '.'))
+                    : '';
                 Notification::make()
                     ->title('Pagos no cuadran')
-                    ->body("Tab {$tabName}: faltan o sobran $".number_format(abs($diff), 0, ',', '.')." (objetivo: $".number_format($t['invoice_total'], 0, ',', '.').")")
+                    ->body("Tab {$tabName}: faltan o sobran $".number_format(abs($diff), 0, ',', '.')." (objetivo: $".number_format($target, 0, ',', '.')."{$hint})")
                     ->danger()->send();
                 return;
             }
@@ -1336,7 +1391,7 @@ class RestaurantPos extends Page
 
         $thirdPartyId = $this->ensureDefaultCustomer()->id;
 
-        // Construir payload con pagos detallados
+        // Construir payload con pagos detallados + extra_discount por tab
         $payload = [];
         foreach ($tabs as $t) {
             $payload[] = [
@@ -1348,11 +1403,31 @@ class RestaurantPos extends Page
                     'account_id' => (int) $p['account_id'],
                     'amount' => round((float) $p['amount'], 2),
                 ], $this->billingPayments[$t['key']]),
+                // Descuento por promociones distribuido proporcionalmente
+                // al invoice_total de este tab. RestaurantOrderEngine::bill()
+                // lo distribuye entre las lineas del tab al crear la factura.
+                'extra_discount' => (float) ($promoShares[$t['key']] ?? 0),
             ];
         }
 
         try {
             $invoices = app(RestaurantOrderEngine::class)->bill($order, $payload, $thirdPartyId, $this->billingInvoiceKind);
+
+            // Registrar uso de promociones (para reportes + validar
+            // max_uses_per_customer en futuras ventas). Se registra contra
+            // la primera factura como referencia.
+            if (! empty($this->appliedPromotions) && ! empty($invoices)) {
+                $firstInvoice = $invoices[0];
+                $promoEngine = app(\App\Services\Promotions\PromotionEngine::class);
+                $result = new \App\Services\Promotions\PromotionResult(
+                    $this->buildOrderCartContext($order, $this->couponCode),
+                );
+                foreach ($this->appliedPromotions as $a) {
+                    $p = \App\Models\Promotion::find($a['promotion_id']);
+                    if ($p) $result->registerApplied($p, (float) $a['discount']);
+                }
+                $promoEngine->recordUsages($result, $firstInvoice->id, Auth::id());
+            }
 
             $numbers = implode(', ', array_map(fn ($i) => $i->fullNumber(), $invoices));
             Notification::make()
@@ -1497,5 +1572,154 @@ class RestaurantPos extends Page
         } catch (\Throwable $e) {
             Notification::make()->title('Error')->body($e->getMessage())->danger()->send();
         }
+    }
+
+    // ================================================================
+    // PROMOCIONES — aplicar descuentos al orden activo
+    // ================================================================
+
+    /**
+     * Reevalua promociones contra los items de la orden activa.
+     * Se llama automaticamente cuando se renderiza la UI del panel de
+     * orden (via lifecycle hook hydrate o invocando explicitamente).
+     * Actualiza appliedPromotions[] y promotionsDiscountAmount.
+     */
+    public function evaluatePromotions(): void
+    {
+        if (! \App\Support\PromotionsSettings::moduleActive()) {
+            $this->appliedPromotions = [];
+            $this->promotionsDiscountAmount = 0.0;
+            return;
+        }
+
+        $order = $this->activeOrder;
+        if (! $order) {
+            $this->appliedPromotions = [];
+            $this->promotionsDiscountAmount = 0.0;
+            return;
+        }
+
+        $context = $this->buildOrderCartContext($order, $this->couponCode);
+        /** @var \App\Services\Promotions\PromotionEngine $engine */
+        $engine = app(\App\Services\Promotions\PromotionEngine::class);
+        $result = $engine->evaluate($context);
+
+        $this->promotionsDiscountAmount = $result->totalDiscount();
+        $this->appliedPromotions = array_map(fn ($a) => [
+            'promotion_id' => $a['promotion']->id,
+            'name' => $a['promotion']->name,
+            'code' => $a['promotion']->code,
+            'discount' => $a['discount'],
+        ], $result->appliedPromotions);
+    }
+
+    public function applyCoupon(): void
+    {
+        $code = trim($this->couponCode);
+        if ($code === '') {
+            Notification::make()->title('Ingresa un código de cupón')->warning()->send();
+            return;
+        }
+
+        $this->couponCode = $code;
+        $previousApplied = collect($this->appliedPromotions)->pluck('promotion_id')->all();
+        $this->evaluatePromotions();
+        $nowApplied = collect($this->appliedPromotions)->pluck('promotion_id')->all();
+
+        $newlyApplied = array_diff($nowApplied, $previousApplied);
+        if (empty($newlyApplied)) {
+            $this->couponCode = '';
+            $this->evaluatePromotions();
+            Notification::make()
+                ->title('Cupón no aplicable')
+                ->body("El código '{$code}' no existe, está vencido, no cumple las condiciones o ya alcanzó su límite.")
+                ->danger()
+                ->send();
+            return;
+        }
+
+        Notification::make()
+            ->title('Cupón aplicado')
+            ->body('Descuento total: $' . number_format($this->promotionsDiscountAmount, 0, ',', '.'))
+            ->success()
+            ->send();
+    }
+
+    public function removeCoupon(): void
+    {
+        $this->couponCode = '';
+        $this->evaluatePromotions();
+        Notification::make()->title('Cupón removido')->success()->send();
+    }
+
+    /**
+     * Construye un CartContext a partir de la orden activa para pasar al
+     * PromotionEngine. Modo servicio: dine_in (mesa), takeaway o delivery.
+     */
+    protected function buildOrderCartContext(\App\Models\Restaurant\Order $order, ?string $couponCode = null): \App\Services\Promotions\CartContext
+    {
+        $order->loadMissing(['items.product:id,category_id,code']);
+
+        $lines = [];
+        foreach ($order->items as $idx => $item) {
+            if ($item->kitchen_status === \App\Models\Restaurant\OrderItem::KS_CANCELLED) {
+                continue;
+            }
+            $productId = (int) $item->product_id;
+            if ($productId <= 0) continue;
+
+            $product = $item->product;
+            $lines[$idx] = new \App\Services\Promotions\CartLine(
+                productId: $productId,
+                categoryId: $product?->category_id,
+                quantity: (int) $item->quantity,
+                // unit_price efectivo: subtotal/qty (incluye modificadores)
+                unitPrice: (float) $item->quantity > 0
+                    ? round((float) $item->subtotal / (float) $item->quantity, 2)
+                    : 0,
+                reference: (string) $item->id,
+            );
+        }
+
+        $serviceMode = match (true) {
+            $order->is_delivery ?? false => 'delivery',
+            $order->is_takeaway ?? false => 'takeaway',
+            default => 'dine_in',
+        };
+
+        return new \App\Services\Promotions\CartContext(
+            lines: $lines,
+            customerId: null, // Restaurant no asocia cliente a la orden por default
+            serviceMode: $serviceMode,
+            couponCode: $couponCode,
+        );
+    }
+
+    /**
+     * Distribuye proporcionalmente promotionsDiscountAmount entre los tabs
+     * del cobro segun su invoice_total. Devuelve [tabKey => share].
+     */
+    protected function distributePromotionsAcrossTabs(array $tabs): array
+    {
+        $totalDiscount = (float) $this->promotionsDiscountAmount;
+        if ($totalDiscount <= 0 || empty($tabs)) return [];
+
+        $totalAllTabs = (float) array_sum(array_map(fn ($t) => (float) $t['invoice_total'], $tabs));
+        if ($totalAllTabs <= 0) return [];
+
+        $effective = min($totalDiscount, $totalAllTabs);
+        $shares = [];
+        $distributed = 0.0;
+        $lastKey = array_key_last($tabs);
+        foreach ($tabs as $key => $tab) {
+            if ($key === $lastKey) {
+                $shares[$tab['key']] = round($effective - $distributed, 2);
+            } else {
+                $share = round($effective * ((float) $tab['invoice_total'] / $totalAllTabs), 2);
+                $shares[$tab['key']] = $share;
+                $distributed += $share;
+            }
+        }
+        return $shares;
     }
 }
