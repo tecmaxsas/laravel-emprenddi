@@ -121,6 +121,14 @@ class PermissionsCatalog
                 'reports.cash_closings' => 'Ver Cierres de Caja Históricos',
                 'exogena.view' => 'Ver y generar Información Exógena',
             ],
+            'Promociones y Gift Cards' => [
+                'promotions.view' => 'Ver promociones y cupones',
+                'promotions.manage' => 'Crear / editar / desactivar promociones y cupones',
+                'gift_cards.view' => 'Ver tarjetas regalo emitidas',
+                'gift_cards.issue' => 'Emitir/vender tarjetas regalo nuevas',
+                'gift_cards.redeem' => 'Redimir tarjetas regalo en POS',
+                'gift_cards.cancel' => 'Anular tarjetas regalo o ajustar saldo',
+            ],
             'Administración' => [
                 'users.view' => 'Ver usuarios de la empresa',
                 'users.manage' => 'Crear / editar / desactivar usuarios',
@@ -200,6 +208,10 @@ class PermissionsCatalog
                 'restaurant.use', 'restaurant.kitchen', 'restaurant.bill.split',
                 'restaurant.delivery.manage', 'restaurant.reservations.manage',
                 'restaurant.menu.manage',
+                // Promos: solo ver (las crea el manager). Gift cards:
+                // emite y redime en POS pero no anula.
+                'promotions.view',
+                'gift_cards.view', 'gift_cards.issue', 'gift_cards.redeem',
             ],
             // Contador externo del Portal Contador. Lectura amplia + edición
             // contable (postear, anular, ajustes). No puede crear ventas/POS
