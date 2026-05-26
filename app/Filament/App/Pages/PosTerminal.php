@@ -97,6 +97,41 @@ class PosTerminal extends Page
     public float $cartDiscountAmount = 0.0;
     public string $cartDiscountMode = 'pct'; // pct | amount
 
+    // ----------------------------------------------------------------
+    // PROMOCIONES (modulo opcional — ver PromotionsSettings)
+    // ----------------------------------------------------------------
+    // Codigo de cupon ingresado manualmente. Si esta vacio, solo se aplican
+    // promociones automaticas (sin codigo).
+    public string $couponCode = '';
+    // Log de promociones aplicadas en la venta actual.
+    // Cada item: ['promotion_id', 'name', 'code', 'discount']
+    public array $appliedPromotions = [];
+    // Total descontado por promociones (suma de appliedPromotions[*].discount).
+    // Se aplica como descuento adicional a nivel ORDEN para no tocar la
+    // logica de recomputeLine y mantener consistencia con impuestos.
+    public float $promotionsDiscountAmount = 0.0;
+
+    // ----------------------------------------------------------------
+    // GIFT CARDS (modulo opcional — ver GiftCardsSettings)
+    // ----------------------------------------------------------------
+    // Codigo en validacion (input del cajero)
+    public string $giftCardCodeInput = '';
+    // Gift cards aplicadas como medio de pago en la venta actual.
+    // Cada item: ['gift_card_id', 'code', 'amount', 'available_balance']
+    public array $appliedGiftCards = [];
+
+    // Modal de emision: cuando el cajero agrega el producto especial 'GIFTCARD'
+    // al carrito, se abre este modal para capturar monto y destinatario.
+    public bool $showGiftCardEmissionModal = false;
+    public ?float $giftCardEmissionAmount = null;
+    public string $giftCardEmissionRecipientName = '';
+    public string $giftCardEmissionRecipientEmail = '';
+    public string $giftCardEmissionSenderName = '';
+    // Cuando el modal se confirma, esto guarda el index de la linea del
+    // carrito que representa la gift card a emitir (asi sabemos a que
+    // linea atar los datos cuando se procese la venta).
+    public ?int $pendingGiftCardLineIndex = null;
+
     // Modal de aprobación por supervisor para descuentos que exceden umbral.
     // pendingDiscount estructura: ['type' => 'line'|'cart', 'index' => int|null,
     // 'pct' => float, 'mode' => 'pct'|'amount', 'value' => float]
@@ -387,6 +422,28 @@ class PosTerminal extends Page
     {
         $product = Product::find($productId);
         if (! $product || ! $product->is_sellable) {
+            return;
+        }
+
+        // Si es el producto especial 'Tarjeta Regalo', abrir modal de emision
+        // en lugar de agregarlo como producto normal. El modal pide monto y
+        // datos del destinatario; al confirmar, agrega la linea con esos datos.
+        if (\App\Services\GiftCards\GiftCardProductProvisioner::isGiftCardProduct($product)) {
+            if (! \App\Support\GiftCardsSettings::moduleActive()) {
+                Notification::make()
+                    ->title('Gift Cards no esta activo')
+                    ->body('Actívalo en Configuraciones → Gift Cards para vender tarjetas regalo.')
+                    ->warning()
+                    ->send();
+                return;
+            }
+            // Limpia el modal y lo abre
+            $this->giftCardEmissionAmount = null;
+            $this->giftCardEmissionRecipientName = '';
+            $this->giftCardEmissionRecipientEmail = '';
+            $this->giftCardEmissionSenderName = '';
+            $this->pendingGiftCardLineIndex = null;
+            $this->showGiftCardEmissionModal = true;
             return;
         }
 
@@ -891,6 +948,13 @@ class PosTerminal extends Page
 
     public function totals(): array
     {
+        // Reevalua promociones automaticas al inicio (las basadas en codigo
+        // se evaluan solo al apretar 'Aplicar cupon'). Esto deja $this->
+        // promotionsDiscountAmount actualizado segun el estado actual del carrito.
+        if (\App\Support\PromotionsSettings::moduleActive()) {
+            $this->evaluateAutomaticPromotions();
+        }
+
         $subtotal = 0;
         $discount = 0;
         $tax = 0;
@@ -903,26 +967,341 @@ class PosTerminal extends Page
             $total += (float) ($line['total'] ?? 0);
         }
 
-        $retentionTotal = collect($this->retentions)->sum(fn ($r) => (float) ($r['amount'] ?? 0));
-        // net_payable = lo que el cliente realmente paga (total - retenciones).
-        // Las retenciones NO son saldo pendiente — son anticipos de impuesto.
-        $netPayable = max(0, $total - $retentionTotal);
+        // Descuento por promociones se aplica a nivel ORDEN (no por linea)
+        // para no tocar la logica de recomputeLine y mantener consistencia
+        // con el calculo de impuestos.
+        $promotionsDiscount = (float) $this->promotionsDiscountAmount;
+        $totalAfterPromotions = max(0, $total - $promotionsDiscount);
 
+        $retentionTotal = collect($this->retentions)->sum(fn ($r) => (float) ($r['amount'] ?? 0));
+        $netPayable = max(0, $totalAfterPromotions - $retentionTotal);
+
+        // Pagos en efectivo/tarjeta/etc + pagos por gift card
         $paid = collect($this->payments)->sum(fn ($p) => (float) ($p['amount'] ?? 0));
-        $change = max(0, $paid - $netPayable);
+        $giftCardsPaid = collect($this->appliedGiftCards)->sum(fn ($g) => (float) ($g['amount'] ?? 0));
+        $totalPaid = $paid + $giftCardsPaid;
+
+        $change = max(0, $totalPaid - $netPayable);
 
         return [
             'subtotal' => $subtotal,
             'discount' => $discount,
+            'promotions_discount' => $promotionsDiscount,
             'tax' => $tax,
-            'total' => $total,
+            'total' => $totalAfterPromotions,
             'retentions' => $retentionTotal,
             'net_payable' => $netPayable,
             'paid' => $paid,
+            'gift_cards_paid' => $giftCardsPaid,
+            'total_paid' => $totalPaid,
             'change' => $change,
-            'remaining' => max(0, $netPayable - $paid),
+            'remaining' => max(0, $netPayable - $totalPaid),
             'items' => collect($this->cart)->sum(fn ($l) => (float) ($l['quantity'] ?? 0)),
         ];
+    }
+
+    // ================================================================
+    // PROMOCIONES
+    // ================================================================
+
+    /**
+     * Reevalua promociones AUTOMATICAS (sin codigo) y actualiza la lista
+     * de aplicadas. Se llama dentro de totals() en cada render.
+     *
+     * Si hay un cupon aplicado (couponCode no vacio), tambien se reevalua
+     * porque pudo cambiar el carrito y dejar de cumplir las condiciones.
+     */
+    protected function evaluateAutomaticPromotions(): void
+    {
+        $context = $this->buildCartContext($this->couponCode);
+        /** @var \App\Services\Promotions\PromotionEngine $engine */
+        $engine = app(\App\Services\Promotions\PromotionEngine::class);
+        $result = $engine->evaluate($context);
+
+        $this->promotionsDiscountAmount = $result->totalDiscount();
+        $this->appliedPromotions = array_map(fn ($a) => [
+            'promotion_id' => $a['promotion']->id,
+            'name' => $a['promotion']->name,
+            'code' => $a['promotion']->code,
+            'discount' => $a['discount'],
+        ], $result->appliedPromotions);
+    }
+
+    /**
+     * Aplicar un cupon manualmente. Valida que exista al menos una promo
+     * con ese codigo aplicable; si no, muestra error y limpia el campo.
+     */
+    public function applyCoupon(): void
+    {
+        $code = trim($this->couponCode);
+        if ($code === '') {
+            Notification::make()->title('Ingresa un código de cupón')->warning()->send();
+            return;
+        }
+
+        $this->couponCode = $code;
+        $previousApplied = collect($this->appliedPromotions)->pluck('promotion_id')->all();
+        $this->evaluateAutomaticPromotions();
+        $nowApplied = collect($this->appliedPromotions)->pluck('promotion_id')->all();
+
+        $newlyApplied = array_diff($nowApplied, $previousApplied);
+        if (empty($newlyApplied)) {
+            $this->couponCode = '';
+            // Re-evaluamos sin cupon para limpiar
+            $this->evaluateAutomaticPromotions();
+            Notification::make()
+                ->title('Cupón no aplicable')
+                ->body("El código '{$code}' no existe, está vencido, no cumple las condiciones del carrito o ya alcanzo su límite.")
+                ->danger()
+                ->send();
+            return;
+        }
+
+        Notification::make()
+            ->title('Cupón aplicado')
+            ->body('Se aplicaron descuentos por $' . number_format($this->promotionsDiscountAmount, 0, ',', '.'))
+            ->success()
+            ->send();
+    }
+
+    /** Quita el cupon aplicado y reevalua solo automaticas. */
+    public function removeCoupon(): void
+    {
+        $this->couponCode = '';
+        $this->evaluateAutomaticPromotions();
+        Notification::make()->title('Cupón removido')->success()->send();
+    }
+
+    /**
+     * Construye el CartContext que pasara al motor de promociones a partir
+     * del estado actual del POS.
+     */
+    protected function buildCartContext(?string $couponCode = null): \App\Services\Promotions\CartContext
+    {
+        $lines = [];
+        foreach ($this->cart as $idx => $line) {
+            $productId = (int) ($line['product_id'] ?? 0);
+            if ($productId <= 0) continue;
+
+            // Evitar contar la linea de gift card como producto regular
+            if (($line['code'] ?? null) === \App\Services\GiftCards\GiftCardProductProvisioner::PRODUCT_CODE) {
+                continue;
+            }
+
+            $product = Product::find($productId);
+            $lines[$idx] = new \App\Services\Promotions\CartLine(
+                productId: $productId,
+                categoryId: $product?->category_id,
+                quantity: (int) ($line['quantity'] ?? 0),
+                unitPrice: (float) ($line['unit_price'] ?? 0),
+                reference: (string) $idx,
+            );
+        }
+
+        return new \App\Services\Promotions\CartContext(
+            lines: $lines,
+            customerId: $this->customer_id,
+            serviceMode: 'dine_in', // POS tradicional no usa modos de servicio
+            couponCode: $couponCode,
+        );
+    }
+
+    // ================================================================
+    // GIFT CARDS
+    // ================================================================
+
+    /**
+     * Valida el codigo de gift card ingresado por el cajero y lo agrega
+     * a la lista de gift cards aplicadas como medio de pago. El monto
+     * se descontara del current_balance al confirmar la venta.
+     */
+    public function applyGiftCard(): void
+    {
+        $code = trim($this->giftCardCodeInput);
+        if ($code === '') {
+            Notification::make()->title('Ingresa un código de gift card')->warning()->send();
+            return;
+        }
+
+        // Evitar duplicados
+        foreach ($this->appliedGiftCards as $existing) {
+            if (strcasecmp($existing['code'], $code) === 0) {
+                Notification::make()
+                    ->title('Gift card ya aplicada')
+                    ->warning()
+                    ->send();
+                $this->giftCardCodeInput = '';
+                return;
+            }
+        }
+
+        /** @var \App\Services\GiftCards\GiftCardEngine $engine */
+        $engine = app(\App\Services\GiftCards\GiftCardEngine::class);
+        $card = $engine->findRedeemable($code);
+
+        if (! $card) {
+            Notification::make()
+                ->title('Gift card no válida')
+                ->body('La tarjeta no existe, está anulada, sin saldo o expirada.')
+                ->danger()
+                ->send();
+            return;
+        }
+
+        // Calcula cuanto se va a redimir: lo minimo entre saldo y faltante
+        $totals = $this->totals();
+        $remaining = (float) $totals['remaining'];
+        $balance = (float) $card->current_balance;
+        $amountToRedeem = $remaining > 0 ? min($remaining, $balance) : $balance;
+
+        $this->appliedGiftCards[] = [
+            'gift_card_id' => $card->id,
+            'code' => $card->code,
+            'amount' => $amountToRedeem,
+            'available_balance' => $balance,
+        ];
+
+        $this->giftCardCodeInput = '';
+
+        Notification::make()
+            ->title("Gift card {$card->code} aplicada")
+            ->body('Saldo disponible: $' . number_format($balance, 0, ',', '.')
+                . ' · Se redime: $' . number_format($amountToRedeem, 0, ',', '.'))
+            ->success()
+            ->send();
+    }
+
+    /** Quita una gift card aplicada de la venta actual. */
+    public function removeAppliedGiftCard(int $index): void
+    {
+        if (! isset($this->appliedGiftCards[$index])) return;
+        unset($this->appliedGiftCards[$index]);
+        $this->appliedGiftCards = array_values($this->appliedGiftCards);
+    }
+
+    /**
+     * Confirma el modal de emision de gift card: agrega la linea al carrito
+     * con el monto ingresado. Los datos del destinatario quedan guardados
+     * en el item del cart para procesarse al confirmar la venta.
+     */
+    public function confirmGiftCardEmission(): void
+    {
+        $amount = (float) ($this->giftCardEmissionAmount ?? 0);
+        if ($amount <= 0) {
+            Notification::make()->title('Ingresa un monto válido')->danger()->send();
+            return;
+        }
+
+        $product = \App\Services\GiftCards\GiftCardProductProvisioner::find(Auth::user()->company_id);
+        if (! $product) {
+            Notification::make()->title('Producto "Gift Card" no encontrado. Actívalo en Configuraciones.')->danger()->send();
+            return;
+        }
+
+        $this->cart[] = [
+            'product_id' => $product->id,
+            'code' => $product->code,
+            'description' => 'Tarjeta Regalo $' . number_format($amount, 0, ',', '.'),
+            'image_path' => null,
+            'quantity' => 1.0,
+            'unit_price' => $amount,
+            'discount_percentage' => 0.0,
+            'discount_amount' => 0.0,
+            'tax_id' => null,
+            'tax_rate' => 0,
+            'tax_amount' => 0.0,
+            'subtotal' => $amount,
+            'total' => $amount,
+            // Metadata especial — al procesar la venta, se emite la gift card
+            'gift_card_emission' => [
+                'amount' => $amount,
+                'recipient_name' => $this->giftCardEmissionRecipientName ?: null,
+                'recipient_email' => $this->giftCardEmissionRecipientEmail ?: null,
+                'sender_name' => $this->giftCardEmissionSenderName ?: null,
+            ],
+        ];
+
+        // Reset modal
+        $this->showGiftCardEmissionModal = false;
+        $this->giftCardEmissionAmount = null;
+        $this->giftCardEmissionRecipientName = '';
+        $this->giftCardEmissionRecipientEmail = '';
+        $this->giftCardEmissionSenderName = '';
+    }
+
+    public function closeGiftCardEmissionModal(): void
+    {
+        $this->showGiftCardEmissionModal = false;
+        $this->giftCardEmissionAmount = null;
+    }
+
+    /**
+     * Antes de crear las lineas de la factura, distribuye el descuento de
+     * promociones ($this->promotionsDiscountAmount) entre las lineas del
+     * carrito sumandolo proporcionalmente al subtotal de cada una. Asi el
+     * total de la factura ya viene con las promos aplicadas y NO requiere
+     * un campo nuevo en sale_invoices.
+     *
+     * No muta $this->cart — devuelve una copia con discount_amount,
+     * tax_amount, total y discount_percentage ajustados.
+     *
+     * Las lineas de gift card emission se excluyen del prorrateo (no
+     * deberian recibir descuentos por promociones).
+     */
+    protected function distributePromotionsDiscountInLines(): array
+    {
+        $cart = $this->cart;
+        $discount = (float) $this->promotionsDiscountAmount;
+        if ($discount <= 0) return $cart;
+
+        // Subtotal de lineas elegibles (excluye gift card)
+        $eligibleIndices = [];
+        $totalEligibleSubtotal = 0.0;
+        foreach ($cart as $idx => $line) {
+            if (($line['code'] ?? null) === \App\Services\GiftCards\GiftCardProductProvisioner::PRODUCT_CODE) {
+                continue;
+            }
+            $sub = (float) ($line['subtotal'] ?? 0);
+            if ($sub <= 0) continue;
+            $eligibleIndices[] = $idx;
+            $totalEligibleSubtotal += $sub;
+        }
+        if ($totalEligibleSubtotal <= 0) return $cart;
+
+        $effectiveDiscount = min($discount, $totalEligibleSubtotal);
+        $distributed = 0.0;
+        $lastIdx = end($eligibleIndices);
+
+        foreach ($eligibleIndices as $idx) {
+            $line = &$cart[$idx];
+            $sub = (float) ($line['subtotal'] ?? 0);
+
+            if ($idx === $lastIdx) {
+                // El ultimo recibe el resto para evitar problemas de redondeo
+                $extraDiscount = round($effectiveDiscount - $distributed, 2);
+            } else {
+                $extraDiscount = round($effectiveDiscount * ($sub / $totalEligibleSubtotal), 2);
+            }
+            $distributed += $extraDiscount;
+
+            // Recalcular linea con el extra discount aplicado
+            $currentDiscount = (float) ($line['discount_amount'] ?? 0);
+            $newDiscount = $currentDiscount + $extraDiscount;
+            $taxable = max(0, $sub - $newDiscount);
+            $taxRate = (float) ($line['tax_rate'] ?? 0);
+            $taxAmount = round($taxable * ($taxRate / 100), 2);
+
+            $line['discount_amount'] = $newDiscount;
+            $line['tax_amount'] = $taxAmount;
+            $line['total'] = $taxable + $taxAmount;
+            // Mantener discount_percentage como referencia informativa
+            if ($sub > 0) {
+                $line['discount_percentage'] = round(($newDiscount / $sub) * 100, 2);
+            }
+            unset($line);
+        }
+
+        return $cart;
     }
 
     // ================================================================
@@ -1008,8 +1387,13 @@ class PosTerminal extends Page
             return;
         }
 
+        // Distribuir descuento de promociones entre las lineas del cart.
+        // El descuento se reparte proporcionalmente al subtotal de cada linea
+        // (excluyendo lineas de gift card emission, que no aplican promos).
+        $cartForInvoice = $this->distributePromotionsDiscountInLines();
+
         try {
-            $invoice = DB::transaction(function () use ($totals, $doc) {
+            $invoice = DB::transaction(function () use ($totals, $doc, $cartForInvoice) {
                 $companyId = Auth::user()->company_id;
                 $company = Company::find($companyId);
 
@@ -1031,7 +1415,7 @@ class PosTerminal extends Page
                 ]);
 
                 $lineNum = 1;
-                foreach ($this->cart as $line) {
+                foreach ($cartForInvoice as $line) {
                     $invoice->lines()->create([
                         'line_number' => $lineNum++,
                         'product_id' => $line['product_id'],
@@ -1091,18 +1475,105 @@ class PosTerminal extends Page
                     ]);
                 }
 
-                return $invoice->fresh();
-            });
+                // Redimir gift cards aplicadas como medio de pago. Cada una
+                // se descuenta del saldo de la tarjeta + se registra como
+                // payment en la venta con method='gift_card'.
+                $gcEngine = app(\App\Services\GiftCards\GiftCardEngine::class);
+                $issuedGiftCards = [];
 
-            Notification::make()
+                foreach ($this->appliedGiftCards as $applied) {
+                    $card = \App\Models\GiftCard::find($applied['gift_card_id']);
+                    if (! $card) continue;
+                    $amount = (float) $applied['amount'];
+                    if ($amount <= 0) continue;
+                    $balance = (float) $invoice->fresh()->balance;
+                    $amount = min($amount, $balance);
+                    if ($amount <= 0) continue;
+
+                    // Redime (atomico: descuenta saldo + crea transaccion)
+                    $gcEngine->redeem($card, $amount, $invoice->id, Auth::id());
+
+                    // Registra como Payment en la venta para que la
+                    // contabilidad y los reportes lo reflejen
+                    $engine->addPayment($invoice, [
+                        'amount' => $amount,
+                        'payment_method' => 'gift_card',
+                        'account_id' => null,
+                        'date' => now()->toDateString(),
+                        'reference' => $card->code,
+                        'description' => 'POS — Gift card '.$card->code,
+                    ]);
+                }
+
+                // Emitir gift cards: por cada linea con metadata
+                // 'gift_card_emission', llamamos al engine para crear la
+                // tarjeta nueva ligada a esta venta. El codigo generado
+                // se entregara al cajero en la notificacion final.
+                foreach ($cartForInvoice as $line) {
+                    if (empty($line['gift_card_emission'])) continue;
+                    $meta = $line['gift_card_emission'];
+                    $newCard = $gcEngine->issue(
+                        initialBalance: (float) $meta['amount'],
+                        userId: Auth::id(),
+                        saleInvoiceId: $invoice->id,
+                        meta: [
+                            'recipient_name' => $meta['recipient_name'] ?? null,
+                            'recipient_email' => $meta['recipient_email'] ?? null,
+                            'sender_name' => $meta['sender_name'] ?? null,
+                        ],
+                    );
+                    $issuedGiftCards[] = $newCard;
+                }
+
+                // Registrar uso de promociones aplicadas (para reportes y
+                // validar max_uses_per_customer en futuras ventas)
+                if (! empty($this->appliedPromotions)) {
+                    $promoEngine = app(\App\Services\Promotions\PromotionEngine::class);
+                    // Reconstruir un PromotionResult sintetico para recordUsages
+                    $result = new \App\Services\Promotions\PromotionResult($this->buildCartContext($this->couponCode));
+                    foreach ($this->appliedPromotions as $a) {
+                        $p = \App\Models\Promotion::find($a['promotion_id']);
+                        if ($p) $result->registerApplied($p, (float) $a['discount']);
+                    }
+                    $promoEngine->recordUsages($result, $invoice->id, Auth::id());
+                }
+
+                // Devolvemos el invoice + las gift cards emitidas para
+                // poder mostrarselas al cajero en la notificacion
+                return [
+                    'invoice' => $invoice->fresh(),
+                    'issued_gift_cards' => $issuedGiftCards,
+                ];
+            });
+            $issuedGiftCards = $invoice['issued_gift_cards'] ?? [];
+            $invoice = $invoice['invoice'];
+
+            // Notificacion: si emitimos gift cards, incluir sus codigos para
+            // que el cajero los entregue al cliente. Persistente cuando hay
+            // gift cards porque el codigo NO debe perderse.
+            $body = sprintf('Total $%s.', number_format($invoice->total, 2));
+            if ($totals['change'] > 0) {
+                $body .= ' Vuelto: $' . number_format($totals['change'], 2) . '.';
+            }
+            if (! empty($issuedGiftCards)) {
+                $body .= "\n\n🎁 Gift Cards emitidas:";
+                foreach ($issuedGiftCards as $gc) {
+                    $body .= sprintf(
+                        "\n  • %s · $%s",
+                        $gc->code,
+                        number_format((float) $gc->initial_balance, 0, ',', '.'),
+                    );
+                }
+                $body .= "\n\nEntrega estos códigos al cliente.";
+            }
+            $notif = Notification::make()
                 ->title('Venta procesada — '.$invoice->fullNumber())
-                ->body(sprintf(
-                    'Total $%s. %s',
-                    number_format($invoice->total, 2),
-                    $totals['change'] > 0 ? 'Vuelto: $'.number_format($totals['change'], 2) : '',
-                ))
-                ->success()
-                ->send();
+                ->body($body)
+                ->success();
+            if (! empty($issuedGiftCards)) {
+                $notif->persistent();
+            }
+            $notif->send();
 
             // Disparo de impresión: gobernado por settings.pos.print_after_sale.
             // Si está desactivado, el cajero abre el ticket manualmente desde
@@ -1420,6 +1891,12 @@ class PosTerminal extends Page
         $this->selectedCategoryId = null;
         $this->paymentMode = 'multi';
         $this->customer_id = $this->ensureDefaultCustomer()->id;
+        // Limpia estado de promociones y gift cards al iniciar nueva venta
+        $this->couponCode = '';
+        $this->appliedPromotions = [];
+        $this->promotionsDiscountAmount = 0.0;
+        $this->giftCardCodeInput = '';
+        $this->appliedGiftCards = [];
     }
 
     public function closePaymentModal(): void

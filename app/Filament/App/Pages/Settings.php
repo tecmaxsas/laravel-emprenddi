@@ -665,6 +665,13 @@ class Settings extends Page implements HasForms
 
         app(\App\Support\CurrentCompany::class)->set($company->fresh());
 
+        // Si se activo el modulo, asegurar que el producto especial 'Tarjeta
+        // Regalo' exista (idempotente). Si se desactiva, lo dejamos por si
+        // se reactiva luego — no se borran productos automaticamente.
+        if (! empty($gc['enabled'])) {
+            app(\App\Services\GiftCards\GiftCardProductProvisioner::class)->provision($company);
+        }
+
         Notification::make()->title('Configuración de Gift Cards guardada')->success()->send();
     }
 

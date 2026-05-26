@@ -842,6 +842,86 @@
                     </div>
                 @endif
 
+                {{-- ============================================ --}}
+                {{-- PROMOCIONES Y GIFT CARDS (modulos opcionales)  --}}
+                {{-- ============================================ --}}
+                @php
+                    $promosActive = \App\Support\PromotionsSettings::moduleActive();
+                    $giftCardsActive = \App\Support\GiftCardsSettings::moduleActive();
+                @endphp
+
+                @if (($promosActive || $giftCardsActive) && ! empty($cart))
+                    <div class="shrink-0 border-t border-gray-200 dark:border-gray-800 bg-indigo-50/40 dark:bg-indigo-950/20 px-4 py-3 space-y-3 text-sm">
+
+                        {{-- Promociones aplicadas (resumen + cupón) --}}
+                        @if ($promosActive)
+                            @if (! empty($appliedPromotions))
+                                <div class="space-y-1">
+                                    @foreach ($appliedPromotions as $promo)
+                                        <div class="flex items-center justify-between gap-2 px-2 py-1 rounded bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 text-xs">
+                                            <div class="flex items-center gap-1.5 min-w-0">
+                                                <span>🎟️</span>
+                                                <span class="truncate font-medium">{{ $promo['name'] }}</span>
+                                                @if ($promo['code'])
+                                                    <span class="font-mono text-[10px] opacity-70">({{ $promo['code'] }})</span>
+                                                @endif
+                                            </div>
+                                            <span class="font-bold whitespace-nowrap">−${{ number_format($promo['discount'], 0, ',', '.') }}</span>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            @endif
+
+                            <div class="flex gap-1">
+                                <input type="text" wire:model="couponCode" wire:keydown.enter="applyCoupon"
+                                       placeholder="Código de cupón"
+                                       class="flex-1 text-xs rounded-md border border-indigo-300 dark:border-indigo-700 bg-white dark:bg-gray-900 px-2 py-1.5 outline-none focus:ring-2 focus:ring-indigo-500 uppercase font-mono" />
+                                <button type="button" wire:click="applyCoupon"
+                                        class="px-3 py-1.5 text-xs font-semibold rounded-md bg-indigo-600 hover:bg-indigo-700 text-white transition">
+                                    Aplicar
+                                </button>
+                                @if (! empty($appliedPromotions))
+                                    <button type="button" wire:click="removeCoupon"
+                                            class="px-2 py-1.5 text-xs rounded-md bg-gray-100 dark:bg-gray-800 text-gray-600 hover:bg-gray-200 transition" title="Quitar cupón">
+                                        ✕
+                                    </button>
+                                @endif
+                            </div>
+                        @endif
+
+                        {{-- Gift cards aplicadas (resumen + input código) --}}
+                        @if ($giftCardsActive)
+                            @if (! empty($appliedGiftCards))
+                                <div class="space-y-1">
+                                    @foreach ($appliedGiftCards as $idx => $gc)
+                                        <div class="flex items-center justify-between gap-2 px-2 py-1 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-200 text-xs">
+                                            <div class="flex items-center gap-1.5 min-w-0">
+                                                <span>🎁</span>
+                                                <span class="truncate font-mono text-[11px]">{{ $gc['code'] }}</span>
+                                            </div>
+                                            <div class="flex items-center gap-1.5 whitespace-nowrap">
+                                                <span class="font-bold">−${{ number_format($gc['amount'], 0, ',', '.') }}</span>
+                                                <button type="button" wire:click="removeAppliedGiftCard({{ $idx }})"
+                                                        class="text-xs opacity-60 hover:opacity-100" title="Quitar gift card">✕</button>
+                                            </div>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            @endif
+
+                            <div class="flex gap-1">
+                                <input type="text" wire:model="giftCardCodeInput" wire:keydown.enter="applyGiftCard"
+                                       placeholder="Código gift card (GC-XXXXX-XXXXX)"
+                                       class="flex-1 text-xs rounded-md border border-purple-300 dark:border-purple-700 bg-white dark:bg-gray-900 px-2 py-1.5 outline-none focus:ring-2 focus:ring-purple-500 uppercase font-mono" />
+                                <button type="button" wire:click="applyGiftCard"
+                                        class="px-3 py-1.5 text-xs font-semibold rounded-md bg-purple-600 hover:bg-purple-700 text-white transition">
+                                    Redimir
+                                </button>
+                            </div>
+                        @endif
+                    </div>
+                @endif
+
                 {{-- Totales — shrink-0 para que SIEMPRE se vean al fondo del cart --}}
                 <div class="shrink-0 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950">
                     <div class="px-4 pt-3 pb-2 space-y-1.5 text-sm">
@@ -859,6 +939,12 @@
                                 <span class="font-medium">−${{ number_format($totals['discount'], 0, ',', '.') }}</span>
                             </div>
                         @endif
+                        @if (($totals['promotions_discount'] ?? 0) > 0)
+                            <div class="flex justify-between text-green-600 dark:text-green-400">
+                                <span>Promociones</span>
+                                <span class="font-medium">−${{ number_format($totals['promotions_discount'], 0, ',', '.') }}</span>
+                            </div>
+                        @endif
                         <div class="flex justify-between text-gray-600 dark:text-gray-400">
                             <span>IVA</span>
                             <span class="font-medium">${{ number_format($totals['tax'], 0, ',', '.') }}</span>
@@ -871,6 +957,12 @@
                             <div class="flex justify-between pt-1 border-t border-dashed border-gray-300 dark:border-gray-700">
                                 <span class="text-gray-500">Total factura</span>
                                 <span class="font-medium">${{ number_format($totals['total'], 0, ',', '.') }}</span>
+                            </div>
+                        @endif
+                        @if (($totals['gift_cards_paid'] ?? 0) > 0)
+                            <div class="flex justify-between text-purple-600 dark:text-purple-400 pt-1 border-t border-dashed border-gray-300 dark:border-gray-700">
+                                <span>Pagado con Gift Cards</span>
+                                <span class="font-medium">${{ number_format($totals['gift_cards_paid'], 0, ',', '.') }}</span>
                             </div>
                         @endif
                     </div>
@@ -1529,6 +1621,82 @@
                 <div class="pos-modal-footer">
                     <button type="button" wire:click="cancelSupervisorPin" class="pos-btn pos-btn-secondary">Cancelar</button>
                     <button type="button" wire:click="approveDiscountWithPin" class="pos-btn pos-btn-primary">Aprobar</button>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    {{-- ================================================================ --}}
+    {{-- MODAL DE EMISIÓN DE GIFT CARD                                     --}}
+    {{-- Se abre al agregar el producto especial 'GIFTCARD' al carrito.    --}}
+    {{-- Pide monto, datos del destinatario y crea la linea con metadata.  --}}
+    {{-- ================================================================ --}}
+    @if ($showGiftCardEmissionModal)
+        <div class="fixed inset-0 flex items-center justify-center p-4"
+             style="z-index: 110; background: rgba(0,0,0,0.55);"
+             wire:click.self="closeGiftCardEmissionModal">
+            <div class="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden"
+                 style="border:1px solid rgba(0,0,0,0.08);">
+                <div style="padding:24px 24px 16px; text-align:center; border-bottom:1px solid rgba(0,0,0,0.06);">
+                    <div style="font-size:42px; line-height:1; margin-bottom:6px;">🎁</div>
+                    <h2 style="font-size:18px; font-weight:800; margin:0 0 4px;" class="dark:!text-gray-100">
+                        Emitir Tarjeta Regalo
+                    </h2>
+                    <p style="font-size:13px; color:#6b7280; margin:0;" class="dark:!text-gray-400">
+                        Ingresa el monto y los datos del destinatario (opcional).
+                    </p>
+                </div>
+                <div style="padding:20px 24px;">
+                    <div style="margin-bottom:14px;">
+                        <label style="display:block; font-size:11px; font-weight:700; color:#374151; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;" class="dark:!text-gray-300">
+                            Monto de la tarjeta
+                        </label>
+                        <div style="position:relative;">
+                            <span style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#6b7280; font-weight:700; font-size:18px;" class="dark:!text-gray-400">$</span>
+                            <input type="number" step="1000" min="1000" wire:model="giftCardEmissionAmount"
+                                   placeholder="50000"
+                                   style="width:100%; padding:12px 12px 12px 28px; font-size:20px; font-weight:800; color:#111827; background:#ffffff; border:1px solid #d1d5db; border-radius:10px; outline:none;"
+                                   class="dark:!bg-gray-900 dark:!text-gray-100 dark:!border-gray-700" />
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block; font-size:11px; font-weight:700; color:#374151; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;" class="dark:!text-gray-300">
+                            Para (destinatario) <span style="color:#9ca3af; font-weight:400; text-transform:none;">opcional</span>
+                        </label>
+                        <input type="text" wire:model="giftCardEmissionRecipientName" placeholder="Nombre del destinatario"
+                               style="width:100%; padding:10px; font-size:14px; border:1px solid #d1d5db; border-radius:10px; outline:none;"
+                               class="dark:!bg-gray-900 dark:!text-gray-100 dark:!border-gray-700" />
+                    </div>
+
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block; font-size:11px; font-weight:700; color:#374151; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;" class="dark:!text-gray-300">
+                            Email destinatario <span style="color:#9ca3af; font-weight:400; text-transform:none;">opcional</span>
+                        </label>
+                        <input type="email" wire:model="giftCardEmissionRecipientEmail" placeholder="destinatario@correo.com"
+                               style="width:100%; padding:10px; font-size:14px; border:1px solid #d1d5db; border-radius:10px; outline:none;"
+                               class="dark:!bg-gray-900 dark:!text-gray-100 dark:!border-gray-700" />
+                    </div>
+
+                    <div style="margin-bottom:16px;">
+                        <label style="display:block; font-size:11px; font-weight:700; color:#374151; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;" class="dark:!text-gray-300">
+                            De parte de <span style="color:#9ca3af; font-weight:400; text-transform:none;">opcional</span>
+                        </label>
+                        <input type="text" wire:model="giftCardEmissionSenderName" placeholder="Nombre del remitente"
+                               style="width:100%; padding:10px; font-size:14px; border:1px solid #d1d5db; border-radius:10px; outline:none;"
+                               class="dark:!bg-gray-900 dark:!text-gray-100 dark:!border-gray-700" />
+                    </div>
+                </div>
+                <div style="padding:14px 24px; background:#f9fafb; display:flex; justify-content:flex-end; gap:8px; border-top:1px solid rgba(0,0,0,0.06);" class="dark:!bg-gray-800/40">
+                    <button type="button" wire:click="closeGiftCardEmissionModal"
+                            style="padding:10px 18px; font-size:14px; font-weight:600; color:#374151; background:#ffffff; border:1px solid #d1d5db; border-radius:10px; cursor:pointer;"
+                            class="dark:!bg-gray-900 dark:!text-gray-200 dark:!border-gray-700">
+                        Cancelar
+                    </button>
+                    <button type="button" wire:click="confirmGiftCardEmission"
+                            style="padding:10px 22px; font-size:14px; font-weight:800; color:#ffffff; background:#7c3aed; border:0; border-radius:10px; cursor:pointer; box-shadow:0 4px 12px rgba(124,58,237,0.3);">
+                        🎁 Agregar al carrito
+                    </button>
                 </div>
             </div>
         </div>
