@@ -47,7 +47,37 @@ class GiftCardsSettings
             'description' => 'Cuantos meses dura una gift card desde su emision (0 = sin expiracion). El cajero puede sobrescribir al venderla.',
             'default' => 12,
         ],
+        'liability_account_id' => [
+            'label' => 'Cuenta contable de pasivo gift card',
+            'description' => 'Cuenta del PUC donde se registra el pasivo cuando se emite una gift card (DR Caja / CR esta cuenta) y donde se debita al redimirla. Recomendado: 240825 Anticipos recibidos. Si no se configura, el sistema toma 240825 automaticamente.',
+            'default' => null,
+        ],
     ];
+
+    /** Devuelve el id de la cuenta contable de pasivo gift card resolviendo:
+     *  1. lo configurado en settings.gift_cards.liability_account_id
+     *  2. o como fallback: la cuenta con codigo '240825' de la empresa actual
+     *  3. o null si tampoco existe (UI deberia advertir al admin para configurarla)
+     */
+    public static function liabilityAccountId(): ?int
+    {
+        $configured = self::get('liability_account_id');
+        if ($configured) {
+            return (int) $configured;
+        }
+
+        $company = app(CurrentCompany::class)->get()
+            ?? (auth()->user()?->company_id ? Company::find(auth()->user()->company_id) : null);
+        if (! $company) return null;
+
+        $accountId = \App\Models\Account::query()
+            ->where('company_id', $company->id)
+            ->where('code', '240825')
+            ->where('active', true)
+            ->value('id');
+
+        return $accountId ? (int) $accountId : null;
+    }
 
     /**
      * Si la feature esta habilitada. Para 'default_expiry_months' devuelve

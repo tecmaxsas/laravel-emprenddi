@@ -116,6 +116,23 @@ class RestaurantPos extends Page
     // entre las lineas de cada tab al facturar.
     public float $promotionsDiscountAmount = 0.0;
 
+    // ----------------------------------------------------------------
+    // GIFT CARDS (modulo opcional — ver GiftCardsSettings)
+    // ----------------------------------------------------------------
+    // Codigo en validacion (input del cajero)
+    public string $giftCardCodeInput = '';
+    // Gift cards aplicadas como medio de pago a la orden actual.
+    // Cada item: ['gift_card_id', 'code', 'amount', 'available_balance']
+    public array $appliedGiftCards = [];
+
+    // Modal de emision: cuando el cajero agrega el producto especial 'GIFTCARD'
+    // a la orden, se abre este modal para capturar monto y destinatario.
+    public bool $showGiftCardEmissionModal = false;
+    public ?float $giftCardEmissionAmount = null;
+    public string $giftCardEmissionRecipientName = '';
+    public string $giftCardEmissionRecipientEmail = '';
+    public string $giftCardEmissionSenderName = '';
+
     public static function canAccess(): bool
     {
         if (! ModuleGate::active('restaurant')) return false;
@@ -345,10 +362,17 @@ class RestaurantPos extends Page
         // accedió en este request quedó memoizada con la orden vieja y el
         // panel seguiría mostrándola tras cancelar/cerrar.
         unset($this->activeOrder);
-        // Limpiar estado de promociones (la siguiente orden empieza limpia)
+        // Limpiar estado de promociones y gift cards (siguiente orden empieza limpia)
         $this->couponCode = '';
         $this->appliedPromotions = [];
         $this->promotionsDiscountAmount = 0.0;
+        $this->giftCardCodeInput = '';
+        $this->appliedGiftCards = [];
+        $this->showGiftCardEmissionModal = false;
+        $this->giftCardEmissionAmount = null;
+        $this->giftCardEmissionRecipientName = '';
+        $this->giftCardEmissionRecipientEmail = '';
+        $this->giftCardEmissionSenderName = '';
     }
 
     public function addProduct(int $productId): void
@@ -358,6 +382,27 @@ class RestaurantPos extends Page
 
         $product = Product::find($productId);
         if (! $product) return;
+
+        // Si es el producto especial 'Tarjeta Regalo', abrir modal de emision
+        // en vez de agregar como producto normal. Al confirmar el modal, se
+        // agrega al order con metadata para que confirmBilling() lo emita
+        // como gift card real despues de facturar.
+        if (\App\Services\GiftCards\GiftCardProductProvisioner::isGiftCardProduct($product)) {
+            if (! \App\Support\GiftCardsSettings::moduleActive()) {
+                Notification::make()
+                    ->title('Gift Cards no esta activo')
+                    ->body('Activalo en Configuraciones → Gift Cards para vender tarjetas regalo.')
+                    ->warning()
+                    ->send();
+                return;
+            }
+            $this->giftCardEmissionAmount = null;
+            $this->giftCardEmissionRecipientName = '';
+            $this->giftCardEmissionRecipientEmail = '';
+            $this->giftCardEmissionSenderName = '';
+            $this->showGiftCardEmissionModal = true;
+            return;
+        }
 
         // Si el producto tiene grupos de modificadores Y la feature 'modifiers'
         // está activa en la empresa, abrir el modal en vez de agregar directo.
@@ -1132,13 +1177,17 @@ class RestaurantPos extends Page
         $orderSubtotal = (float) $items->sum('subtotal');
         $orderTip = (float) $order->tip_amount;
         $totalPromosDiscount = (float) $this->promotionsDiscountAmount;
+        $totalGiftCardsApplied = (float) array_sum(array_map(fn ($g) => (float) $g['amount'], $this->appliedGiftCards));
 
         if ($this->splitMode === 'none') {
             $taxSum = (float) $items->sum('tax_amount');
             $totalSum = (float) $items->sum('total');
             $tipShare = $orderTip;
             $promoDiscount = $totalPromosDiscount;
-            $payable = max(0, $totalSum - $promoDiscount);
+            $giftCardsCovered = $totalGiftCardsApplied;
+            // Payable = total - promos - gift cards (lo que cubre con efectivo/tarjeta)
+            $afterPromos = max(0, $totalSum - $promoDiscount);
+            $payable = max(0, $afterPromos - $giftCardsCovered);
             return [[
                 'key' => 'main',
                 'label' => null,
@@ -1146,10 +1195,11 @@ class RestaurantPos extends Page
                 'subtotal' => $orderSubtotal,
                 'tax' => $taxSum,
                 'tip_share' => $tipShare,
-                'invoice_total' => $totalSum,           // total bruto antes de promos
-                'promo_discount' => $promoDiscount,     // descuento por promos del tab
-                'payable_amount' => $payable,           // lo que el cajero debe cubrir en pagos (sin propina)
-                'grand_total' => $payable + $tipShare,  // con propina
+                'invoice_total' => $totalSum,                   // total bruto antes de promos
+                'promo_discount' => $promoDiscount,             // descuento por promos del tab
+                'gift_cards_covered' => $giftCardsCovered,      // monto cubierto por gift cards
+                'payable_amount' => $payable,                   // lo que el cajero debe cubrir en pagos (sin propina)
+                'grand_total' => $payable + $tipShare,          // con propina
             ]];
         }
 
@@ -1176,21 +1226,39 @@ class RestaurantPos extends Page
             ];
             $tabTotals[] = $total;
         }
-        // Prorratear el descuento total de promociones entre tabs
+        // Prorratear descuento total de promociones + gift cards entre tabs
         $totalSumAll = (float) array_sum($tabTotals);
-        $distributed = 0.0;
+        $distributedPromos = 0.0;
+        $distributedGcs = 0.0;
         $lastIdx = array_key_last($tabs);
         foreach ($tabs as $idx => &$tab) {
+            // Promociones
             if ($totalPromosDiscount <= 0 || $totalSumAll <= 0) {
                 $tab['promo_discount'] = 0;
             } elseif ($idx === $lastIdx) {
-                $tab['promo_discount'] = round(min($totalPromosDiscount, $totalSumAll) - $distributed, 2);
+                $tab['promo_discount'] = round(min($totalPromosDiscount, $totalSumAll) - $distributedPromos, 2);
             } else {
                 $share = round($totalPromosDiscount * ($tab['invoice_total'] / $totalSumAll), 2);
                 $tab['promo_discount'] = $share;
-                $distributed += $share;
+                $distributedPromos += $share;
             }
-            $tab['payable_amount'] = max(0, $tab['invoice_total'] - $tab['promo_discount']);
+
+            // Gift cards (se prorratean sobre el total post-promos para que
+            // no resten mas de lo que el tab debe pagar)
+            $afterPromos = max(0, $tab['invoice_total'] - $tab['promo_discount']);
+            if ($totalGiftCardsApplied <= 0 || $totalSumAll <= 0) {
+                $tab['gift_cards_covered'] = 0;
+            } elseif ($idx === $lastIdx) {
+                $tab['gift_cards_covered'] = round(min($totalGiftCardsApplied, $totalSumAll - $distributedPromos) - $distributedGcs, 2);
+            } else {
+                $share = round($totalGiftCardsApplied * ($tab['invoice_total'] / $totalSumAll), 2);
+                // Nunca exceder lo pagable del tab (despues de promos)
+                $share = min($share, $afterPromos);
+                $tab['gift_cards_covered'] = $share;
+                $distributedGcs += $share;
+            }
+
+            $tab['payable_amount'] = max(0, $afterPromos - $tab['gift_cards_covered']);
             $tab['grand_total'] = $tab['payable_amount'] + $tab['tip_share'];
         }
         unset($tab);
@@ -1345,6 +1413,10 @@ class RestaurantPos extends Page
         // su share del descuento.
         $promoShares = $this->distributePromotionsAcrossTabs($tabs);
 
+        // Distribuir las gift cards aplicadas entre tabs (igual logica
+        // proporcional). Devuelve [tabKey => [['gift_card_id', 'code', 'amount'], ...]]
+        $giftCardSharesByTab = $this->distributeGiftCardsAcrossTabs($tabs, $promoShares);
+
         // Validar cada pago por tab: metodo, cuenta, monto > 0 y suma =
         // invoice_total (descontado el share de promociones)
         foreach ($tabs as $t) {
@@ -1374,12 +1446,20 @@ class RestaurantPos extends Page
                 $sum += $amount;
             }
             $extraDiscount = (float) ($promoShares[$t['key']] ?? 0);
-            $target = max(0, (float) $t['invoice_total'] - $extraDiscount);
+            $giftCardCovered = (float) array_sum(array_map(
+                fn ($g) => (float) $g['amount'],
+                $giftCardSharesByTab[$t['key']] ?? [],
+            ));
+            // Pagos tradicionales deben cubrir: invoice_total - promos - gift cards
+            $target = max(0, (float) $t['invoice_total'] - $extraDiscount - $giftCardCovered);
             $diff = round($target - $sum, 2);
             if (abs($diff) > 0.01) {
                 $tabName = $t['label'] ?: 'principal';
-                $hint = $extraDiscount > 0
-                    ? sprintf(' (descontando $%s por promociones)', number_format($extraDiscount, 0, ',', '.'))
+                $hintParts = [];
+                if ($extraDiscount > 0) $hintParts[] = '$' . number_format($extraDiscount, 0, ',', '.') . ' promos';
+                if ($giftCardCovered > 0) $hintParts[] = '$' . number_format($giftCardCovered, 0, ',', '.') . ' gift cards';
+                $hint = ! empty($hintParts)
+                    ? ' (descontando ' . implode(' + ', $hintParts) . ')'
                     : '';
                 Notification::make()
                     ->title('Pagos no cuadran')
@@ -1391,7 +1471,7 @@ class RestaurantPos extends Page
 
         $thirdPartyId = $this->ensureDefaultCustomer()->id;
 
-        // Construir payload con pagos detallados + extra_discount por tab
+        // Construir payload con pagos + extra_discount + gift_card_payments por tab
         $payload = [];
         foreach ($tabs as $t) {
             $payload[] = [
@@ -1407,17 +1487,70 @@ class RestaurantPos extends Page
                 // al invoice_total de este tab. RestaurantOrderEngine::bill()
                 // lo distribuye entre las lineas del tab al crear la factura.
                 'extra_discount' => (float) ($promoShares[$t['key']] ?? 0),
+                // Gift cards aplicadas a este tab (cada una con monto a cubrir).
+                // bill() las agregara como addPayment con method='gift_card'.
+                'gift_card_payments' => $giftCardSharesByTab[$t['key']] ?? [],
             ];
         }
 
         try {
             $invoices = app(RestaurantOrderEngine::class)->bill($order, $payload, $thirdPartyId, $this->billingInvoiceKind);
 
-            // Registrar uso de promociones (para reportes + validar
-            // max_uses_per_customer en futuras ventas). Se registra contra
-            // la primera factura como referencia.
-            if (! empty($this->appliedPromotions) && ! empty($invoices)) {
-                $firstInvoice = $invoices[0];
+            // 1. REDIMIR gift cards aplicadas — descuenta saldo y registra
+            //    transaccion en el ledger. bill() ya creo el Payment con
+            //    method='gift_card', aqui consolidamos la mutacion del modelo.
+            $gcEngine = app(\App\Services\GiftCards\GiftCardEngine::class);
+            $firstInvoice = $invoices[0] ?? null;
+            foreach ($this->appliedGiftCards as $applied) {
+                $card = \App\Models\GiftCard::find($applied['gift_card_id']);
+                if (! $card) continue;
+                $amount = (float) $applied['amount'];
+                if ($amount <= 0) continue;
+                try {
+                    $gcEngine->redeem($card, $amount, $firstInvoice?->id, Auth::id());
+                } catch (\Throwable $e) {
+                    // Log y seguir — la factura ya esta creada
+                    \Log::warning('No se pudo redimir gift card despues de billar', [
+                        'card_code' => $card->code,
+                        'amount' => $amount,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
+            // 2. EMITIR nuevas gift cards por cada OrderItem con metadata
+            //    '_gift_card_emission' (los que el cajero agrego via modal)
+            $issuedGiftCards = [];
+            foreach ($order->fresh('items')->items as $item) {
+                $notes = $item->notes;
+                if (! $notes) continue;
+                $parsed = is_string($notes) ? json_decode($notes, true) : $notes;
+                if (! is_array($parsed) || empty($parsed['_gift_card_emission'])) continue;
+
+                $meta = $parsed['_gift_card_emission'];
+                try {
+                    $newCard = $gcEngine->issue(
+                        initialBalance: (float) $meta['amount'],
+                        userId: Auth::id(),
+                        saleInvoiceId: $firstInvoice?->id,
+                        meta: [
+                            'recipient_name' => $meta['recipient_name'] ?? null,
+                            'recipient_email' => $meta['recipient_email'] ?? null,
+                            'sender_name' => $meta['sender_name'] ?? null,
+                        ],
+                    );
+                    $issuedGiftCards[] = $newCard;
+                } catch (\Throwable $e) {
+                    \Log::warning('No se pudo emitir gift card despues de billar', [
+                        'order_id' => $order->id,
+                        'amount' => $meta['amount'] ?? 0,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
+            // 3. Registrar uso de promociones (reportes + max_uses_per_customer)
+            if (! empty($this->appliedPromotions) && $firstInvoice) {
                 $promoEngine = app(\App\Services\Promotions\PromotionEngine::class);
                 $result = new \App\Services\Promotions\PromotionResult(
                     $this->buildOrderCartContext($order, $this->couponCode),
@@ -1429,12 +1562,29 @@ class RestaurantPos extends Page
                 $promoEngine->recordUsages($result, $firstInvoice->id, Auth::id());
             }
 
+            // Notificacion: con codigos de gift cards emitidas si las hay
             $numbers = implode(', ', array_map(fn ($i) => $i->fullNumber(), $invoices));
-            Notification::make()
+            $body = count($invoices).' factura(s) generada(s): '.$numbers;
+            if (! empty($issuedGiftCards)) {
+                $body .= "\n\n🎁 Gift Cards emitidas:";
+                foreach ($issuedGiftCards as $gc) {
+                    $body .= sprintf(
+                        "\n  • %s · $%s",
+                        $gc->code,
+                        number_format((float) $gc->initial_balance, 0, ',', '.'),
+                    );
+                }
+                $body .= "\n\nEntrega estos codigos al cliente.";
+            }
+
+            $notif = Notification::make()
                 ->title('Cuenta cobrada')
-                ->body(count($invoices).' factura(s) generada(s): '.$numbers)
-                ->success()
-                ->send();
+                ->body($body)
+                ->success();
+            if (! empty($issuedGiftCards)) {
+                $notif->persistent();
+            }
+            $notif->send();
 
             $this->flushBrowserPrintJobs();
             $this->billingModalOpen = false;
@@ -1442,6 +1592,66 @@ class RestaurantPos extends Page
         } catch (\Throwable $e) {
             Notification::make()->title('Error al cobrar')->body($e->getMessage())->danger()->send();
         }
+    }
+
+    /**
+     * Distribuye las gift cards aplicadas entre los tabs proporcionalmente
+     * al payable_amount (despues de descontar promociones). Devuelve
+     * [tabKey => [['gift_card_id', 'code', 'amount'], ...]].
+     *
+     * Si solo hay un tab: todas las gift cards van al unico tab.
+     * Si hay multiples tabs: por cada gift card, se distribuye su amount
+     * proporcionalmente al payable de cada tab. Esto puede llevar a
+     * fracciones pequeñas pero cuadra al final.
+     */
+    protected function distributeGiftCardsAcrossTabs(array $tabs, array $promoShares): array
+    {
+        $byTab = [];
+        if (empty($this->appliedGiftCards) || empty($tabs)) return $byTab;
+
+        // Calcular payable post-promos de cada tab
+        $payables = [];
+        $totalPayable = 0.0;
+        foreach ($tabs as $t) {
+            $promo = (float) ($promoShares[$t['key']] ?? 0);
+            $payable = max(0, (float) $t['invoice_total'] - $promo);
+            $payables[$t['key']] = $payable;
+            $totalPayable += $payable;
+        }
+        if ($totalPayable <= 0) return $byTab;
+
+        // Caso simple: 1 tab — todas las gift cards van ahi
+        if (count($tabs) === 1) {
+            $key = $tabs[0]['key'];
+            $byTab[$key] = array_map(fn ($g) => [
+                'gift_card_id' => $g['gift_card_id'],
+                'code' => $g['code'],
+                'amount' => round((float) $g['amount'], 2),
+            ], $this->appliedGiftCards);
+            return $byTab;
+        }
+
+        // Multi-tab: por cada gift card, prorratear su amount entre tabs
+        foreach ($this->appliedGiftCards as $g) {
+            $gcAmount = (float) $g['amount'];
+            $distributed = 0.0;
+            $lastKey = array_key_last($payables);
+            foreach ($payables as $tabKey => $tabPayable) {
+                if ($tabKey === $lastKey) {
+                    $share = round($gcAmount - $distributed, 2);
+                } else {
+                    $share = round($gcAmount * ($tabPayable / $totalPayable), 2);
+                    $distributed += $share;
+                }
+                if ($share <= 0) continue;
+                $byTab[$tabKey][] = [
+                    'gift_card_id' => $g['gift_card_id'],
+                    'code' => $g['code'],
+                    'amount' => $share,
+                ];
+            }
+        }
+        return $byTab;
     }
 
     public function increaseQty(int $itemId): void
@@ -1721,5 +1931,166 @@ class RestaurantPos extends Page
             }
         }
         return $shares;
+    }
+
+    // ================================================================
+    // GIFT CARDS — redimir como pago y emitir desde la orden
+    // ================================================================
+
+    /**
+     * Valida el codigo y agrega la gift card a la lista de pagos. El monto
+     * se calcula como min(saldo disponible, faltante por cubrir en la orden).
+     */
+    public function applyGiftCard(): void
+    {
+        if (! \App\Support\GiftCardsSettings::moduleActive()) {
+            Notification::make()->title('Gift Cards no esta activo')->warning()->send();
+            return;
+        }
+
+        $code = trim($this->giftCardCodeInput);
+        if ($code === '') {
+            Notification::make()->title('Ingresa un codigo de gift card')->warning()->send();
+            return;
+        }
+
+        // Evitar duplicados
+        foreach ($this->appliedGiftCards as $existing) {
+            if (strcasecmp($existing['code'], $code) === 0) {
+                Notification::make()->title('Gift card ya aplicada')->warning()->send();
+                $this->giftCardCodeInput = '';
+                return;
+            }
+        }
+
+        $engine = app(\App\Services\GiftCards\GiftCardEngine::class);
+        $card = $engine->findRedeemable($code);
+        if (! $card) {
+            Notification::make()
+                ->title('Gift card no valida')
+                ->body('La tarjeta no existe, esta anulada, sin saldo o expirada.')
+                ->danger()
+                ->send();
+            return;
+        }
+
+        // Calcular cuanto cubrir: min(saldo, faltante en la orden completa)
+        $tabs = $this->billingTabs;
+        $totalOrderPayable = (float) array_sum(array_map(fn ($t) => (float) ($t['payable_amount'] ?? $t['invoice_total']), $tabs));
+        $alreadyCovered = (float) array_sum(array_map(fn ($g) => (float) $g['amount'], $this->appliedGiftCards));
+        $remaining = max(0, $totalOrderPayable - $alreadyCovered);
+        $balance = (float) $card->current_balance;
+        $amountToRedeem = $remaining > 0 ? min($remaining, $balance) : $balance;
+
+        if ($amountToRedeem <= 0) {
+            Notification::make()
+                ->title('Nada por cubrir')
+                ->body('La orden ya esta totalmente cubierta. Quita una gift card antes de agregar otra.')
+                ->warning()
+                ->send();
+            return;
+        }
+
+        $this->appliedGiftCards[] = [
+            'gift_card_id' => $card->id,
+            'code' => $card->code,
+            'amount' => $amountToRedeem,
+            'available_balance' => $balance,
+        ];
+
+        $this->giftCardCodeInput = '';
+
+        Notification::make()
+            ->title("Gift card {$card->code} aplicada")
+            ->body('Saldo: $' . number_format($balance, 0, ',', '.')
+                . ' · Se redime: $' . number_format($amountToRedeem, 0, ',', '.'))
+            ->success()
+            ->send();
+    }
+
+    public function removeAppliedGiftCard(int $index): void
+    {
+        if (! isset($this->appliedGiftCards[$index])) return;
+        unset($this->appliedGiftCards[$index]);
+        $this->appliedGiftCards = array_values($this->appliedGiftCards);
+    }
+
+    /**
+     * Confirma el modal de emision: agrega un OrderItem con el producto
+     * Gift Card al precio ingresado. La metadata 'gift_card_emission' va
+     * en order.metadata (o similar) — al billar, RestaurantPos detecta
+     * esos items y los emite como gift cards reales tras crear la factura.
+     */
+    public function confirmGiftCardEmission(): void
+    {
+        $amount = (float) ($this->giftCardEmissionAmount ?? 0);
+        if ($amount <= 0) {
+            Notification::make()->title('Ingresa un monto valido')->danger()->send();
+            return;
+        }
+
+        $order = $this->activeOrder;
+        if (! $order) return;
+
+        $product = \App\Services\GiftCards\GiftCardProductProvisioner::find(Auth::user()->company_id);
+        if (! $product) {
+            Notification::make()->title('Producto "Tarjeta Regalo" no encontrado. Activa el modulo en Configuraciones.')->danger()->send();
+            return;
+        }
+
+        // Crear el OrderItem manualmente con notes que llevan la metadata
+        // de emision. RestaurantOrderEngine no conoce este caso especial,
+        // asi que vamos directo al modelo + dejamos metadata para confirmBilling.
+        try {
+            $item = $order->items()->create([
+                'company_id' => $order->company_id,
+                'product_id' => $product->id,
+                'description' => 'Tarjeta Regalo $' . number_format($amount, 0, ',', '.'),
+                'quantity' => 1,
+                'unit_price' => $amount,
+                'tax_id' => null,
+                'tax_rate' => 0,
+                'tax_amount' => 0,
+                'subtotal' => $amount,
+                'total' => $amount,
+                'modifier_total' => 0,
+                'course' => 1,
+                'kitchen_status' => \App\Models\Restaurant\OrderItem::KS_SERVED,
+                'sent_to_kitchen_at' => now(),
+                'notes' => json_encode([
+                    '_gift_card_emission' => [
+                        'amount' => $amount,
+                        'recipient_name' => $this->giftCardEmissionRecipientName ?: null,
+                        'recipient_email' => $this->giftCardEmissionRecipientEmail ?: null,
+                        'sender_name' => $this->giftCardEmissionSenderName ?: null,
+                    ],
+                ]),
+                'created_by_user_id' => Auth::id(),
+            ]);
+
+            // Reset modal
+            $this->showGiftCardEmissionModal = false;
+            $this->giftCardEmissionAmount = null;
+            $this->giftCardEmissionRecipientName = '';
+            $this->giftCardEmissionRecipientEmail = '';
+            $this->giftCardEmissionSenderName = '';
+
+            // Refresh order para que el panel muestre el nuevo item
+            unset($this->activeOrder);
+
+            Notification::make()
+                ->title('Gift card agregada a la orden')
+                ->body('Al cobrar se emitira el codigo y se entregara al cliente.')
+                ->success()
+                ->send();
+        } catch (\Throwable $e) {
+            Notification::make()->title('Error al agregar')->body($e->getMessage())->danger()->send();
+        }
+    }
+
+    public function closeGiftCardEmissionModal(): void
+    {
+        $this->showGiftCardEmissionModal = false;
+        $this->giftCardEmissionAmount = null;
     }
 }

@@ -589,7 +589,7 @@ class Settings extends Page implements HasForms
             ->default((bool) GiftCardsSettings::FEATURES['enabled']['default'])
             ->inline(false);
 
-        // Sub-features — algunas son toggle, otras son input numerico (expiry)
+        // Sub-features — toggle (default), input numerico (expiry) o select de cuenta (liability)
         $subFields = [];
         foreach (GiftCardsSettings::FEATURES as $key => $meta) {
             if ($key === 'enabled') continue;
@@ -602,6 +602,22 @@ class Settings extends Page implements HasForms
                     ->maxValue(120)
                     ->default((int) $meta['default'])
                     ->suffix('meses');
+                continue;
+            }
+            if ($key === 'liability_account_id') {
+                $subFields[] = Forms\Components\Select::make("gift_cards_{$key}")
+                    ->label($meta['label'])
+                    ->helperText($meta['description'])
+                    ->options(fn () => \App\Models\Account::query()
+                        ->where('accepts_movements', true)
+                        ->where('active', true)
+                        ->where('code', 'like', '24%')   // pasivos a corto plazo
+                        ->orderBy('code')
+                        ->get()
+                        ->mapWithKeys(fn ($a) => [$a->id => $a->code.' — '.$a->name])
+                        ->all())
+                    ->searchable()
+                    ->placeholder('— Usar 240825 por defecto —');
                 continue;
             }
             $subFields[] = Forms\Components\Toggle::make("gift_cards_{$key}")
@@ -652,9 +668,14 @@ class Settings extends Page implements HasForms
                 $gc[$key] = $gc[$key] ?? GiftCardsSettings::FEATURES[$key]['default'];
                 continue;
             }
-            // default_expiry_months es numerico, los demas booleans
+            // Cast por tipo de feature:
+            //  - default_expiry_months: int
+            //  - liability_account_id: int|null (acepta vacio para fallback)
+            //  - resto: bool
             if ($key === 'default_expiry_months') {
                 $gc[$key] = (int) $this->data[$stateKey];
+            } elseif ($key === 'liability_account_id') {
+                $gc[$key] = $this->data[$stateKey] ? (int) $this->data[$stateKey] : null;
             } else {
                 $gc[$key] = (bool) $this->data[$stateKey];
             }

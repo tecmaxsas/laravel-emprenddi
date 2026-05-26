@@ -774,6 +774,52 @@
                             </div>
                         @endif
 
+                        {{-- =============================================== --}}
+                        {{-- GIFT CARDS (modulo opcional)                     --}}
+                        {{-- =============================================== --}}
+                        @if (\App\Support\GiftCardsSettings::moduleActive())
+                            <div style="padding:10px 12px; border-radius:8px; background:#faf5ff; border:1px solid #e9d5ff; margin-top:8px;">
+                                @if (! empty($appliedGiftCards))
+                                    <div style="display:flex; flex-direction:column; gap:4px; margin-bottom:8px;">
+                                        @foreach ($appliedGiftCards as $idx => $gc)
+                                            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:5px 8px; border-radius:6px; background:#f3e8ff; color:#6b21a8; font-size:12px;">
+                                                <div style="display:flex; align-items:center; gap:4px; min-width:0;">
+                                                    <span>🎁</span>
+                                                    <span style="font-family:monospace; font-size:11px;">{{ $gc['code'] }}</span>
+                                                </div>
+                                                <div style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
+                                                    <span style="font-weight:700;">−${{ number_format($gc['amount'], 0, ',', '.') }}</span>
+                                                    <button type="button" wire:click="removeAppliedGiftCard({{ $idx }})"
+                                                            title="Quitar gift card"
+                                                            style="font-size:11px; opacity:0.6; background:transparent; border:0; cursor:pointer;">✕</button>
+                                                </div>
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                @endif
+
+                                <div style="display:flex; gap:4px;">
+                                    <input type="text" wire:model="giftCardCodeInput" wire:keydown.enter="applyGiftCard"
+                                           placeholder="Código gift card (GC-XXXXX-XXXXX)"
+                                           style="flex:1; padding:6px 10px; font-size:12px; border:1px solid #e9d5ff; border-radius:6px; outline:none; text-transform:uppercase; font-family:monospace;" />
+                                    <button type="button" wire:click="applyGiftCard"
+                                            style="padding:6px 12px; font-size:12px; font-weight:600; background:#7c3aed; color:white; border:0; border-radius:6px; cursor:pointer;">
+                                        Redimir
+                                    </button>
+                                </div>
+
+                                @php
+                                    $totalGc = collect($appliedGiftCards)->sum(fn ($g) => (float) $g['amount']);
+                                @endphp
+                                @if ($totalGc > 0)
+                                    <div style="margin-top:6px; padding-top:6px; border-top:1px dashed #e9d5ff; display:flex; justify-content:space-between; font-size:11px; color:#6b21a8; font-weight:700;">
+                                        <span>Total cubierto por gift cards</span>
+                                        <span>−${{ number_format($totalGc, 0, ',', '.') }}</span>
+                                    </div>
+                                @endif
+                            </div>
+                        @endif
+
                         <button type="button" wire:click="openBillingModal"
                                 @disabled($order->items->reject(fn ($i) => $i->kitchen_status === 'cancelled')->isEmpty())
                                 style="padding:14px; border-radius:8px; background:#10b981; color:white; border:0; font-weight:800; cursor:pointer; font-size:15px; margin-top:6px; box-shadow:0 2px 4px rgba(16,185,129,0.3);">
@@ -1704,6 +1750,74 @@
                     <button type="button" wire:click="closeCaja"
                             style="padding:10px 22px; background:#dc2626; color:white; border:0; border-radius:8px; font-weight:700; cursor:pointer;">
                         ✓ Cerrar caja
+                    </button>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    {{-- ================================================================ --}}
+    {{-- MODAL DE EMISIÓN DE GIFT CARD (restaurante)                       --}}
+    {{-- Se abre al agregar el producto especial 'GIFTCARD' a la orden.    --}}
+    {{-- Confirma → crea un OrderItem con metadata para que confirmBilling --}}
+    {{-- emita la gift card real despues de facturar.                      --}}
+    {{-- ================================================================ --}}
+    @if ($showGiftCardEmissionModal)
+        <div style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:16px; z-index:120; background:rgba(0,0,0,0.55);"
+             wire:click.self="closeGiftCardEmissionModal">
+            <div style="background:#ffffff; border-radius:16px; box-shadow:0 20px 50px rgba(0,0,0,0.3); max-width:440px; width:100%; overflow:hidden; border:1px solid rgba(0,0,0,0.08);">
+                <div style="padding:24px 24px 16px; text-align:center; border-bottom:1px solid rgba(0,0,0,0.06);">
+                    <div style="font-size:42px; line-height:1; margin-bottom:6px;">🎁</div>
+                    <h2 style="font-size:18px; font-weight:800; margin:0 0 4px; color:#111827;">Emitir Tarjeta Regalo</h2>
+                    <p style="font-size:13px; color:#6b7280; margin:0;">
+                        Ingresa el monto y datos del destinatario (opcional). Se entregara al cliente despues de cobrar.
+                    </p>
+                </div>
+                <div style="padding:20px 24px;">
+                    <div style="margin-bottom:14px;">
+                        <label style="display:block; font-size:11px; font-weight:700; color:#374151; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">
+                            Monto de la tarjeta
+                        </label>
+                        <div style="position:relative;">
+                            <span style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#6b7280; font-weight:700; font-size:18px;">$</span>
+                            <input type="number" step="1000" min="1000" wire:model="giftCardEmissionAmount"
+                                   placeholder="50000"
+                                   style="width:100%; padding:12px 12px 12px 28px; font-size:20px; font-weight:800; color:#111827; background:#ffffff; border:1px solid #d1d5db; border-radius:10px; outline:none;" />
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block; font-size:11px; font-weight:700; color:#374151; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">
+                            Para (destinatario) <span style="color:#9ca3af; font-weight:400; text-transform:none;">opcional</span>
+                        </label>
+                        <input type="text" wire:model="giftCardEmissionRecipientName" placeholder="Nombre del destinatario"
+                               style="width:100%; padding:10px; font-size:14px; border:1px solid #d1d5db; border-radius:10px; outline:none;" />
+                    </div>
+
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block; font-size:11px; font-weight:700; color:#374151; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">
+                            Email destinatario <span style="color:#9ca3af; font-weight:400; text-transform:none;">opcional</span>
+                        </label>
+                        <input type="email" wire:model="giftCardEmissionRecipientEmail" placeholder="destinatario@correo.com"
+                               style="width:100%; padding:10px; font-size:14px; border:1px solid #d1d5db; border-radius:10px; outline:none;" />
+                    </div>
+
+                    <div style="margin-bottom:16px;">
+                        <label style="display:block; font-size:11px; font-weight:700; color:#374151; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">
+                            De parte de <span style="color:#9ca3af; font-weight:400; text-transform:none;">opcional</span>
+                        </label>
+                        <input type="text" wire:model="giftCardEmissionSenderName" placeholder="Nombre del remitente"
+                               style="width:100%; padding:10px; font-size:14px; border:1px solid #d1d5db; border-radius:10px; outline:none;" />
+                    </div>
+                </div>
+                <div style="padding:14px 24px; background:#f9fafb; display:flex; justify-content:flex-end; gap:8px; border-top:1px solid rgba(0,0,0,0.06);">
+                    <button type="button" wire:click="closeGiftCardEmissionModal"
+                            style="padding:10px 18px; font-size:14px; font-weight:600; color:#374151; background:#ffffff; border:1px solid #d1d5db; border-radius:10px; cursor:pointer;">
+                        Cancelar
+                    </button>
+                    <button type="button" wire:click="confirmGiftCardEmission"
+                            style="padding:10px 22px; font-size:14px; font-weight:800; color:#ffffff; background:#7c3aed; border:0; border-radius:10px; cursor:pointer; box-shadow:0 4px 12px rgba(124,58,237,0.3);">
+                        🎁 Agregar a la orden
                     </button>
                 </div>
             </div>

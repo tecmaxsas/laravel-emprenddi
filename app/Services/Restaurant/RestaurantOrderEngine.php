@@ -1030,12 +1030,23 @@ class RestaurantOrderEngine
                     ]];
                 }
 
-                // Validar que la suma de pagos cubre exactamente invoice.total
+                // Gift cards aplicadas a este tab (opcional). Cada item:
+                // ['gift_card_id', 'code', 'amount']. Se procesan DESPUES
+                // de los payments tradicionales como addPayment con
+                // method='gift_card' + account_id de la cuenta de pasivo
+                // configurada en GiftCardsSettings.
+                $giftCardPayments = $tab['gift_card_payments'] ?? [];
+                $giftCardsTotal = round((float) array_sum(
+                    array_map(fn ($g) => (float) $g['amount'], $giftCardPayments)
+                ), 2);
+
+                // Validar: suma(payments tradicionales) + suma(gift cards)
+                // = invoice.total exactamente (con tolerancia 1 centavo)
                 $sum = round((float) array_sum(array_map(fn ($p) => (float) $p['amount'], $payments)), 2);
-                $target = round((float) $invoice->total, 2);
+                $target = round((float) $invoice->total - $giftCardsTotal, 2);
                 if (abs($sum - $target) > 0.01) {
                     throw new RuntimeException(sprintf(
-                        'Los pagos del tab%s suman $%s pero la factura es $%s. Diferencia: $%s.',
+                        'Los pagos del tab%s suman $%s pero la factura (descontando gift cards) es $%s. Diferencia: $%s.',
                         $tabLabel ? ' '.$tabLabel : '',
                         number_format($sum, 0, ',', '.'),
                         number_format($target, 0, ',', '.'),
@@ -1059,6 +1070,31 @@ class RestaurantOrderEngine
                             .($tabLabel ? ' tab '.$tabLabel : '')
                             .(count($payments) > 1 ? ' (pago '.($idx + 1).'/'.count($payments).')' : ''),
                     ]);
+                }
+
+                // Procesar gift cards como payments adicionales. Contabilmente:
+                // DR Pasivo Gift Card (240825 default) / CR CxC del invoice
+                // → cancela el pasivo que se creo al emitir la card y cubre
+                // la venta como si fuera efectivo.
+                if (! empty($giftCardPayments)) {
+                    $liabilityAccountId = \App\Support\GiftCardsSettings::liabilityAccountId();
+                    if (! $liabilityAccountId) {
+                        throw new RuntimeException('No se encuentra la cuenta de pasivo Gift Card. Configurala en Configuraciones → Gift Cards o asegurate que la cuenta 240825 exista en el PUC.');
+                    }
+                    foreach ($giftCardPayments as $gIdx => $g) {
+                        $amount = round((float) $g['amount'], 2);
+                        if ($amount <= 0) continue;
+                        $invoiceEngine->addPayment($invoice, [
+                            'amount' => $amount,
+                            'payment_method' => 'gift_card',
+                            'account_id' => $liabilityAccountId,
+                            'date' => now()->toDateString(),
+                            'reference' => $g['code'] ?? null,
+                            'description' => 'Orden restaurante '.$order->fullNumber()
+                                .($tabLabel ? ' tab '.$tabLabel : '')
+                                .' — Gift card '.($g['code'] ?? '?'),
+                        ]);
+                    }
                 }
 
                 // Asiento contable de propina del tab (si configurado y >0)
