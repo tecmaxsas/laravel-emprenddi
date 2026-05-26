@@ -4,6 +4,8 @@ namespace App\Filament\App\Pages;
 
 use App\Models\Company;
 use App\Support\ModuleGate;
+use App\Support\GiftCardsSettings;
+use App\Support\PromotionsSettings;
 use App\Support\RestaurantSettings;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
@@ -101,6 +103,26 @@ class Settings extends Page implements HasForms
         // Cuenta de propinas por pagar
         $this->data['restaurant_tip_payable_account_id'] = data_get($settings, 'restaurant.tip_payable_account_id');
 
+        // Promotions settings (settings.promotions.*) — uno por feature
+        foreach (array_keys(PromotionsSettings::FEATURES) as $key) {
+            $default = PromotionsSettings::FEATURES[$key]['default'];
+            $this->data['promotions_'.$key] = (bool) data_get(
+                $settings,
+                "promotions.{$key}",
+                $default,
+            );
+        }
+
+        // Gift cards settings (settings.gift_cards.*)
+        foreach (array_keys(GiftCardsSettings::FEATURES) as $key) {
+            $default = GiftCardsSettings::FEATURES[$key]['default'];
+            $this->data['gift_cards_'.$key] = data_get(
+                $settings,
+                "gift_cards.{$key}",
+                $default,
+            );
+        }
+
         $this->form->fill($this->data);
     }
 
@@ -126,6 +148,16 @@ class Settings extends Page implements HasForms
                             ->visible(fn () => ModuleGate::active('restaurant')
                                 && auth()->user()?->can('company.settings'))
                             ->schema($this->restaurantTabSchema()),
+
+                        Forms\Components\Tabs\Tab::make('Promociones')
+                            ->icon('heroicon-o-tag')
+                            ->visible(fn () => auth()->user()?->can('company.settings'))
+                            ->schema($this->promotionsTabSchema()),
+
+                        Forms\Components\Tabs\Tab::make('Gift Cards')
+                            ->icon('heroicon-o-gift')
+                            ->visible(fn () => auth()->user()?->can('company.settings'))
+                            ->schema($this->giftCardsTabSchema()),
                     ]),
             ])
             ->statePath('data');
@@ -466,6 +498,174 @@ class Settings extends Page implements HasForms
         app(\App\Support\CurrentCompany::class)->set($company->fresh());
 
         Notification::make()->title('Configuración de Restaurante guardada')->success()->send();
+    }
+
+    // ================================================================
+    // PROMOCIONES
+    // ================================================================
+
+    protected function promotionsTabSchema(): array
+    {
+        // Master switch arriba destacado
+        $masterToggle = Forms\Components\Toggle::make('promotions_enabled')
+            ->label(PromotionsSettings::FEATURES['enabled']['label'])
+            ->helperText(PromotionsSettings::FEATURES['enabled']['description'])
+            ->live()
+            ->default((bool) PromotionsSettings::FEATURES['enabled']['default'])
+            ->inline(false);
+
+        // Sub-toggles — solo visibles si master esta ON
+        $subToggles = [];
+        foreach (PromotionsSettings::FEATURES as $key => $meta) {
+            if ($key === 'enabled') continue;
+            $subToggles[] = Forms\Components\Toggle::make("promotions_{$key}")
+                ->label($meta['label'])
+                ->helperText($meta['description'])
+                ->default((bool) $meta['default'])
+                ->inline(false);
+        }
+
+        return [
+            Forms\Components\Section::make('Módulo Promociones')
+                ->description('Activa el motor de promociones y descuentos automáticos. Una vez encendido, podrás crear promociones desde "Ventas → Promociones" y se aplicarán automáticamente al carrito en el POS según sus condiciones.')
+                ->schema([$masterToggle]),
+
+            Forms\Components\Section::make('Tipos de promoción habilitados')
+                ->description('Apaga los que no uses para que no aparezcan en el formulario de creación. No afecta promociones ya existentes — solo oculta el tipo al crear nuevas.')
+                ->columns(2)
+                ->schema($subToggles)
+                ->visible(fn (Forms\Get $get) => (bool) $get('promotions_enabled')),
+
+            Forms\Components\Placeholder::make('save_promotions_hint')
+                ->label('')
+                ->content(new \Illuminate\Support\HtmlString(
+                    '<div style="display:flex; justify-content:flex-end; padding-top:8px;">'
+                    .'<button type="button" wire:click="savePromotions" '
+                    .'style="padding:10px 20px; background:#6366f1; color:white; border:0; border-radius:8px; font-weight:700; cursor:pointer; font-size:14px; display:inline-flex; align-items:center; gap:6px;">'
+                    .'<svg style="width:16px; height:16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>'
+                    .'Guardar configuración Promociones'
+                    .'</button></div>'
+                )),
+        ];
+    }
+
+    public function savePromotions(): void
+    {
+        if (! auth()->user()->can('company.settings')) {
+            $this->errorNotif('Sin permiso para editar configuración');
+            return;
+        }
+
+        $company = $this->getCompany();
+        $settings = $company->settings ?? [];
+        $promotions = $settings['promotions'] ?? [];
+
+        foreach (array_keys(PromotionsSettings::FEATURES) as $key) {
+            $stateKey = 'promotions_'.$key;
+            $value = array_key_exists($stateKey, $this->data)
+                ? (bool) $this->data[$stateKey]
+                : (bool) ($promotions[$key] ?? PromotionsSettings::FEATURES[$key]['default']);
+            $promotions[$key] = $value;
+        }
+
+        $settings['promotions'] = $promotions;
+        $company->update(['settings' => $settings]);
+
+        app(\App\Support\CurrentCompany::class)->set($company->fresh());
+
+        Notification::make()->title('Configuración de Promociones guardada')->success()->send();
+    }
+
+    // ================================================================
+    // GIFT CARDS
+    // ================================================================
+
+    protected function giftCardsTabSchema(): array
+    {
+        $masterToggle = Forms\Components\Toggle::make('gift_cards_enabled')
+            ->label(GiftCardsSettings::FEATURES['enabled']['label'])
+            ->helperText(GiftCardsSettings::FEATURES['enabled']['description'])
+            ->live()
+            ->default((bool) GiftCardsSettings::FEATURES['enabled']['default'])
+            ->inline(false);
+
+        // Sub-features — algunas son toggle, otras son input numerico (expiry)
+        $subFields = [];
+        foreach (GiftCardsSettings::FEATURES as $key => $meta) {
+            if ($key === 'enabled') continue;
+            if ($key === 'default_expiry_months') {
+                $subFields[] = Forms\Components\TextInput::make("gift_cards_{$key}")
+                    ->label($meta['label'])
+                    ->helperText($meta['description'])
+                    ->numeric()
+                    ->minValue(0)
+                    ->maxValue(120)
+                    ->default((int) $meta['default'])
+                    ->suffix('meses');
+                continue;
+            }
+            $subFields[] = Forms\Components\Toggle::make("gift_cards_{$key}")
+                ->label($meta['label'])
+                ->helperText($meta['description'])
+                ->default((bool) $meta['default'])
+                ->inline(false);
+        }
+
+        return [
+            Forms\Components\Section::make('Módulo Gift Cards / Bonos Regalo')
+                ->description('Permite vender y redimir tarjetas regalo desde el POS. Una vez activo, aparecerá un Resource "Tarjetas Regalo" en el menú lateral.')
+                ->schema([$masterToggle]),
+
+            Forms\Components\Section::make('Comportamiento')
+                ->description('Configura el comportamiento default al vender y redimir tarjetas.')
+                ->columns(2)
+                ->schema($subFields)
+                ->visible(fn (Forms\Get $get) => (bool) $get('gift_cards_enabled')),
+
+            Forms\Components\Placeholder::make('save_gift_cards_hint')
+                ->label('')
+                ->content(new \Illuminate\Support\HtmlString(
+                    '<div style="display:flex; justify-content:flex-end; padding-top:8px;">'
+                    .'<button type="button" wire:click="saveGiftCards" '
+                    .'style="padding:10px 20px; background:#6366f1; color:white; border:0; border-radius:8px; font-weight:700; cursor:pointer; font-size:14px; display:inline-flex; align-items:center; gap:6px;">'
+                    .'<svg style="width:16px; height:16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>'
+                    .'Guardar configuración Gift Cards'
+                    .'</button></div>'
+                )),
+        ];
+    }
+
+    public function saveGiftCards(): void
+    {
+        if (! auth()->user()->can('company.settings')) {
+            $this->errorNotif('Sin permiso para editar configuración');
+            return;
+        }
+
+        $company = $this->getCompany();
+        $settings = $company->settings ?? [];
+        $gc = $settings['gift_cards'] ?? [];
+
+        foreach (array_keys(GiftCardsSettings::FEATURES) as $key) {
+            $stateKey = 'gift_cards_'.$key;
+            if (! array_key_exists($stateKey, $this->data)) {
+                $gc[$key] = $gc[$key] ?? GiftCardsSettings::FEATURES[$key]['default'];
+                continue;
+            }
+            // default_expiry_months es numerico, los demas booleans
+            if ($key === 'default_expiry_months') {
+                $gc[$key] = (int) $this->data[$stateKey];
+            } else {
+                $gc[$key] = (bool) $this->data[$stateKey];
+            }
+        }
+
+        $settings['gift_cards'] = $gc;
+        $company->update(['settings' => $settings]);
+
+        app(\App\Support\CurrentCompany::class)->set($company->fresh());
+
+        Notification::make()->title('Configuración de Gift Cards guardada')->success()->send();
     }
 
     protected function getCompany(): Company
