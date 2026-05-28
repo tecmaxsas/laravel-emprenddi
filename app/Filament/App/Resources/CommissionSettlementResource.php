@@ -14,7 +14,9 @@ use Filament\Tables\Table;
 
 class CommissionSettlementResource extends Resource
 {
-    use ChecksPermission;
+    use ChecksPermission {
+        canAccess as protected permissionCanAccess;
+    }
 
     protected static function viewPermission(): string { return 'commissions.view'; }
     protected static function managePermission(): string { return 'commissions.settle'; }
@@ -31,7 +33,7 @@ class CommissionSettlementResource extends Resource
     public static function canAccess(): bool
     {
         if (! CommissionsSettings::moduleActive()) return false;
-        return parent::canAccess();
+        return static::permissionCanAccess();
     }
 
     public static function table(Table $table): Table

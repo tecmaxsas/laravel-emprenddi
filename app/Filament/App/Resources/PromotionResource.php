@@ -18,7 +18,9 @@ use Illuminate\Support\HtmlString;
 
 class PromotionResource extends Resource
 {
-    use ChecksPermission;
+    use ChecksPermission {
+        canAccess as protected permissionCanAccess;
+    }
 
     protected static function viewPermission(): string { return 'promotions.view'; }
     protected static function managePermission(): string { return 'promotions.manage'; }
@@ -39,7 +41,7 @@ class PromotionResource extends Resource
     public static function canAccess(): bool
     {
         if (! PromotionsSettings::moduleActive()) return false;
-        return parent::canAccess();
+        return static::permissionCanAccess();
     }
 
     public static function form(Form $form): Form

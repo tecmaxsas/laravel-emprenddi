@@ -18,7 +18,9 @@ use Illuminate\Database\Eloquent\Builder;
 
 class CommissionRuleResource extends Resource
 {
-    use ChecksPermission;
+    use ChecksPermission {
+        canAccess as protected permissionCanAccess;
+    }
 
     protected static function viewPermission(): string { return 'commissions.view'; }
     protected static function managePermission(): string { return 'commissions.manage'; }
@@ -35,7 +37,7 @@ class CommissionRuleResource extends Resource
     public static function canAccess(): bool
     {
         if (! CommissionsSettings::moduleActive()) return false;
-        return parent::canAccess();
+        return static::permissionCanAccess();
     }
 
     public static function form(Form $form): Form

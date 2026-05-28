@@ -17,7 +17,9 @@ use Illuminate\Database\Eloquent\Builder;
 
 class GiftCardResource extends Resource
 {
-    use ChecksPermission;
+    use ChecksPermission {
+        canAccess as protected permissionCanAccess;
+    }
 
     protected static function viewPermission(): string { return 'gift_cards.view'; }
     protected static function managePermission(): string { return 'gift_cards.issue'; }
@@ -34,7 +36,7 @@ class GiftCardResource extends Resource
     public static function canAccess(): bool
     {
         if (! GiftCardsSettings::moduleActive()) return false;
-        return parent::canAccess();
+        return static::permissionCanAccess();
     }
 
     public static function form(Form $form): Form
