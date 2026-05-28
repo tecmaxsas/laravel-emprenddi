@@ -151,8 +151,8 @@ class ViewWarranty extends ViewRecord
                     Infolists\Components\TextEntry::make('status')
                         ->label('Estado')
                         ->badge()
-                        ->formatStateUsing(fn (string $s) => Warranty::STATUSES[$s] ?? $s)
-                        ->color(fn (string $s) => match ($s) {
+                        ->formatStateUsing(fn (string $state) => Warranty::STATUSES[$state] ?? $state)
+                        ->color(fn (string $state) => match ($state) {
                             Warranty::STATUS_RECEIVED => 'gray',
                             Warranty::STATUS_IN_REVIEW => 'info',
                             Warranty::STATUS_IN_REPAIR => 'warning',

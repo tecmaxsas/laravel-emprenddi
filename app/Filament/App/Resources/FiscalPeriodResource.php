@@ -97,10 +97,10 @@ class FiscalPeriodResource extends Resource
 
                 Tables\Columns\TextColumn::make('status')
                     ->label('Estado')
-                    ->formatStateUsing(fn (string $s) => $s === 'closed' ? 'Cerrado' : 'Abierto')
+                    ->formatStateUsing(fn (string $state) => $state === 'closed' ? 'Cerrado' : 'Abierto')
                     ->badge()
-                    ->color(fn (string $s) => $s === 'closed' ? 'danger' : 'success')
-                    ->icon(fn (string $s) => $s === 'closed' ? 'heroicon-o-lock-closed' : 'heroicon-o-lock-open'),
+                    ->color(fn (string $state) => $state === 'closed' ? 'danger' : 'success')
+                    ->icon(fn (string $state) => $state === 'closed' ? 'heroicon-o-lock-closed' : 'heroicon-o-lock-open'),
 
                 Tables\Columns\TextColumn::make('locked_at')->label('Cerrado el')->dateTime('Y-m-d H:i')->placeholder('—')->toggleable(),
                 Tables\Columns\TextColumn::make('lockedBy.name')->label('Cerrado por')->placeholder('—')->toggleable(),

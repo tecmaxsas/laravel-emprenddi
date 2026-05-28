@@ -88,9 +88,9 @@ class ViewInventoryAdjustment extends ViewRecord
                     Infolists\Components\TextEntry::make('location.name')->label('Sede'),
                     Infolists\Components\TextEntry::make('status')
                         ->label('Estado')
-                        ->formatStateUsing(fn (string $s) => InventoryAdjustment::STATUSES[$s] ?? $s)
+                        ->formatStateUsing(fn (string $state) => InventoryAdjustment::STATUSES[$state] ?? $state)
                         ->badge()
-                        ->color(fn (string $s) => match ($s) {
+                        ->color(fn (string $state) => match ($state) {
                             'draft' => 'gray',
                             'posted' => 'success',
                             'cancelled' => 'danger',
@@ -98,13 +98,13 @@ class ViewInventoryAdjustment extends ViewRecord
 
                     Infolists\Components\TextEntry::make('direction')
                         ->label('Tipo')
-                        ->formatStateUsing(fn (string $s) => InventoryAdjustment::DIRECTIONS[$s] ?? $s)
+                        ->formatStateUsing(fn (string $state) => InventoryAdjustment::DIRECTIONS[$state] ?? $state)
                         ->badge()
-                        ->color(fn (string $s) => $s === 'in' ? 'success' : 'danger'),
+                        ->color(fn (string $state) => $state === 'in' ? 'success' : 'danger'),
 
                     Infolists\Components\TextEntry::make('reason_code')
                         ->label('Motivo')
-                        ->formatStateUsing(fn (string $s) => InventoryAdjustment::REASONS[$s] ?? $s),
+                        ->formatStateUsing(fn (string $state) => InventoryAdjustment::REASONS[$state] ?? $state),
 
                     Infolists\Components\TextEntry::make('counterpartAccount')
                         ->label('Cuenta contraparte')

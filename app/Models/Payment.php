@@ -21,6 +21,7 @@ class Payment extends Model
         'debit_card' => 'Tarjeta débito',
         'electronic' => 'PSE / Pago electrónico',
         'credit_note' => 'Nota crédito aplicada',
+        'gift_card' => 'Tarjeta regalo',
         'other' => 'Otro',
     ];
 

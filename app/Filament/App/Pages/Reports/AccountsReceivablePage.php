@@ -151,9 +151,9 @@ class AccountsReceivablePage extends Page implements HasForms, HasTable
 
                 Tables\Columns\TextColumn::make('payment_status')
                     ->label('Estado')
-                    ->formatStateUsing(fn (string $s) => SaleInvoice::PAYMENT_STATUSES[$s] ?? $s)
+                    ->formatStateUsing(fn (string $state) => SaleInvoice::PAYMENT_STATUSES[$state] ?? $state)
                     ->badge()
-                    ->color(fn (string $s) => match ($s) {
+                    ->color(fn (string $state) => match ($state) {
                         'pendiente' => 'warning',
                         'parcial' => 'info',
                         'pagado' => 'success',

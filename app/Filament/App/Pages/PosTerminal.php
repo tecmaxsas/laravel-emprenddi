@@ -1481,6 +1481,12 @@ class PosTerminal extends Page
                 $gcEngine = app(\App\Services\GiftCards\GiftCardEngine::class);
                 $issuedGiftCards = [];
 
+                // Cuenta contable de pasivo gift card (240825 por defecto).
+                // El pago con gift card NO entra a caja — debita el pasivo
+                // que se creo al emitir la tarjeta. Sin cuenta, el asiento
+                // queda corrupto, asi que exigimos que exista.
+                $giftCardLiabilityAccountId = \App\Support\GiftCardsSettings::liabilityAccountId();
+
                 foreach ($this->appliedGiftCards as $applied) {
                     $card = \App\Models\GiftCard::find($applied['gift_card_id']);
                     if (! $card) continue;
@@ -1490,15 +1496,19 @@ class PosTerminal extends Page
                     $amount = min($amount, $balance);
                     if ($amount <= 0) continue;
 
+                    if (! $giftCardLiabilityAccountId) {
+                        throw new \RuntimeException('No se encuentra la cuenta de pasivo Gift Card. Configurala en Configuraciones → Gift Cards o asegurate que la cuenta 240825 exista en el PUC.');
+                    }
+
                     // Redime (atomico: descuenta saldo + crea transaccion)
                     $gcEngine->redeem($card, $amount, $invoice->id, Auth::id());
 
-                    // Registra como Payment en la venta para que la
-                    // contabilidad y los reportes lo reflejen
+                    // Registra como Payment en la venta. account_id = cuenta de
+                    // pasivo gift card (DR Pasivo Gift Card / CR CxC).
                     $engine->addPayment($invoice, [
                         'amount' => $amount,
                         'payment_method' => 'gift_card',
-                        'account_id' => null,
+                        'account_id' => $giftCardLiabilityAccountId,
                         'date' => now()->toDateString(),
                         'reference' => $card->code,
                         'description' => 'POS — Gift card '.$card->code,

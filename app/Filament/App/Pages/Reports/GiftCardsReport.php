@@ -120,14 +120,14 @@ class GiftCardsReport extends Page implements HasForms, HasTable
                 Tables\Columns\TextColumn::make('status')
                     ->label('Estado')
                     ->badge()
-                    ->formatStateUsing(fn (string $s) => match ($s) {
+                    ->formatStateUsing(fn (string $state) => match ($state) {
                         GiftCard::STATUS_ACTIVE => 'Activa',
                         GiftCard::STATUS_FULLY_REDEEMED => 'Redimida',
                         GiftCard::STATUS_EXPIRED => 'Expirada',
                         GiftCard::STATUS_CANCELLED => 'Cancelada',
-                        default => $s,
+                        default => $state,
                     })
-                    ->color(fn (string $s) => match ($s) {
+                    ->color(fn (string $state) => match ($state) {
                         GiftCard::STATUS_ACTIVE => 'success',
                         GiftCard::STATUS_FULLY_REDEEMED => 'gray',
                         GiftCard::STATUS_EXPIRED => 'danger',

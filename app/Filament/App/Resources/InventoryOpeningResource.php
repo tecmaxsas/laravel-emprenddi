@@ -185,7 +185,7 @@ class InventoryOpeningResource extends Resource
                     ->state(fn (InventoryOpening $r) => $r->fullNumber())
                     ->fontFamily('mono')
                     ->weight('semibold')
-                    ->searchable(query: fn (Builder $q, string $s) => $q->where('number', 'like', "%{$s}%")),
+                    ->searchable(query: fn (Builder $q, string $state) => $q->where('number', 'like', "%{$state}%")),
 
                 Tables\Columns\TextColumn::make('date')->label('Fecha')->date('Y-m-d')->sortable(),
 
@@ -204,9 +204,9 @@ class InventoryOpeningResource extends Resource
 
                 Tables\Columns\TextColumn::make('status')
                     ->label('Estado')
-                    ->formatStateUsing(fn (string $s) => InventoryOpening::STATUSES[$s] ?? $s)
+                    ->formatStateUsing(fn (string $state) => InventoryOpening::STATUSES[$state] ?? $state)
                     ->badge()
-                    ->color(fn (string $s) => match ($s) {
+                    ->color(fn (string $state) => match ($state) {
                         'draft' => 'gray',
                         'posted' => 'success',
                         'cancelled' => 'danger',

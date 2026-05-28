@@ -115,14 +115,14 @@ class ViewFixedAsset extends ViewRecord
                     Infolists\Components\TextEntry::make('code')->label('Código')->weight('bold'),
                     Infolists\Components\TextEntry::make('category')
                         ->label('Categoría')
-                        ->formatStateUsing(fn (?string $s) => FixedAsset::CATEGORIES[$s] ?? '—')
+                        ->formatStateUsing(fn (?string $state) => FixedAsset::CATEGORIES[$state] ?? '—')
                         ->badge(),
                     Infolists\Components\TextEntry::make('location.name')->label('Sede')->placeholder('—'),
                     Infolists\Components\TextEntry::make('status')
                         ->label('Estado')
-                        ->formatStateUsing(fn (string $s) => FixedAsset::STATUSES[$s] ?? $s)
+                        ->formatStateUsing(fn (string $state) => FixedAsset::STATUSES[$state] ?? $state)
                         ->badge()
-                        ->color(fn (string $s) => $s === 'active' ? 'success' : 'gray'),
+                        ->color(fn (string $state) => $state === 'active' ? 'success' : 'gray'),
 
                     Infolists\Components\TextEntry::make('name')->label('Nombre')->columnSpanFull()->weight('semibold'),
                     Infolists\Components\TextEntry::make('description')->label('Descripción')->placeholder('—')->columnSpanFull(),

@@ -303,9 +303,9 @@ class CreditDebitNoteResource extends Resource
             ->columns([
                 Tables\Columns\TextColumn::make('type')
                     ->label('Tipo')
-                    ->formatStateUsing(fn (string $s) => CreditDebitNote::TYPES[$s] ?? $s)
+                    ->formatStateUsing(fn (string $state) => CreditDebitNote::TYPES[$state] ?? $state)
                     ->badge()
-                    ->color(fn (string $s) => $s === 'credit' ? 'warning' : 'info'),
+                    ->color(fn (string $state) => $state === 'credit' ? 'warning' : 'info'),
 
                 Tables\Columns\TextColumn::make('full_number')
                     ->label('Número')
@@ -334,9 +334,9 @@ class CreditDebitNoteResource extends Resource
 
                 Tables\Columns\TextColumn::make('status')
                     ->label('Estado')
-                    ->formatStateUsing(fn (string $s) => CreditDebitNote::STATUSES[$s] ?? $s)
+                    ->formatStateUsing(fn (string $state) => CreditDebitNote::STATUSES[$state] ?? $state)
                     ->badge()
-                    ->color(fn (string $s) => match ($s) {
+                    ->color(fn (string $state) => match ($state) {
                         'draft' => 'gray',
                         'posted' => 'success',
                         'cancelled' => 'danger',
@@ -344,9 +344,9 @@ class CreditDebitNoteResource extends Resource
 
                 Tables\Columns\TextColumn::make('dian_status')
                     ->label('DIAN')
-                    ->formatStateUsing(fn (?string $s) => $s ? (CreditDebitNote::DIAN_STATUSES[$s] ?? $s) : '—')
+                    ->formatStateUsing(fn (?string $state) => $state ? (CreditDebitNote::DIAN_STATUSES[$state] ?? $state) : '—')
                     ->badge()
-                    ->color(fn (?string $s) => match ($s) {
+                    ->color(fn (?string $state) => match ($state) {
                         'accepted' => 'success',
                         'sent' => 'info',
                         'pending' => 'gray',

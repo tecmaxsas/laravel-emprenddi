@@ -88,9 +88,9 @@ class ViewPurchaseReturn extends ViewRecord
                     Infolists\Components\TextEntry::make('location.name')->label('Sede'),
                     Infolists\Components\TextEntry::make('status')
                         ->label('Estado')
-                        ->formatStateUsing(fn (string $s) => PurchaseReturn::STATUSES[$s] ?? $s)
+                        ->formatStateUsing(fn (string $state) => PurchaseReturn::STATUSES[$state] ?? $state)
                         ->badge()
-                        ->color(fn (string $s) => match ($s) {
+                        ->color(fn (string $state) => match ($state) {
                             'draft' => 'gray',
                             'posted' => 'success',
                             'cancelled' => 'danger',

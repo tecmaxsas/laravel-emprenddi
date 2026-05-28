@@ -241,9 +241,9 @@ class ViewSaleInvoice extends ViewRecord
                     Infolists\Components\TextEntry::make('due_date')->label('Vence')->date('Y-m-d')->placeholder('—'),
                     Infolists\Components\TextEntry::make('status')
                         ->label('Estado')
-                        ->formatStateUsing(fn (string $s) => SaleInvoice::STATUSES[$s] ?? $s)
+                        ->formatStateUsing(fn (string $state) => SaleInvoice::STATUSES[$state] ?? $state)
                         ->badge()
-                        ->color(fn (string $s) => match ($s) {
+                        ->color(fn (string $state) => match ($state) {
                             'posted' => 'success', 'cancelled' => 'danger', default => 'gray',
                         }),
                     Infolists\Components\TextEntry::make('customer.name')->label('Cliente')->columnSpan(2),
@@ -305,9 +305,9 @@ class ViewSaleInvoice extends ViewRecord
                         ->weight('semibold'),
                     Infolists\Components\TextEntry::make('payment_status')
                         ->label('Estado pago')
-                        ->formatStateUsing(fn (string $s) => SaleInvoice::PAYMENT_STATUSES[$s] ?? $s)
+                        ->formatStateUsing(fn (string $state) => SaleInvoice::PAYMENT_STATUSES[$state] ?? $state)
                         ->badge()
-                        ->color(fn (string $s) => match ($s) {
+                        ->color(fn (string $state) => match ($state) {
                             'pendiente' => 'warning', 'parcial' => 'info', 'pagado' => 'success',
                             'vencido' => 'danger', 'cancelada' => 'gray', default => 'gray',
                         }),
@@ -330,9 +330,9 @@ class ViewSaleInvoice extends ViewRecord
                 ->schema([
                     Infolists\Components\TextEntry::make('dian_status')
                         ->label('Estado')
-                        ->formatStateUsing(fn (?string $s) => $s ? (SaleInvoice::DIAN_STATUSES[$s] ?? $s) : '—')
+                        ->formatStateUsing(fn (?string $state) => $state ? (SaleInvoice::DIAN_STATUSES[$state] ?? $state) : '—')
                         ->badge()
-                        ->color(fn (?string $s) => match ($s) {
+                        ->color(fn (?string $state) => match ($state) {
                             'accepted' => 'success',
                             'sent' => 'info',
                             'pending' => 'gray',

@@ -141,9 +141,9 @@ class ViewDeliveryNote extends ViewRecord
                     Infolists\Components\TextEntry::make('date')->label('Fecha')->date('Y-m-d'),
                     Infolists\Components\TextEntry::make('status')
                         ->label('Estado')
-                        ->formatStateUsing(fn (string $s) => DeliveryNote::STATUSES[$s] ?? $s)
+                        ->formatStateUsing(fn (string $state) => DeliveryNote::STATUSES[$state] ?? $state)
                         ->badge()
-                        ->color(fn (string $s) => match ($s) {
+                        ->color(fn (string $state) => match ($state) {
                             'draft' => 'gray',
                             'dispatched' => 'info',
                             'delivered' => 'success',

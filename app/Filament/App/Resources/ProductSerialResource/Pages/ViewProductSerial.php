@@ -60,8 +60,8 @@ class ViewProductSerial extends ViewRecord
                     Infolists\Components\TextEntry::make('status')
                         ->label('Estado')
                         ->badge()
-                        ->formatStateUsing(fn (string $s) => ProductSerial::STATUSES[$s] ?? $s)
-                        ->color(fn (string $s) => match ($s) {
+                        ->formatStateUsing(fn (string $state) => ProductSerial::STATUSES[$state] ?? $state)
+                        ->color(fn (string $state) => match ($state) {
                             ProductSerial::STATUS_IN_STOCK => 'success',
                             ProductSerial::STATUS_SOLD => 'info',
                             ProductSerial::STATUS_RETURNED => 'warning',

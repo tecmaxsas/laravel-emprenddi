@@ -107,9 +107,9 @@ class ViewPurchaseInvoice extends ViewRecord
                     Infolists\Components\TextEntry::make('due_date')->label('Vence')->date('Y-m-d')->placeholder('—'),
                     Infolists\Components\TextEntry::make('status')
                         ->label('Estado')
-                        ->formatStateUsing(fn (string $s) => PurchaseInvoice::STATUSES[$s] ?? $s)
+                        ->formatStateUsing(fn (string $state) => PurchaseInvoice::STATUSES[$state] ?? $state)
                         ->badge()
-                        ->color(fn (string $s) => match ($s) {
+                        ->color(fn (string $state) => match ($state) {
                             'posted' => 'success', 'cancelled' => 'danger', default => 'gray',
                         }),
                     Infolists\Components\TextEntry::make('supplier.name')->label('Proveedor')->columnSpan(2),
@@ -143,9 +143,9 @@ class ViewPurchaseInvoice extends ViewRecord
                     Infolists\Components\TextEntry::make('total')->label('TOTAL')->money('COP')->weight('bold'),
                     Infolists\Components\TextEntry::make('payment_status')
                         ->label('Estado pago')
-                        ->formatStateUsing(fn (string $s) => PurchaseInvoice::PAYMENT_STATUSES[$s] ?? $s)
+                        ->formatStateUsing(fn (string $state) => PurchaseInvoice::PAYMENT_STATUSES[$state] ?? $state)
                         ->badge()
-                        ->color(fn (string $s) => match ($s) {
+                        ->color(fn (string $state) => match ($state) {
                             'pendiente' => 'warning', 'parcial' => 'info', 'pagado' => 'success',
                             'vencido' => 'danger', 'cancelada' => 'gray', default => 'gray',
                         }),

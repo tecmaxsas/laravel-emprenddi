@@ -88,9 +88,9 @@ class ViewInventoryTransfer extends ViewRecord
                     Infolists\Components\TextEntry::make('date')->label('Fecha')->date('Y-m-d'),
                     Infolists\Components\TextEntry::make('status')
                         ->label('Estado')
-                        ->formatStateUsing(fn (string $s) => InventoryTransfer::STATUSES[$s] ?? $s)
+                        ->formatStateUsing(fn (string $state) => InventoryTransfer::STATUSES[$state] ?? $state)
                         ->badge()
-                        ->color(fn (string $s) => match ($s) {
+                        ->color(fn (string $state) => match ($state) {
                             'draft' => 'gray',
                             'posted' => 'success',
                             'cancelled' => 'danger',

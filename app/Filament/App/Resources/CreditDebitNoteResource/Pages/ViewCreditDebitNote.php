@@ -98,9 +98,9 @@ class ViewCreditDebitNote extends ViewRecord
                 ->schema([
                     Infolists\Components\TextEntry::make('type')
                         ->label('Tipo')
-                        ->formatStateUsing(fn (string $s) => CreditDebitNote::TYPES[$s] ?? $s)
+                        ->formatStateUsing(fn (string $state) => CreditDebitNote::TYPES[$state] ?? $state)
                         ->badge()
-                        ->color(fn (string $s) => $s === 'credit' ? 'warning' : 'info'),
+                        ->color(fn (string $state) => $state === 'credit' ? 'warning' : 'info'),
                     Infolists\Components\TextEntry::make('full_number')
                         ->label('Número')
                         ->state(fn (CreditDebitNote $r) => $r->fullNumber())
@@ -108,7 +108,7 @@ class ViewCreditDebitNote extends ViewRecord
                     Infolists\Components\TextEntry::make('date')->label('Fecha')->date('Y-m-d'),
                     Infolists\Components\TextEntry::make('status')
                         ->label('Estado')
-                        ->formatStateUsing(fn (string $s) => CreditDebitNote::STATUSES[$s] ?? $s)
+                        ->formatStateUsing(fn (string $state) => CreditDebitNote::STATUSES[$state] ?? $state)
                         ->badge(),
                     Infolists\Components\TextEntry::make('saleInvoice.full_number')
                         ->label('Factura referenciada')
@@ -164,9 +164,9 @@ class ViewCreditDebitNote extends ViewRecord
                 ->schema([
                     Infolists\Components\TextEntry::make('dian_status')
                         ->label('Estado')
-                        ->formatStateUsing(fn (?string $s) => $s ? (CreditDebitNote::DIAN_STATUSES[$s] ?? $s) : '—')
+                        ->formatStateUsing(fn (?string $state) => $state ? (CreditDebitNote::DIAN_STATUSES[$state] ?? $state) : '—')
                         ->badge()
-                        ->color(fn (?string $s) => match ($s) {
+                        ->color(fn (?string $state) => match ($state) {
                             'accepted' => 'success', 'sent' => 'info',
                             'pending' => 'gray', 'rejected' => 'danger',
                             default => 'gray',

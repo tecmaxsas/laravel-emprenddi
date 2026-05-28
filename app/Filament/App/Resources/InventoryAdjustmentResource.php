@@ -224,7 +224,7 @@ class InventoryAdjustmentResource extends Resource
                     ->state(fn (InventoryAdjustment $r) => $r->fullNumber())
                     ->fontFamily('mono')
                     ->weight('semibold')
-                    ->searchable(query: fn (Builder $q, string $s) => $q->where('number', 'like', "%{$s}%")),
+                    ->searchable(query: fn (Builder $q, string $state) => $q->where('number', 'like', "%{$state}%")),
 
                 Tables\Columns\TextColumn::make('date')->label('Fecha')->date('Y-m-d')->sortable(),
 
@@ -232,13 +232,13 @@ class InventoryAdjustmentResource extends Resource
 
                 Tables\Columns\TextColumn::make('direction')
                     ->label('Tipo')
-                    ->formatStateUsing(fn (string $s) => InventoryAdjustment::DIRECTIONS[$s] ?? $s)
+                    ->formatStateUsing(fn (string $state) => InventoryAdjustment::DIRECTIONS[$state] ?? $state)
                     ->badge()
-                    ->color(fn (string $s) => $s === 'in' ? 'success' : 'danger'),
+                    ->color(fn (string $state) => $state === 'in' ? 'success' : 'danger'),
 
                 Tables\Columns\TextColumn::make('reason_code')
                     ->label('Motivo')
-                    ->formatStateUsing(fn (string $s) => InventoryAdjustment::REASONS[$s] ?? $s)
+                    ->formatStateUsing(fn (string $state) => InventoryAdjustment::REASONS[$state] ?? $state)
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('lines_count')
@@ -249,9 +249,9 @@ class InventoryAdjustmentResource extends Resource
 
                 Tables\Columns\TextColumn::make('status')
                     ->label('Estado')
-                    ->formatStateUsing(fn (string $s) => InventoryAdjustment::STATUSES[$s] ?? $s)
+                    ->formatStateUsing(fn (string $state) => InventoryAdjustment::STATUSES[$state] ?? $state)
                     ->badge()
-                    ->color(fn (string $s) => match ($s) {
+                    ->color(fn (string $state) => match ($state) {
                         'draft' => 'gray',
                         'posted' => 'success',
                         'cancelled' => 'danger',

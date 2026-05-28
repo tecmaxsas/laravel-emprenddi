@@ -30,16 +30,16 @@ class TransactionsRelationManager extends RelationManager
                 Tables\Columns\TextColumn::make('type')
                     ->label('Tipo')
                     ->badge()
-                    ->formatStateUsing(fn (string $s) => match ($s) {
+                    ->formatStateUsing(fn (string $state) => match ($state) {
                         GiftCardTransaction::TYPE_ISSUE => 'Emisión',
                         GiftCardTransaction::TYPE_REDEEM => 'Redención',
                         GiftCardTransaction::TYPE_REFUND => 'Devolución',
                         GiftCardTransaction::TYPE_EXPIRE => 'Expiración',
                         GiftCardTransaction::TYPE_ADJUST => 'Ajuste',
                         GiftCardTransaction::TYPE_CANCEL => 'Anulación',
-                        default => $s,
+                        default => $state,
                     })
-                    ->color(fn (string $s) => match ($s) {
+                    ->color(fn (string $state) => match ($state) {
                         GiftCardTransaction::TYPE_ISSUE, GiftCardTransaction::TYPE_REFUND => 'success',
                         GiftCardTransaction::TYPE_REDEEM => 'info',
                         GiftCardTransaction::TYPE_ADJUST => 'warning',

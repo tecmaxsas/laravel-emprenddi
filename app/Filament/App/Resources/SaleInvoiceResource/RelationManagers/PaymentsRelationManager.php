@@ -117,7 +117,7 @@ class PaymentsRelationManager extends RelationManager
                 Tables\Columns\TextColumn::make('amount')->label('Monto')->money('COP')->weight('semibold')->alignEnd(),
                 Tables\Columns\TextColumn::make('payment_method')
                     ->label('Método')
-                    ->formatStateUsing(fn (string $s) => Payment::PAYMENT_METHODS[$s] ?? $s)
+                    ->formatStateUsing(fn (string $state) => Payment::PAYMENT_METHODS[$state] ?? $state)
                     ->badge(),
                 Tables\Columns\TextColumn::make('account.code')->label('Cta.')->fontFamily('mono'),
                 Tables\Columns\TextColumn::make('reference')->label('Ref.')->placeholder('—'),

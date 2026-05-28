@@ -118,15 +118,15 @@ class PromotionsReport extends Page implements HasForms, HasTable
                 Tables\Columns\TextColumn::make('type')
                     ->label('Tipo')
                     ->badge()
-                    ->formatStateUsing(fn (string $s) => match ($s) {
+                    ->formatStateUsing(fn (string $state) => match ($state) {
                         Promotion::TYPE_PERCENTAGE => 'Porcentaje',
                         Promotion::TYPE_FIXED_AMOUNT => 'Monto fijo',
                         Promotion::TYPE_BOGO => 'BOGO',
                         Promotion::TYPE_VOLUME_TIER => 'Volumen',
                         Promotion::TYPE_BUNDLE => 'Combo',
-                        default => $s,
+                        default => $state,
                     })
-                    ->color(fn (string $s) => match ($s) {
+                    ->color(fn (string $state) => match ($state) {
                         Promotion::TYPE_PERCENTAGE => 'success',
                         Promotion::TYPE_FIXED_AMOUNT => 'info',
                         Promotion::TYPE_BOGO => 'warning',

@@ -28,13 +28,13 @@ class ViewGiftCard extends ViewRecord
                     Infolists\Components\TextEntry::make('status')
                         ->label('Estado')
                         ->badge()
-                        ->formatStateUsing(fn (string $s) => match ($s) {
+                        ->formatStateUsing(fn (string $state) => match ($state) {
                             GiftCard::STATUS_ACTIVE => 'Activa',
                             GiftCard::STATUS_FULLY_REDEEMED => 'Redimida totalmente',
                             GiftCard::STATUS_EXPIRED => 'Expirada',
                             GiftCard::STATUS_CANCELLED => 'Cancelada',
                         })
-                        ->color(fn (string $s) => match ($s) {
+                        ->color(fn (string $state) => match ($state) {
                             GiftCard::STATUS_ACTIVE => 'success',
                             GiftCard::STATUS_FULLY_REDEEMED => 'gray',
                             default => 'danger',

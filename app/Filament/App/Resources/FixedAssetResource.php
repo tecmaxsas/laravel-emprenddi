@@ -219,7 +219,7 @@ class FixedAssetResource extends Resource
 
                 Tables\Columns\TextColumn::make('category')
                     ->label('Categoría')
-                    ->formatStateUsing(fn (?string $s) => FixedAsset::CATEGORIES[$s] ?? '—')
+                    ->formatStateUsing(fn (?string $state) => FixedAsset::CATEGORIES[$state] ?? '—')
                     ->badge()
                     ->toggleable(),
 
@@ -240,9 +240,9 @@ class FixedAssetResource extends Resource
 
                 Tables\Columns\TextColumn::make('status')
                     ->label('Estado')
-                    ->formatStateUsing(fn (string $s) => FixedAsset::STATUSES[$s] ?? $s)
+                    ->formatStateUsing(fn (string $state) => FixedAsset::STATUSES[$state] ?? $state)
                     ->badge()
-                    ->color(fn (string $s) => $s === 'active' ? 'success' : 'gray'),
+                    ->color(fn (string $state) => $state === 'active' ? 'success' : 'gray'),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')->label('Estado')->options(FixedAsset::STATUSES),

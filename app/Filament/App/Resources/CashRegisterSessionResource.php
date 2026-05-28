@@ -44,8 +44,8 @@ class CashRegisterSessionResource extends Resource
                 Tables\Columns\TextColumn::make('status')
                     ->label('Estado')
                     ->badge()
-                    ->color(fn (string $s) => $s === 'open' ? 'success' : 'gray')
-                    ->formatStateUsing(fn (string $s) => $s === 'open' ? 'Abierta' : 'Cerrada'),
+                    ->color(fn (string $state) => $state === 'open' ? 'success' : 'gray')
+                    ->formatStateUsing(fn (string $state) => $state === 'open' ? 'Abierta' : 'Cerrada'),
                 Tables\Columns\TextColumn::make('opening_amount')->label('Apertura')->money('COP')->alignEnd(),
                 Tables\Columns\TextColumn::make('total_sales')->label('Ventas')->money('COP')->alignEnd(),
                 Tables\Columns\TextColumn::make('invoice_count')->label('Facturas')->alignCenter(),
@@ -83,8 +83,8 @@ class CashRegisterSessionResource extends Resource
                     Infolists\Components\TextEntry::make('status')
                         ->label('Estado')
                         ->badge()
-                        ->color(fn (string $s) => $s === 'open' ? 'success' : 'gray')
-                        ->formatStateUsing(fn (string $s) => $s === 'open' ? 'Abierta' : 'Cerrada'),
+                        ->color(fn (string $state) => $state === 'open' ? 'success' : 'gray')
+                        ->formatStateUsing(fn (string $state) => $state === 'open' ? 'Abierta' : 'Cerrada'),
                     Infolists\Components\TextEntry::make('opened_at')->label('Apertura')->dateTime('Y-m-d H:i:s'),
                     Infolists\Components\TextEntry::make('closed_at')->label('Cierre')->dateTime('Y-m-d H:i:s')->placeholder('—'),
                     Infolists\Components\TextEntry::make('closedBy.name')->label('Cerrada por')->placeholder('—'),
