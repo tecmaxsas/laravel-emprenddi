@@ -82,6 +82,21 @@ class Company extends Model
         return $this->hasMany(GiftCard::class);
     }
 
+    public function commissionRules(): HasMany
+    {
+        return $this->hasMany(CommissionRule::class);
+    }
+
+    public function commissionEntries(): HasMany
+    {
+        return $this->hasMany(CommissionEntry::class);
+    }
+
+    public function commissionSettlements(): HasMany
+    {
+        return $this->hasMany(CommissionSettlement::class);
+    }
+
     public function activeSubscription(): HasOne
     {
         return $this->hasOne(Subscription::class)

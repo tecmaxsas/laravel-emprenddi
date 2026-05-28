@@ -4,6 +4,7 @@ namespace App\Filament\App\Pages;
 
 use App\Models\Company;
 use App\Support\ModuleGate;
+use App\Support\CommissionsSettings;
 use App\Support\GiftCardsSettings;
 use App\Support\PromotionsSettings;
 use App\Support\RestaurantSettings;
@@ -123,6 +124,16 @@ class Settings extends Page implements HasForms
             );
         }
 
+        // Commissions settings (settings.commissions.*)
+        foreach (array_keys(CommissionsSettings::FEATURES) as $key) {
+            $default = CommissionsSettings::FEATURES[$key]['default'];
+            $this->data['commissions_'.$key] = data_get(
+                $settings,
+                "commissions.{$key}",
+                $default,
+            );
+        }
+
         $this->form->fill($this->data);
     }
 
@@ -158,6 +169,11 @@ class Settings extends Page implements HasForms
                             ->icon('heroicon-o-gift')
                             ->visible(fn () => auth()->user()?->can('company.settings'))
                             ->schema($this->giftCardsTabSchema()),
+
+                        Forms\Components\Tabs\Tab::make('Comisiones')
+                            ->icon('heroicon-o-currency-dollar')
+                            ->visible(fn () => auth()->user()?->can('company.settings'))
+                            ->schema($this->commissionsTabSchema()),
                     ]),
             ])
             ->statePath('data');
@@ -694,6 +710,124 @@ class Settings extends Page implements HasForms
         }
 
         Notification::make()->title('Configuración de Gift Cards guardada')->success()->send();
+    }
+
+    // ================================================================
+    // COMISIONES
+    // ================================================================
+
+    protected function commissionsTabSchema(): array
+    {
+        $masterToggle = Forms\Components\Toggle::make('commissions_enabled')
+            ->label(CommissionsSettings::FEATURES['enabled']['label'])
+            ->helperText(CommissionsSettings::FEATURES['enabled']['description'])
+            ->live()
+            ->default((bool) CommissionsSettings::FEATURES['enabled']['default'])
+            ->inline(false);
+
+        return [
+            Forms\Components\Section::make('Módulo Comisiones')
+                ->description('Calcula comisiones por vendedor sobre las ventas y permite liquidarlas por período. Las reglas de % por vendedor se configuran en Ventas → Comisiones.')
+                ->schema([$masterToggle]),
+
+            Forms\Components\Section::make('Parámetros de cálculo')
+                ->columns(2)
+                ->visible(fn (Forms\Get $get) => (bool) $get('commissions_enabled'))
+                ->schema([
+                    Forms\Components\Select::make('commissions_base')
+                        ->label(CommissionsSettings::FEATURES['base']['label'])
+                        ->helperText(CommissionsSettings::FEATURES['base']['description'])
+                        ->options([
+                            CommissionsSettings::BASE_SUBTOTAL => 'Subtotal (sin IVA)',
+                            CommissionsSettings::BASE_TOTAL => 'Total (con IVA)',
+                            CommissionsSettings::BASE_PROFIT => 'Utilidad (venta − costo)',
+                        ])
+                        ->default(CommissionsSettings::BASE_SUBTOTAL)
+                        ->required(),
+
+                    Forms\Components\Select::make('commissions_causation')
+                        ->label(CommissionsSettings::FEATURES['causation']['label'])
+                        ->helperText(CommissionsSettings::FEATURES['causation']['description'])
+                        ->options([
+                            CommissionsSettings::CAUSATION_COLLECTED => 'Al cobrar (factura pagada totalmente)',
+                            CommissionsSettings::CAUSATION_INVOICED => 'Al facturar (al emitir la venta)',
+                        ])
+                        ->default(CommissionsSettings::CAUSATION_COLLECTED)
+                        ->required(),
+                ]),
+
+            Forms\Components\Section::make('Cuentas contables')
+                ->description('Al liquidar comisiones se genera el asiento: débito a gasto, crédito a comisiones por pagar.')
+                ->columns(2)
+                ->visible(fn (Forms\Get $get) => (bool) $get('commissions_enabled'))
+                ->schema([
+                    Forms\Components\Select::make('commissions_expense_account_id')
+                        ->label(CommissionsSettings::FEATURES['expense_account_id']['label'])
+                        ->helperText(CommissionsSettings::FEATURES['expense_account_id']['description'])
+                        ->options(fn () => \App\Models\Account::query()
+                            ->where('accepts_movements', true)->where('active', true)
+                            ->where(fn ($q) => $q->where('code', 'like', '51%')->orWhere('code', 'like', '52%')->orWhere('code', 'like', '53%'))
+                            ->orderBy('code')->get()
+                            ->mapWithKeys(fn ($a) => [$a->id => $a->code.' — '.$a->name])->all())
+                        ->searchable()
+                        ->placeholder('— Usar 530515 por defecto —'),
+
+                    Forms\Components\Select::make('commissions_payable_account_id')
+                        ->label(CommissionsSettings::FEATURES['payable_account_id']['label'])
+                        ->helperText(CommissionsSettings::FEATURES['payable_account_id']['description'])
+                        ->options(fn () => \App\Models\Account::query()
+                            ->where('accepts_movements', true)->where('active', true)
+                            ->where('code', 'like', '23%')
+                            ->orderBy('code')->get()
+                            ->mapWithKeys(fn ($a) => [$a->id => $a->code.' — '.$a->name])->all())
+                        ->searchable()
+                        ->placeholder('— Usar 233520 por defecto —'),
+                ]),
+
+            Forms\Components\Placeholder::make('save_commissions_hint')
+                ->label('')
+                ->content(new \Illuminate\Support\HtmlString(
+                    '<div style="display:flex; justify-content:flex-end; padding-top:8px;">'
+                    .'<button type="button" wire:click="saveCommissions" '
+                    .'style="padding:10px 20px; background:#6366f1; color:white; border:0; border-radius:8px; font-weight:700; cursor:pointer; font-size:14px; display:inline-flex; align-items:center; gap:6px;">'
+                    .'<svg style="width:16px; height:16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>'
+                    .'Guardar configuración Comisiones'
+                    .'</button></div>'
+                )),
+        ];
+    }
+
+    public function saveCommissions(): void
+    {
+        if (! auth()->user()->can('company.settings')) {
+            $this->errorNotif('Sin permiso para editar configuración');
+            return;
+        }
+
+        $company = $this->getCompany();
+        $settings = $company->settings ?? [];
+        $c = $settings['commissions'] ?? [];
+
+        foreach (array_keys(CommissionsSettings::FEATURES) as $key) {
+            $stateKey = 'commissions_'.$key;
+            if (! array_key_exists($stateKey, $this->data)) {
+                $c[$key] = $c[$key] ?? CommissionsSettings::FEATURES[$key]['default'];
+                continue;
+            }
+            if ($key === 'enabled') {
+                $c[$key] = (bool) $this->data[$stateKey];
+            } elseif (in_array($key, ['expense_account_id', 'payable_account_id'], true)) {
+                $c[$key] = $this->data[$stateKey] ? (int) $this->data[$stateKey] : null;
+            } else {
+                $c[$key] = $this->data[$stateKey]; // base, causation (strings)
+            }
+        }
+
+        $settings['commissions'] = $c;
+        $company->update(['settings' => $settings]);
+        app(\App\Support\CurrentCompany::class)->set($company->fresh());
+
+        Notification::make()->title('Configuración de Comisiones guardada')->success()->send();
     }
 
     protected function getCompany(): Company

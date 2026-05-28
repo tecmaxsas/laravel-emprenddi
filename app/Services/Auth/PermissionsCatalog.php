@@ -129,6 +129,11 @@ class PermissionsCatalog
                 'gift_cards.redeem' => 'Redimir tarjetas regalo en POS',
                 'gift_cards.cancel' => 'Anular tarjetas regalo o ajustar saldo',
             ],
+            'Comisiones' => [
+                'commissions.view' => 'Ver comisiones causadas y reglas',
+                'commissions.manage' => 'Crear / editar reglas de comisión por vendedor',
+                'commissions.settle' => 'Liquidar y contabilizar comisiones',
+            ],
             'Administración' => [
                 'users.view' => 'Ver usuarios de la empresa',
                 'users.manage' => 'Crear / editar / desactivar usuarios',
@@ -192,6 +197,7 @@ class PermissionsCatalog
                 'payroll.employees.view', 'payroll.employees.manage',
                 'payroll.periods.view', 'payroll.periods.manage',
                 'payroll.parameters.manage', 'payroll.accounts.manage', 'payroll.settlements.manage',
+                'commissions.view', 'commissions.settle',
                 'inventory.view',
                 'serials.view',
                 'products.view', 'categories.view',
