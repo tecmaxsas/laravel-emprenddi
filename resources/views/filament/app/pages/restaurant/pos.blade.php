@@ -37,14 +37,55 @@
         }
         :is(.dark) .rpos-catalog-img { background:rgb(17,24,39); color:rgb(75,85,99); }
         .rpos-catalog-img img { width:100%; height:100%; object-fit:cover; }
-        /* Sticky del catálogo para que siempre se vea al hacer scroll de items */
+        /* Sticky del catálogo para que siempre se vea al hacer scroll de items.
+           SOLO en desktop (>=1024px): en pantallas grandes hay espacio lateral
+           y mantener el catalogo pegado ayuda a la venta rapida. */
         .rpos-catalog-sticky {
-            position:sticky; top:0; z-index:5;
             background:#ffffff; padding:10px; margin:-10px -10px 14px; border-radius:10px;
             border:1px solid #e5e7eb;
             box-shadow:0 2px 4px rgba(0,0,0,0.04);
         }
+        @media (min-width: 1024px) {
+            .rpos-catalog-sticky { position:sticky; top:0; z-index:5; }
+        }
         :is(.dark) .rpos-catalog-sticky { background:rgb(17,24,39); border-color:rgb(31,41,55); }
+
+        /* Tabs de categoria: en movil van en UNA fila con scroll horizontal
+           (no wrap en 6 filas que comen toda la pantalla). En desktop, wrap normal. */
+        .rpos-cats {
+            display:flex; gap:4px; margin-bottom:10px;
+            flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch;
+            padding-bottom:4px;
+        }
+        .rpos-cats::-webkit-scrollbar { height:4px; }
+        .rpos-cats::-webkit-scrollbar-thumb { background:rgba(0,0,0,0.15); border-radius:999px; }
+        .rpos-cats > button { white-space:nowrap; flex-shrink:0; }
+        @media (min-width: 1024px) {
+            .rpos-cats { flex-wrap:wrap; overflow-x:visible; }
+        }
+
+        /* Grid de productos: alto adaptativo. En movil mas bajo para dejar
+           espacio a los items de la orden y el boton enviar a cocina debajo. */
+        .rpos-products-grid {
+            display:grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap:6px; max-height:200px; overflow-y:auto;
+        }
+        @media (min-width: 1024px) {
+            .rpos-products-grid {
+                grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+                max-height:340px;
+            }
+        }
+
+        /* Panel de orden: en movil sin tope de altura (fluye con el scroll de
+           la pagina) — el max-height calc tapaba los controles en pantallas
+           cortas. En desktop si limitamos para scroll interno. */
+        .rpos-order-panel {
+            display:flex; flex-direction:column; gap:14px;
+        }
+        @media (min-width: 1024px) {
+            .rpos-order-panel { max-height: calc(100vh - 160px); overflow-y:auto; }
+        }
         .rpos-item-row { display:flex; gap:8px; padding:8px 10px; border-radius:8px; align-items:center; }
         .rpos-item-row:hover { background:#f9fafb; }
         :is(.dark) .rpos-item-row:hover { background:rgb(31,41,55); }
@@ -316,7 +357,7 @@
         {{-- DERECHA: PANEL DE ORDEN ACTIVA (solo si hay orden)  --}}
         {{-- =================================================== --}}
         @if ($order)
-            <div class="rpos-card" style="display:flex; flex-direction:column; gap:14px; max-height: calc(100vh - 160px); overflow-y:auto;">
+            <div class="rpos-card rpos-order-panel">
                 {{-- Header de la orden --}}
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:12px; border-bottom:1px solid #e5e7eb;" class="dark:!border-gray-800">
                     <div style="flex:1; min-width:0;">
@@ -409,7 +450,7 @@
                     </div>
 
                     {{-- Tabs de categoría --}}
-                    <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:10px;">
+                    <div class="rpos-cats">
                         <button type="button" wire:click="$set('activeCategoryId', null)"
                                 style="padding:4px 10px; font-size:11px; border-radius:6px; background:{{ $this->activeCategoryId === null ? 'rgb(99,102,241)' : '#f3f4f6' }}; color:{{ $this->activeCategoryId === null ? 'white' : '#374151' }}; border:0; cursor:pointer; font-weight:600;"
                                 class="@if($this->activeCategoryId !== null) dark:!bg-gray-800 dark:!text-gray-300 @endif">
@@ -425,7 +466,7 @@
                     </div>
 
                     {{-- Grid de productos con imagen --}}
-                    <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap:6px; max-height:340px; overflow-y:auto;">
+                    <div class="rpos-products-grid">
                         @forelse ($catalog as $p)
                             <button type="button" wire:click="addProduct({{ $p->id }})" class="rpos-catalog-btn">
                                 <div class="rpos-catalog-img">
