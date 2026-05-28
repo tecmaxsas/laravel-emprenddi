@@ -159,179 +159,199 @@
         </div>
     </div>
 
-    {{-- ===================== KPIs ===================== --}}
-    @if (! empty($kpis))
-        <div class="ed-kpis">
-            @foreach ($kpis as $i => $k)
-                <div class="ed-kpi" style="animation-delay:{{ $i * 70 }}ms;">
-                    <div class="ed-kpi-top" style="background:{{ $k['color'] }};"></div>
-                    <div class="ed-kpi-ic" style="background:{{ $k['color'] }}1a; color:{{ $k['color'] }};">
-                        @svg($k['icon'])
-                    </div>
-                    <div class="ed-kpi-val">{{ $k['value'] }}</div>
-                    <div class="ed-kpi-label">{{ $k['label'] }}</div>
-                    <div class="ed-kpi-sub">{{ $k['sub'] }}</div>
-                </div>
-            @endforeach
-        </div>
-    @endif
+    {{-- Las secciones se renderizan en el ORDEN y con la VISIBILIDAD que el
+         usuario configuró en "Personalizar Escritorio". $visibleSections es
+         una lista ordenada de keys; el @switch renderiza cada bloque. --}}
+    @php
+        $visibleSections = $visibleSections ?? ['kpis','sales_chart','restaurant','payroll','activity'];
+    @endphp
 
-    {{-- ===================== GRÁFICA DE VENTAS ===================== --}}
-    @if ($sales)
-        @php
-            $maxSale = max(1, max(array_column($salesSeries, 'total')));
-            $todayKey = count($salesSeries) - 1;
-        @endphp
-        <div class="ed-card" style="animation-delay:120ms;">
-            <div class="ed-card-head">
-                <div>
-                    <div class="ed-card-title">📈 Ventas — últimos 14 días</div>
-                    <div class="ed-card-hint">Tendencia diaria de facturación</div>
-                </div>
-                <div style="text-align:right;">
-                    <div style="font-size:1.4rem; font-weight:800; color:#10b981;">{{ $fmt($sales['today']) }}</div>
-                    <div class="ed-card-hint">
-                        Ventas de hoy ·
-                        <span class="ed-delta {{ $sales['delta'] >= 0 ? 'up' : 'down' }}">
-                            {{ $sales['delta'] >= 0 ? '↑' : '↓' }} {{ abs($sales['delta']) }}% vs ayer
-                        </span>
+    @foreach ($visibleSections as $section)
+        @switch($section)
+
+            {{-- ===================== KPIs ===================== --}}
+            @case('kpis')
+                @if (! empty($kpis))
+                    <div class="ed-kpis">
+                        @foreach ($kpis as $i => $k)
+                            <div class="ed-kpi" style="animation-delay:{{ $i * 70 }}ms;">
+                                <div class="ed-kpi-top" style="background:{{ $k['color'] }};"></div>
+                                <div class="ed-kpi-ic" style="background:{{ $k['color'] }}1a; color:{{ $k['color'] }};">
+                                    @svg($k['icon'])
+                                </div>
+                                <div class="ed-kpi-val">{{ $k['value'] }}</div>
+                                <div class="ed-kpi-label">{{ $k['label'] }}</div>
+                                <div class="ed-kpi-sub">{{ $k['sub'] }}</div>
+                            </div>
+                        @endforeach
                     </div>
-                </div>
-            </div>
-            <div class="ed-chart">
-                @foreach ($salesSeries as $i => $pt)
-                    @php $h = $pt['total'] > 0 ? max(round($pt['total'] / $maxSale * 100), 5) : 0; @endphp
-                    <div class="ed-bar-col">
-                        <div class="ed-bar-wrap">
-                            <span class="ed-bar-tip">{{ $fmt($pt['total']) }}</span>
-                            <div class="ed-bar" style="height:{{ $h }}%; animation-delay:{{ 150 + $i * 45 }}ms;
-                                @if ($i === $todayKey) background:linear-gradient(180deg,#34d399,#10b981); @endif"></div>
+                @endif
+                @break
+
+            {{-- ===================== GRÁFICA DE VENTAS ===================== --}}
+            @case('sales_chart')
+                @if ($sales)
+                    @php
+                        $maxSale = max(1, max(array_column($salesSeries, 'total')));
+                        $todayKey = count($salesSeries) - 1;
+                    @endphp
+                    <div class="ed-card" style="animation-delay:120ms;">
+                        <div class="ed-card-head">
+                            <div>
+                                <div class="ed-card-title">📈 Ventas — últimos 14 días</div>
+                                <div class="ed-card-hint">Tendencia diaria de facturación</div>
+                            </div>
+                            <div style="text-align:right;">
+                                <div style="font-size:1.4rem; font-weight:800; color:#10b981;">{{ $fmt($sales['today']) }}</div>
+                                <div class="ed-card-hint">
+                                    Ventas de hoy ·
+                                    <span class="ed-delta {{ $sales['delta'] >= 0 ? 'up' : 'down' }}">
+                                        {{ $sales['delta'] >= 0 ? '↑' : '↓' }} {{ abs($sales['delta']) }}% vs ayer
+                                    </span>
+                                </div>
+                            </div>
                         </div>
-                        <span class="ed-bar-x {{ $i === $todayKey ? 'today' : '' }}">{{ $pt['label'] }}</span>
-                    </div>
-                @endforeach
-            </div>
-        </div>
-    @endif
-
-    {{-- ===================== RESTAURANTE + NÓMINA ===================== --}}
-    @if ($restaurant || ($payroll && $payroll['last_net'] !== null))
-        <div class="ed-grid-2">
-            @if ($restaurant)
-                <div class="ed-card" style="animation-delay:170ms;">
-                    <div class="ed-card-head"><div class="ed-card-title">🍽️ Restaurante hoy</div></div>
-                    <div class="ed-mini">
-                        <div class="ed-mini-ic" style="background:#10b9811a; color:#10b981;">@svg('heroicon-o-table-cells')</div>
-                        <div class="ed-mini-label">Mesas ocupadas</div>
-                        <div class="ed-mini-val">{{ $restaurant['occupied'] }} / {{ $restaurant['total_tables'] }}</div>
-                    </div>
-                    <div class="ed-mini">
-                        <div class="ed-mini-ic" style="background:#0ea5e91a; color:#0ea5e9;">@svg('heroicon-o-clipboard-document-list')</div>
-                        <div class="ed-mini-label">Órdenes abiertas</div>
-                        <div class="ed-mini-val">{{ $restaurant['open_orders'] }}</div>
-                    </div>
-                    <div class="ed-mini">
-                        <div class="ed-mini-ic" style="background:#f59e0b1a; color:#f59e0b;">@svg('heroicon-o-truck')</div>
-                        <div class="ed-mini-label">Domicilios activos</div>
-                        <div class="ed-mini-val">{{ $restaurant['deliveries'] }}</div>
-                    </div>
-                    <div class="ed-mini">
-                        <div class="ed-mini-ic" style="background:#10b9811a; color:#10b981;">@svg('heroicon-o-banknotes')</div>
-                        <div class="ed-mini-label">Ventas de hoy</div>
-                        <div class="ed-mini-val">{{ $fmt($restaurant['today_sales']) }}</div>
-                    </div>
-                </div>
-            @endif
-
-            @if ($payroll && $payroll['last_net'] !== null)
-                <div class="ed-card" style="animation-delay:200ms;">
-                    <div class="ed-card-head"><div class="ed-card-title">👥 Nómina</div></div>
-                    @if ($payroll['employees'] !== null)
-                        <div class="ed-mini">
-                            <div class="ed-mini-ic" style="background:#6366f11a; color:#6366f1;">@svg('heroicon-o-identification')</div>
-                            <div class="ed-mini-label">Empleados activos</div>
-                            <div class="ed-mini-val">{{ $payroll['employees'] }}</div>
-                        </div>
-                    @endif
-                    <div class="ed-mini">
-                        <div class="ed-mini-ic" style="background:#10b9811a; color:#10b981;">@svg('heroicon-o-calculator')</div>
-                        <div class="ed-mini-label">Última nómina · {{ $payroll['last_period'] ?? '—' }}</div>
-                        <div class="ed-mini-val">{{ $fmt($payroll['last_net']) }}</div>
-                    </div>
-                    <div class="ed-mini">
-                        <div class="ed-mini-ic" style="background:#f59e0b1a; color:#f59e0b;">@svg('heroicon-o-gift')</div>
-                        <div class="ed-mini-label">Liquidaciones por pagar</div>
-                        <div class="ed-mini-val">{{ $payroll['pending_settlements'] ?? 0 }}</div>
-                    </div>
-                </div>
-            @endif
-        </div>
-    @endif
-
-    {{-- ===================== ACTIVIDAD RECIENTE ===================== --}}
-    @if ($canSales || $canPurchases)
-        <div class="ed-card" style="animation-delay:240ms;">
-            <div class="ed-card-head">
-                <div>
-                    <div class="ed-card-title">📋 Actividad reciente</div>
-                    <div class="ed-card-hint">Últimas transacciones del negocio</div>
-                </div>
-            </div>
-            @if ($activity->isEmpty())
-                <div class="ed-empty">Sin actividad registrada todavía.</div>
-            @else
-                <div style="overflow-x:auto;">
-                    <table class="ed-table">
-                        <thead>
-                            <tr>
-                                <th>Fecha</th><th>Tipo</th><th>Documento</th>
-                                <th style="text-align:right;">Monto</th><th style="text-align:center;">Pago</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach ($activity as $a)
-                                @php
-                                    $isSale = $a->kind === 'sale';
-                                    $payStatus = $a->payment_status ?? 'pendiente';
-                                    $payColors = [
-                                        'pagado' => ['#dcfce7', '#166534'],
-                                        'parcial' => ['#fef3c7', '#92400e'],
-                                        'pendiente' => ['#fee2e2', '#991b1b'],
-                                        'vencido' => ['#fee2e2', '#991b1b'],
-                                    ];
-                                    $pc = $payColors[$payStatus] ?? ['#e5e7eb', '#374151'];
-                                    $url = ($isSale ? '/app/sale-invoices/' : '/app/purchase-invoices/').$a->id;
-                                @endphp
-                                <tr>
-                                    <td style="font-family:ui-monospace,monospace; white-space:nowrap;">
-                                        {{ \Illuminate\Support\Carbon::parse($a->date)->format('d/m/Y') }}
-                                    </td>
-                                    <td>
-                                        <span style="font-weight:700; color:{{ $isSale ? '#10b981' : '#f43f5e' }};">
-                                            {{ $isSale ? '↗ Venta' : '↘ Compra' }}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <a href="{{ $url }}" class="ed-link">
-                                            {{ $a->prefix }}-{{ str_pad((string) $a->number, 6, '0', STR_PAD_LEFT) }}
-                                        </a>
-                                    </td>
-                                    <td style="text-align:right; font-weight:800;">
-                                        ${{ number_format((float) $a->total, 0, ',', '.') }}
-                                    </td>
-                                    <td style="text-align:center;">
-                                        <span class="ed-pill" style="background:{{ $pc[0] }}; color:{{ $pc[1] }};">
-                                            {{ ucfirst($payStatus) }}
-                                        </span>
-                                    </td>
-                                </tr>
+                        <div class="ed-chart">
+                            @foreach ($salesSeries as $i => $pt)
+                                @php $h = $pt['total'] > 0 ? max(round($pt['total'] / $maxSale * 100), 5) : 0; @endphp
+                                <div class="ed-bar-col">
+                                    <div class="ed-bar-wrap">
+                                        <span class="ed-bar-tip">{{ $fmt($pt['total']) }}</span>
+                                        <div class="ed-bar" style="height:{{ $h }}%; animation-delay:{{ 150 + $i * 45 }}ms;
+                                            @if ($i === $todayKey) background:linear-gradient(180deg,#34d399,#10b981); @endif"></div>
+                                    </div>
+                                    <span class="ed-bar-x {{ $i === $todayKey ? 'today' : '' }}">{{ $pt['label'] }}</span>
+                                </div>
                             @endforeach
-                        </tbody>
-                    </table>
-                </div>
-            @endif
-        </div>
-    @endif
+                        </div>
+                    </div>
+                @endif
+                @break
+
+            {{-- ===================== RESTAURANTE ===================== --}}
+            @case('restaurant')
+                @if ($restaurant)
+                    <div class="ed-card" style="animation-delay:170ms;">
+                        <div class="ed-card-head"><div class="ed-card-title">🍽️ Restaurante hoy</div></div>
+                        <div class="ed-mini">
+                            <div class="ed-mini-ic" style="background:#10b9811a; color:#10b981;">@svg('heroicon-o-table-cells')</div>
+                            <div class="ed-mini-label">Mesas ocupadas</div>
+                            <div class="ed-mini-val">{{ $restaurant['occupied'] }} / {{ $restaurant['total_tables'] }}</div>
+                        </div>
+                        <div class="ed-mini">
+                            <div class="ed-mini-ic" style="background:#0ea5e91a; color:#0ea5e9;">@svg('heroicon-o-clipboard-document-list')</div>
+                            <div class="ed-mini-label">Órdenes abiertas</div>
+                            <div class="ed-mini-val">{{ $restaurant['open_orders'] }}</div>
+                        </div>
+                        <div class="ed-mini">
+                            <div class="ed-mini-ic" style="background:#f59e0b1a; color:#f59e0b;">@svg('heroicon-o-truck')</div>
+                            <div class="ed-mini-label">Domicilios activos</div>
+                            <div class="ed-mini-val">{{ $restaurant['deliveries'] }}</div>
+                        </div>
+                        <div class="ed-mini">
+                            <div class="ed-mini-ic" style="background:#10b9811a; color:#10b981;">@svg('heroicon-o-banknotes')</div>
+                            <div class="ed-mini-label">Ventas de hoy</div>
+                            <div class="ed-mini-val">{{ $fmt($restaurant['today_sales']) }}</div>
+                        </div>
+                    </div>
+                @endif
+                @break
+
+            {{-- ===================== NÓMINA ===================== --}}
+            @case('payroll')
+                @if ($payroll && $payroll['last_net'] !== null)
+                    <div class="ed-card" style="animation-delay:200ms;">
+                        <div class="ed-card-head"><div class="ed-card-title">👥 Nómina</div></div>
+                        @if ($payroll['employees'] !== null)
+                            <div class="ed-mini">
+                                <div class="ed-mini-ic" style="background:#6366f11a; color:#6366f1;">@svg('heroicon-o-identification')</div>
+                                <div class="ed-mini-label">Empleados activos</div>
+                                <div class="ed-mini-val">{{ $payroll['employees'] }}</div>
+                            </div>
+                        @endif
+                        <div class="ed-mini">
+                            <div class="ed-mini-ic" style="background:#10b9811a; color:#10b981;">@svg('heroicon-o-calculator')</div>
+                            <div class="ed-mini-label">Última nómina · {{ $payroll['last_period'] ?? '—' }}</div>
+                            <div class="ed-mini-val">{{ $fmt($payroll['last_net']) }}</div>
+                        </div>
+                        <div class="ed-mini">
+                            <div class="ed-mini-ic" style="background:#f59e0b1a; color:#f59e0b;">@svg('heroicon-o-gift')</div>
+                            <div class="ed-mini-label">Liquidaciones por pagar</div>
+                            <div class="ed-mini-val">{{ $payroll['pending_settlements'] ?? 0 }}</div>
+                        </div>
+                    </div>
+                @endif
+                @break
+
+            {{-- ===================== ACTIVIDAD RECIENTE ===================== --}}
+            @case('activity')
+                @if ($canSales || $canPurchases)
+                    <div class="ed-card" style="animation-delay:240ms;">
+                        <div class="ed-card-head">
+                            <div>
+                                <div class="ed-card-title">📋 Actividad reciente</div>
+                                <div class="ed-card-hint">Últimas transacciones del negocio</div>
+                            </div>
+                        </div>
+                        @if ($activity->isEmpty())
+                            <div class="ed-empty">Sin actividad registrada todavía.</div>
+                        @else
+                            <div style="overflow-x:auto;">
+                                <table class="ed-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Fecha</th><th>Tipo</th><th>Documento</th>
+                                            <th style="text-align:right;">Monto</th><th style="text-align:center;">Pago</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach ($activity as $a)
+                                            @php
+                                                $isSale = $a->kind === 'sale';
+                                                $payStatus = $a->payment_status ?? 'pendiente';
+                                                $payColors = [
+                                                    'pagado' => ['#dcfce7', '#166534'],
+                                                    'parcial' => ['#fef3c7', '#92400e'],
+                                                    'pendiente' => ['#fee2e2', '#991b1b'],
+                                                    'vencido' => ['#fee2e2', '#991b1b'],
+                                                ];
+                                                $pc = $payColors[$payStatus] ?? ['#e5e7eb', '#374151'];
+                                                $url = ($isSale ? '/app/sale-invoices/' : '/app/purchase-invoices/').$a->id;
+                                            @endphp
+                                            <tr>
+                                                <td style="font-family:ui-monospace,monospace; white-space:nowrap;">
+                                                    {{ \Illuminate\Support\Carbon::parse($a->date)->format('d/m/Y') }}
+                                                </td>
+                                                <td>
+                                                    <span style="font-weight:700; color:{{ $isSale ? '#10b981' : '#f43f5e' }};">
+                                                        {{ $isSale ? '↗ Venta' : '↘ Compra' }}
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <a href="{{ $url }}" class="ed-link">
+                                                        {{ $a->prefix }}-{{ str_pad((string) $a->number, 6, '0', STR_PAD_LEFT) }}
+                                                    </a>
+                                                </td>
+                                                <td style="text-align:right; font-weight:800;">
+                                                    ${{ number_format((float) $a->total, 0, ',', '.') }}
+                                                </td>
+                                                <td style="text-align:center;">
+                                                    <span class="ed-pill" style="background:{{ $pc[0] }}; color:{{ $pc[1] }};">
+                                                        {{ ucfirst($payStatus) }}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+                        @endif
+                    </div>
+                @endif
+                @break
+
+        @endswitch
+    @endforeach
 
 </div>
 </x-filament-widgets::widget>

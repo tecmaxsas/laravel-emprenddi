@@ -76,6 +76,12 @@ class DashboardOverviewWidget extends Widget
             $data['activity'] = $this->recentActivity($companyId, $data['canSales'], $data['canPurchases']);
         }
 
+        // Preferencias del usuario: lista ordenada de secciones visibles.
+        // El blade recorre $visibleSections en orden y renderiza cada una
+        // solo si está en la lista. Respeta permisos (availableFor) + la
+        // configuración personal (ocultas/orden) de PersonalizarEscritorio.
+        $data['visibleSections'] = \App\Models\DashboardPreference::visibleSectionsFor($user);
+
         return $data;
     }
 
