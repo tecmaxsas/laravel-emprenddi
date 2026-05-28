@@ -37,16 +37,15 @@
         }
         :is(.dark) .rpos-catalog-img { background:rgb(17,24,39); color:rgb(75,85,99); }
         .rpos-catalog-img img { width:100%; height:100%; object-fit:cover; }
-        /* Sticky del catálogo para que siempre se vea al hacer scroll de items.
-           SOLO en desktop (>=1024px): en pantallas grandes hay espacio lateral
-           y mantener el catalogo pegado ayuda a la venta rapida. */
+        /* Catálogo de productos — card normal en el flujo del panel.
+           NO usamos position:sticky: con altura del grid + categorias,
+           el catalogo pegado tapaba los items y totales al hacer scroll
+           (tanto en desktop como movil). Sin sticky, todo el panel scrollea
+           de forma natural: header → catalogo → items → totales. */
         .rpos-catalog-sticky {
             background:#ffffff; padding:10px; margin:-10px -10px 14px; border-radius:10px;
             border:1px solid #e5e7eb;
             box-shadow:0 2px 4px rgba(0,0,0,0.04);
-        }
-        @media (min-width: 1024px) {
-            .rpos-catalog-sticky { position:sticky; top:0; z-index:5; }
         }
         :is(.dark) .rpos-catalog-sticky { background:rgb(17,24,39); border-color:rgb(31,41,55); }
 
