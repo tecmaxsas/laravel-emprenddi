@@ -10,6 +10,7 @@ use App\Models\Payment;
 use App\Models\SaleInvoice;
 use App\Services\Accounting\JournalEntryNumberer;
 use App\Services\Inventory\InventoryEngine;
+use App\Support\CommissionsSettings;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -124,8 +125,34 @@ class SaleInvoiceEngine
                 'dian_status' => $invoice->dian_status ?: SaleInvoice::DIAN_PENDING,
             ]);
 
+            // 6. Comisiones — causar al facturar si el modo es 'invoiced'.
+            // (modo 'collected' se causa en recomputePaymentStatus al quedar pagada)
+            $this->maybeCauseCommission($invoice->fresh(), CommissionsSettings::CAUSATION_INVOICED);
+
             return $invoice->fresh();
         });
+    }
+
+    /**
+     * Causa la comisión del vendedor si el módulo está activo y el modo de
+     * causación configurado coincide con $forBasis. Defensivo: un error
+     * aquí no debe tumbar la venta (solo se loguea).
+     */
+    protected function maybeCauseCommission(SaleInvoice $invoice, string $forBasis): void
+    {
+        if (! CommissionsSettings::moduleActive()) return;
+        if (CommissionsSettings::causation() !== $forBasis) return;
+
+        try {
+            app(\App\Services\Commissions\CommissionEngine::class)
+                ->causeForInvoice($invoice, $forBasis);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('No se pudo causar comisión', [
+                'invoice_id' => $invoice->id,
+                'basis' => $forBasis,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -257,6 +284,13 @@ class SaleInvoiceEngine
             'paid_amount' => $paid,
             'payment_status' => $status,
         ]);
+
+        // Comisiones — causar al cobrar cuando la factura queda totalmente
+        // pagada (modo 'collected'). El engine es idempotente: si ya se causó
+        // (ej. recompute corre varias veces) no duplica.
+        if ($status === SaleInvoice::PAYMENT_PAGADO) {
+            $this->maybeCauseCommission($invoice->fresh(), CommissionsSettings::CAUSATION_COLLECTED);
+        }
     }
 
     /**
@@ -651,6 +685,19 @@ class SaleInvoiceEngine
                 'status' => SaleInvoice::STATUS_CANCELLED,
                 'payment_status' => SaleInvoice::PAYMENT_CANCELADA,
             ]);
+
+            // 5. Reversa comisiones pendientes de esta factura (las ya
+            // liquidadas no se tocan — se ajustan en la siguiente liquidación).
+            if (CommissionsSettings::moduleActive()) {
+                try {
+                    app(\App\Services\Commissions\CommissionEngine::class)->reverseForInvoice($invoice);
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning('No se pudo reversar comisión al anular factura', [
+                        'invoice_id' => $invoice->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
 
             return $invoice->fresh();
         });
