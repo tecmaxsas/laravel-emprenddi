@@ -214,13 +214,19 @@ class PosTerminal extends Page
 
         if ($appt->product_id) {
             $this->addProductToCart($appt->product_id);
-        }
 
-        Notification::make()
-            ->title('Cita cargada')
-            ->body('Ajusta el carrito si hace falta y procesa el cobro. Al finalizar, la cita quedará completada.')
-            ->success()
-            ->send();
+            Notification::make()
+                ->title('Cita cargada')
+                ->body('Ajusta el carrito si hace falta y procesa el cobro. Al finalizar, la cita quedará completada.')
+                ->success()
+                ->send();
+        } else {
+            Notification::make()
+                ->title('Cita cargada — sin servicio')
+                ->body('Esta cita no tiene un servicio asignado. Agrega los productos manualmente y procesa el cobro; la cita quedará completada al finalizar.')
+                ->warning()
+                ->send();
+        }
     }
 
     /**

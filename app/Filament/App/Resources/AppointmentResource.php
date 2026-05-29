@@ -74,10 +74,10 @@ class AppointmentResource extends Resource
                             ->all()),
 
                     Forms\Components\Select::make('product_id')
-                        ->label('Servicio')
+                        ->label('Servicio (recomendado)')
                         ->searchable()
                         ->placeholder('— Sin servicio específico —')
-                        ->helperText('Solo aparecen productos de tipo "Servicio".')
+                        ->helperText('Recomendado: al "Atender y cobrar" se precarga en el POS. Solo aparecen productos de tipo "Servicio".')
                         ->options(fn () => Product::query()
                             ->where('company_id', auth()->user()->company_id)
                             ->where('type', 'service')
