@@ -43,6 +43,12 @@ class DashboardSections
             'default_order' => 3,
             'permission' => 'restaurant_module',
         ],
+        'appointments' => [
+            'label' => 'Citas de hoy',
+            'description' => 'Citas agendadas para hoy, pendientes por atender y la próxima cita.',
+            'default_order' => 4,
+            'permission' => 'appointments_module',
+        ],
         'payroll' => [
             'label' => 'Resumen de nómina',
             'description' => 'Empleados activos, última nómina liquidada y prestaciones pendientes.',
@@ -69,6 +75,9 @@ class DashboardSections
 
         if ($permission === 'restaurant_module') {
             return \App\Support\ModuleGate::active('restaurant') && $user->can('restaurant.use');
+        }
+        if ($permission === 'appointments_module') {
+            return \App\Support\AppointmentsSettings::moduleActive() && $user->can('appointments.view');
         }
         if (is_array($permission)) {
             foreach ($permission as $p) {

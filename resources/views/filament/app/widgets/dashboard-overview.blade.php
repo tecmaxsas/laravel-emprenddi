@@ -163,7 +163,7 @@
          usuario configuró en "Personalizar Escritorio". $visibleSections es
          una lista ordenada de keys; el @switch renderiza cada bloque. --}}
     @php
-        $visibleSections = $visibleSections ?? ['kpis','sales_chart','restaurant','payroll','activity'];
+        $visibleSections = $visibleSections ?? ['kpis','sales_chart','restaurant','appointments','payroll','activity'];
     @endphp
 
     @foreach ($visibleSections as $section)
@@ -253,6 +253,42 @@
                             <div class="ed-mini-label">Ventas de hoy</div>
                             <div class="ed-mini-val">{{ $fmt($restaurant['today_sales']) }}</div>
                         </div>
+                    </div>
+                @endif
+                @break
+
+            {{-- ===================== CITAS ===================== --}}
+            @case('appointments')
+                @if ($appointments)
+                    <div class="ed-card" style="animation-delay:185ms;">
+                        <div class="ed-card-head"><div class="ed-card-title">📅 Citas hoy</div></div>
+                        <div class="ed-mini">
+                            <div class="ed-mini-ic" style="background:#6366f11a; color:#6366f1;">@svg('heroicon-o-calendar-days')</div>
+                            <div class="ed-mini-label">Agendadas hoy</div>
+                            <div class="ed-mini-val">{{ $appointments['today'] }}</div>
+                        </div>
+                        <div class="ed-mini">
+                            <div class="ed-mini-ic" style="background:#f59e0b1a; color:#f59e0b;">@svg('heroicon-o-clock')</div>
+                            <div class="ed-mini-label">Pendientes por atender</div>
+                            <div class="ed-mini-val">{{ $appointments['pending'] }}</div>
+                        </div>
+                        <div class="ed-mini">
+                            <div class="ed-mini-ic" style="background:#10b9811a; color:#10b981;">@svg('heroicon-o-check-circle')</div>
+                            <div class="ed-mini-label">Completadas</div>
+                            <div class="ed-mini-val">{{ $appointments['completed'] }}</div>
+                        </div>
+                        @if ($appointments['next'])
+                            <div class="ed-mini">
+                                <div class="ed-mini-ic" style="background:#0ea5e91a; color:#0ea5e9;">@svg('heroicon-o-arrow-right-circle')</div>
+                                <div class="ed-mini-label">
+                                    Próxima · {{ $appointments['next']['client'] }}
+                                    @if ($appointments['next']['service'])
+                                        <span style="color:#9ca3af;">({{ $appointments['next']['service'] }})</span>
+                                    @endif
+                                </div>
+                                <div class="ed-mini-val">{{ $appointments['next']['time'] }}</div>
+                            </div>
+                        @endif
                     </div>
                 @endif
                 @break

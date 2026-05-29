@@ -2,11 +2,13 @@
 
 namespace App\Filament\App\Widgets;
 
+use App\Models\Appointment;
 use App\Models\Employee;
 use App\Models\PayrollPeriod;
 use App\Models\PayrollSettlement;
 use App\Models\Restaurant\Order;
 use App\Models\Restaurant\Table;
+use App\Support\AppointmentsSettings;
 use App\Support\CurrentCompany;
 use App\Support\ModuleGate;
 use Filament\Widgets\Widget;
@@ -43,11 +45,13 @@ class DashboardOverviewWidget extends Widget
             'canPurchases' => $can('purchases.view'),
             'canPayroll' => $can('payroll.employees.view') || $can('payroll.periods.view'),
             'canRestaurant' => ModuleGate::active('restaurant') && $can('restaurant.use'),
+            'canAppointments' => AppointmentsSettings::moduleActive() && $can('appointments.view'),
             'sales' => null,
             'inventory' => null,
             'purchases' => null,
             'payroll' => null,
             'restaurant' => null,
+            'appointments' => null,
             'activity' => collect(),
             'salesSeries' => [],
         ];
@@ -71,6 +75,9 @@ class DashboardOverviewWidget extends Widget
         }
         if ($data['canRestaurant']) {
             $data['restaurant'] = $this->restaurantData($companyId);
+        }
+        if ($data['canAppointments']) {
+            $data['appointments'] = $this->appointmentsData($companyId);
         }
         if ($data['canSales'] || $data['canPurchases']) {
             $data['activity'] = $this->recentActivity($companyId, $data['canSales'], $data['canPurchases']);
@@ -262,6 +269,38 @@ class DashboardOverviewWidget extends Widget
             'open_orders' => $openOrders,
             'deliveries' => $deliveries,
             'today_sales' => $todaySales,
+        ];
+    }
+
+    protected function appointmentsData(int $companyId): array
+    {
+        $start = now()->startOfDay();
+        $end = now()->endOfDay();
+
+        $base = fn () => Appointment::query()
+            ->where('company_id', $companyId)
+            ->whereBetween('starts_at', [$start, $end]);
+
+        $todayCount = (clone $base())->count();
+        $pending = (clone $base())->whereIn('status', Appointment::ACTIVE_STATUSES)->count();
+        $completed = (clone $base())->where('status', Appointment::STATUS_COMPLETED)->count();
+
+        $next = (clone $base())
+            ->whereIn('status', Appointment::ACTIVE_STATUSES)
+            ->where('starts_at', '>=', now())
+            ->orderBy('starts_at')
+            ->with(['client:id,name', 'service:id,name'])
+            ->first();
+
+        return [
+            'today' => $todayCount,
+            'pending' => $pending,
+            'completed' => $completed,
+            'next' => $next ? [
+                'time' => $next->starts_at->format('H:i'),
+                'client' => $next->client?->name ?? 'Sin cliente',
+                'service' => $next->service?->name,
+            ] : null,
         ];
     }
 
