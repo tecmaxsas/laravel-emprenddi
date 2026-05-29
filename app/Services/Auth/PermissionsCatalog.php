@@ -134,6 +134,10 @@ class PermissionsCatalog
                 'commissions.manage' => 'Crear / editar reglas de comisión por vendedor',
                 'commissions.settle' => 'Liquidar y contabilizar comisiones',
             ],
+            'Citas / Agendamiento' => [
+                'appointments.view' => 'Ver la agenda y las citas',
+                'appointments.manage' => 'Crear, reprogramar, atender y cancelar citas',
+            ],
             'Administración' => [
                 'users.view' => 'Ver usuarios de la empresa',
                 'users.manage' => 'Crear / editar / desactivar usuarios',
@@ -218,6 +222,8 @@ class PermissionsCatalog
                 // emite y redime en POS pero no anula.
                 'promotions.view',
                 'gift_cards.view', 'gift_cards.issue', 'gift_cards.redeem',
+                // Citas: el front-desk agenda y atiende
+                'appointments.view', 'appointments.manage',
             ],
             // Contador externo del Portal Contador. Lectura amplia + edición
             // contable (postear, anular, ajustes). No puede crear ventas/POS
@@ -252,6 +258,7 @@ class PermissionsCatalog
                 'third_parties.view', 'third_parties.manage',
                 'inventory.view',
                 'serials.view',
+                'appointments.view', 'appointments.manage',
             ],
             default => [],
         };

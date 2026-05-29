@@ -4,6 +4,7 @@ namespace App\Filament\App\Pages;
 
 use App\Models\Company;
 use App\Support\ModuleGate;
+use App\Support\AppointmentsSettings;
 use App\Support\CommissionsSettings;
 use App\Support\GiftCardsSettings;
 use App\Support\PromotionsSettings;
@@ -134,6 +135,16 @@ class Settings extends Page implements HasForms
             );
         }
 
+        // Appointments settings (settings.appointments.*)
+        foreach (array_keys(AppointmentsSettings::FEATURES) as $key) {
+            $default = AppointmentsSettings::FEATURES[$key]['default'];
+            $this->data['appointments_'.$key] = data_get(
+                $settings,
+                "appointments.{$key}",
+                $default,
+            );
+        }
+
         $this->form->fill($this->data);
     }
 
@@ -174,6 +185,11 @@ class Settings extends Page implements HasForms
                             ->icon('heroicon-o-currency-dollar')
                             ->visible(fn () => auth()->user()?->can('company.settings'))
                             ->schema($this->commissionsTabSchema()),
+
+                        Forms\Components\Tabs\Tab::make('Citas')
+                            ->icon('heroicon-o-calendar-days')
+                            ->visible(fn () => auth()->user()?->can('company.settings'))
+                            ->schema($this->appointmentsTabSchema()),
                     ]),
             ])
             ->statePath('data');
@@ -828,6 +844,95 @@ class Settings extends Page implements HasForms
         app(\App\Support\CurrentCompany::class)->set($company->fresh());
 
         Notification::make()->title('Configuración de Comisiones guardada')->success()->send();
+    }
+
+    // ================================================================
+    // CITAS / AGENDAMIENTO
+    // ================================================================
+
+    protected function appointmentsTabSchema(): array
+    {
+        $masterToggle = Forms\Components\Toggle::make('appointments_enabled')
+            ->label(AppointmentsSettings::FEATURES['enabled']['label'])
+            ->helperText(AppointmentsSettings::FEATURES['enabled']['description'])
+            ->live()
+            ->default((bool) AppointmentsSettings::FEATURES['enabled']['default'])
+            ->inline(false);
+
+        return [
+            Forms\Components\Section::make('Módulo Citas')
+                ->description('Activa la agenda de citas. Una vez encendido, aparecerá "Citas" (agenda y calendario) en el menú lateral para agendar servicios a clientes con un profesional asignado.')
+                ->schema([$masterToggle]),
+
+            Forms\Components\Section::make('Comportamiento')
+                ->columns(2)
+                ->visible(fn (Forms\Get $get) => (bool) $get('appointments_enabled'))
+                ->schema([
+                    Forms\Components\TextInput::make('appointments_default_duration_minutes')
+                        ->label(AppointmentsSettings::FEATURES['default_duration_minutes']['label'])
+                        ->helperText(AppointmentsSettings::FEATURES['default_duration_minutes']['description'])
+                        ->numeric()
+                        ->minValue(5)
+                        ->maxValue(480)
+                        ->step(5)
+                        ->default((int) AppointmentsSettings::FEATURES['default_duration_minutes']['default'])
+                        ->suffix('min'),
+
+                    Forms\Components\Toggle::make('appointments_require_client')
+                        ->label(AppointmentsSettings::FEATURES['require_client']['label'])
+                        ->helperText(AppointmentsSettings::FEATURES['require_client']['description'])
+                        ->default((bool) AppointmentsSettings::FEATURES['require_client']['default'])
+                        ->inline(false),
+
+                    Forms\Components\Toggle::make('appointments_allow_overlap')
+                        ->label(AppointmentsSettings::FEATURES['allow_overlap']['label'])
+                        ->helperText(AppointmentsSettings::FEATURES['allow_overlap']['description'])
+                        ->default((bool) AppointmentsSettings::FEATURES['allow_overlap']['default'])
+                        ->inline(false),
+                ]),
+
+            Forms\Components\Placeholder::make('save_appointments_hint')
+                ->label('')
+                ->content(new \Illuminate\Support\HtmlString(
+                    '<div style="display:flex; justify-content:flex-end; padding-top:8px;">'
+                    .'<button type="button" wire:click="saveAppointments" '
+                    .'style="padding:10px 20px; background:#6366f1; color:white; border:0; border-radius:8px; font-weight:700; cursor:pointer; font-size:14px; display:inline-flex; align-items:center; gap:6px;">'
+                    .'<svg style="width:16px; height:16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>'
+                    .'Guardar configuración Citas'
+                    .'</button></div>'
+                )),
+        ];
+    }
+
+    public function saveAppointments(): void
+    {
+        if (! auth()->user()->can('company.settings')) {
+            $this->errorNotif('Sin permiso para editar configuración');
+            return;
+        }
+
+        $company = $this->getCompany();
+        $settings = $company->settings ?? [];
+        $a = $settings['appointments'] ?? [];
+
+        foreach (array_keys(AppointmentsSettings::FEATURES) as $key) {
+            $stateKey = 'appointments_'.$key;
+            if (! array_key_exists($stateKey, $this->data)) {
+                $a[$key] = $a[$key] ?? AppointmentsSettings::FEATURES[$key]['default'];
+                continue;
+            }
+            if ($key === 'default_duration_minutes') {
+                $a[$key] = (int) $this->data[$stateKey];
+            } else {
+                $a[$key] = (bool) $this->data[$stateKey];
+            }
+        }
+
+        $settings['appointments'] = $a;
+        $company->update(['settings' => $settings]);
+        app(\App\Support\CurrentCompany::class)->set($company->fresh());
+
+        Notification::make()->title('Configuración de Citas guardada')->success()->send();
     }
 
     protected function getCompany(): Company
