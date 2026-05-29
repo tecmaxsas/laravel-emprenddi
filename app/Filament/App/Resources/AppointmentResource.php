@@ -227,6 +227,23 @@ class AppointmentResource extends Resource
                     }),
             ])
             ->actions([
+                Tables\Actions\Action::make('attend')
+                    ->label('Atender y cobrar')
+                    ->icon('heroicon-o-banknotes')
+                    ->color('success')
+                    ->visible(fn (Appointment $record) => $record->sale_invoice_id === null
+                        && $record->isOpen()
+                        && auth()->user()?->can('appointments.manage')
+                        && auth()->user()?->can('pos.use'))
+                    ->requiresConfirmation()
+                    ->modalHeading('Atender y cobrar')
+                    ->modalDescription('Se marcará la cita como atendida y se abrirá el POS con el cliente y el servicio precargados.')
+                    ->modalSubmitActionLabel('Ir al POS')
+                    ->action(function (Appointment $record) {
+                        $record->update(['status' => Appointment::STATUS_ATTENDED]);
+
+                        return redirect(\App\Filament\App\Pages\PosTerminal::getUrl(['appointment' => $record->id]));
+                    }),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
             ])

@@ -52,6 +52,11 @@ class PosTerminal extends Page
     public ?int $seller_user_id = null;
     public ?int $session_id = null;
 
+    // Cita de origen (modulo Citas): si se llega al POS desde "Atender y
+    // cobrar", precarga cliente + servicio y al cerrar la venta marca la
+    // cita como completada enlazando la factura.
+    public ?int $appointment_id = null;
+
     // Apertura de caja
     public ?int $openingLocationId = null;
     public ?float $openingAmount = 0.0;
@@ -178,6 +183,44 @@ class PosTerminal extends Page
         }
 
         $this->customer_id = $this->ensureDefaultCustomer()->id;
+
+        // Precarga desde el modulo Citas: ?appointment=ID
+        $appointmentId = (int) request()->query('appointment');
+        if ($appointmentId > 0) {
+            $this->loadAppointment($appointmentId);
+        }
+    }
+
+    /**
+     * Precarga la venta a partir de una cita: fija el cliente y agrega el
+     * servicio al carrito. Guarda el id para enlazar la factura al cerrar.
+     */
+    protected function loadAppointment(int $appointmentId): void
+    {
+        $appt = \App\Models\Appointment::query()
+            ->where('company_id', Auth::user()->company_id)
+            ->whereNull('sale_invoice_id')
+            ->find($appointmentId);
+
+        if (! $appt) {
+            return;
+        }
+
+        $this->appointment_id = $appt->id;
+
+        if ($appt->third_party_id) {
+            $this->customer_id = $appt->third_party_id;
+        }
+
+        if ($appt->product_id) {
+            $this->addProductToCart($appt->product_id);
+        }
+
+        Notification::make()
+            ->title('Cita cargada')
+            ->body('Ajusta el carrito si hace falta y procesa el cobro. Al finalizar, la cita quedará completada.')
+            ->success()
+            ->send();
     }
 
     /**
@@ -1604,6 +1647,20 @@ class PosTerminal extends Page
                 } else {
                     $this->dispatch('pos-print-ticket', invoiceId: $invoice->id);
                 }
+            }
+
+            // Cierre del ciclo de Citas: si la venta vino de una cita,
+            // marcarla completada y enlazar la factura.
+            if ($this->appointment_id) {
+                \App\Models\Appointment::query()
+                    ->where('company_id', Auth::user()->company_id)
+                    ->where('id', $this->appointment_id)
+                    ->whereNull('sale_invoice_id')
+                    ->update([
+                        'status' => \App\Models\Appointment::STATUS_COMPLETED,
+                        'sale_invoice_id' => $invoice->id,
+                    ]);
+                $this->appointment_id = null;
             }
 
             $this->resetCart();
