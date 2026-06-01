@@ -68,6 +68,58 @@ class DemoSeeder
         });
     }
 
+    public function seedSport(): array
+    {
+        return DB::transaction(function () {
+            $company = $this->createCompany([
+                'nit' => '900333333',
+                'dv' => '3',
+                'name' => 'Sportime Store SAS',
+                'legal_name' => 'Sportime Store Sociedad por Acciones Simplificada',
+                'email' => 'demo-sport@emprenddi.com',
+                'address' => 'Carrera 13 #93-12',
+                'modules' => ['electronic_billing'],
+            ]);
+
+            $admin = $this->createAdmin($company, 'demo-sport@emprenddi.com', 'Admin Sportime');
+
+            // Pre-crear sedes ANTES del bootstrap para que el provisioner
+            // de "Sede Principal" se salte (es idempotente: si ya hay
+            // locations no crea otra). Bodega Central queda como is_main.
+            $locations = $this->seedSportLocations($company);
+
+            $this->onboarding->bootstrap($company->fresh());
+
+            $categories = $this->seedSportCategories($company);
+            $productCount = $this->seedSportProducts($company, $categories);
+            $this->ensureProductLocations($company, $locations);
+
+            $clients = $this->seedClients($company, $this->sportClients());
+            $suppliers = $this->seedSuppliers($company, $this->sportSuppliers());
+
+            $historyCount = $this->populateSportHistory($company, $admin, $locations, $clients);
+
+            Log::info('[DemoSeeder] sport seeded', [
+                'company_id' => $company->id, 'products' => $productCount,
+                'clients' => count($clients), 'suppliers' => count($suppliers),
+                'locations' => count($locations), 'history' => $historyCount,
+            ]);
+
+            return [
+                'company' => $company,
+                'admin_email' => $admin->email,
+                'admin_password' => 'Demo2026!',
+                'login_url' => url('/app/login'),
+                'categories' => count($categories),
+                'products' => $productCount,
+                'clients' => count($clients),
+                'suppliers' => count($suppliers),
+                'locations' => count($locations),
+                'history' => $historyCount,
+            ];
+        });
+    }
+
     public function seedRestaurant(): array
     {
         return DB::transaction(function () {
@@ -596,6 +648,258 @@ class DemoSeeder
             );
         }
         return $created;
+    }
+
+    // ============================================================
+    // SEDES Y BODEGA — SPORT
+    // ============================================================
+
+    private function seedSportLocations(Company $company): array
+    {
+        $defs = [
+            ['BOD', 'Bodega Central', 'warehouse', true,  'Calle 80 #75-50',         'Bogotá'],
+            ['SCN', 'Sede Centro',    'store',     false, 'Carrera 13 #93-12',       'Bogotá'],
+            ['SNT', 'Sede Norte',     'store',     false, 'Calle 140 #15-20',        'Bogotá'],
+            ['SSR', 'Sede Sur',       'store',     false, 'Av. 1° de Mayo #45-10',   'Bogotá'],
+        ];
+
+        $created = [];
+        foreach ($defs as [$code, $name, $type, $isMain, $address, $city]) {
+            $created[$code] = Location::withoutGlobalScopes()->firstOrCreate(
+                ['company_id' => $company->id, 'code' => $code],
+                [
+                    'name' => $name,
+                    'type' => $type,
+                    'is_main' => $isMain,
+                    'address' => $address,
+                    'city' => $city,
+                    'country' => 'CO',
+                    'currency' => 'COP',
+                    'timezone' => 'America/Bogota',
+                    'active' => true,
+                ],
+            );
+        }
+        return $created;
+    }
+
+    // ============================================================
+    // CATEGORIAS — SPORT
+    // ============================================================
+
+    private function seedSportCategories(Company $company): array
+    {
+        $defs = [
+            ['Guayos y Botines', 'GYO', '⚽'],
+            ['Ropa Deportiva',   'ROP', '👕'],
+            ['Accesorios',       'ACC', '🎒'],
+            ['Balones',          'BAL', '🏀'],
+        ];
+
+        $created = [];
+        foreach ($defs as $i => [$name, $code, $icon]) {
+            $created[$code] = Category::firstOrCreate(
+                ['company_id' => $company->id, 'code' => $code],
+                ['name' => $name, 'icon' => $icon, 'sort_order' => $i + 1, 'active' => true],
+            );
+        }
+        return $created;
+    }
+
+    // ============================================================
+    // PRODUCTOS — SPORT
+    // ============================================================
+
+    private function seedSportProducts(Company $company, array $cats): int
+    {
+        $iva19 = $this->findTax($company, 19);
+
+        $items = [
+            // Guayos y Botines
+            ['GYO', 'Adidas Predator Pro FG',        'GYO001', '4549343001001', 250000, 389000],
+            ['GYO', 'Nike Mercurial Vapor 15 Elite', 'GYO002', '4549343001002', 270000, 419000],
+            ['GYO', 'Puma Future Match FG',          'GYO003', '4549343001003', 210000, 329000],
+            ['GYO', 'Nike Phantom GX Academy',       'GYO004', '4549343001004', 240000, 389000],
+            ['GYO', 'Adidas Copa Pure FG',           'GYO005', '4549343001005', 230000, 359000],
+            ['GYO', 'Joma Aguila Top',               'GYO006', '4549343001006', 100000, 169000],
+            ['GYO', 'Mizuno Morelia Neo III',        'GYO007', '4549343001007', 380000, 549000],
+
+            // Ropa Deportiva
+            ['ROP', 'Camiseta Selección Colombia Local', 'ROP001', '4549343002001', 180000, 299000],
+            ['ROP', 'Camiseta Real Madrid Local 25/26',  'ROP002', '4549343002002', 180000, 299000],
+            ['ROP', 'Camiseta Barcelona Local 25/26',    'ROP003', '4549343002003', 170000, 289000],
+            ['ROP', 'Pantaloneta Adidas Tiro 23',        'ROP004', '4549343002004',  45000,  89000],
+            ['ROP', 'Sudadera Nike Dri-FIT',             'ROP005', '4549343002005',  95000, 159000],
+            ['ROP', 'Camisa Polo Deportiva',             'ROP006', '4549343002006',  40000,  79000],
+            ['ROP', 'Medias de Fútbol Profesionales',    'ROP007', '4549343002007',  16000,  35000],
+            ['ROP', 'Buzo Deportivo Adidas',             'ROP008', '4549343002008', 110000, 189000],
+
+            // Accesorios
+            ['ACC', 'Espinilleras Adidas X',         'ACC001', '4549343003001',  22000,  45000],
+            ['ACC', 'Espinilleras Nike Mercurial',   'ACC002', '4549343003002',  28000,  55000],
+            ['ACC', 'Mochila Nike Brasilia',         'ACC003', '4549343003003',  75000, 129000],
+            ['ACC', 'Maletín Adidas Tiro',           'ACC004', '4549343003004',  70000, 119000],
+            ['ACC', 'Termo Deportivo 750 ml',        'ACC005', '4549343003005',  18000,  39000],
+            ['ACC', 'Tomatodo Sport 1 L',            'ACC006', '4549343003006',  14000,  29000],
+            ['ACC', 'Guantes de Arquero',            'ACC007', '4549343003007',  45000,  89000],
+            ['ACC', 'Vendas Elásticas (par)',        'ACC008', '4549343003008',   8000,  19000],
+            ['ACC', 'Cinta Adhesiva Deportiva',      'ACC009', '4549343003009',   6000,  15000],
+            ['ACC', 'Toalla de Microfibra',          'ACC010', '4549343003010',  10000,  25000],
+
+            // Balones
+            ['BAL', 'Balón Adidas FIFA Pro N°5',     'BAL001', '4549343004001', 120000, 199000],
+            ['BAL', 'Balón Nike Strike N°5',         'BAL002', '4549343004002', 100000, 169000],
+            ['BAL', 'Balón Penalty Storm N°4',       'BAL003', '4549343004003',  55000,  99000],
+            ['BAL', 'Balón Microfútbol Voit',        'BAL004', '4549343004004',  45000,  79000],
+            ['BAL', 'Balón Wilson Basketball',       'BAL005', '4549343004005',  75000, 129000],
+        ];
+
+        $count = 0;
+        foreach ($items as [$catCode, $name, $code, $barcode, $cost, $price]) {
+            Product::firstOrCreate(
+                ['company_id' => $company->id, 'code' => $code],
+                [
+                    'name' => $name,
+                    'barcode' => $barcode,
+                    'type' => 'good',
+                    'category_id' => $cats[$catCode]->id,
+                    'default_purchase_price' => $cost,
+                    'default_sale_price' => $price,
+                    'default_sale_tax_id' => $iva19?->id,
+                    'default_purchase_tax_id' => $iva19?->id,
+                    'unit_of_measure' => 'und',
+                    'is_purchasable' => true,
+                    'is_sellable' => true,
+                    'track_inventory' => true,
+                    'active' => true,
+                ],
+            );
+            $count++;
+        }
+        return $count;
+    }
+
+    /**
+     * Activa cada producto en cada location (product_locations). Necesario
+     * para que la sede pueda venderlo y aparezca en el stock por sede.
+     */
+    private function ensureProductLocations(Company $company, array $locations): void
+    {
+        $productIds = Product::query()->where('company_id', $company->id)->pluck('id');
+        foreach ($productIds as $pid) {
+            foreach ($locations as $loc) {
+                \App\Models\ProductLocation::firstOrCreate(
+                    ['product_id' => $pid, 'location_id' => $loc->id],
+                    ['active' => true],
+                );
+            }
+        }
+    }
+
+    // ============================================================
+    // CLIENTES Y PROVEEDORES — SPORT
+    // ============================================================
+
+    private function sportClients(): array
+    {
+        return [
+            ['cc',  '1040506070', 'Camilo Rodríguez',              '3001110001', 'camilo.rodriguez@example.co', 'Bogotá'],
+            ['cc',  '1040506071', 'Mariana Sánchez',               '3001110002', 'mariana.sanchez@example.co',  'Bogotá'],
+            ['cc',  '1040506072', 'Andrés Felipe Bedoya',          '3001110003', 'andres.bedoya@example.co',    'Medellín'],
+            ['cc',  '1040506073', 'Lina María Quintero',           '3001110004', 'lina.quintero@example.co',    'Bogotá'],
+            ['cc',  '1040506074', 'Juan Camilo Mejía',             '3001110005', 'juan.mejia@example.co',       'Cali'],
+            ['nit', '901400400',  'Academia Sub-15 Bogotá SAS',    '6014002001', 'compras@subxv.co',            'Bogotá'],
+            ['nit', '901400401',  'Club Deportivo Los Pumas SAS',  '6014002002', 'admin@lospumas.co',           'Bogotá'],
+        ];
+    }
+
+    private function sportSuppliers(): array
+    {
+        return [
+            ['nit', '900400400', 'Distribuidora Deportes Andinos SAS', '6017002001', 'ventas@deportesandinos.co',    'Bogotá'],
+            ['nit', '900400401', 'Importadora Sport Global SAS',       '6017002002', 'comercial@sportglobal.co',     'Bogotá'],
+            ['nit', '900400402', 'Textiles Deportivos Colombia SAS',   '6017002003', 'pedidos@textilesdeportivos.co','Bogotá'],
+        ];
+    }
+
+    // ============================================================
+    // VENTAS HISTORICAS — SPORT (para que el dashboard luzca con datos)
+    // ============================================================
+
+    /**
+     * Inserta facturas de venta de los últimos 14 días repartidas entre las
+     * sedes (no en la bodega). Idempotente: si ya hay ventas posted, no
+     * inserta. Va directo a la tabla — sin lineas/asiento — porque solo
+     * alimenta el dashboard y el listado de Cartera. Para invoices reales
+     * el demo crea ventas en vivo desde el POS.
+     */
+    private function populateSportHistory(Company $company, User $admin, array $locations, array $clients): int
+    {
+        $existing = \App\Models\SaleInvoice::withoutGlobalScopes()
+            ->where('company_id', $company->id)
+            ->where('status', 'posted')
+            ->count();
+        if ($existing > 0) {
+            return 0;
+        }
+
+        $sedes = array_values(array_filter($locations, fn ($l) => $l->type === 'store'));
+        if (empty($sedes) || empty($clients)) {
+            return 0;
+        }
+
+        $count = 0;
+        $number = 1;
+        for ($daysAgo = 13; $daysAgo >= 0; $daysAgo--) {
+            $date = now()->subDays($daysAgo)->toDateString();
+            $perDay = $daysAgo === 0 ? mt_rand(2, 4) : mt_rand(1, 3);
+
+            for ($i = 0; $i < $perDay; $i++) {
+                $loc = $sedes[array_rand($sedes)];
+                $client = $clients[array_rand($clients)];
+
+                $subtotal = mt_rand(50, 450) * 1000;
+                $taxTotal = (int) round($subtotal * 0.19, 0);
+                $total = $subtotal + $taxTotal;
+
+                $r = mt_rand(1, 100);
+                if ($r <= 60) {
+                    $paymentStatus = 'pagado';
+                    $paid = $total;
+                } elseif ($r <= 85) {
+                    $paymentStatus = 'parcial';
+                    $paid = (int) round($total * 0.5, 0);
+                } else {
+                    $paymentStatus = 'pendiente';
+                    $paid = 0;
+                }
+
+                \App\Models\SaleInvoice::withoutGlobalScopes()->create([
+                    'company_id' => $company->id,
+                    'location_id' => $loc->id,
+                    'third_party_id' => $client->id,
+                    'prefix' => 'FV',
+                    'number' => $number++,
+                    'date' => $date,
+                    'currency' => 'COP',
+                    'exchange_rate' => 1,
+                    'subtotal' => $subtotal,
+                    'discount_total' => 0,
+                    'tax_total' => $taxTotal,
+                    'total' => $total,
+                    'paid_amount' => $paid,
+                    'payment_status' => $paymentStatus,
+                    'status' => 'posted',
+                    'created_by_user_id' => $admin->id,
+                    'posted_by_user_id' => $admin->id,
+                    'seller_user_id' => $admin->id,
+                    'posted_at' => $date,
+                    'description' => 'Venta demo Sportime — '.$loc->name,
+                ]);
+                $count++;
+            }
+        }
+        return $count;
     }
 
     // ============================================================
