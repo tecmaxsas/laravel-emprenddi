@@ -49,10 +49,42 @@
         .fs-pct { text-align:right; font-family:ui-monospace, monospace; width:78px; white-space:nowrap; font-size:11px; color: var(--fs-text-muted); opacity:.8; }
         .fs-note { margin-top:10px; font-size:11px; color: var(--fs-text-muted); padding:0 4px; }
         .dark .fs-note { color:#94a3b8; }
+        .fs-toolbar { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+        .fs-btn { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:8px; font-weight:700; font-size:13px; text-decoration:none; cursor:pointer; border:0; }
+        .fs-btn-excel { background:#16a34a; color:#fff; }
+        .fs-btn-excel:hover { background:#15803d; }
+        .fs-btn-print { background:#475569; color:#fff; }
+        .fs-btn-print:hover { background:#334155; }
+
+        @media print {
+            @page { size: A4; margin: 12mm; }
+            body * { visibility: hidden !important; }
+            .print-area, .print-area * { visibility: visible !important; }
+            .print-area {
+                position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important;
+                box-shadow: none !important; border: 1px solid #999 !important;
+                background: #fff !important; color: #000 !important; margin-top: 0 !important;
+            }
+            .print-area .fs-header { background:#0f172a !important; color:#fff !important; }
+            .print-area .fs-section td { background:#f1f5f9 !important; color:#0f172a !important; }
+            .print-area .fs-bold td, .print-area .fs-detail td { background:#fff !important; color:#000 !important; }
+            .print-area .fs-total td { background:#0f172a !important; color:#fff !important; }
+            .print-area tr { page-break-inside: avoid; }
+        }
     </style>
 
     @if ($t)
-        <div class="fs-card">
+        <div class="fs-toolbar">
+            <a href="{{ route('reports.export.income_statement', ['from' => $filters['from'] ?? null, 'to' => $filters['to'] ?? null]) }}"
+               class="fs-btn fs-btn-excel" target="_blank" rel="noopener">
+                📊 Descargar Excel
+            </a>
+            <button type="button" class="fs-btn fs-btn-print" onclick="window.print()">
+                🖨️ Imprimir / Guardar PDF
+            </button>
+        </div>
+
+        <div class="fs-card print-area">
             <div class="fs-header">
                 <div>
                     <div style="font-size:11px; opacity:.75; text-transform:uppercase; letter-spacing:.05em; font-weight:700;">Estado de Resultados Integral</div>

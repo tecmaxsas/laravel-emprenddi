@@ -55,9 +55,44 @@
         .fi-bench { font-size:11px; color: var(--fi-text-muted); margin-top:2px; opacity:.85; }
         .fi-note { margin-top:16px; font-size:11px; color: #64748b; padding:0 4px; }
         .dark .fi-note { color:#94a3b8; }
+        .fi-toolbar { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+        .fi-btn { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:8px; font-weight:700; font-size:13px; text-decoration:none; cursor:pointer; border:0; }
+        .fi-btn-excel { background:#16a34a; color:#fff; }
+        .fi-btn-excel:hover { background:#15803d; }
+        .fi-btn-print { background:#475569; color:#fff; }
+        .fi-btn-print:hover { background:#334155; }
+
+        @media print {
+            @page { size: A4; margin: 12mm; }
+            body * { visibility: hidden !important; }
+            .print-area, .print-area * { visibility: visible !important; }
+            .print-area {
+                position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important;
+            }
+            .print-area .fi-card {
+                box-shadow: none !important; border: 1px solid #999 !important;
+                background: #fff !important; color: #000 !important; margin-top: 12px !important;
+                page-break-inside: avoid;
+            }
+            .print-area .fi-value { color:#000 !important; }
+            .print-area .fi-formula, .print-area .fi-bench { color:#475569 !important; }
+            .print-area .fi-item { border-color:#e5e7eb !important; }
+            .print-area .fi-item-name { color:#0f172a !important; }
+        }
     </style>
 
     @if (! empty($indicators))
+        <div class="fi-toolbar">
+            <a href="{{ route('reports.export.financial_indicators', ['from' => $filters['from'] ?? null, 'to' => $filters['to'] ?? null]) }}"
+               class="fi-btn fi-btn-excel" target="_blank" rel="noopener">
+                📊 Descargar Excel
+            </a>
+            <button type="button" class="fi-btn fi-btn-print" onclick="window.print()">
+                🖨️ Imprimir / Guardar PDF
+            </button>
+        </div>
+
+        <div class="print-area">
         @foreach ($indicators as $group)
             <div class="fi-card">
                 <div class="fi-head" style="background:{{ $group['color'] }};">
@@ -84,6 +119,7 @@
                 </div>
             </div>
         @endforeach
+        </div>
 
         <div class="fi-note">
             * El balance se toma a la fecha "hasta"; los indicadores de flujo (ventas, utilidad, costo) usan el rango completo. Cartera = saldo cuentas 13xx; Inventarios = 14xx; Gastos financieros = 5305. Los umbrales de "saludable / atención / crítico" son referencias generales — ajústalos a tu sector y al criterio de tu contador.

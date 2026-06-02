@@ -21,6 +21,17 @@ Route::middleware(['web', 'auth'])->group(function () {
         ->name('qz.certificate');
     Route::post('/qz/sign', [\App\Http\Controllers\QzSigningController::class, 'sign'])
         ->name('qz.sign');
+
+    // Exportacion XLSX de estados financieros.
+    Route::get('/app/reports/export/income-statement',
+        [\App\Http\Controllers\App\ReportExportController::class, 'incomeStatement'])
+        ->name('reports.export.income_statement');
+    Route::get('/app/reports/export/balance-sheet',
+        [\App\Http\Controllers\App\ReportExportController::class, 'balanceSheet'])
+        ->name('reports.export.balance_sheet');
+    Route::get('/app/reports/export/financial-indicators',
+        [\App\Http\Controllers\App\ReportExportController::class, 'indicators'])
+        ->name('reports.export.financial_indicators');
 });
 
 // Tracking público de domicilios — sin auth, token random.

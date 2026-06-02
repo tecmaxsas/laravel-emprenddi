@@ -62,6 +62,33 @@
         .dark .bs-valid-err { background:#7f1d1d; color:#fecaca; }
         .bs-note { margin-top:10px; font-size:11px; color: var(--bs-text-muted); padding:0 4px; }
         .dark .bs-note { color:#94a3b8; }
+        .bs-toolbar { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+        .bs-btn { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:8px; font-weight:700; font-size:13px; text-decoration:none; cursor:pointer; border:0; }
+        .bs-btn-excel { background:#16a34a; color:#fff; }
+        .bs-btn-excel:hover { background:#15803d; }
+        .bs-btn-print { background:#475569; color:#fff; }
+        .bs-btn-print:hover { background:#334155; }
+
+        @media print {
+            @page { size: A4; margin: 12mm; }
+            body * { visibility: hidden !important; }
+            .print-area, .print-area * { visibility: visible !important; }
+            .print-area {
+                position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important;
+                box-shadow: none !important; border: 1px solid #999 !important;
+                background: #fff !important; color: #000 !important; margin-top: 0 !important;
+            }
+            .print-area .bs-header { background:#0f172a !important; color:#fff !important; }
+            .print-area .bs-sec-asset td { background:#f0fdf4 !important; color:#166534 !important; }
+            .print-area .bs-sec-liab td { background:#eff6ff !important; color:#1e40af !important; }
+            .print-area .bs-sec-equity td { background:#faf5ff !important; color:#6b21a8 !important; }
+            .print-area .bs-sub-asset td { background:#16a34a !important; color:#fff !important; }
+            .print-area .bs-sub-liab td { background:#0284c7 !important; color:#fff !important; }
+            .print-area .bs-sub-equity td { background:#9333ea !important; color:#fff !important; }
+            .print-area .bs-detail td { background:#fff !important; color:#475569 !important; }
+            .print-area .bs-grand td { background:#0f172a !important; color:#fff !important; }
+            .print-area tr { page-break-inside: avoid; }
+        }
     </style>
 
     @php
@@ -74,7 +101,17 @@
     @endphp
 
     @if ($assets)
-        <div class="bs-card">
+        <div class="bs-toolbar">
+            <a href="{{ route('reports.export.balance_sheet', ['as_of' => $filters['as_of'] ?? null]) }}"
+               class="bs-btn bs-btn-excel" target="_blank" rel="noopener">
+                📊 Descargar Excel
+            </a>
+            <button type="button" class="bs-btn bs-btn-print" onclick="window.print()">
+                🖨️ Imprimir / Guardar PDF
+            </button>
+        </div>
+
+        <div class="bs-card print-area">
             <div class="bs-header">
                 <div>
                     <div style="font-size:11px; opacity:.75; text-transform:uppercase; letter-spacing:.05em; font-weight:700;">Estado de Situación Financiera</div>
