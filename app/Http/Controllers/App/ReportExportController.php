@@ -5,9 +5,14 @@ namespace App\Http\Controllers\App;
 use App\Filament\App\Pages\Reports\FinancialIndicatorsPage;
 use App\Http\Controllers\Controller;
 use App\Models\Account;
+use App\Models\CashRegisterSession;
 use App\Models\InventoryMovement;
 use App\Models\JournalEntry;
 use App\Models\JournalEntryLine;
+use App\Models\Location;
+use App\Models\Product;
+use App\Models\PurchaseInvoice;
+use App\Models\SaleInvoice;
 use App\Services\Reports\FinancialReportExporter;
 use App\Services\Reports\FinancialStatementsEngine;
 use App\Services\Reports\TabularReportExporter;
@@ -347,6 +352,309 @@ class ReportExportController extends Controller
                 columnTypes: ['string', 'string', 'string', 'string', 'string', 'number', 'number', 'number', 'number', 'number', 'number'],
             ),
             "kardex-{$product->code}-{$from}-a-{$to}.xlsx",
+            $this->xlsxHeaders(),
+        );
+    }
+
+    // ============================================================
+    // REPORTES TABULARES — Cartera, CxP, Ventas, Stock, Cierres (batch 2)
+    // ============================================================
+
+    public function accountsReceivable(Request $request): StreamedResponse
+    {
+        abort_unless($request->user()?->can('reports.accounts_receivable'), 403);
+
+        $asOf = $this->parseDate($request->query('as_of'), now()->toDateString());
+        $thirdPartyId = (int) $request->query('third_party_id') ?: null;
+        $onlyOverdue = filter_var($request->query('only_overdue', '0'), FILTER_VALIDATE_BOOL);
+        $includePaid = filter_var($request->query('include_paid', '0'), FILTER_VALIDATE_BOOL);
+
+        $rows = SaleInvoice::query()
+            ->where('status', SaleInvoice::STATUS_POSTED)
+            ->whereDate('date', '<=', $asOf)
+            ->when(! $includePaid, fn (Builder $q) => $q->whereIn('payment_status', ['pendiente', 'parcial', 'vencido']))
+            ->when($onlyOverdue, fn (Builder $q) => $q
+                ->whereNotNull('due_date')
+                ->whereDate('due_date', '<', $asOf)
+                ->whereIn('payment_status', ['pendiente', 'parcial', 'vencido']))
+            ->when($thirdPartyId, fn (Builder $q) => $q->where('third_party_id', $thirdPartyId))
+            ->with(['customer:id,name,document_number', 'location:id,name'])
+            ->orderBy('due_date')
+            ->get()
+            ->map(function (SaleInvoice $i) use ($asOf) {
+                $daysOverdue = null;
+                if ($i->due_date) {
+                    $diff = $i->due_date->diffInDays(\Carbon\Carbon::parse($asOf), false);
+                    $daysOverdue = $diff > 0 ? (int) $diff : 0;
+                }
+                return [
+                    $i->fullNumber(),
+                    $i->customer?->name ?: '',
+                    $i->customer?->document_number ?: '',
+                    $i->date?->format('Y-m-d') ?: '',
+                    $i->due_date?->format('Y-m-d') ?: '',
+                    $daysOverdue ?? '',
+                    (float) $i->total,
+                    (float) $i->paid_amount,
+                    (float) $i->balance,
+                    SaleInvoice::PAYMENT_STATUSES[$i->payment_status] ?? $i->payment_status,
+                ];
+            });
+
+        $subtitle = "Corte al: {$asOf}".($onlyOverdue ? ' · Solo vencidas' : '').($includePaid ? ' · Incluye pagadas' : '');
+
+        return response()->streamDownload(
+            $this->tabular->stream(
+                title: 'Cartera — Cuentas por Cobrar',
+                subtitle: $subtitle,
+                companyName: $this->companyName(),
+                headers: ['Factura', 'Cliente', 'Documento', 'Fecha', 'Vence', 'Días vencido', 'Total', 'Pagado', 'Saldo', 'Estado'],
+                rows: $rows,
+                columnTypes: ['string', 'string', 'string', 'string', 'string', 'string', 'number', 'number', 'number', 'string'],
+            ),
+            "cartera-{$asOf}.xlsx",
+            $this->xlsxHeaders(),
+        );
+    }
+
+    public function accountsPayable(Request $request): StreamedResponse
+    {
+        abort_unless($request->user()?->can('reports.accounts_receivable'), 403);
+
+        $asOf = $this->parseDate($request->query('as_of'), now()->toDateString());
+        $thirdPartyId = (int) $request->query('third_party_id') ?: null;
+        $onlyOverdue = filter_var($request->query('only_overdue', '0'), FILTER_VALIDATE_BOOL);
+        $includePaid = filter_var($request->query('include_paid', '0'), FILTER_VALIDATE_BOOL);
+
+        $rows = PurchaseInvoice::query()
+            ->where('status', PurchaseInvoice::STATUS_POSTED)
+            ->whereDate('date', '<=', $asOf)
+            ->when(! $includePaid, fn (Builder $q) => $q->whereIn('payment_status', ['pendiente', 'parcial', 'vencido']))
+            ->when($onlyOverdue, fn (Builder $q) => $q
+                ->whereNotNull('due_date')
+                ->whereDate('due_date', '<', $asOf)
+                ->whereIn('payment_status', ['pendiente', 'parcial', 'vencido']))
+            ->when($thirdPartyId, fn (Builder $q) => $q->where('third_party_id', $thirdPartyId))
+            ->with(['supplier:id,name,document_number', 'location:id,name'])
+            ->orderBy('due_date')
+            ->get()
+            ->map(function (PurchaseInvoice $i) use ($asOf) {
+                $daysOverdue = null;
+                if ($i->due_date) {
+                    $diff = $i->due_date->diffInDays(\Carbon\Carbon::parse($asOf), false);
+                    $daysOverdue = $diff > 0 ? (int) $diff : 0;
+                }
+                return [
+                    $i->fullNumber(),
+                    $i->supplier_invoice_number ?: '',
+                    $i->supplier?->name ?: '',
+                    $i->supplier?->document_number ?: '',
+                    $i->date?->format('Y-m-d') ?: '',
+                    $i->due_date?->format('Y-m-d') ?: '',
+                    $daysOverdue ?? '',
+                    (float) $i->total,
+                    (float) $i->paid_amount,
+                    (float) $i->balance,
+                    PurchaseInvoice::PAYMENT_STATUSES[$i->payment_status] ?? $i->payment_status,
+                ];
+            });
+
+        $subtitle = "Corte al: {$asOf}".($onlyOverdue ? ' · Solo vencidas' : '').($includePaid ? ' · Incluye pagadas' : '');
+
+        return response()->streamDownload(
+            $this->tabular->stream(
+                title: 'Cuentas por Pagar',
+                subtitle: $subtitle,
+                companyName: $this->companyName(),
+                headers: ['Factura', 'N° prov.', 'Proveedor', 'Documento', 'Fecha', 'Vence', 'Días vencido', 'Total', 'Pagado', 'Saldo', 'Estado'],
+                rows: $rows,
+                columnTypes: ['string', 'string', 'string', 'string', 'string', 'string', 'string', 'number', 'number', 'number', 'string'],
+            ),
+            "cuentas-por-pagar-{$asOf}.xlsx",
+            $this->xlsxHeaders(),
+        );
+    }
+
+    public function salesByPeriod(Request $request): StreamedResponse
+    {
+        abort_unless($request->user()?->can('reports.sales'), 403);
+
+        $from = $this->parseDate($request->query('from'), now()->startOfMonth()->toDateString());
+        $to = $this->parseDate($request->query('to'), now()->endOfMonth()->toDateString());
+        $locationId = (int) $request->query('location_id') ?: null;
+        $sellerUserId = (int) $request->query('seller_user_id') ?: null;
+
+        $rows = SaleInvoice::query()
+            ->where('status', SaleInvoice::STATUS_POSTED)
+            ->whereDate('date', '>=', $from)
+            ->whereDate('date', '<=', $to)
+            ->when($locationId, fn (Builder $q) => $q->where('location_id', $locationId))
+            ->when($sellerUserId, fn (Builder $q) => $q->where('seller_user_id', $sellerUserId))
+            ->with(['customer:id,name,document_number', 'location:id,name', 'seller:id,name'])
+            ->orderBy('date', 'desc')
+            ->get()
+            ->map(fn (SaleInvoice $i) => [
+                $i->fullNumber(),
+                $i->date?->format('Y-m-d') ?: '',
+                $i->customer?->name ?: '',
+                $i->customer?->document_number ?: '',
+                $i->location?->name ?: '',
+                $i->seller?->name ?: '',
+                (float) $i->subtotal,
+                (float) $i->tax_total,
+                (float) $i->total,
+                (float) $i->paid_amount,
+                SaleInvoice::PAYMENT_STATUSES[$i->payment_status] ?? $i->payment_status,
+            ]);
+
+        $subtitle = "Período: {$from} a {$to}";
+
+        return response()->streamDownload(
+            $this->tabular->stream(
+                title: 'Ventas por Período',
+                subtitle: $subtitle,
+                companyName: $this->companyName(),
+                headers: ['Número', 'Fecha', 'Cliente', 'Documento', 'Sede', 'Vendedor', 'Subtotal', 'IVA', 'Total', 'Pagado', 'Pago'],
+                rows: $rows,
+                columnTypes: ['string', 'string', 'string', 'string', 'string', 'string', 'number', 'number', 'number', 'number', 'string'],
+            ),
+            "ventas-{$from}-a-{$to}.xlsx",
+            $this->xlsxHeaders(),
+        );
+    }
+
+    public function stockByLocation(Request $request): StreamedResponse
+    {
+        abort_unless($request->user()?->can('reports.kardex'), 403);
+
+        $categoryId = (int) $request->query('category_id') ?: null;
+        $onlyWithStock = filter_var($request->query('only_with_stock', '0'), FILTER_VALIDATE_BOOL);
+
+        $companyId = Auth::user()->company_id;
+
+        $locations = Location::query()
+            ->where('active', true)
+            ->orderBy('name')
+            ->get();
+
+        // Matriz de saldos [product_id => [location_id => balance]]
+        $matrixRows = DB::table('inventory_movements')
+            ->select('product_id', 'location_id', 'balance_quantity_after')
+            ->where('company_id', $companyId)
+            ->orderBy('product_id')
+            ->orderBy('location_id')
+            ->orderByDesc('date')
+            ->orderByDesc('id')
+            ->distinct('product_id', 'location_id')
+            ->get();
+
+        $matrix = [];
+        foreach ($matrixRows as $r) {
+            $matrix[(int) $r->product_id][(int) $r->location_id] = (float) $r->balance_quantity_after;
+        }
+
+        $products = Product::query()
+            ->where('track_inventory', true)
+            ->where('active', true)
+            ->when($categoryId, fn (Builder $q) => $q->where('category_id', $categoryId))
+            ->with(['category:id,name'])
+            ->orderBy('name')
+            ->get();
+
+        $rows = $products
+            ->filter(function (Product $p) use ($matrix, $onlyWithStock) {
+                if (! $onlyWithStock) return true;
+                return ! empty(array_filter($matrix[$p->id] ?? [], fn ($v) => $v > 0));
+            })
+            ->map(function (Product $p) use ($matrix, $locations) {
+                $row = [
+                    $p->code,
+                    $p->name,
+                    $p->category?->name ?: '',
+                ];
+                $total = 0.0;
+                foreach ($locations as $loc) {
+                    $bal = (float) ($matrix[$p->id][$loc->id] ?? 0);
+                    $row[] = $bal;
+                    $total += $bal;
+                }
+                $row[] = $total;
+                return $row;
+            });
+
+        $headers = ['Código', 'Producto', 'Categoría'];
+        $types = ['string', 'string', 'string'];
+        foreach ($locations as $loc) {
+            $headers[] = $loc->name;
+            $types[] = 'number';
+        }
+        $headers[] = 'Total';
+        $types[] = 'number';
+
+        $subtitle = 'Sedes: '.$locations->pluck('name')->implode(', ').($onlyWithStock ? ' · Solo con stock > 0' : '');
+
+        return response()->streamDownload(
+            $this->tabular->stream(
+                title: 'Stock por Sede',
+                subtitle: $subtitle,
+                companyName: $this->companyName(),
+                headers: $headers,
+                rows: $rows,
+                columnTypes: $types,
+            ),
+            'stock-por-sede-'.now()->format('Y-m-d').'.xlsx',
+            $this->xlsxHeaders(),
+        );
+    }
+
+    public function cashClosings(Request $request): StreamedResponse
+    {
+        abort_unless($request->user()?->can('reports.cash_closings'), 403);
+
+        $from = $this->parseDate($request->query('from'), now()->startOfMonth()->toDateString());
+        $to = $this->parseDate($request->query('to'), now()->endOfMonth()->toDateString());
+        $locationId = (int) $request->query('location_id') ?: null;
+        $cashierUserId = (int) $request->query('cashier_user_id') ?: null;
+        $onlyWithDifference = filter_var($request->query('only_with_difference', '0'), FILTER_VALIDATE_BOOL);
+
+        $rows = CashRegisterSession::query()
+            ->where('status', CashRegisterSession::STATUS_CLOSED)
+            ->whereDate('closed_at', '>=', $from)
+            ->whereDate('closed_at', '<=', $to)
+            ->when($locationId, fn (Builder $q) => $q->where('location_id', $locationId))
+            ->when($cashierUserId, fn (Builder $q) => $q->where('cashier_user_id', $cashierUserId))
+            ->when($onlyWithDifference, fn (Builder $q) => $q
+                ->whereRaw('ABS(COALESCE(closing_difference, 0)) >= 0.01'))
+            ->with(['cashier:id,name', 'location:id,name', 'closedBy:id,name'])
+            ->orderBy('closed_at', 'desc')
+            ->get()
+            ->map(fn (CashRegisterSession $s) => [
+                $s->id,
+                $s->location?->name ?: '',
+                $s->cashier?->name ?: '',
+                $s->opened_at?->format('Y-m-d H:i') ?: '',
+                $s->closed_at?->format('Y-m-d H:i') ?: '',
+                (float) $s->opening_amount,
+                (float) $s->total_sales,
+                (int) $s->invoice_count,
+                (float) $s->closing_expected,
+                (float) $s->closing_counted,
+                (float) $s->closing_difference,
+                (string) ($s->closing_notes ?? ''),
+            ]);
+
+        $subtitle = "Período cierres: {$from} a {$to}".($onlyWithDifference ? ' · Solo con diferencia' : '');
+
+        return response()->streamDownload(
+            $this->tabular->stream(
+                title: 'Cierres de Caja',
+                subtitle: $subtitle,
+                companyName: $this->companyName(),
+                headers: ['#', 'Sede', 'Cajero', 'Abrió', 'Cerró', 'Apertura', 'Ventas', '# Fact.', 'Esperado', 'Contado', 'Diferencia', 'Notas'],
+                rows: $rows,
+                columnTypes: ['string', 'string', 'string', 'string', 'string', 'number', 'number', 'number', 'number', 'number', 'number', 'string'],
+            ),
+            "cierres-caja-{$from}-a-{$to}.xlsx",
             $this->xlsxHeaders(),
         );
     }

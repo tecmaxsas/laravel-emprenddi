@@ -52,6 +52,17 @@ class CashClosingsPage extends Page implements HasForms, HasTable
         $this->form->fill($this->filters);
     }
 
+    public function getExportUrl(): ?string
+    {
+        return route('reports.export.cash_closings', array_filter([
+            'from' => $this->filters['from'] ?? null,
+            'to' => $this->filters['to'] ?? null,
+            'location_id' => $this->filters['location_id'] ?? null,
+            'cashier_user_id' => $this->filters['cashier_user_id'] ?? null,
+            'only_with_difference' => ($this->filters['only_with_difference'] ?? false) ? '1' : null,
+        ]));
+    }
+
     public function form(Form $form): Form
     {
         return $form->schema([

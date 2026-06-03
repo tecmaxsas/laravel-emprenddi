@@ -50,6 +50,16 @@ class AccountsPayablePage extends Page implements HasForms, HasTable
         $this->form->fill($this->filters);
     }
 
+    public function getExportUrl(): ?string
+    {
+        return route('reports.export.accounts_payable', array_filter([
+            'as_of' => $this->filters['as_of'] ?? null,
+            'third_party_id' => $this->filters['third_party_id'] ?? null,
+            'only_overdue' => ($this->filters['only_overdue'] ?? false) ? '1' : null,
+            'include_paid' => ($this->filters['include_paid'] ?? false) ? '1' : null,
+        ]));
+    }
+
     public function form(Form $form): Form
     {
         return $form->schema([

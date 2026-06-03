@@ -51,6 +51,16 @@ class SalesByPeriodPage extends Page implements HasForms, HasTable
         $this->form->fill($this->filters);
     }
 
+    public function getExportUrl(): ?string
+    {
+        return route('reports.export.sales_by_period', array_filter([
+            'from' => $this->filters['from'] ?? null,
+            'to' => $this->filters['to'] ?? null,
+            'location_id' => $this->filters['location_id'] ?? null,
+            'seller_user_id' => $this->filters['seller_user_id'] ?? null,
+        ]));
+    }
+
     public function form(Form $form): Form
     {
         return $form->schema([

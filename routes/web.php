@@ -46,6 +46,21 @@ Route::middleware(['web', 'auth'])->group(function () {
     Route::get('/app/reports/export/kardex',
         [\App\Http\Controllers\App\ReportExportController::class, 'kardex'])
         ->name('reports.export.kardex');
+    Route::get('/app/reports/export/accounts-receivable',
+        [\App\Http\Controllers\App\ReportExportController::class, 'accountsReceivable'])
+        ->name('reports.export.accounts_receivable');
+    Route::get('/app/reports/export/accounts-payable',
+        [\App\Http\Controllers\App\ReportExportController::class, 'accountsPayable'])
+        ->name('reports.export.accounts_payable');
+    Route::get('/app/reports/export/sales-by-period',
+        [\App\Http\Controllers\App\ReportExportController::class, 'salesByPeriod'])
+        ->name('reports.export.sales_by_period');
+    Route::get('/app/reports/export/stock-by-location',
+        [\App\Http\Controllers\App\ReportExportController::class, 'stockByLocation'])
+        ->name('reports.export.stock_by_location');
+    Route::get('/app/reports/export/cash-closings',
+        [\App\Http\Controllers\App\ReportExportController::class, 'cashClosings'])
+        ->name('reports.export.cash_closings');
 });
 
 // Tracking público de domicilios — sin auth, token random.

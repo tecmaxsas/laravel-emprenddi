@@ -66,6 +66,14 @@ class StockByLocationPage extends Page implements HasForms, HasTable
         $this->form->fill($this->filters);
     }
 
+    public function getExportUrl(): ?string
+    {
+        return route('reports.export.stock_by_location', array_filter([
+            'category_id' => $this->filters['category_id'] ?? null,
+            'only_with_stock' => ($this->filters['only_with_stock'] ?? false) ? '1' : null,
+        ]));
+    }
+
     public function form(Form $form): Form
     {
         return $form->schema([
