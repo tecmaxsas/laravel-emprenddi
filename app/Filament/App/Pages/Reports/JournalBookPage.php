@@ -48,6 +48,15 @@ class JournalBookPage extends Page implements HasForms, HasTable
         $this->form->fill($this->filters);
     }
 
+    public function getExportUrl(): ?string
+    {
+        return route('reports.export.journal_book', array_filter([
+            'from' => $this->filters['from'] ?? null,
+            'to' => $this->filters['to'] ?? null,
+            'type' => $this->filters['type'] ?? null,
+        ]));
+    }
+
     public function form(Form $form): Form
     {
         return $form

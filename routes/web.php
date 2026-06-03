@@ -32,6 +32,20 @@ Route::middleware(['web', 'auth'])->group(function () {
     Route::get('/app/reports/export/financial-indicators',
         [\App\Http\Controllers\App\ReportExportController::class, 'indicators'])
         ->name('reports.export.financial_indicators');
+
+    // Exportacion XLSX de reportes tabulares operativos.
+    Route::get('/app/reports/export/journal-book',
+        [\App\Http\Controllers\App\ReportExportController::class, 'journalBook'])
+        ->name('reports.export.journal_book');
+    Route::get('/app/reports/export/general-ledger',
+        [\App\Http\Controllers\App\ReportExportController::class, 'generalLedger'])
+        ->name('reports.export.general_ledger');
+    Route::get('/app/reports/export/trial-balance',
+        [\App\Http\Controllers\App\ReportExportController::class, 'trialBalance'])
+        ->name('reports.export.trial_balance');
+    Route::get('/app/reports/export/kardex',
+        [\App\Http\Controllers\App\ReportExportController::class, 'kardex'])
+        ->name('reports.export.kardex');
 });
 
 // Tracking público de domicilios — sin auth, token random.

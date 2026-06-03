@@ -52,6 +52,20 @@ class KardexPage extends Page implements HasForms, HasTable
         $this->form->fill($this->filters);
     }
 
+    public function getExportUrl(): ?string
+    {
+        if (empty($this->filters['product_id']) || empty($this->filters['location_id'])) {
+            return null;
+        }
+        return route('reports.export.kardex', array_filter([
+            'product_id' => $this->filters['product_id'],
+            'location_id' => $this->filters['location_id'],
+            'from' => $this->filters['from'] ?? null,
+            'to' => $this->filters['to'] ?? null,
+            'types' => ! empty($this->filters['types']) ? implode(',', $this->filters['types']) : null,
+        ]));
+    }
+
     public function form(Form $form): Form
     {
         return $form

@@ -52,6 +52,20 @@ class GeneralLedgerPage extends Page implements HasForms, HasTable
         $this->form->fill($this->filters);
     }
 
+    public function getExportUrl(): ?string
+    {
+        if (empty($this->filters['account_id'])) {
+            return null;
+        }
+        return route('reports.export.general_ledger', array_filter([
+            'account_id' => $this->filters['account_id'],
+            'from' => $this->filters['from'] ?? null,
+            'to' => $this->filters['to'] ?? null,
+            'cost_center_id' => $this->filters['cost_center_id'] ?? null,
+            'third_party_id' => $this->filters['third_party_id'] ?? null,
+        ]));
+    }
+
     public function form(Form $form): Form
     {
         return $form

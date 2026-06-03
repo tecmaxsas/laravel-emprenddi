@@ -50,6 +50,16 @@ class TrialBalancePage extends Page implements HasForms, HasTable
         $this->form->fill($this->filters);
     }
 
+    public function getExportUrl(): ?string
+    {
+        return route('reports.export.trial_balance', [
+            'from' => $this->filters['from'] ?? null,
+            'to' => $this->filters['to'] ?? null,
+            'level' => $this->filters['level'] ?? 4,
+            'only_with_movements' => ($this->filters['only_with_movements'] ?? true) ? '1' : '0',
+        ]);
+    }
+
     public function form(Form $form): Form
     {
         return $form
