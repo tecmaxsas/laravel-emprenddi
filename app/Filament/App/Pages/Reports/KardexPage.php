@@ -179,7 +179,7 @@ class KardexPage extends Page implements HasForms, HasTable
                     ->summarize(
                         Tables\Columns\Summarizers\Summarizer::make()
                             ->label('Total entradas')
-                            ->using(fn (Builder $query) => $query
+                            ->using(fn ($query) => $query
                                 ->whereIn('type', InventoryMovement::ENTRY_TYPES)
                                 ->sum(\Illuminate\Support\Facades\DB::raw('ABS(quantity)')))
                             ->numeric(decimalPlaces: 2)
@@ -194,7 +194,7 @@ class KardexPage extends Page implements HasForms, HasTable
                     ->summarize(
                         Tables\Columns\Summarizers\Summarizer::make()
                             ->label('Total salidas')
-                            ->using(fn (Builder $query) => $query
+                            ->using(fn ($query) => $query
                                 ->whereIn('type', InventoryMovement::EXIT_TYPES)
                                 ->sum(\Illuminate\Support\Facades\DB::raw('ABS(quantity)')))
                             ->numeric(decimalPlaces: 2)
