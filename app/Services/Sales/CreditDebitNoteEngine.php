@@ -95,8 +95,10 @@ class CreditDebitNoteEngine
             $journalEntry = $this->createJournalEntry($note);
 
             // 4. Reversa COGS si hubo devolución de inventario (NC con affects_inventory).
+            // El método agrupa por par (cuenta_costo, cuenta_inventario) que
+            // resuelve cada producto vía cascada categoría → PUC default.
             if ($totalCogsReversal > 0) {
-                $this->createCogsReversalEntry($note, $totalCogsReversal);
+                $this->createCogsReversalEntry($note);
             }
 
             $note->update([
@@ -228,7 +230,9 @@ class CreditDebitNoteEngine
             // NC: revierte ingresos (DR), revierte IVA (DR), revierte CxC (CR)
             // DR ingresos por línea
             foreach ($note->lines as $invLine) {
-                $accountId = $invLine->account_id ?? $defaultIncomeAccountId;
+                $accountId = $invLine->account_id
+                    ?? $invLine->product?->effectiveSaleAccountId()
+                    ?? $defaultIncomeAccountId;
                 $netAmount = (float) $invLine->subtotal - (float) $invLine->discount_amount;
                 if ($netAmount <= 0) continue;
 
@@ -281,7 +285,9 @@ class CreditDebitNoteEngine
 
             // CR ingresos por línea
             foreach ($note->lines as $invLine) {
-                $accountId = $invLine->account_id ?? $defaultIncomeAccountId;
+                $accountId = $invLine->account_id
+                    ?? $invLine->product?->effectiveSaleAccountId()
+                    ?? $defaultIncomeAccountId;
                 $netAmount = (float) $invLine->subtotal - (float) $invLine->discount_amount;
                 if ($netAmount <= 0) continue;
 
@@ -314,23 +320,52 @@ class CreditDebitNoteEngine
     }
 
     /**
-     * Reversa de COGS por devolución física (solo NC con affects_inventory):
-     *   DR 1435 Inventario
-     *      CR 6135 COGS
+     * Reversa de COGS por devolución física (solo NC con affects_inventory).
+     * Por cada par único (cuenta_costo, cuenta_inventario) resuelto vía
+     * cascada producto → categoría → PUC default (6135 / 1435), emite UNA
+     * línea DR (inventario, reingresa) y UNA línea CR (costo, reversa).
+     *
+     * Es simétrico al asiento original de COGS de la venta, asegurando
+     * que cualquier categoría con cuentas distintas quede balanceada en
+     * la reversa.
      */
-    protected function createCogsReversalEntry(CreditDebitNote $note, float $totalCogs): ?JournalEntry
+    protected function createCogsReversalEntry(CreditDebitNote $note): ?JournalEntry
     {
-        $cogsAccountId = Account::withoutGlobalScopes()
+        $defaultCogsAccountId = Account::withoutGlobalScopes()
             ->where('company_id', $note->company_id)
             ->where('code', '6135')
             ->value('id');
 
-        $inventoryAccountId = Account::withoutGlobalScopes()
+        $defaultInventoryAccountId = Account::withoutGlobalScopes()
             ->where('company_id', $note->company_id)
             ->where('code', '1435')
             ->value('id');
 
-        if (! $cogsAccountId || ! $inventoryAccountId) {
+        // Acumular costo a reversar por par (cogs_account_id, inventory_account_id)
+        $pairs = [];
+        $totalCogs = 0.0;
+
+        foreach ($note->lines as $line) {
+            if (! $line->product_id || ! $line->product?->track_inventory) {
+                continue;
+            }
+            $cost = abs((float) $line->quantity) * (float) ($line->cost_at_return ?? 0);
+            if ($cost <= 0) continue;
+
+            $cogsId = $line->product?->effectiveCostAccountId() ?? $defaultCogsAccountId;
+            $invId = $line->product?->effectiveInventoryAccountId() ?? $defaultInventoryAccountId;
+
+            if (! $cogsId || ! $invId) continue;
+
+            $key = "{$cogsId}:{$invId}";
+            if (! isset($pairs[$key])) {
+                $pairs[$key] = ['cogs' => (int) $cogsId, 'inv' => (int) $invId, 'amount' => 0.0];
+            }
+            $pairs[$key]['amount'] += $cost;
+            $totalCogs += $cost;
+        }
+
+        if ($totalCogs <= 0 || empty($pairs)) {
             return null;
         }
 
@@ -350,27 +385,33 @@ class CreditDebitNoteEngine
             'posted_at' => now(),
             'posted_by_user_id' => Auth::id(),
             'created_by_user_id' => Auth::id(),
-            'total_debit' => $totalCogs,
-            'total_credit' => $totalCogs,
+            'total_debit' => round($totalCogs, 2),
+            'total_credit' => round($totalCogs, 2),
         ]);
 
-        JournalEntryLine::create([
-            'journal_entry_id' => $entry->id,
-            'line_number' => 1,
-            'account_id' => $inventoryAccountId,
-            'description' => "Reingreso inventario {$note->fullNumber()}",
-            'debit' => $totalCogs,
-            'credit' => 0,
-        ]);
-
-        JournalEntryLine::create([
-            'journal_entry_id' => $entry->id,
-            'line_number' => 2,
-            'account_id' => $cogsAccountId,
-            'description' => "Reversa COGS {$note->fullNumber()}",
-            'debit' => 0,
-            'credit' => $totalCogs,
-        ]);
+        $lineNum = 1;
+        // DR cuenta de inventario por cada par (reingresa stock contable)
+        foreach ($pairs as $p) {
+            JournalEntryLine::create([
+                'journal_entry_id' => $entry->id,
+                'line_number' => $lineNum++,
+                'account_id' => $p['inv'],
+                'description' => "Reingreso inventario {$note->fullNumber()}",
+                'debit' => round($p['amount'], 2),
+                'credit' => 0,
+            ]);
+        }
+        // CR cuenta de costo por cada par (reversa COGS)
+        foreach ($pairs as $p) {
+            JournalEntryLine::create([
+                'journal_entry_id' => $entry->id,
+                'line_number' => $lineNum++,
+                'account_id' => $p['cogs'],
+                'description' => "Reversa COGS {$note->fullNumber()}",
+                'debit' => 0,
+                'credit' => round($p['amount'], 2),
+            ]);
+        }
 
         return $entry;
     }

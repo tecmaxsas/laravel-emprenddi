@@ -108,9 +108,11 @@ class SaleInvoiceEngine
             // 3. Asiento contable de la venta (ingresos + IVA + CxC)
             $journalEntry = $this->createSaleJournalEntry($invoice);
 
-            // 4. Asiento contable del costo de ventas (DR 6135 | CR 1435) si hubo inventario
+            // 4. Asiento del costo de ventas si hubo movimiento de inventario.
+            // El método agrupa por par (cuenta_costo, cuenta_inventario) que
+            // resuelve cada producto vía cascada categoría → PUC default.
             if ($totalCogs > 0) {
-                $this->createCogsJournalEntry($invoice, $totalCogs);
+                $this->createCogsJournalEntry($invoice);
             }
 
             // 5. Marcar posted. dian_status='pending' indica "lista para envío"
@@ -416,9 +418,13 @@ class SaleInvoiceEngine
             ]);
         }
 
-        // CR ingresos por cada línea (subtotal - descuento, sin IVA)
+        // CR ingresos por cada línea (subtotal - descuento, sin IVA).
+        // Cuenta de venta: override de línea → cuenta del producto → cuenta
+        // de la categoría → 4135 (PUC default).
         foreach ($invoice->lines as $invLine) {
-            $accountId = $invLine->account_id ?? $defaultIncomeAccountId;
+            $accountId = $invLine->account_id
+                ?? $invLine->product?->effectiveSaleAccountId()
+                ?? $defaultIncomeAccountId;
             $netAmount = (float) $invLine->subtotal - (float) $invLine->discount_amount;
 
             if ($netAmount <= 0) {
@@ -456,29 +462,56 @@ class SaleInvoiceEngine
     }
 
     /**
-     * Asiento del costo de ventas:
-     *   DR 6135 (Costo de ventas) — al WAvg de salida
-     *   CR 1435 (Inventario) — mismo monto
-     * Se crea como asiento separado para que sea fácil aislar costos en
-     * reportes y para mantener los movimientos de inventario referenciados
-     * a un asiento contable distinto del de la venta.
+     * Asiento del costo de ventas. Por cada par único de cuentas
+     * (costo, inventario) resuelto en cascada producto → categoría →
+     * PUC default (6135 / 1435), emite UNA línea DR (costo) y UNA línea
+     * CR (inventario) con el total acumulado de ese par.
+     *
+     * Si todos los productos comparten las mismas cuentas (caso típico),
+     * el asiento sigue siendo 1 DR + 1 CR como antes. Si los productos
+     * pertenecen a categorías con cuentas distintas (ej. mercancía 6135
+     * vs servicios 6155), el asiento tiene N DR + N CR balanceados.
      */
-    protected function createCogsJournalEntry(SaleInvoice $invoice, float $totalCogs): JournalEntry
+    protected function createCogsJournalEntry(SaleInvoice $invoice): JournalEntry
     {
-        $cogsAccountId = Account::withoutGlobalScopes()
+        $defaultCogsAccountId = Account::withoutGlobalScopes()
             ->where('company_id', $invoice->company_id)
             ->where('code', '6135')
             ->value('id');
 
-        $inventoryAccountId = Account::withoutGlobalScopes()
+        $defaultInventoryAccountId = Account::withoutGlobalScopes()
             ->where('company_id', $invoice->company_id)
             ->where('code', '1435')
             ->value('id');
 
-        if (! $cogsAccountId || ! $inventoryAccountId) {
-            // Sin cuentas configuradas, omitimos el asiento de COGS pero ya
-            // grabamos los movimientos de inventario (los saldos van bien).
-            // Reportes contables quedarán inconsistentes hasta que se configuren.
+        // Acumular costo por par (cogs_account_id, inventory_account_id)
+        $pairs = []; // "cogsId:invId" => ['cogs' => int, 'inv' => int, 'amount' => float]
+        $totalCogs = 0.0;
+
+        foreach ($invoice->lines as $line) {
+            if (! $line->product_id || ! $line->product?->track_inventory) {
+                continue;
+            }
+            $cost = abs((float) $line->quantity) * (float) ($line->cost_at_sale ?? 0);
+            if ($cost <= 0) continue;
+
+            $cogsId = $line->product?->effectiveCostAccountId() ?? $defaultCogsAccountId;
+            $invId = $line->product?->effectiveInventoryAccountId() ?? $defaultInventoryAccountId;
+
+            // Si una cuenta no resuelve por ningún lado, omitimos esa línea
+            // del asiento (saldos de inventario quedan correctos por los
+            // inventory_movements; reportes contables omitirán esa parte).
+            if (! $cogsId || ! $invId) continue;
+
+            $key = "{$cogsId}:{$invId}";
+            if (! isset($pairs[$key])) {
+                $pairs[$key] = ['cogs' => (int) $cogsId, 'inv' => (int) $invId, 'amount' => 0.0];
+            }
+            $pairs[$key]['amount'] += $cost;
+            $totalCogs += $cost;
+        }
+
+        if ($totalCogs <= 0 || empty($pairs)) {
             return $this->dummyEntry();
         }
 
@@ -498,27 +531,33 @@ class SaleInvoiceEngine
             'posted_at' => now(),
             'posted_by_user_id' => Auth::id(),
             'created_by_user_id' => Auth::id(),
-            'total_debit' => $totalCogs,
-            'total_credit' => $totalCogs,
+            'total_debit' => round($totalCogs, 2),
+            'total_credit' => round($totalCogs, 2),
         ]);
 
-        JournalEntryLine::create([
-            'journal_entry_id' => $entry->id,
-            'line_number' => 1,
-            'account_id' => $cogsAccountId,
-            'description' => "Costo {$invoice->fullNumber()}",
-            'debit' => $totalCogs,
-            'credit' => 0,
-        ]);
-
-        JournalEntryLine::create([
-            'journal_entry_id' => $entry->id,
-            'line_number' => 2,
-            'account_id' => $inventoryAccountId,
-            'description' => "Salida inventario {$invoice->fullNumber()}",
-            'debit' => 0,
-            'credit' => $totalCogs,
-        ]);
+        $lineNum = 1;
+        // DR cuenta de costo por cada par único
+        foreach ($pairs as $p) {
+            JournalEntryLine::create([
+                'journal_entry_id' => $entry->id,
+                'line_number' => $lineNum++,
+                'account_id' => $p['cogs'],
+                'description' => "Costo {$invoice->fullNumber()}",
+                'debit' => round($p['amount'], 2),
+                'credit' => 0,
+            ]);
+        }
+        // CR cuenta de inventario por cada par único (mismos montos)
+        foreach ($pairs as $p) {
+            JournalEntryLine::create([
+                'journal_entry_id' => $entry->id,
+                'line_number' => $lineNum++,
+                'account_id' => $p['inv'],
+                'description' => "Salida inventario {$invoice->fullNumber()}",
+                'debit' => 0,
+                'credit' => round($p['amount'], 2),
+            ]);
+        }
 
         return $entry;
     }
