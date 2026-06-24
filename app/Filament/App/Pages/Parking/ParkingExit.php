@@ -135,6 +135,15 @@ class ParkingExit extends Page implements HasForms
                             ->all())
                         ->getOptionLabelUsing(fn ($v) => \App\Models\ThirdParty::find($v)?->name)
                         ->columnSpan(3),
+
+                    Forms\Components\FileUpload::make('exit_photo_path')
+                        ->label('Foto de salida (opcional)')
+                        ->image()->imageEditor()
+                        ->disk('public')
+                        ->directory('parking/'.now()->format('Y/m'))
+                        ->maxSize(5120)
+                        ->helperText('Evidencia de estado al salir. Comparable con la foto de entrada para reclamos.')
+                        ->columnSpan(3),
                 ]),
         ])->statePath('data');
     }
@@ -194,6 +203,7 @@ class ParkingExit extends Page implements HasForms
     {
         if (! $this->activeSession) return;
         try {
+            $this->persistExitPhoto();
             $closed = app(ParkingSessionEngine::class)->checkOut($this->activeSession);
             $invoice = $this->maybeIssueInvoice($closed);
 
@@ -222,6 +232,7 @@ class ParkingExit extends Page implements HasForms
     {
         if (! $this->activeSession) return;
         try {
+            $this->persistExitPhoto();
             $closed = app(ParkingSessionEngine::class)->lostTicket($this->activeSession);
             $invoice = $this->maybeIssueInvoice($closed);
 
@@ -243,6 +254,20 @@ class ParkingExit extends Page implements HasForms
                 ->send();
         } catch (\Throwable $e) {
             $this->errorNotif('No se pudo procesar ticket perdido', $e->getMessage());
+        }
+    }
+
+    /**
+     * Persiste la foto de salida en la sesion activa antes del cierre.
+     * Se llama desde processExit y processLostTicket para que quede
+     * grabada aunque el cierre falle por otra razon.
+     */
+    protected function persistExitPhoto(): void
+    {
+        if (! $this->activeSession) return;
+        $path = $this->data['exit_photo_path'] ?? null;
+        if ($path) {
+            $this->activeSession->update(['exit_photo_path' => $path]);
         }
     }
 

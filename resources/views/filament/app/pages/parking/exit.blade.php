@@ -47,6 +47,15 @@
                 </div>
             </div>
 
+            @if ($activeSession->entry_photo_path)
+                <div style="margin-top:12px;">
+                    <div style="font-size:11px; text-transform:uppercase; letter-spacing:.04em; font-weight:700; opacity:.7; margin-bottom:4px;">Foto de entrada</div>
+                    <a href="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($activeSession->entry_photo_path) }}" target="_blank">
+                        <img src="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($activeSession->entry_photo_path) }}" alt="Foto de entrada" style="max-height:140px; border-radius:8px; border:1px solid #c7d2fe;" />
+                    </a>
+                </div>
+            @endif
+
             @if (! empty($quote['breakdown']))
                 <table style="width:100%; margin-top:14px; border-top:1px solid #c7d2fe; padding-top:10px; font-size:13px;">
                     @foreach ($quote['breakdown'] as $row)

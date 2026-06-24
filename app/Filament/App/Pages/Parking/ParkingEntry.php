@@ -99,6 +99,16 @@ class ParkingEntry extends Page implements HasForms
                     Forms\Components\Textarea::make('notes')
                         ->label('Observaciones (opcional)')
                         ->rows(2)->columnSpan(2),
+
+                    Forms\Components\FileUpload::make('entry_photo_path')
+                        ->label('Foto de entrada (opcional)')
+                        ->image()
+                        ->imageEditor()
+                        ->disk('public')
+                        ->directory('parking/'.now()->format('Y/m'))
+                        ->maxSize(5120)
+                        ->helperText('Evidencia de estado al entrar. Recomendado para reclamos.')
+                        ->columnSpan(2),
                 ]),
 
             Forms\Components\Actions::make([
@@ -122,6 +132,7 @@ class ParkingEntry extends Page implements HasForms
                 'parking_space_id' => $state['parking_space_id'] ?? null,
                 'plate' => $state['plate'] ?? '',
                 'notes' => $state['notes'] ?? null,
+                'entry_photo_path' => $state['entry_photo_path'] ?? null,
             ]);
 
             $this->lastSession = $session;
@@ -135,6 +146,7 @@ class ParkingEntry extends Page implements HasForms
             // Reset placa para siguiente vehículo
             $this->data['plate'] = '';
             $this->data['notes'] = null;
+            $this->data['entry_photo_path'] = null;
             $this->form->fill($this->data);
         } catch (\Throwable $e) {
             Notification::make()

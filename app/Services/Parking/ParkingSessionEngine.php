@@ -92,6 +92,7 @@ class ParkingSessionEngine
                 'entry_at' => $payload['entry_at'] ?? now(),
                 'status' => ParkingSession::STATUS_ACTIVE,
                 'notes' => $payload['notes'] ?? null,
+                'entry_photo_path' => $payload['entry_photo_path'] ?? null,
                 'created_by_user_id' => Auth::id(),
             ]);
         });

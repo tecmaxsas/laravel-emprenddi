@@ -146,6 +146,7 @@ class PermissionsCatalog
                 'parking.manage' => 'Configurar parqueaderos, tipos de vehículo y tarifas',
                 'parking.cancel' => 'Anular sesiones activas',
                 'parking.reports' => 'Ver reportes de parqueadero',
+                'parking.incidents' => 'Registrar y gestionar incidentes',
             ],
             'Administración' => [
                 'users.view' => 'Ver usuarios de la empresa',
