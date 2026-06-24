@@ -141,6 +141,12 @@ class PermissionsCatalog
                 'appointments.view' => 'Ver la agenda y las citas',
                 'appointments.manage' => 'Crear, reprogramar, atender y cancelar citas',
             ],
+            'Parqueadero' => [
+                'parking.use' => 'Operar entrada/salida del parqueadero',
+                'parking.manage' => 'Configurar parqueaderos, tipos de vehículo y tarifas',
+                'parking.cancel' => 'Anular sesiones activas',
+                'parking.reports' => 'Ver reportes de parqueadero',
+            ],
             'Administración' => [
                 'users.view' => 'Ver usuarios de la empresa',
                 'users.manage' => 'Crear / editar / desactivar usuarios',
@@ -228,6 +234,8 @@ class PermissionsCatalog
                 'gift_cards.view', 'gift_cards.issue', 'gift_cards.redeem',
                 // Citas: el front-desk agenda y atiende
                 'appointments.view', 'appointments.manage',
+                // Parqueadero: el cajero opera entrada/salida y puede anular
+                'parking.use', 'parking.cancel',
             ],
             // Contador externo del Portal Contador. Lectura amplia + edición
             // contable (postear, anular, ajustes). No puede crear ventas/POS
