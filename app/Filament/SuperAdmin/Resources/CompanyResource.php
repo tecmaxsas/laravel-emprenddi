@@ -145,6 +145,7 @@ class CompanyResource extends Resource
                         ->label('Módulos opcionales')
                         ->options([
                             'restaurant' => 'Restaurante (mesas, comandas, cocina, delivery)',
+                            'parking' => 'Parqueadero (tarifas, espacios, mensualidades, incidentes)',
                             'pharmacy' => 'Farmacia (próximamente)',
                             'retail' => 'Retail / Tiendas (próximamente)',
                             'services' => 'Servicios profesionales (próximamente)',
