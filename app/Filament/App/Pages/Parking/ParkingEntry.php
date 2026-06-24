@@ -4,6 +4,7 @@ namespace App\Filament\App\Pages\Parking;
 
 use App\Models\Parking\ParkingLot;
 use App\Models\Parking\ParkingSession;
+use App\Models\Parking\ParkingSpace;
 use App\Models\Parking\VehicleType;
 use App\Services\Parking\ParkingSessionEngine;
 use App\Support\ModuleGate;
@@ -46,6 +47,7 @@ class ParkingEntry extends Page implements HasForms
             'parking_lot_id' => ParkingLot::query()->where('active', true)->orderBy('id')->value('id'),
             'vehicle_type_id' => VehicleType::query()->where('active', true)
                 ->where('code', VehicleType::CODE_CAR)->value('id'),
+            'parking_space_id' => null,
             'plate' => '',
             'notes' => null,
         ];
@@ -59,14 +61,31 @@ class ParkingEntry extends Page implements HasForms
                 ->columns(2)
                 ->schema([
                     Forms\Components\Select::make('parking_lot_id')
-                        ->label('Parqueadero')->required()->native(false)
+                        ->label('Parqueadero')->required()->native(false)->live()
                         ->options(fn () => ParkingLot::query()->where('active', true)
-                            ->orderBy('name')->pluck('name', 'id')->all()),
+                            ->orderBy('name')->pluck('name', 'id')->all())
+                        ->afterStateUpdated(fn (Forms\Set $set) => $set('parking_space_id', null)),
 
                     Forms\Components\Select::make('vehicle_type_id')
                         ->label('Tipo de vehículo')->required()->native(false)
                         ->options(fn () => VehicleType::query()->where('active', true)
                             ->orderBy('sort_order')->pluck('name', 'id')->all()),
+
+                    Forms\Components\Select::make('parking_space_id')
+                        ->label('Espacio (opcional)')->native(false)->searchable()
+                        ->placeholder('Sin asignar')
+                        ->options(fn (Forms\Get $get) => $get('parking_lot_id')
+                            ? ParkingSpace::query()
+                                ->where('parking_lot_id', $get('parking_lot_id'))
+                                ->where('status', ParkingSpace::STATUS_FREE)
+                                ->orderBy('zone')->orderBy('code')->get()
+                                ->mapWithKeys(fn (ParkingSpace $s) => [
+                                    $s->id => trim(($s->zone ? "[{$s->zone}] " : '').$s->code.($s->is_accessibility ? ' ♿' : '')),
+                                ])
+                                ->all()
+                            : [])
+                        ->helperText('Solo se listan espacios libres del parqueadero seleccionado.')
+                        ->columnSpan(2),
 
                     Forms\Components\TextInput::make('plate')
                         ->label('Placa')
@@ -100,6 +119,7 @@ class ParkingEntry extends Page implements HasForms
             $session = app(ParkingSessionEngine::class)->checkIn([
                 'parking_lot_id' => $state['parking_lot_id'] ?? null,
                 'vehicle_type_id' => $state['vehicle_type_id'] ?? null,
+                'parking_space_id' => $state['parking_space_id'] ?? null,
                 'plate' => $state['plate'] ?? '',
                 'notes' => $state['notes'] ?? null,
             ]);

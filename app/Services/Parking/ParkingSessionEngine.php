@@ -4,8 +4,10 @@ namespace App\Services\Parking;
 
 use App\Models\Parking\ParkingLot;
 use App\Models\Parking\ParkingSession;
+use App\Models\Parking\ParkingSpace;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 /**
@@ -22,9 +24,11 @@ class ParkingSessionEngine
     ) {}
 
     /**
-     * Registra entrada de un vehiculo. Crea sesion 'active'.
+     * Registra entrada de un vehiculo. Crea sesion 'active' y, si se asigna
+     * espacio (parking_space_id), lo marca como ocupado dentro de una sola
+     * transaccion para evitar carreras (dos entradas al mismo slot).
      *
-     * @param array $payload  ['parking_lot_id', 'vehicle_type_id', 'plate', 'notes', 'entry_at'?]
+     * @param array $payload  ['parking_lot_id', 'vehicle_type_id', 'parking_space_id'?, 'plate', 'notes', 'entry_at'?]
      */
     public function checkIn(array $payload): ParkingSession
     {
@@ -52,16 +56,40 @@ class ParkingSessionEngine
             throw new RuntimeException("Ya hay una sesión activa para la placa {$plate} en este parqueadero.");
         }
 
-        return ParkingSession::create([
-            'company_id' => $lot->company_id,
-            'parking_lot_id' => $lot->id,
-            'vehicle_type_id' => $payload['vehicle_type_id'] ?? null,
-            'plate' => $plate,
-            'entry_at' => $payload['entry_at'] ?? now(),
-            'status' => ParkingSession::STATUS_ACTIVE,
-            'notes' => $payload['notes'] ?? null,
-            'created_by_user_id' => Auth::id(),
-        ]);
+        $spaceId = $payload['parking_space_id'] ?? null;
+
+        return DB::transaction(function () use ($lot, $plate, $payload, $spaceId) {
+            $spaceCode = null;
+            if ($spaceId) {
+                // Lock pesimista para evitar que dos entradas tomen el mismo espacio.
+                $space = ParkingSpace::query()
+                    ->where('id', $spaceId)
+                    ->where('parking_lot_id', $lot->id)
+                    ->lockForUpdate()
+                    ->first();
+                if (! $space) {
+                    throw new RuntimeException('El espacio seleccionado no existe en este parqueadero.');
+                }
+                if (! $space->isFree()) {
+                    throw new RuntimeException("El espacio {$space->code} ya no está libre.");
+                }
+                $space->update(['status' => ParkingSpace::STATUS_OCCUPIED]);
+                $spaceCode = $space->code;
+            }
+
+            return ParkingSession::create([
+                'company_id' => $lot->company_id,
+                'parking_lot_id' => $lot->id,
+                'vehicle_type_id' => $payload['vehicle_type_id'] ?? null,
+                'parking_space_id' => $spaceId,
+                'space_code' => $spaceCode,
+                'plate' => $plate,
+                'entry_at' => $payload['entry_at'] ?? now(),
+                'status' => ParkingSession::STATUS_ACTIVE,
+                'notes' => $payload['notes'] ?? null,
+                'created_by_user_id' => Auth::id(),
+            ]);
+        });
     }
 
     /**
@@ -94,19 +122,22 @@ class ParkingSessionEngine
 
         $calc = $this->rates->calculate($rate, $session->entry_at, $exitAt);
 
-        $session->update([
-            'rate_id' => $rate->id,
-            'exit_at' => $exitAt,
-            'status' => ParkingSession::STATUS_CLOSED,
-            'total_minutes' => $calc['minutes'],
-            'free_minutes' => $calc['free_minutes'],
-            'charge_minutes' => $calc['charge_minutes'],
-            'amount' => $calc['amount'],
-            'cap_applied' => $calc['cap_applied'],
-            'breakdown' => $calc['breakdown'],
-            'closed_by_user_id' => Auth::id(),
-            'closed_at' => now(),
-        ]);
+        DB::transaction(function () use ($session, $rate, $exitAt, $calc) {
+            $session->update([
+                'rate_id' => $rate->id,
+                'exit_at' => $exitAt,
+                'status' => ParkingSession::STATUS_CLOSED,
+                'total_minutes' => $calc['minutes'],
+                'free_minutes' => $calc['free_minutes'],
+                'charge_minutes' => $calc['charge_minutes'],
+                'amount' => $calc['amount'],
+                'cap_applied' => $calc['cap_applied'],
+                'breakdown' => $calc['breakdown'],
+                'closed_by_user_id' => Auth::id(),
+                'closed_at' => now(),
+            ]);
+            $this->releaseSpace($session);
+        });
 
         return $session->fresh();
     }
@@ -135,16 +166,19 @@ class ParkingSessionEngine
 
         $calc = $this->rates->calculateLostTicket($rate);
 
-        $session->update([
-            'rate_id' => $rate->id,
-            'exit_at' => now(),
-            'status' => ParkingSession::STATUS_LOST_TICKET,
-            'amount' => $calc['amount'],
-            'cap_applied' => false,
-            'breakdown' => $calc['breakdown'],
-            'closed_by_user_id' => Auth::id(),
-            'closed_at' => now(),
-        ]);
+        DB::transaction(function () use ($session, $rate, $calc) {
+            $session->update([
+                'rate_id' => $rate->id,
+                'exit_at' => now(),
+                'status' => ParkingSession::STATUS_LOST_TICKET,
+                'amount' => $calc['amount'],
+                'cap_applied' => false,
+                'breakdown' => $calc['breakdown'],
+                'closed_by_user_id' => Auth::id(),
+                'closed_at' => now(),
+            ]);
+            $this->releaseSpace($session);
+        });
 
         return $session->fresh();
     }
@@ -163,14 +197,32 @@ class ParkingSessionEngine
             throw new RuntimeException('El motivo de anulación es obligatorio.');
         }
 
-        $session->update([
-            'status' => ParkingSession::STATUS_CANCELLED,
-            'cancel_reason' => $reason,
-            'closed_by_user_id' => Auth::id(),
-            'closed_at' => now(),
-        ]);
+        DB::transaction(function () use ($session, $reason) {
+            $session->update([
+                'status' => ParkingSession::STATUS_CANCELLED,
+                'cancel_reason' => $reason,
+                'closed_by_user_id' => Auth::id(),
+                'closed_at' => now(),
+            ]);
+            $this->releaseSpace($session);
+        });
 
         return $session->fresh();
+    }
+
+    /**
+     * Libera el espacio asociado a la sesion (si tiene). Se llama desde
+     * checkOut, lostTicket y cancel. Idempotente: si el espacio no esta
+     * 'occupied' (ej. cambio manual desde admin), no hace nada para no
+     * pisar el estado.
+     */
+    protected function releaseSpace(ParkingSession $session): void
+    {
+        if (! $session->parking_space_id) return;
+        ParkingSpace::query()
+            ->where('id', $session->parking_space_id)
+            ->where('status', ParkingSpace::STATUS_OCCUPIED)
+            ->update(['status' => ParkingSpace::STATUS_FREE]);
     }
 
     /**

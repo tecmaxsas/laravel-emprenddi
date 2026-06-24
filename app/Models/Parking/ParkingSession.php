@@ -38,6 +38,7 @@ class ParkingSession extends Model
         'company_id',
         'parking_lot_id',
         'vehicle_type_id',
+        'parking_space_id',
         'rate_id',
         'plate',
         'space_code',
@@ -86,6 +87,11 @@ class ParkingSession extends Model
     public function vehicleType(): BelongsTo
     {
         return $this->belongsTo(VehicleType::class);
+    }
+
+    public function space(): BelongsTo
+    {
+        return $this->belongsTo(ParkingSpace::class, 'parking_space_id');
     }
 
     public function rate(): BelongsTo
