@@ -22,6 +22,8 @@ class ParkingLot extends Model
         'address',
         'city',
         'phone',
+        'default_location_id',
+        'default_invoice_kind',
         'total_capacity',
         'settings',
         'active',
@@ -45,5 +47,10 @@ class ParkingLot extends Model
     {
         return $this->hasMany(ParkingRate::class)
             ->where('active', true);
+    }
+
+    public function defaultLocation(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(\App\Models\Location::class, 'default_location_id');
     }
 }

@@ -4,6 +4,7 @@ namespace App\Filament\App\Resources\Parking;
 
 use App\Filament\App\Resources\Parking\ParkingLotResource\Pages;
 use App\Filament\Concerns\ChecksPermission;
+use App\Models\Location;
 use App\Models\Parking\ParkingLot;
 use App\Support\ModuleGate;
 use Filament\Forms;
@@ -55,6 +56,28 @@ class ParkingLotResource extends Resource
                         ->label('Capacidad total')->numeric()->minValue(0)
                         ->helperText('Opcional. Solo se usa para alertas de aforo.'),
                     Forms\Components\Toggle::make('active')->label('Activo')->default(true),
+                ]),
+
+            Forms\Components\Section::make('Facturación')
+                ->description('Define dónde se emiten las facturas de cobro al cliente y qué tipo de factura usa por defecto.')
+                ->columns(2)
+                ->schema([
+                    Forms\Components\Select::make('default_location_id')
+                        ->label('Sede de facturación')->native(false)->searchable()
+                        ->options(fn () => Location::query()
+                            ->where('active', true)
+                            ->orderByDesc('is_main')
+                            ->orderBy('name')
+                            ->pluck('name', 'id')->all())
+                        ->helperText('Determina qué resolución DIAN aplica al cobrar. Si la dejas vacía, usa la sede principal.'),
+
+                    Forms\Components\Select::make('default_invoice_kind')
+                        ->label('Tipo de factura por defecto')->native(false)
+                        ->options([
+                            'pos' => 'POS (no electrónica)',
+                            'electronic' => 'Electrónica (DIAN)',
+                        ])->default('pos')
+                        ->helperText('El cobrador puede cambiarlo manualmente en cada salida.'),
                 ]),
         ]);
     }

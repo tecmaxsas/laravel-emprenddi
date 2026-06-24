@@ -91,6 +91,15 @@
                 · {{ $lastClosedSession->total_minutes ?? '—' }} min
                 · Ticket <code>#{{ str_pad($lastClosedSession->id, 6, '0', STR_PAD_LEFT) }}</code>
             </div>
+            @if ($lastInvoice)
+                <div style="margin-top:10px; padding:8px 12px; background:#bbf7d0; border-radius:6px; font-size:13px;">
+                    🧾 <strong>Factura emitida:</strong>
+                    <code style="font-size:14px;">{{ $lastInvoice->fullNumber() }}</code>
+                    · {{ strtoupper($lastInvoice->invoice_kind) }}
+                    @php $invoiceUrl = route('filament.app.resources.sale-invoices.view', $lastInvoice); @endphp
+                    · <a href="{{ $invoiceUrl }}" target="_blank" style="text-decoration:underline; font-weight:600;">Ver factura</a>
+                </div>
+            @endif
         </div>
     @endif
 </x-filament-panels::page>
