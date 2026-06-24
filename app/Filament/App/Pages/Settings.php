@@ -81,6 +81,7 @@ class Settings extends Page implements HasForms
             'warranties_enabled' => (bool) data_get($settings, 'warranties.enabled', false),
 
             // POS settings (settings.pos.*)
+            'pos_default_invoice_kind' => (string) data_get($settings, 'pos.default_invoice_kind', 'pos'),
             'pos_allow_price_modification' => (bool) data_get($settings, 'pos.allow_price_modification', true),
             'pos_allow_discount' => (bool) data_get($settings, 'pos.allow_discount', true),
             'pos_require_customer' => (bool) data_get($settings, 'pos.require_customer', false),
@@ -325,6 +326,17 @@ class Settings extends Page implements HasForms
             Forms\Components\Section::make('Comportamiento de venta')
                 ->columns(2)
                 ->schema([
+                    Forms\Components\Select::make('pos_default_invoice_kind')
+                        ->label('Tipo de factura por defecto')
+                        ->options([
+                            'pos' => 'POS (no electrónica)',
+                            'electronic' => 'Electrónica (DIAN)',
+                        ])
+                        ->default('pos')
+                        ->native(false)
+                        ->required()
+                        ->helperText('Define qué tipo de factura emite el POS al abrir cada venta. Las empresas que solo facturan electrónicamente pueden elegir "Electrónica" para evitar cambiar el tipo en cada venta. El cajero puede cambiarlo manualmente en el momento de cobrar.'),
+
                     Forms\Components\Toggle::make('pos_print_after_sale')
                         ->label('Imprimir ticket automáticamente al cerrar venta')
                         ->helperText('Si está desactivado, el cajero debe abrir manualmente el ticket desde la factura.'),
@@ -417,7 +429,12 @@ class Settings extends Page implements HasForms
         $settings = $company->settings ?? [];
 
         // Mergeo en settings.pos.* sin perder otras keys.
+        $defaultInvoiceKind = in_array($state['pos_default_invoice_kind'] ?? 'pos', ['pos', 'electronic'], true)
+            ? $state['pos_default_invoice_kind']
+            : 'pos';
+
         $settings['pos'] = array_merge($settings['pos'] ?? [], [
+            'default_invoice_kind' => $defaultInvoiceKind,
             'allow_price_modification' => (bool) ($state['pos_allow_price_modification'] ?? true),
             'allow_discount' => (bool) ($state['pos_allow_discount'] ?? true),
             'require_customer' => (bool) ($state['pos_require_customer'] ?? false),

@@ -146,6 +146,15 @@ class RestaurantPos extends Page
             ->where('active', true)
             ->where('is_main', true)
             ->value('id') ?? Location::query()->where('active', true)->value('id');
+
+        // Tipo de factura por defecto desde settings.pos.default_invoice_kind.
+        // Empresas que solo facturan electronicamente lo dejan en 'electronic'
+        // para no tener que cambiar el tipo en cada cobro.
+        $settings = \App\Models\Company::find(auth()->user()->company_id)?->settings ?? [];
+        $defaultKind = data_get($settings, 'pos.default_invoice_kind', 'pos');
+        $this->billingInvoiceKind = in_array($defaultKind, ['pos', 'electronic'], true)
+            ? $defaultKind
+            : 'pos';
     }
 
     // ============ CAJA REGISTRADORA ============

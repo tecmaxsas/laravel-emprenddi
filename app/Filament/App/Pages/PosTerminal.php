@@ -184,6 +184,11 @@ class PosTerminal extends Page
 
         $this->customer_id = $this->ensureDefaultCustomer()->id;
 
+        // Tipo de factura por defecto desde settings (pos | electronic). El cajero
+        // puede cambiarlo manualmente en el momento de cobrar.
+        $defaultKind = $this->posSettings['default_invoice_kind'] ?? 'pos';
+        $this->invoiceKind = in_array($defaultKind, ['pos', 'electronic'], true) ? $defaultKind : 'pos';
+
         // Precarga desde el modulo Citas: ?appointment=ID
         $appointmentId = (int) request()->query('appointment');
         if ($appointmentId > 0) {
@@ -269,6 +274,8 @@ class PosTerminal extends Page
             'default_tip_percent' => 0,
             // % a partir del cual se exige PIN de supervisor. 0 = nunca exigir.
             'discount_supervisor_threshold' => 10.0,
+            // Tipo de factura por defecto al abrir el POS (pos | electronic).
+            'default_invoice_kind' => 'pos',
         ], $settings['pos'] ?? []);
     }
 
