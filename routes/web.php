@@ -61,6 +61,14 @@ Route::middleware(['web', 'auth'])->group(function () {
     Route::get('/app/reports/export/cash-closings',
         [\App\Http\Controllers\App\ReportExportController::class, 'cashClosings'])
         ->name('reports.export.cash_closings');
+
+    // Exportacion XLSX de reportes del modulo de parqueadero.
+    Route::get('/app/parking/reports/export/sessions',
+        [\App\Http\Controllers\App\ParkingReportExportController::class, 'sessions'])
+        ->name('parking.reports.export.sessions');
+    Route::get('/app/parking/reports/export/revenue',
+        [\App\Http\Controllers\App\ParkingReportExportController::class, 'revenue'])
+        ->name('parking.reports.export.revenue');
 });
 
 // Tracking público de domicilios — sin auth, token random.
