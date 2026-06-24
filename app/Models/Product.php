@@ -171,16 +171,6 @@ class Product extends Model
         return $this->inventory_account_id ?? $this->category?->resolveDefault('default_inventory_account_id');
     }
 
-    public function effectiveSaleTaxId(): ?int
-    {
-        return $this->default_sale_tax_id ?? $this->category?->resolveDefault('default_sale_tax_id');
-    }
-
-    public function effectivePurchaseTaxId(): ?int
-    {
-        return $this->default_purchase_tax_id ?? $this->category?->resolveDefault('default_purchase_tax_id');
-    }
-
     public function productLocations(): HasMany
     {
         return $this->hasMany(ProductLocation::class);

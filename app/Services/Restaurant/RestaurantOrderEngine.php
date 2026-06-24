@@ -293,7 +293,7 @@ class RestaurantOrderEngine
             $product = Product::find($item->product_id);
             if (! $product) continue;
 
-            $baseTax = $product->effectiveSaleTaxId() ? Tax::find($product->effectiveSaleTaxId()) : null;
+            $baseTax = $product->default_sale_tax_id ? Tax::find($product->default_sale_tax_id) : null;
             $tax = $this->resolveTaxForMode($baseTax, $order);
             $rate = $tax ? (float) $tax->rate : 0.0;
 
@@ -332,8 +332,8 @@ class RestaurantOrderEngine
             throw new RuntimeException('La cantidad debe ser mayor a 0.');
         }
 
-        $tax = $product->effectiveSaleTaxId()
-            ? Tax::find($product->effectiveSaleTaxId())
+        $tax = $product->default_sale_tax_id
+            ? Tax::find($product->default_sale_tax_id)
             : null;
         // IVA diferencial: si la orden es para llevar/delivery y el impuesto
         // tiene una alternativa configurada, se usa esa.
@@ -447,11 +447,11 @@ class RestaurantOrderEngine
         // Normalizar precios a "base" (sin IVA) si el flag dice que el precio
         // ya incluia el impuesto. La tasa respeta el modo (para llevar).
         $taxAResolved = $this->resolveTaxForMode(
-            $a->effectiveSaleTaxId() ? Tax::find($a->effectiveSaleTaxId()) : null,
+            $a->default_sale_tax_id ? Tax::find($a->default_sale_tax_id) : null,
             $order,
         );
         $taxBResolved = $this->resolveTaxForMode(
-            $b->effectiveSaleTaxId() ? Tax::find($b->effectiveSaleTaxId()) : null,
+            $b->default_sale_tax_id ? Tax::find($b->default_sale_tax_id) : null,
             $order,
         );
         $taxARate = $taxAResolved ? (float) $taxAResolved->rate : 0;
@@ -473,7 +473,7 @@ class RestaurantOrderEngine
         $mainProduct = $priceA >= $priceB ? $a : $b;
 
         $tax = $this->resolveTaxForMode(
-            $mainProduct->effectiveSaleTaxId() ? Tax::find($mainProduct->effectiveSaleTaxId()) : null,
+            $mainProduct->default_sale_tax_id ? Tax::find($mainProduct->default_sale_tax_id) : null,
             $order,
         );
         $taxRate = $tax ? (float) $tax->rate : 0.0;

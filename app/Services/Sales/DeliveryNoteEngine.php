@@ -137,7 +137,7 @@ class DeliveryNoteEngine
             $lineNum = 1;
             foreach ($note->lines as $line) {
                 // Calcular tax desde el producto si tiene default_sale_tax
-                $taxId = $line->product?->effectiveSaleTaxId();
+                $taxId = $line->product?->default_sale_tax_id;
                 $taxRate = 0;
                 if ($taxId) {
                     $tax = \App\Models\Tax::find($taxId);

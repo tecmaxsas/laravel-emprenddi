@@ -20,8 +20,6 @@ class Category extends Model
         'default_sale_account_id',
         'default_cost_account_id',
         'default_inventory_account_id',
-        'default_sale_tax_id',
-        'default_purchase_tax_id',
         'code',
         'name',
         'slug',
@@ -78,16 +76,6 @@ class Category extends Model
         return $this->belongsTo(Account::class, 'default_inventory_account_id');
     }
 
-    public function defaultSaleTax(): BelongsTo
-    {
-        return $this->belongsTo(Tax::class, 'default_sale_tax_id');
-    }
-
-    public function defaultPurchaseTax(): BelongsTo
-    {
-        return $this->belongsTo(Tax::class, 'default_purchase_tax_id');
-    }
-
     public function fullName(): string
     {
         return $this->parent ? "{$this->parent->name} › {$this->name}" : $this->name;
@@ -103,8 +91,6 @@ class Category extends Model
             'default_sale_account_id',
             'default_cost_account_id',
             'default_inventory_account_id',
-            'default_sale_tax_id',
-            'default_purchase_tax_id',
         ], true)) {
             return null;
         }

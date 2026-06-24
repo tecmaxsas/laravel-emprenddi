@@ -162,7 +162,7 @@ class QuotationResource extends Resource
                                     if (! $product) return;
                                     $set('description', $product->name);
                                     $set('unit_price', (float) $product->default_sale_price);
-                                    $set('tax_id', $product->effectiveSaleTaxId());
+                                    $set('tax_id', $product->default_sale_tax_id);
                                 })
                                 ->columnSpan(4),
 

@@ -6,7 +6,6 @@ use App\Filament\App\Resources\CategoryResource\Pages;
 use App\Filament\Concerns\ChecksPermission;
 use App\Models\Account;
 use App\Models\Category;
-use App\Models\Tax;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -95,8 +94,8 @@ class CategoryResource extends Resource
                         ->default(true),
                 ]),
 
-            Forms\Components\Section::make('Cuentas contables e impuestos por defecto')
-                ->description('Los productos de esta categoría heredarán estos valores automáticamente. Si un producto define el suyo propio (override), gana ese.')
+            Forms\Components\Section::make('Cuentas contables por defecto')
+                ->description('Los productos de esta categoría heredarán estas cuentas automáticamente. Si un producto define la suya propia (override), gana esa. Los impuestos (IVA) se siguen configurando producto por producto porque dentro de una categoría pueden coexistir tasas distintas.')
                 ->collapsible()
                 ->collapsed(fn (?Category $record) => $record === null)
                 ->columns(2)
@@ -115,20 +114,6 @@ class CategoryResource extends Resource
                         'default_cost_account_id',
                         'Cuenta de costo de venta',
                         'Típico: 6135 — Costo comercio al por mayor y al por menor.'
-                    ),
-                    Forms\Components\Placeholder::make('accounts_spacer')->label('')->content(''),
-
-                    self::taxSelect(
-                        'default_sale_tax_id',
-                        'Impuesto de venta (IVA)',
-                        ['sale', 'both'],
-                        'Aplicado al vender. Típico: IVA 19%.'
-                    ),
-                    self::taxSelect(
-                        'default_purchase_tax_id',
-                        'Impuesto de compra (IVA)',
-                        ['purchase', 'both'],
-                        'Aplicado al comprar a proveedores.'
                     ),
                 ]),
         ]);
@@ -226,27 +211,4 @@ class CategoryResource extends Resource
                 : null);
     }
 
-    private static function taxSelect(string $name, string $label, array $appliesTo, ?string $help = null): Forms\Components\Select
-    {
-        return Forms\Components\Select::make($name)
-            ->label($label)
-            ->helperText($help)
-            ->searchable()
-            ->placeholder('— Sin impuesto por defecto —')
-            ->getSearchResultsUsing(fn (string $search) => Tax::query()
-                ->where('is_active', true)
-                ->whereIn('applies_to', $appliesTo)
-                ->where(function ($q) use ($search) {
-                    $q->where('name', 'ilike', "%{$search}%")
-                      ->orWhere('code', 'ilike', "%{$search}%");
-                })
-                ->orderBy('name')
-                ->limit(20)
-                ->get()
-                ->mapWithKeys(fn (Tax $t) => [$t->id => "{$t->code} — {$t->name}"])
-                ->all())
-            ->getOptionLabelUsing(fn ($value) => Tax::find($value)
-                ? Tax::find($value)->code.' — '.Tax::find($value)->name
-                : null);
-    }
 }

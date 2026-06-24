@@ -181,7 +181,7 @@ class SaleInvoiceResource extends Resource
                                     $set('description', $product->name);
                                     $set('unit_price', (float) $product->default_sale_price);
                                     $set('cost_at_sale', (float) ($product->default_purchase_price ?? 0));
-                                    $set('tax_id', $product->effectiveSaleTaxId());
+                                    $set('tax_id', $product->default_sale_tax_id);
                                 })
                                 ->columnSpan(4),
 

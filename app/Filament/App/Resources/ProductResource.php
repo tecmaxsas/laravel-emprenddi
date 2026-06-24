@@ -97,7 +97,7 @@ class ProductResource extends Resource
                                 ->label('Categoría')
                                 ->searchable()
                                 ->live()
-                                ->helperText('La categoría aporta las cuentas contables e impuestos por defecto; los puedes sobrescribir en este producto si hace falta.')
+                                ->helperText('La categoría aporta las cuentas contables por defecto; puedes sobrescribirlas en este producto si hace falta. Los impuestos (IVA) se configuran producto por producto.')
                                 ->getSearchResultsUsing(fn (string $search) => Category::query()
                                     ->where('name', 'ilike', "%{$search}%")
                                     ->orderBy('name')
@@ -213,14 +213,8 @@ class ProductResource extends Resource
                                 ->helperText('No permite vender por debajo (si se define).'),
 
                             Forms\Components\Select::make('default_purchase_tax_id')
-                                ->label('Impuesto compra (override)')
-                                ->helperText(fn (Forms\Get $get) => self::inheritanceHint(
-                                    $get('category_id'),
-                                    'default_purchase_tax_id',
-                                    'Vacío = heredar de la categoría.'
-                                ))
+                                ->label('Impuesto compra (default)')
                                 ->searchable()
-                                ->placeholder('— Heredar de la categoría —')
                                 ->getSearchResultsUsing(fn (string $search) => Tax::query()
                                     ->where('is_active', true)
                                     ->whereIn('applies_to', ['purchase', 'both'])
@@ -238,15 +232,9 @@ class ProductResource extends Resource
                                     : null),
 
                             Forms\Components\Select::make('default_sale_tax_id')
-                                ->label('Impuesto venta (override)')
-                                ->helperText(fn (Forms\Get $get) => self::inheritanceHint(
-                                    $get('category_id'),
-                                    'default_sale_tax_id',
-                                    'Vacío = heredar de la categoría.'
-                                ))
+                                ->label('Impuesto venta (default)')
                                 ->live()
                                 ->searchable()
-                                ->placeholder('— Heredar de la categoría —')
                                 ->getSearchResultsUsing(fn (string $search) => Tax::query()
                                     ->where('is_active', true)
                                     ->whereIn('applies_to', ['sale', 'both'])
@@ -494,8 +482,10 @@ class ProductResource extends Resource
     }
 
     /**
-     * Texto para el helperText de los campos de override: si el producto deja
-     * el campo vacio, muestra que cuenta/impuesto heredaria de su categoria.
+     * Texto para el helperText de los campos de override de cuenta contable:
+     * si el producto deja el campo vacio, muestra que cuenta heredaria de
+     * su categoria. Los impuestos NO se heredan — se configuran producto
+     * por producto porque pueden variar dentro de una misma categoria.
      */
     private static function inheritanceHint(?int $categoryId, string $field, string $fallback): string
     {
@@ -504,14 +494,7 @@ class ProductResource extends Resource
         if (! $category) return $fallback;
         $resolvedId = $category->resolveDefault($field);
         if (! $resolvedId) {
-            return "Vacío = heredar (la categoría \"{$category->name}\" no tiene este valor configurado).";
-        }
-        // Detecta si es cuenta o impuesto por el nombre del campo
-        if (str_contains($field, 'tax')) {
-            $tax = \App\Models\Tax::find($resolvedId);
-            return $tax
-                ? "Vacío = heredar de la categoría → {$tax->code} ({$tax->name})"
-                : $fallback;
+            return "Vacío = heredar (la categoría \"{$category->name}\" no tiene esta cuenta configurada).";
         }
         $account = \App\Models\Account::find($resolvedId);
         return $account

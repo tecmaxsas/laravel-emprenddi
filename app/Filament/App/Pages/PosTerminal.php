@@ -437,8 +437,8 @@ class PosTerminal extends Page
         }
 
         $taxRate = 0;
-        if ($product->effectiveSaleTaxId()) {
-            $taxRate = (float) Tax::find($product->effectiveSaleTaxId())?->rate;
+        if ($product->default_sale_tax_id) {
+            $taxRate = (float) Tax::find($product->default_sale_tax_id)?->rate;
         }
         $rawPrice = (float) $product->default_sale_price;
         $unitPrice = ($product->sale_price_includes_tax && $taxRate > 0)
@@ -454,7 +454,7 @@ class PosTerminal extends Page
             'unit_price' => $unitPrice,
             'discount_percentage' => 0.0,
             'discount_amount' => 0.0,
-            'tax_id' => $product->effectiveSaleTaxId(),
+            'tax_id' => $product->default_sale_tax_id,
             'tax_rate' => $taxRate,
             'tax_amount' => 0.0,
             'subtotal' => 0.0,
@@ -521,8 +521,8 @@ class PosTerminal extends Page
         }
 
         $taxRate = 0;
-        if ($product->effectiveSaleTaxId()) {
-            $taxRate = (float) Tax::find($product->effectiveSaleTaxId())?->rate;
+        if ($product->default_sale_tax_id) {
+            $taxRate = (float) Tax::find($product->default_sale_tax_id)?->rate;
         }
 
         // Si el precio del producto YA incluye el impuesto, desnormalizar a
@@ -541,7 +541,7 @@ class PosTerminal extends Page
             'unit_price' => $unitPrice,
             'discount_percentage' => 0.0,
             'discount_amount' => 0.0,
-            'tax_id' => $product->effectiveSaleTaxId(),
+            'tax_id' => $product->default_sale_tax_id,
             'tax_rate' => $taxRate,
             'tax_amount' => 0.0,
             'subtotal' => 0.0,
