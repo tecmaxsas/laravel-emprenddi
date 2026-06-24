@@ -84,7 +84,7 @@ class PurchaseReturnEngine
 
                 $line->update(['inventory_movement_id' => $movement->id]);
 
-                $invAccountId = $product->inventory_account_id
+                $invAccountId = $product->effectiveInventoryAccountId()
                     ?? $this->defaultInventoryAccountId($return->company_id);
                 if (! $invAccountId) {
                     throw new RuntimeException(

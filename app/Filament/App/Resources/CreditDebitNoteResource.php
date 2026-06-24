@@ -181,7 +181,7 @@ class CreditDebitNoteResource extends Resource
                                     if (! $product) return;
                                     $set('description', $product->name);
                                     $set('unit_price', (float) $product->default_sale_price);
-                                    $set('tax_id', $product->default_sale_tax_id);
+                                    $set('tax_id', $product->effectiveSaleTaxId());
                                 })
                                 ->columnSpan(4),
 

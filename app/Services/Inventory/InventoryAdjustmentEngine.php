@@ -99,7 +99,7 @@ class InventoryAdjustmentEngine
                 $totalCost += $lineCost;
 
                 // Cuenta de inventario por producto (default a configurable)
-                $invAccountId = $product->inventory_account_id ?? $this->defaultInventoryAccountId($adj->company_id);
+                $invAccountId = $product->effectiveInventoryAccountId() ?? $this->defaultInventoryAccountId($adj->company_id);
                 if (! $invAccountId) {
                     throw new RuntimeException(
                         "No se encontró la cuenta de inventario del producto {$product->code}. Configúrala en el producto o en el plan de cuentas (1435)."

@@ -174,7 +174,7 @@ class InventoryEngine
             return null;
         }
 
-        $inventoryAccountId = $product->inventory_account_id ?? Account::withoutGlobalScopes()
+        $inventoryAccountId = $product->effectiveInventoryAccountId() ?? Account::withoutGlobalScopes()
             ->where('company_id', $product->company_id)
             ->where('code', '1435')
             ->value('id');

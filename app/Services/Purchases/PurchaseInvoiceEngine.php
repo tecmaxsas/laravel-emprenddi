@@ -283,7 +283,7 @@ class PurchaseInvoiceEngine
         // DR por cada línea con producto: usa la cuenta de inventario del producto
         foreach ($invoice->lines as $invLine) {
             $accountId = $invLine->account_id
-                ?? $invLine->product?->inventory_account_id
+                ?? $invLine->product?->effectiveInventoryAccountId()
                 ?? $defaultExpenseAccountId;
 
             if (! $accountId) {

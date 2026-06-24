@@ -82,7 +82,7 @@ class InventoryOpeningEngine
                 $lineCost = round($qty * $unitCost, 2);
                 $totalCost += $lineCost;
 
-                $invAccountId = $product->inventory_account_id
+                $invAccountId = $product->effectiveInventoryAccountId()
                     ?? $this->defaultInventoryAccountId($opening->company_id);
                 if (! $invAccountId) {
                     throw new RuntimeException(

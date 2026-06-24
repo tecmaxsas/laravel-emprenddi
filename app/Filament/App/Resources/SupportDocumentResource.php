@@ -171,7 +171,7 @@ class SupportDocumentResource extends Resource
                                     if (! $product) return;
                                     $set('description', $product->name);
                                     $set('unit_cost', (float) $product->default_purchase_price);
-                                    $set('tax_id', $product->default_purchase_tax_id);
+                                    $set('tax_id', $product->effectivePurchaseTaxId());
                                 })
                                 ->columnSpan(4),
 
