@@ -3,6 +3,7 @@
 namespace App\Filament\App\Pages\Parking;
 
 use App\Models\Account;
+use App\Models\CashRegisterSession;
 use App\Models\Parking\ParkingSession;
 use App\Models\PaymentMethod;
 use App\Services\Parking\ParkingBillingEngine;
@@ -37,6 +38,15 @@ class ParkingExit extends Page implements HasForms
     public ?array $quote = null;
     public ?ParkingSession $lastClosedSession = null;
     public ?\App\Models\SaleInvoice $lastInvoice = null;
+
+    public function getOpenCashSessionProperty(): ?CashRegisterSession
+    {
+        return CashRegisterSession::query()
+            ->where('cashier_user_id', auth()->id())
+            ->where('status', CashRegisterSession::STATUS_OPEN)
+            ->latest('opened_at')
+            ->first();
+    }
 
     public static function canAccess(): bool
     {

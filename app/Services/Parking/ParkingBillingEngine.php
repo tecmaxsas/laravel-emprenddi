@@ -2,6 +2,7 @@
 
 namespace App\Services\Parking;
 
+use App\Models\CashRegisterSession;
 use App\Models\Company;
 use App\Models\Location;
 use App\Models\Parking\ParkingSession;
@@ -78,9 +79,19 @@ class ParkingBillingEngine
         $customer = $this->resolveCustomer($company, $payload['third_party_id'] ?? null);
         $product = $this->products->ensure($company);
 
+        // Turno de caja del cajero — obligatorio. Si no hay turno abierto, no
+        // se puede facturar (las ventas tienen que quedar en el cierre de caja).
+        $cashSession = $this->resolveOpenCashSession((int) $location->id);
+        if (! $cashSession) {
+            throw new RuntimeException(
+                'No tienes un turno de caja abierto. Abre tu caja en POS → Apertura de caja '
+                .'antes de cobrar el parqueadero.'
+            );
+        }
+
         return DB::transaction(function () use (
             $session, $invoiceKind, $location, $customer, $product, $company,
-            $accountId, $paymentMethod, $paidAmount, $payload,
+            $accountId, $paymentMethod, $paidAmount, $payload, $cashSession,
         ) {
             // 1. Reservar consecutivo (resolucion POS o DIAN segun kind)
             $doc = $this->numberer->reserveForLocation((int) $location->id, $invoiceKind);
@@ -90,6 +101,7 @@ class ParkingBillingEngine
                 'company_id' => $company->id,
                 'location_id' => $location->id,
                 'third_party_id' => $customer->id,
+                'cash_register_session_id' => $cashSession->id,
                 'prefix' => $doc['prefix'],
                 'number' => $doc['number'],
                 'invoice_kind' => $doc['kind'],
@@ -161,6 +173,22 @@ class ParkingBillingEngine
 
             return $invoice->fresh();
         });
+    }
+
+    /**
+     * Turno abierto del cajero actual. Si hay multiples (no deberia), gana
+     * el mas reciente. Si el cajero abrio caja en otra sede, igual sirve —
+     * el turno no esta amarrado a la sede de la factura porque un usuario
+     * puede operar varias sedes.
+     */
+    protected function resolveOpenCashSession(int $locationId): ?CashRegisterSession
+    {
+        if (! Auth::id()) return null;
+        return CashRegisterSession::query()
+            ->where('cashier_user_id', Auth::id())
+            ->where('status', CashRegisterSession::STATUS_OPEN)
+            ->latest('opened_at')
+            ->first();
     }
 
     protected function resolveLocation(ParkingSession $session): ?Location

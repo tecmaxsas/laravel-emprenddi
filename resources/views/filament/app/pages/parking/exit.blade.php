@@ -3,6 +3,24 @@
 @endphp
 
 <x-filament-panels::page>
+    @php $cashSession = $this->openCashSession; @endphp
+    @if ($cashSession)
+        <div style="border:1px solid #16a34a; background:#dcfce7; color:#166534; border-radius:8px; padding:10px 14px; font-size:13px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+            <div>
+                💰 <strong>Turno abierto</strong> desde <strong>{{ $cashSession->opened_at->format('d/m/Y H:i') }}</strong>
+                · Base: {{ $fmt($cashSession->opening_amount) }}
+                · Sede: {{ $cashSession->location?->name ?? '—' }}
+            </div>
+            <a href="{{ route('filament.app.pages.pos-terminal') }}" style="color:#166534; text-decoration:underline; font-weight:600;">Ir al POS</a>
+        </div>
+    @else
+        <div style="border:1px solid #dc2626; background:#fee2e2; color:#991b1b; border-radius:8px; padding:12px 14px; font-size:13px;">
+            🚨 <strong>No tienes un turno de caja abierto.</strong>
+            Para cobrar parqueadero debes abrir caja primero.
+            <a href="{{ route('filament.app.pages.pos-terminal') }}" style="color:#991b1b; text-decoration:underline; font-weight:700; margin-left:6px;">Abrir caja</a>
+        </div>
+    @endif
+
     {{ $this->form }}
 
     @if ($activeSession && $quote)
