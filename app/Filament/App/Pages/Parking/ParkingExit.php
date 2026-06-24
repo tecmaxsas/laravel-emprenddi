@@ -18,10 +18,7 @@ use Filament\Pages\Page;
 /**
  * Pantalla de salida del parqueadero. El operario busca por placa, ve la
  * sesion activa con el monto calculado en vivo y procesa la salida (cobro
- * normal, ticket perdido o cancelación).
- *
- * El cobro/factura se completa en el commit 5; por ahora solo cierra la
- * sesion con el amount calculado.
+ * normal con factura POS/DIAN, ticket perdido o cancelacion).
  */
 class ParkingExit extends Page implements HasForms
 {
