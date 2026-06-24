@@ -65,6 +65,8 @@ class DianSettings extends Page implements HasForms
             'dian_tax_liability_id' => $config->dian_tax_liability_id,
             'dian_municipality_id' => $config->dian_municipality_id,
             'merchant_registration' => $config->merchant_registration,
+            'contact_email' => auth()->user()->company?->email,
+            'contact_phone' => auth()->user()->company?->phone,
 
             // Tab 2
             'software_id' => $config->software_id,
@@ -210,6 +212,25 @@ class DianSettings extends Page implements HasForms
                         ->columnSpan(3),
                 ]),
 
+            Forms\Components\Section::make('Contacto')
+                ->description('DIAN exige correo y teléfono de contacto. Si los cambias acá, se actualizan también en los datos de la empresa.')
+                ->columns(2)
+                ->schema([
+                    Forms\Components\TextInput::make('contact_email')
+                        ->label('Correo electrónico')
+                        ->email()
+                        ->required()
+                        ->maxLength(150)
+                        ->placeholder('contacto@miempresa.co'),
+
+                    Forms\Components\TextInput::make('contact_phone')
+                        ->label('Teléfono')
+                        ->tel()
+                        ->required()
+                        ->maxLength(30)
+                        ->placeholder('6011234567'),
+                ]),
+
             Forms\Components\Actions::make([
                 Forms\Components\Actions\Action::make('saveTab1')
                     ->label('Guardar y registrar en DIAN')
@@ -246,12 +267,18 @@ class DianSettings extends Page implements HasForms
             'dian_regime_type_id' => 'Régimen',
             'dian_tax_liability_id' => 'Responsabilidad tributaria',
             'dian_municipality_id' => 'Municipio',
+            'contact_email' => 'Correo electrónico',
+            'contact_phone' => 'Teléfono',
         ];
         foreach ($required as $key => $label) {
             if (empty($state[$key] ?? null)) {
                 $this->errorNotif('Falta diligenciar', "Completa el campo \"{$label}\" antes de enviar a DIAN.");
                 return;
             }
+        }
+        if (! filter_var($state['contact_email'], FILTER_VALIDATE_EMAIL)) {
+            $this->errorNotif('Correo inválido', 'Verifica el formato del correo de contacto.');
+            return;
         }
 
         DB::transaction(function () use ($state, $company) {
@@ -270,6 +297,9 @@ class DianSettings extends Page implements HasForms
 
         $config = $this->config()->refresh();
 
+        $contactEmail = trim((string) $state['contact_email']);
+        $contactPhone = trim((string) $state['contact_phone']);
+
         $payload = [
             'type_document_identification_id' => $config->dian_document_type_id,
             'type_organization_id' => $config->dian_organization_type_id,
@@ -279,8 +309,8 @@ class DianSettings extends Page implements HasForms
             'merchant_registration' => $config->merchant_registration ?: '0000000-00',
             'municipality_id' => $config->dian_municipality_id,
             'address' => $company->address ?: 'Sin dirección',
-            'phone' => (int) preg_replace('/\D/', '', (string) ($company->phone ?: '0')),
-            'email' => $company->email ?: 'sin@email.com',
+            'phone' => (int) preg_replace('/\D/', '', $contactPhone),
+            'email' => $contactEmail,
         ];
 
         $result = (new DianApiClient($config))->registerCompany($company->nit, $company->dv, $payload);
@@ -291,6 +321,13 @@ class DianSettings extends Page implements HasForms
             $config->update([
                 'company_registered' => true,
                 'api_token' => $token ?: $config->api_token,
+            ]);
+            // Sincroniza correo y telefono que se enviaron a DIAN con los
+            // datos basicos de la empresa para que coincidan en facturas,
+            // tickets, etc.
+            $company->update([
+                'email' => $contactEmail,
+                'phone' => $contactPhone,
             ]);
             $this->successNotif('Empresa registrada en DIAN', 'Continúa con el tab de Software.');
         } else {
