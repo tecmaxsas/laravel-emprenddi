@@ -96,6 +96,8 @@ class ProductResource extends Resource
                             Forms\Components\Select::make('category_id')
                                 ->label('Categoría')
                                 ->searchable()
+                                ->live()
+                                ->helperText('La categoría aporta las cuentas contables e impuestos por defecto; los puedes sobrescribir en este producto si hace falta.')
                                 ->getSearchResultsUsing(fn (string $search) => Category::query()
                                     ->where('name', 'ilike', "%{$search}%")
                                     ->orderBy('name')
@@ -211,8 +213,14 @@ class ProductResource extends Resource
                                 ->helperText('No permite vender por debajo (si se define).'),
 
                             Forms\Components\Select::make('default_purchase_tax_id')
-                                ->label('Impuesto compra (default)')
+                                ->label('Impuesto compra (override)')
+                                ->helperText(fn (Forms\Get $get) => self::inheritanceHint(
+                                    $get('category_id'),
+                                    'default_purchase_tax_id',
+                                    'Vacío = heredar de la categoría.'
+                                ))
                                 ->searchable()
+                                ->placeholder('— Heredar de la categoría —')
                                 ->getSearchResultsUsing(fn (string $search) => Tax::query()
                                     ->where('is_active', true)
                                     ->whereIn('applies_to', ['purchase', 'both'])
@@ -230,9 +238,15 @@ class ProductResource extends Resource
                                     : null),
 
                             Forms\Components\Select::make('default_sale_tax_id')
-                                ->label('Impuesto venta (default)')
+                                ->label('Impuesto venta (override)')
+                                ->helperText(fn (Forms\Get $get) => self::inheritanceHint(
+                                    $get('category_id'),
+                                    'default_sale_tax_id',
+                                    'Vacío = heredar de la categoría.'
+                                ))
                                 ->live()
                                 ->searchable()
+                                ->placeholder('— Heredar de la categoría —')
                                 ->getSearchResultsUsing(fn (string $search) => Tax::query()
                                     ->where('is_active', true)
                                     ->whereIn('applies_to', ['sale', 'both'])
@@ -294,7 +308,15 @@ class ProductResource extends Resource
 
                 Forms\Components\Tabs\Tab::make('Cuentas contables')
                     ->icon('heroicon-o-banknotes')
+                    ->badge('Opcional')
                     ->schema([
+                        Forms\Components\Placeholder::make('accounts_inheritance_hint')
+                            ->label('')
+                            ->content(new \Illuminate\Support\HtmlString(
+                                '<div style="padding:10px 12px; background:#eef2ff; color:#3730a3; border-radius:8px; font-size:13px;">'
+                                .'💡 <strong>Estas cuentas son un override opcional.</strong> Si las dejas vacías, el producto hereda las cuentas configuradas en su <strong>categoría</strong> (o en la categoría padre si la suya no las define). Solo configúralas aquí si este producto necesita cuentas distintas a las del resto de su categoría.'
+                                .'</div>'
+                            )),
                         Forms\Components\Placeholder::make('variable_hint_accounts')
                             ->label('')
                             ->content('💡 Para productos variables, estas cuentas son DEFAULTS que las variantes heredan automáticamente al crearse.')
@@ -302,19 +324,31 @@ class ProductResource extends Resource
                         Forms\Components\Group::make()->columns(1)->schema([
                             self::accountSelect(
                                 'inventory_account_id',
-                                'Cuenta de inventario',
-                                'Donde se registra el stock contablemente. Típico: 1435 — Mercancías no fabricadas.'
-                            ),
+                                'Cuenta de inventario (override)',
+                                'Vacío = heredar de la categoría. Típico: 1435.'
+                            )->helperText(fn (Forms\Get $get) => self::inheritanceHint(
+                                $get('category_id'),
+                                'default_inventory_account_id',
+                                'Vacío = heredar de la categoría. Típico: 1435.'
+                            )),
                             self::accountSelect(
                                 'sale_account_id',
-                                'Cuenta de ingreso por venta',
-                                'Típico: 4135 — Comercio al por mayor y al por menor.'
-                            ),
+                                'Cuenta de ingreso por venta (override)',
+                                'Vacío = heredar de la categoría. Típico: 4135.'
+                            )->helperText(fn (Forms\Get $get) => self::inheritanceHint(
+                                $get('category_id'),
+                                'default_sale_account_id',
+                                'Vacío = heredar de la categoría. Típico: 4135.'
+                            )),
                             self::accountSelect(
                                 'cost_account_id',
-                                'Cuenta de costo de venta',
-                                'Típico: 6135 — Costo comercio al por mayor y al por menor.'
-                            ),
+                                'Cuenta de costo de venta (override)',
+                                'Vacío = heredar de la categoría. Típico: 6135.'
+                            )->helperText(fn (Forms\Get $get) => self::inheritanceHint(
+                                $get('category_id'),
+                                'default_cost_account_id',
+                                'Vacío = heredar de la categoría. Típico: 6135.'
+                            )),
                         ]),
                     ]),
 
@@ -457,6 +491,32 @@ class ProductResource extends Resource
                     ]),
             ])->columnSpanFull(),
         ]);
+    }
+
+    /**
+     * Texto para el helperText de los campos de override: si el producto deja
+     * el campo vacio, muestra que cuenta/impuesto heredaria de su categoria.
+     */
+    private static function inheritanceHint(?int $categoryId, string $field, string $fallback): string
+    {
+        if (! $categoryId) return $fallback;
+        $category = \App\Models\Category::with('parent')->find($categoryId);
+        if (! $category) return $fallback;
+        $resolvedId = $category->resolveDefault($field);
+        if (! $resolvedId) {
+            return "Vacío = heredar (la categoría \"{$category->name}\" no tiene este valor configurado).";
+        }
+        // Detecta si es cuenta o impuesto por el nombre del campo
+        if (str_contains($field, 'tax')) {
+            $tax = \App\Models\Tax::find($resolvedId);
+            return $tax
+                ? "Vacío = heredar de la categoría → {$tax->code} ({$tax->name})"
+                : $fallback;
+        }
+        $account = \App\Models\Account::find($resolvedId);
+        return $account
+            ? "Vacío = heredar de la categoría → {$account->code} — {$account->name}"
+            : $fallback;
     }
 
     private static function accountSelect(string $name, string $label, ?string $help = null): Forms\Components\Select
