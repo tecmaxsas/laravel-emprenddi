@@ -147,6 +147,40 @@ class Product extends Model
         return $this->belongsTo(Account::class, 'cost_account_id');
     }
 
+    // ============================================================
+    // RESOLUCION DE CUENTAS / IMPUESTOS (producto -> categoria -> padre)
+    // ============================================================
+
+    /**
+     * Cuenta de venta efectiva: override del producto, o herencia desde la
+     * categoria (recursivo por jerarquia padre). Devuelve null si nadie
+     * la define — el postear debe fallar con mensaje claro.
+     */
+    public function effectiveSaleAccountId(): ?int
+    {
+        return $this->sale_account_id ?? $this->category?->resolveDefault('default_sale_account_id');
+    }
+
+    public function effectiveCostAccountId(): ?int
+    {
+        return $this->cost_account_id ?? $this->category?->resolveDefault('default_cost_account_id');
+    }
+
+    public function effectiveInventoryAccountId(): ?int
+    {
+        return $this->inventory_account_id ?? $this->category?->resolveDefault('default_inventory_account_id');
+    }
+
+    public function effectiveSaleTaxId(): ?int
+    {
+        return $this->default_sale_tax_id ?? $this->category?->resolveDefault('default_sale_tax_id');
+    }
+
+    public function effectivePurchaseTaxId(): ?int
+    {
+        return $this->default_purchase_tax_id ?? $this->category?->resolveDefault('default_purchase_tax_id');
+    }
+
     public function productLocations(): HasMany
     {
         return $this->hasMany(ProductLocation::class);

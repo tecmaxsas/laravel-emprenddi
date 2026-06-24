@@ -17,6 +17,11 @@ class Category extends Model
     protected $fillable = [
         'company_id',
         'parent_id',
+        'default_sale_account_id',
+        'default_cost_account_id',
+        'default_inventory_account_id',
+        'default_sale_tax_id',
+        'default_purchase_tax_id',
         'code',
         'name',
         'slug',
@@ -58,8 +63,63 @@ class Category extends Model
         return $this->hasMany(Product::class);
     }
 
+    public function defaultSaleAccount(): BelongsTo
+    {
+        return $this->belongsTo(Account::class, 'default_sale_account_id');
+    }
+
+    public function defaultCostAccount(): BelongsTo
+    {
+        return $this->belongsTo(Account::class, 'default_cost_account_id');
+    }
+
+    public function defaultInventoryAccount(): BelongsTo
+    {
+        return $this->belongsTo(Account::class, 'default_inventory_account_id');
+    }
+
+    public function defaultSaleTax(): BelongsTo
+    {
+        return $this->belongsTo(Tax::class, 'default_sale_tax_id');
+    }
+
+    public function defaultPurchaseTax(): BelongsTo
+    {
+        return $this->belongsTo(Tax::class, 'default_purchase_tax_id');
+    }
+
     public function fullName(): string
     {
         return $this->parent ? "{$this->parent->name} › {$this->name}" : $this->name;
+    }
+
+    /**
+     * Resuelve la cuenta/impuesto subiendo por la jerarquía padre hasta
+     * encontrar valor. Si nadie en la cascada lo define, devuelve null.
+     */
+    public function resolveDefault(string $field): ?int
+    {
+        if (! in_array($field, [
+            'default_sale_account_id',
+            'default_cost_account_id',
+            'default_inventory_account_id',
+            'default_sale_tax_id',
+            'default_purchase_tax_id',
+        ], true)) {
+            return null;
+        }
+
+        $current = $this;
+        $depth = 0;
+        while ($current && $depth < 10) { // limite de seguridad para ciclos
+            $value = $current->{$field};
+            if ($value !== null) {
+                return (int) $value;
+            }
+            $current = $current->parent;
+            $depth++;
+        }
+
+        return null;
     }
 }
