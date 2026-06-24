@@ -552,6 +552,14 @@ class DianSettings extends Page implements HasForms
 
             Forms\Components\Section::make('Nueva resolución')
                 ->description('Datos exactos de la resolución que entrega la DIAN al habilitar el rango de numeración.')
+                ->headerActions([
+                    Forms\Components\Actions\Action::make('loadDianTestData')
+                        ->label('Cargar datos de prueba DIAN')
+                        ->icon('heroicon-o-beaker')
+                        ->color('warning')
+                        ->tooltip('Precarga el formulario con los datos del Set de Habilitación estándar de DIAN para Facturación Electrónica.')
+                        ->action('loadDianTestResolution'),
+                ])
                 ->columns(3)
                 ->schema([
                     Forms\Components\Select::make('res_document_type_id')
@@ -682,6 +690,35 @@ class DianSettings extends Page implements HasForms
         })->implode('');
 
         return new HtmlString('<ul class="list-disc ml-5 space-y-1">'.$rows.'</ul>');
+    }
+
+    /**
+     * Precarga el formulario con los datos exactos del Set de Habilitación
+     * estándar que DIAN entrega a todos los proveedores tecnológicos para el
+     * proceso de habilitación de Facturación Electrónica. Mismos valores que
+     * usa cualquier integrador (SETP / 18760000001 / clave técnica fija /
+     * rango 990000000-995000000 / vigencia 19/01/2019 — 19/01/2030).
+     */
+    public function loadDianTestResolution(): void
+    {
+        $this->data = array_merge($this->data, [
+            'res_document_type_id' => 1,
+            'res_prefix' => 'SETP',
+            'res_resolution_number' => '18760000001',
+            'res_resolution_date' => '2019-01-19',
+            'res_technical_key' => 'fc8eac422eba16e22ffd8c6f94b3f40a6e38162c',
+            'res_range_from' => 990000000,
+            'res_range_to' => 995000000,
+            'res_date_from' => '2019-01-19',
+            'res_date_to' => '2030-01-19',
+        ]);
+        $this->form->fill($this->data);
+
+        \Filament\Notifications\Notification::make()
+            ->title('Datos de prueba cargados')
+            ->body('Revisa los valores y pulsa "Guardar resolución y enviar a DIAN" para registrarlos.')
+            ->success()
+            ->send();
     }
 
     public function saveResolution(): void
