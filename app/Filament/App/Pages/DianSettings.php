@@ -39,6 +39,15 @@ class DianSettings extends Page implements HasForms
 
     public ?array $data = [];
 
+    /**
+     * Última respuesta de la API DIAN por tab, para que el usuario vea
+     * exactamente lo que devolvió apidian.emprenddi.com despues de cada
+     * accion (no solo un mensaje de exito/error).
+     *
+     * Estructura: ['tab1' => ['ok'=>bool, 'status'=>int, 'data'=>array, 'error'=>?string, 'time'=>string]]
+     */
+    public array $apiResponses = [];
+
     public static function canAccess(): bool
     {
         return (bool) auth()->user()?->can('dian.manage');
@@ -63,6 +72,8 @@ class DianSettings extends Page implements HasForms
 
             // Tab 3
             'certificate_password' => $config->certificate_password,
+            'certificate_expedition_date' => $config->certificate_expedition_date?->toDateString(),
+            'certificate_expiration_date' => $config->certificate_expiration_date?->toDateString(),
 
             // Tab 4 — campos para crear UNA nueva resolución
             'res_document_type_id' => 1,
@@ -205,6 +216,10 @@ class DianSettings extends Page implements HasForms
                     ->icon('heroicon-o-cloud-arrow-up')
                     ->action('saveTab1'),
             ])->alignEnd(),
+
+            Forms\Components\Placeholder::make('tab1_api_response')
+                ->label('')
+                ->content(fn () => $this->apiResponseBlock('tab1')),
         ];
     }
 
@@ -252,6 +267,7 @@ class DianSettings extends Page implements HasForms
         ];
 
         $result = (new DianApiClient($config))->registerCompany($company->nit, $company->dv, $payload);
+        $this->recordApiResponse('tab1', $result);
 
         if ($result['ok']) {
             $token = $this->extractToken($result['data']);
@@ -295,6 +311,10 @@ class DianSettings extends Page implements HasForms
                     ->icon('heroicon-o-cloud-arrow-up')
                     ->action('saveTab2'),
             ])->alignEnd(),
+
+            Forms\Components\Placeholder::make('tab2_api_response')
+                ->label('')
+                ->content(fn () => $this->apiResponseBlock('tab2')),
         ];
     }
 
@@ -319,6 +339,7 @@ class DianSettings extends Page implements HasForms
             'id' => $config->software_id,
             'pin' => $config->software_pin,
         ]);
+        $this->recordApiResponse('tab2', $result);
 
         if ($result['ok']) {
             $config->update(['software_configured' => true]);
@@ -357,6 +378,36 @@ class DianSettings extends Page implements HasForms
                         ->revealable()
                         ->maxLength(200)
                         ->columnSpan(2),
+
+                    Forms\Components\DatePicker::make('certificate_expedition_date')
+                        ->label('Fecha de expedición')
+                        ->native(false)
+                        ->displayFormat('d/m/Y')
+                        ->helperText('Cuándo emitió la entidad certificadora el .p12. Solo informativo — no se envía a DIAN.'),
+
+                    Forms\Components\DatePicker::make('certificate_expiration_date')
+                        ->label('Fecha de vencimiento')
+                        ->native(false)
+                        ->displayFormat('d/m/Y')
+                        ->live()
+                        ->helperText('Cuándo expira el certificado. Sirve para alertarte antes del vencimiento.')
+                        ->after('certificate_expedition_date'),
+
+                    Forms\Components\Placeholder::make('expiration_status')
+                        ->label('')
+                        ->columnSpan(2)
+                        ->content(function () {
+                            $config = $this->config();
+                            $days = $config->daysToCertificateExpiration();
+                            if ($days === null) return new HtmlString('<div style="padding:8px 12px; background:#f1f5f9; color:#475569; border-radius:6px; font-size:12.5px;">⚠ No has registrado la fecha de vencimiento.</div>');
+                            if ($days < 0) {
+                                return new HtmlString('<div style="padding:8px 12px; background:#fee2e2; color:#991b1b; border-radius:6px; font-size:13px; font-weight:600;">🚨 El certificado venció hace '.abs($days).' día(s). Renuévalo y vuelve a subirlo.</div>');
+                            }
+                            if ($days <= 30) {
+                                return new HtmlString('<div style="padding:8px 12px; background:#fef3c7; color:#92400e; border-radius:6px; font-size:13px; font-weight:600;">⚠ El certificado vence en '.$days.' día(s). Empieza la renovación pronto.</div>');
+                            }
+                            return new HtmlString('<div style="padding:8px 12px; background:#dcfce7; color:#166534; border-radius:6px; font-size:13px;">✓ Certificado vigente. Vence en '.$days.' día(s).</div>');
+                        }),
                 ]),
 
             Forms\Components\Actions::make([
@@ -365,6 +416,10 @@ class DianSettings extends Page implements HasForms
                     ->icon('heroicon-o-cloud-arrow-up')
                     ->action('saveTab3'),
             ])->alignEnd(),
+
+            Forms\Components\Placeholder::make('tab3_api_response')
+                ->label('')
+                ->content(fn () => $this->apiResponseBlock('tab3')),
         ];
     }
 
@@ -392,15 +447,24 @@ class DianSettings extends Page implements HasForms
             'certificate' => $base64,
             'password' => $state['certificate_password'],
         ]);
+        $this->recordApiResponse('tab3', $result);
 
         if ($result['ok']) {
             $config->update([
                 'certificate_filename' => $filename,
                 'certificate_password' => $state['certificate_password'],
+                'certificate_expedition_date' => $state['certificate_expedition_date'] ?? null,
+                'certificate_expiration_date' => $state['certificate_expiration_date'] ?? null,
                 'certificate_uploaded' => true,
             ]);
             $this->successNotif('Certificado subido a DIAN', 'Continúa con el tab de Resoluciones.');
         } else {
+            // Aunque la API falle, guardamos localmente las fechas si las hay
+            // para que el usuario pueda gestionar el vencimiento.
+            $config->update([
+                'certificate_expedition_date' => $state['certificate_expedition_date'] ?? $config->certificate_expedition_date,
+                'certificate_expiration_date' => $state['certificate_expiration_date'] ?? $config->certificate_expiration_date,
+            ]);
             $this->errorNotif('No fue posible subir el certificado a DIAN', $result['error'] ?? 'Error desconocido');
         }
     }
@@ -475,6 +539,10 @@ class DianSettings extends Page implements HasForms
                     ->icon('heroicon-o-cloud-arrow-up')
                     ->action('saveResolution'),
             ])->alignEnd(),
+
+            Forms\Components\Placeholder::make('tab4_api_response')
+                ->label('')
+                ->content(fn () => $this->apiResponseBlock('tab4')),
 
             Forms\Components\Section::make('Asignar resolución a sede')
                 ->description('El consecutivo inicial es editable: por defecto arranca en "Rango desde", pero si la resolución ya fue usada antes puedes empezar desde un número distinto.')
@@ -574,6 +642,7 @@ class DianSettings extends Page implements HasForms
         ];
 
         $result = (new DianApiClient($config))->saveResolution($payload);
+        $this->recordApiResponse('tab4', $result);
 
         if (! $result['ok']) {
             $this->errorNotif('No fue posible guardar la resolución en DIAN', $result['error'] ?? 'Error desconocido');
@@ -682,6 +751,11 @@ class DianSettings extends Page implements HasForms
                             ->icon('heroicon-o-arrow-path')
                             ->action('changeEnvironment'),
                     ]),
+
+                    Forms\Components\Placeholder::make('tab5_env_api_response')
+                        ->label('')
+                        ->columnSpan(2)
+                        ->content(fn () => $this->apiResponseBlock('tab5')),
                 ]),
 
             Forms\Components\Section::make('Set de pruebas DIAN')
@@ -701,6 +775,11 @@ class DianSettings extends Page implements HasForms
                             ->color('warning')
                             ->action('sendTestInvoice'),
                     ]),
+
+                    Forms\Components\Placeholder::make('tab5_test_api_response')
+                        ->label('')
+                        ->columnSpan(2)
+                        ->content(fn () => $this->apiResponseBlock('tab5_test')),
                 ]),
         ];
     }
@@ -718,6 +797,7 @@ class DianSettings extends Page implements HasForms
         $env = (int) $state['environment'];
 
         $result = (new DianApiClient($config))->changeEnvironment($env);
+        $this->recordApiResponse('tab5', $result);
 
         if ($result['ok']) {
             $config->update(['environment' => $env]);
@@ -747,6 +827,7 @@ class DianSettings extends Page implements HasForms
         $payload = $this->buildTestInvoicePayload();
 
         $result = (new DianApiClient($config))->sendTestInvoice($payload, $state['test_set_id']);
+        $this->recordApiResponse('tab5_test', $result);
 
         if ($result['ok']) {
             $this->successNotif('Factura de prueba enviada a DIAN', 'Revisa el estado del set en el portal MUISCA.');
@@ -885,5 +966,56 @@ class DianSettings extends Page implements HasForms
     protected function errorNotif(string $title, ?string $body = null): void
     {
         Notification::make()->title($title)->body($body)->danger()->persistent()->send();
+    }
+
+    /**
+     * Guarda la respuesta de apidian.emprenddi.com asociada a un tab para
+     * que se muestre en el visor de respuestas (apiResponseBlock).
+     */
+    protected function recordApiResponse(string $tabKey, array $result): void
+    {
+        $this->apiResponses[$tabKey] = array_merge($result, [
+            'time' => now()->format('d/m/Y H:i:s'),
+        ]);
+    }
+
+    /**
+     * Renderiza la última respuesta de la API DIAN para un tab. Muestra:
+     *  - Status HTTP coloreado (verde si ok, rojo si error)
+     *  - Timestamp del envío
+     *  - JSON completo decodificado (max-height con scroll)
+     * Retorna null (cadena vacía) si aún no hay respuesta para ese tab.
+     */
+    protected function apiResponseBlock(string $tabKey): HtmlString
+    {
+        $r = $this->apiResponses[$tabKey] ?? null;
+        if (! $r) {
+            return new HtmlString('');
+        }
+        $ok = (bool) ($r['ok'] ?? false);
+        $status = (int) ($r['status'] ?? 0);
+        $time = (string) ($r['time'] ?? '');
+        $err = (string) ($r['error'] ?? '');
+        $body = json_encode($r['data'] ?? [], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        $color = $ok ? '#16a34a' : '#dc2626';
+        $bg = $ok ? '#dcfce7' : '#fee2e2';
+        $fg = $ok ? '#166534' : '#991b1b';
+        $statusLabel = $ok ? '✓ OK' : '✗ Error';
+
+        $errLine = $err !== ''
+            ? '<div style="margin-top:6px; padding:6px 10px; background:#fee2e2; color:#991b1b; border-radius:4px; font-size:12.5px;">'.e($err).'</div>'
+            : '';
+
+        return new HtmlString(
+            '<div style="border:1px solid '.$color.'; border-radius:8px; overflow:hidden; margin-top:12px;">'
+            .'<div style="padding:8px 12px; background:'.$bg.'; color:'.$fg.'; display:flex; justify-content:space-between; align-items:center; font-size:13px; font-weight:600;">'
+            .'<span>📡 Respuesta de apidian.emprenddi.com — '.$statusLabel.' · HTTP '.$status.'</span>'
+            .'<span style="font-weight:500; opacity:.8;">'.e($time).'</span>'
+            .'</div>'
+            .$errLine
+            .'<pre style="margin:0; padding:10px 12px; background:#0f172a; color:#e2e8f0; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11.5px; line-height:1.45; max-height:320px; overflow:auto; white-space:pre-wrap; word-break:break-word;">'.e($body).'</pre>'
+            .'</div>'
+        );
     }
 }

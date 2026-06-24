@@ -35,6 +35,8 @@ class CompanyConfig extends Model
         'software_pin',
         'certificate_filename',
         'certificate_password',
+        'certificate_expedition_date',
+        'certificate_expiration_date',
         'company_registered',
         'software_configured',
         'certificate_uploaded',
@@ -47,7 +49,21 @@ class CompanyConfig extends Model
             'company_registered' => 'boolean',
             'software_configured' => 'boolean',
             'certificate_uploaded' => 'boolean',
+            'certificate_expedition_date' => 'date',
+            'certificate_expiration_date' => 'date',
         ];
+    }
+
+    /**
+     * Días restantes hasta el vencimiento del certificado.
+     * Devuelve null si no hay fecha. Negativo si ya vencido.
+     */
+    public function daysToCertificateExpiration(): ?int
+    {
+        if (! $this->certificate_expiration_date) {
+            return null;
+        }
+        return (int) round(now()->startOfDay()->diffInDays($this->certificate_expiration_date->startOfDay(), false));
     }
 
     /**
