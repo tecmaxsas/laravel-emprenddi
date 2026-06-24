@@ -85,3 +85,7 @@ Route::get('/menu/{slug}', [\App\Http\Controllers\PublicMenuController::class, '
 Route::get('/legal/{doc}', fn (string $doc) => view('legal.policy', ['doc' => $doc]))
     ->name('legal.policy')
     ->where('doc', 'terminos|privacidad');
+
+// Documentación pública del módulo Parqueadero.
+Route::get('/docs/parqueadero', fn () => view('docs.parking'))
+    ->name('docs.parking');
