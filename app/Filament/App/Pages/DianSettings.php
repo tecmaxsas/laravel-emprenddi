@@ -543,7 +543,15 @@ class DianSettings extends Page implements HasForms
     {
         return [
             Forms\Components\Section::make('Resoluciones registradas')
-                ->description('Resoluciones DIAN cargadas para esta empresa.')
+                ->description('Resoluciones DIAN cargadas para esta empresa. Puedes consultar el listado que DIAN tiene autorizado para tu software y guardarlas localmente.')
+                ->headerActions([
+                    Forms\Components\Actions\Action::make('fetchDianResolutions')
+                        ->label('Consultar resoluciones DIAN')
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->color('info')
+                        ->tooltip('Llama a apidian.emprenddi.com /numbering-range con tu IDSoftware y guarda las resoluciones devueltas.')
+                        ->action('fetchDianResolutions'),
+                ])
                 ->schema([
                     Forms\Components\Placeholder::make('existing_resolutions')
                         ->label('')
@@ -690,6 +698,158 @@ class DianSettings extends Page implements HasForms
         })->implode('');
 
         return new HtmlString('<ul class="list-disc ml-5 space-y-1">'.$rows.'</ul>');
+    }
+
+    /**
+     * Consulta a apidian.emprenddi.com las resoluciones autorizadas por DIAN
+     * para el IDSoftware de la empresa y las guarda localmente (updateOrCreate
+     * por company_id + document_type_id + prefix). Tolerante a las variantes
+     * de campos que pueda devolver la API (snake_case, PascalCase, alias).
+     */
+    public function fetchDianResolutions(): void
+    {
+        $config = $this->config()->refresh();
+
+        if (! $config->software_id || ! $config->api_token) {
+            $this->errorNotif(
+                'Falta configuración previa',
+                'Necesitas tener el Software configurado (tab 2) antes de consultar resoluciones DIAN.',
+            );
+            return;
+        }
+
+        $result = (new DianApiClient($config))->getNumberRanges([
+            'IDSoftware' => $config->software_id,
+        ]);
+        $this->recordApiResponse('tab4', $result);
+
+        if (! $result['ok']) {
+            $this->errorNotif(
+                'No fue posible consultar resoluciones en DIAN',
+                $result['error'] ?? 'Error desconocido',
+            );
+            return;
+        }
+
+        $items = $this->extractResolutionItems($result['data']);
+        if (empty($items)) {
+            $this->errorNotif(
+                'La consulta no devolvió resoluciones',
+                'Revisa el JSON de la respuesta debajo. DIAN puede no tener resoluciones autorizadas todavía.',
+            );
+            return;
+        }
+
+        $companyId = auth()->user()->company_id;
+        $saved = 0;
+        foreach ($items as $item) {
+            $payload = $this->normalizeResolutionItem($item);
+            if (! $payload['prefix'] || ! $payload['document_type_id']) {
+                continue;
+            }
+            Resolution::updateOrCreate(
+                [
+                    'company_id' => $companyId,
+                    'document_type_id' => $payload['document_type_id'],
+                    'prefix' => $payload['prefix'],
+                ],
+                $payload + [
+                    'company_id' => $companyId,
+                    'kind' => Resolution::KIND_ELECTRONIC,
+                    'active' => true,
+                ],
+            );
+            $saved++;
+        }
+
+        $this->successNotif(
+            "Se guardaron {$saved} resolución(es) de DIAN",
+            'Revisa la lista de "Resoluciones registradas" arriba.',
+        );
+    }
+
+    /**
+     * Recorre la respuesta de la API buscando el array de resoluciones,
+     * sin importar la key con la que venga (ResolutionList, resolutions,
+     * data, items, etc.). Si la raíz ya es un array de objetos, lo retorna.
+     */
+    protected function extractResolutionItems(array $data): array
+    {
+        // Posibles ubicaciones del array
+        $candidates = [
+            $data['ResolutionList'] ?? null,
+            $data['resolutions'] ?? null,
+            $data['Resolutions'] ?? null,
+            $data['data']['ResolutionList'] ?? null,
+            $data['data']['resolutions'] ?? null,
+            $data['data'] ?? null,
+            $data['items'] ?? null,
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (is_array($candidate) && ! empty($candidate) && $this->looksLikeResolutionList($candidate)) {
+                return $candidate;
+            }
+        }
+
+        // Caso límite: la API devolvió un solo objeto en la raíz
+        if ($this->looksLikeResolutionRow($data)) {
+            return [$data];
+        }
+        return [];
+    }
+
+    protected function looksLikeResolutionList(array $rows): bool
+    {
+        $first = reset($rows);
+        return is_array($first) && $this->looksLikeResolutionRow($first);
+    }
+
+    protected function looksLikeResolutionRow(array $row): bool
+    {
+        return isset($row['Prefix']) || isset($row['prefix'])
+            || isset($row['TypeDocumentId']) || isset($row['type_document_id'])
+            || isset($row['Resolution']) || isset($row['resolution']);
+    }
+
+    /**
+     * Normaliza un row del API (en cualquier convención de naming) al shape
+     * que usa el modelo Resolution.
+     */
+    protected function normalizeResolutionItem(array $row): array
+    {
+        $pick = fn (array $keys, $default = null) => collect($keys)
+            ->map(fn ($k) => $row[$k] ?? null)
+            ->first(fn ($v) => $v !== null && $v !== '') ?? $default;
+
+        $docTypeId = (int) $pick(['type_document_id', 'TypeDocumentId', 'document_type_id', 'DocumentTypeId']);
+        $docTypeName = (string) $pick(['type_document_name', 'TypeDocumentName', 'document_type_name'], '');
+        if (! $docTypeName && $docTypeId) {
+            $docTypeName = Resolution::DOCUMENT_TYPES[$docTypeId] ?? '';
+        }
+
+        return [
+            'document_type_id' => $docTypeId ?: null,
+            'document_type_name' => $docTypeName ?: null,
+            'prefix' => (string) ($pick(['prefix', 'Prefix']) ?? ''),
+            'resolution_number' => (string) ($pick(['resolution', 'Resolution', 'resolution_number']) ?? ''),
+            'resolution_date' => $this->parseDateOrNull($pick(['resolution_date', 'ResolutionDate'])),
+            'technical_key' => (string) ($pick(['technical_key', 'TechnicalKey']) ?? ''),
+            'range_from' => (int) ($pick(['from', 'From', 'range_from']) ?? 0),
+            'range_to' => (int) ($pick(['to', 'To', 'range_to']) ?? 0),
+            'date_from' => $this->parseDateOrNull($pick(['date_from', 'DateFrom'])),
+            'date_to' => $this->parseDateOrNull($pick(['date_to', 'DateTo'])),
+        ];
+    }
+
+    protected function parseDateOrNull($value): ?string
+    {
+        if (! $value) return null;
+        try {
+            return \Carbon\Carbon::parse((string) $value)->toDateString();
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**
