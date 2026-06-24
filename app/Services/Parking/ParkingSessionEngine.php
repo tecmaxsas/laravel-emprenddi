@@ -21,6 +21,7 @@ class ParkingSessionEngine
 {
     public function __construct(
         protected ParkingRateEngine $rates,
+        protected ParkingMembershipEngine $memberships,
     ) {}
 
     /**
@@ -57,8 +58,11 @@ class ParkingSessionEngine
         }
 
         $spaceId = $payload['parking_space_id'] ?? null;
+        // Detectar cobertura por mensualidad/convenio al momento del checkIn
+        // — se queda asociada a la sesion para que el checkOut no cobre.
+        $membership = $this->memberships->findCoverageFor($plate, (int) $lot->id);
 
-        return DB::transaction(function () use ($lot, $plate, $payload, $spaceId) {
+        return DB::transaction(function () use ($lot, $plate, $payload, $spaceId, $membership) {
             $spaceCode = null;
             if ($spaceId) {
                 // Lock pesimista para evitar que dos entradas tomen el mismo espacio.
@@ -82,6 +86,7 @@ class ParkingSessionEngine
                 'parking_lot_id' => $lot->id,
                 'vehicle_type_id' => $payload['vehicle_type_id'] ?? null,
                 'parking_space_id' => $spaceId,
+                'parking_membership_id' => $membership?->id,
                 'space_code' => $spaceCode,
                 'plate' => $plate,
                 'entry_at' => $payload['entry_at'] ?? now(),
@@ -105,6 +110,35 @@ class ParkingSessionEngine
         $exitAt = $exitAt ?: now();
         if ($exitAt->lt($session->entry_at)) {
             throw new RuntimeException('La hora de salida no puede ser anterior a la de entrada.');
+        }
+
+        // Si la sesion tiene mensualidad activa, no se cobra al cliente: la
+        // mensualidad se factura por separado. Se cierra con amount=0 y un
+        // breakdown explicativo para que quede trazabilidad.
+        if ($session->parking_membership_id) {
+            $minutes = max(0, (int) $session->entry_at->diffInMinutes($exitAt));
+            $membership = $session->relationLoaded('parkingMembership')
+                ? $session->parkingMembership
+                : $session->parkingMembership()->first();
+            DB::transaction(function () use ($session, $exitAt, $minutes, $membership) {
+                $session->update([
+                    'exit_at' => $exitAt,
+                    'status' => ParkingSession::STATUS_CLOSED,
+                    'total_minutes' => $minutes,
+                    'free_minutes' => $minutes,
+                    'charge_minutes' => 0,
+                    'amount' => 0,
+                    'cap_applied' => false,
+                    'breakdown' => [[
+                        'label' => 'Cubierto por '.($membership?->name ?? 'mensualidad/convenio'),
+                        'amount' => 0.0,
+                    ]],
+                    'closed_by_user_id' => Auth::id(),
+                    'closed_at' => now(),
+                ]);
+                $this->releaseSpace($session);
+            });
+            return $session->fresh();
         }
 
         $rate = $this->rates->resolveActiveRate(
@@ -232,6 +266,26 @@ class ParkingSessionEngine
     public function quote(ParkingSession $session, ?Carbon $exitAt = null): array
     {
         $exitAt = $exitAt ?: now();
+
+        // Si esta cubierta por mensualidad/convenio, el monto es 0
+        if ($session->parking_membership_id) {
+            $minutes = max(0, (int) $session->entry_at->diffInMinutes($exitAt));
+            $membership = $session->parkingMembership()->first();
+            return [
+                'minutes' => $minutes,
+                'free_minutes' => $minutes,
+                'charge_minutes' => 0,
+                'amount' => 0.0,
+                'cap_applied' => false,
+                'breakdown' => [[
+                    'label' => 'Cubierto por '.($membership?->name ?? 'mensualidad/convenio'),
+                    'amount' => 0.0,
+                ]],
+                'rate' => null,
+                'membership' => $membership,
+            ];
+        }
+
         $rate = $this->rates->resolveActiveRate(
             (int) $session->parking_lot_id,
             $session->vehicle_type_id,
