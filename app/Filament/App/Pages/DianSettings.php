@@ -225,7 +225,9 @@ class DianSettings extends Page implements HasForms
 
     public function saveTab1(): void
     {
-        $state = $this->form->getState();
+        // Leer raw data sin disparar validacion de TODO el formulario:
+        // cada tab valida sus propios campos en su metodo save respectivo.
+        $state = $this->data;
         $company = auth()->user()->company;
 
         if (! $company) {
@@ -235,6 +237,21 @@ class DianSettings extends Page implements HasForms
         if (! $company->nit || ! $company->dv) {
             $this->errorNotif('La empresa debe tener NIT y dígito de verificación', 'Configura primero los datos básicos de la empresa.');
             return;
+        }
+
+        // Validacion local del tab 1
+        $required = [
+            'dian_document_type_id' => 'Tipo de documento',
+            'dian_organization_type_id' => 'Tipo de organización',
+            'dian_regime_type_id' => 'Régimen',
+            'dian_tax_liability_id' => 'Responsabilidad tributaria',
+            'dian_municipality_id' => 'Municipio',
+        ];
+        foreach ($required as $key => $label) {
+            if (empty($state[$key] ?? null)) {
+                $this->errorNotif('Falta diligenciar', "Completa el campo \"{$label}\" antes de enviar a DIAN.");
+                return;
+            }
         }
 
         DB::transaction(function () use ($state, $company) {
@@ -320,7 +337,13 @@ class DianSettings extends Page implements HasForms
 
     public function saveTab2(): void
     {
-        $state = $this->form->getState();
+        // Leer raw data sin disparar validacion de TODO el formulario:
+        // cada tab valida sus propios campos en su metodo save respectivo.
+        $state = $this->data;
+        if (empty($state['software_id'] ?? null) || empty($state['software_pin'] ?? null)) {
+            $this->errorNotif('Falta diligenciar', 'Completa ID Software y PIN antes de enviar a DIAN.');
+            return;
+        }
         $config = $this->config()->refresh();
 
         if (! $config->company_registered || ! $config->api_token) {
@@ -425,7 +448,13 @@ class DianSettings extends Page implements HasForms
 
     public function saveTab3(): void
     {
-        $state = $this->form->getState();
+        // Leer raw data sin disparar validacion de TODO el formulario:
+        // cada tab valida sus propios campos en su metodo save respectivo.
+        $state = $this->data;
+        if (empty($state['certificate_password'] ?? null)) {
+            $this->errorNotif('Falta la contraseña del certificado');
+            return;
+        }
         $config = $this->config()->refresh();
 
         if (! $config->software_configured || ! $config->api_token) {
@@ -620,7 +649,21 @@ class DianSettings extends Page implements HasForms
 
     public function saveResolution(): void
     {
-        $state = $this->form->getState();
+        // Leer raw data sin disparar validacion de TODO el formulario:
+        // cada tab valida sus propios campos en su metodo save respectivo.
+        $state = $this->data;
+        $required = [
+            'res_document_type_id' => 'Tipo de documento',
+            'res_resolution_number' => 'Número de resolución',
+            'res_range_from' => 'Rango desde',
+            'res_range_to' => 'Rango hasta',
+        ];
+        foreach ($required as $key => $label) {
+            if (empty($state[$key] ?? null)) {
+                $this->errorNotif('Falta diligenciar', "Completa el campo \"{$label}\" antes de enviar a DIAN.");
+                return;
+            }
+        }
         $config = $this->config()->refresh();
         $company = auth()->user()->company;
 
@@ -686,7 +729,9 @@ class DianSettings extends Page implements HasForms
 
     public function assignToLocation(): void
     {
-        $state = $this->form->getState();
+        // Leer raw data sin disparar validacion de TODO el formulario:
+        // cada tab valida sus propios campos en su metodo save respectivo.
+        $state = $this->data;
         $resolutionId = $state['assign_resolution_id'] ?? null;
         $locationId = $state['assign_location_id'] ?? null;
         $consecutive = $state['assign_current_consecutive'] ?? null;
@@ -786,11 +831,18 @@ class DianSettings extends Page implements HasForms
 
     public function changeEnvironment(): void
     {
-        $state = $this->form->getState();
+        // Leer raw data sin disparar validacion de TODO el formulario:
+        // cada tab valida sus propios campos en su metodo save respectivo.
+        $state = $this->data;
         $config = $this->config()->refresh();
 
         if (! $config->api_token) {
             $this->errorNotif('No hay token DIAN', 'Completa primero "Datos de la empresa".');
+            return;
+        }
+
+        if (! isset($state['environment']) || ! in_array((int) $state['environment'], [1, 2], true)) {
+            $this->errorNotif('Selecciona el ambiente', 'Elige Pruebas o Producción antes de aplicar el cambio.');
             return;
         }
 
@@ -812,7 +864,9 @@ class DianSettings extends Page implements HasForms
 
     public function sendTestInvoice(): void
     {
-        $state = $this->form->getState();
+        // Leer raw data sin disparar validacion de TODO el formulario:
+        // cada tab valida sus propios campos en su metodo save respectivo.
+        $state = $this->data;
         $config = $this->config()->refresh();
 
         if (! $config->api_token) {
