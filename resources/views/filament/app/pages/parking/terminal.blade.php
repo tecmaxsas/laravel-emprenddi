@@ -314,14 +314,20 @@
         </div>
     @endif
 
-    {{-- Listener: abre ventana de ticket QR tras registrar entrada --}}
+    {{-- Listeners: abre ventana de impresion del ticket QR (entrada) o la
+         factura POS (salida con cobro). --}}
     <script>
         document.addEventListener('livewire:init', () => {
             Livewire.on('parking-ticket-ready', (data) => {
                 const id = Array.isArray(data) ? data[0]?.sessionId : data.sessionId;
                 if (id) {
-                    const url = '/app/parking/tickets/' + id + '/print';
-                    window.open(url, '_blank', 'width=420,height=620');
+                    window.open('/app/parking/tickets/' + id + '/print', '_blank', 'width=420,height=620');
+                }
+            });
+            Livewire.on('parking-invoice-ready', (data) => {
+                const id = Array.isArray(data) ? data[0]?.invoiceId : data.invoiceId;
+                if (id) {
+                    window.open('/app/pos/print/' + id, '_blank', 'width=420,height=620');
                 }
             });
         });

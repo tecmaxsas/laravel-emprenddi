@@ -414,6 +414,11 @@ class ParkingTerminal extends Page
                 ->title("✓ Salida · {$closed->plate}")
                 ->body($msg)
                 ->success()->send();
+
+            // Imprimir factura POS en nueva ventana (mismo flujo que POS regular)
+            if ($invoice) {
+                $this->dispatch('parking-invoice-ready', invoiceId: $invoice->id);
+            }
         } catch (\Throwable $e) {
             $this->notify('danger', 'No se pudo registrar la salida', $e->getMessage());
         }
@@ -438,6 +443,10 @@ class ParkingTerminal extends Page
                 ->title("⚠ Ticket perdido · {$closed->plate}")
                 ->body($msg)
                 ->warning()->send();
+
+            if ($invoice) {
+                $this->dispatch('parking-invoice-ready', invoiceId: $invoice->id);
+            }
         } catch (\Throwable $e) {
             $this->notify('danger', 'No se pudo procesar el ticket perdido', $e->getMessage());
         }
