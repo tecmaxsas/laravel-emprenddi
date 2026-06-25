@@ -28,6 +28,7 @@ class ParkingEntry extends Page implements HasForms
     protected static ?string $navigationLabel = 'Entrada';
     protected static ?string $navigationGroup = 'Parqueadero';
     protected static ?int $navigationSort = 1;
+    protected static bool $shouldRegisterNavigation = false;
     protected static ?string $title = 'Registrar entrada';
 
     protected static string $view = 'filament.app.pages.parking.entry';

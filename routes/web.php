@@ -62,6 +62,11 @@ Route::middleware(['web', 'auth'])->group(function () {
         [\App\Http\Controllers\App\ReportExportController::class, 'cashClosings'])
         ->name('reports.export.cash_closings');
 
+    // Ticket imprimible de entrada al parqueadero (con QR para salida).
+    Route::get('/app/parking/tickets/{session}/print',
+        [\App\Http\Controllers\App\ParkingTicketController::class, 'show'])
+        ->name('parking.tickets.print');
+
     // Exportacion XLSX de reportes del modulo de parqueadero.
     Route::get('/app/parking/reports/export/sessions',
         [\App\Http\Controllers\App\ParkingReportExportController::class, 'sessions'])

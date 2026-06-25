@@ -29,6 +29,7 @@ class ParkingExit extends Page implements HasForms
     protected static ?string $navigationLabel = 'Salida';
     protected static ?string $navigationGroup = 'Parqueadero';
     protected static ?int $navigationSort = 2;
+    protected static bool $shouldRegisterNavigation = false;
     protected static ?string $title = 'Registrar salida';
 
     protected static string $view = 'filament.app.pages.parking.exit';
