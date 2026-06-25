@@ -2,11 +2,11 @@
     // Decide a qué POS apunta el botón segun los modulos activos de la
     // empresa y los permisos del usuario. Orden de prioridad:
     //  1. Restaurante (si esta activo + restaurant.use)
-    //  2. Parqueadero (si esta activo + parking.use Y la empresa NO tiene
-    //     ni restaurant ni pos.use — empresa parking-only)
+    //  2. Parqueadero (si esta activo + parking.use) — gana sobre POS
+    //     regular porque el Terminal ES su POS. Si necesitan POS retail
+    //     tambien, lo acceden desde el sidebar.
     //  3. POS regular (si tiene pos.use)
-    //  4. Parqueadero (fallback si no hay POS regular pero si hay parking)
-    //  5. Si no puede usar ninguno, no rendereamos nada.
+    //  4. Si no puede usar ninguno, no rendereamos nada.
     $user = auth()->user();
     $canRestaurant = \App\Support\ModuleGate::active('restaurant')
         && $user?->can('restaurant.use');
@@ -18,8 +18,7 @@
         $href = route('filament.app.pages.restaurant-pos');
         $title = 'Abrir POS Restaurante';
         $label = 'POS';
-    } elseif ($canParking && ! $canRegular) {
-        // Empresa de parqueadero pura: el "POS" lleva al terminal
+    } elseif ($canParking) {
         $href = route('filament.app.pages.parking');
         $title = 'Abrir Terminal de Parqueadero';
         $label = 'Terminal';
@@ -27,10 +26,6 @@
         $href = route('filament.app.pages.pos');
         $title = 'Abrir terminal POS';
         $label = 'POS';
-    } elseif ($canParking) {
-        $href = route('filament.app.pages.parking');
-        $title = 'Abrir Terminal de Parqueadero';
-        $label = 'Terminal';
     } else {
         $href = null;
     }
