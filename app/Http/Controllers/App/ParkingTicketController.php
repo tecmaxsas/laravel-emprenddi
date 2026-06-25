@@ -22,7 +22,7 @@ class ParkingTicketController extends Controller
             'vehicleType:id,name,icon,code',
             'space:id,code,zone',
             'parkingMembership:id,name',
-            'company:id,name,nit,document_type',
+            'company:id,name,nit,document_type,active_modules',
         ])->find($session);
 
         // Aislamiento por empresa: el ticket solo se imprime para sesiones
