@@ -10,8 +10,11 @@ use App\Models\Parking\ParkingSession;
 use App\Models\Parking\ParkingSpace;
 use App\Models\Parking\VehicleType;
 use App\Models\PaymentMethod;
+use App\Models\Product;
+use App\Models\Tax;
 use App\Models\ThirdParty;
 use App\Services\Parking\ParkingBillingEngine;
+use App\Services\Parking\ParkingProductProvisioner;
 use App\Services\Parking\ParkingSessionEngine;
 use App\Support\ModuleGate;
 use Filament\Notifications\Notification;
@@ -58,6 +61,10 @@ class ParkingTerminal extends Page
     public array $exitForm = [];
     public ?array $quote = null;
     public ?int $printTicketId = null;
+
+    /** Items adicionales agregados a la salida (productos/servicios) */
+    public array $exitExtras = [];
+    public string $extraSearch = '';
 
     public static function canAccess(): bool
     {
@@ -214,6 +221,83 @@ class ParkingTerminal extends Page
             'notes' => null,
         ];
     }
+
+    /* ------------------------------------------------------------------ */
+    /*  Extras (productos/servicios adicionales)                           */
+    /* ------------------------------------------------------------------ */
+
+    public function getProductSearchResultsProperty()
+    {
+        $q = trim($this->extraSearch);
+        if (strlen($q) < 2) return collect();
+        return Product::query()
+            ->where('is_sellable', true)
+            ->where('active', true)
+            ->where('code', '!=', ParkingProductProvisioner::CODE)
+            ->where(function ($builder) use ($q) {
+                $builder->where('name', 'ilike', "%{$q}%")
+                    ->orWhere('code', 'ilike', "%{$q}%");
+            })
+            ->orderBy('name')->limit(12)
+            ->get(['id', 'code', 'name', 'default_sale_price', 'default_sale_tax_id']);
+    }
+
+    public function addExtra(int $productId): void
+    {
+        // Si ya esta en la lista, solo incrementa cantidad
+        foreach ($this->exitExtras as $i => $extra) {
+            if ((int) $extra['product_id'] === $productId) {
+                $this->exitExtras[$i]['quantity']++;
+                $this->extraSearch = '';
+                return;
+            }
+        }
+
+        $product = Product::find($productId);
+        if (! $product) return;
+        $tax = $product->default_sale_tax_id ? Tax::find($product->default_sale_tax_id) : null;
+
+        $this->exitExtras[] = [
+            'product_id' => $product->id,
+            'product_code' => $product->code,
+            'product_name' => $product->name,
+            'quantity' => 1,
+            'unit_price' => (float) $product->default_sale_price,
+            'tax_id' => $tax?->id,
+            'tax_rate' => $tax ? (float) $tax->rate : 0,
+        ];
+        $this->extraSearch = '';
+    }
+
+    public function removeExtra(int $index): void
+    {
+        if (! isset($this->exitExtras[$index])) return;
+        unset($this->exitExtras[$index]);
+        $this->exitExtras = array_values($this->exitExtras);
+    }
+
+    public function adjustExtraQty(int $index, int $delta): void
+    {
+        if (! isset($this->exitExtras[$index])) return;
+        $new = max(1, (int) $this->exitExtras[$index]['quantity'] + $delta);
+        $this->exitExtras[$index]['quantity'] = $new;
+    }
+
+    public function getExtrasTotalProperty(): float
+    {
+        return array_sum(array_map(
+            fn ($e) => (int) ($e['quantity'] ?? 0) * (float) ($e['unit_price'] ?? 0),
+            $this->exitExtras,
+        ));
+    }
+
+    public function getGrandTotalProperty(): float
+    {
+        $parking = (float) ($this->quote['amount'] ?? 0);
+        return round($parking + $this->extrasTotal, 2);
+    }
+
+    /* ------------------------------------------------------------------ */
 
     protected function resetExitForm(): void
     {
@@ -403,10 +487,11 @@ class ParkingTerminal extends Page
         try {
             $closed = app(ParkingSessionEngine::class)->checkOut($session);
             $invoice = $this->maybeIssueInvoice($closed);
+            $charged = $invoice ? (float) $invoice->total : (float) $closed->amount;
 
             $this->closeModal();
 
-            $msg = 'Total: $'.number_format((float) $closed->amount, 0, ',', '.');
+            $msg = 'Total: $'.number_format($charged, 0, ',', '.');
             if ($invoice) {
                 $msg .= ' · Factura '.$invoice->fullNumber();
             }
@@ -432,10 +517,11 @@ class ParkingTerminal extends Page
         try {
             $closed = app(ParkingSessionEngine::class)->lostTicket($session);
             $invoice = $this->maybeIssueInvoice($closed);
+            $charged = $invoice ? (float) $invoice->total : (float) $closed->amount;
 
             $this->closeModal();
 
-            $msg = 'Cobro: $'.number_format((float) $closed->amount, 0, ',', '.');
+            $msg = 'Cobro: $'.number_format($charged, 0, ',', '.');
             if ($invoice) {
                 $msg .= ' · Factura '.$invoice->fullNumber();
             }
@@ -472,20 +558,28 @@ class ParkingTerminal extends Page
 
     protected function maybeIssueInvoice(ParkingSession $closed): ?\App\Models\SaleInvoice
     {
-        if ((float) $closed->amount <= 0 || $closed->parking_membership_id) {
+        $parkingCharge = $closed->parking_membership_id ? 0 : (float) $closed->amount;
+        $extrasTotal = $this->extrasTotal;
+        $grandTotal = round($parkingCharge + $extrasTotal, 2);
+
+        // Nada que facturar: parqueo cubierto/cero + sin extras
+        if ($grandTotal <= 0) {
             return null;
         }
+
         $accountId = (int) ($this->exitForm['account_id'] ?? 0);
         if ($accountId <= 0) {
             throw new \RuntimeException('Selecciona la cuenta contable del cobro.');
         }
+
         return app(ParkingBillingEngine::class)->issueForSession($closed, [
             'invoice_kind' => $this->exitForm['invoice_kind'] ?? 'pos',
             'payment_method' => $this->exitForm['payment_method'] ?? 'cash',
             'account_id' => $accountId,
-            'paid_amount' => (float) $closed->amount,
+            'paid_amount' => $grandTotal,
             'third_party_id' => $this->exitForm['third_party_id'] ?? null,
             'reference' => 'Parqueo '.$closed->plate,
+            'extras' => $this->exitExtras,
         ]);
     }
 
@@ -495,6 +589,8 @@ class ParkingTerminal extends Page
         $this->selectedSpaceId = null;
         $this->activeSessionId = null;
         $this->quote = null;
+        $this->exitExtras = [];
+        $this->extraSearch = '';
         $this->resetEntryForm();
         $this->resetExitForm();
     }

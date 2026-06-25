@@ -201,8 +201,11 @@
             $sess = $activeSession;
             $membership = $sess->parkingMembership;
             $minutes = $quote['minutes'] ?? 0;
-            $amount = $quote['amount'] ?? 0;
-            $isCovered = (float) $amount === 0.0 && $membership;
+            $parkingAmount = (float) ($quote['amount'] ?? 0);
+            $extrasTotal = $this->extrasTotal;
+            $grandTotal = $this->grandTotal;
+            $isCovered = $parkingAmount === 0.0 && $membership;
+            $searchResults = $this->productSearchResults;
         @endphp
         <div class="pt-overlay" wire:click.self="closeModal">
             <div class="pt-modal pt-modal-lg">
@@ -226,18 +229,18 @@
                             <div class="pt-summary-val">{{ $minutes }} min</div>
                         </div>
                         <div>
-                            <div class="pt-summary-label">Tipo</div>
-                            <div class="pt-summary-val">{{ $sess->vehicleType?->name ?? '—' }}</div>
+                            <div class="pt-summary-label">Parqueo</div>
+                            <div class="pt-summary-val">{{ $fmt($parkingAmount) }}</div>
                         </div>
                         <div class="pt-summary-amount">
-                            <div class="pt-summary-label">Total</div>
-                            <div class="pt-summary-amount-val">{{ $fmt($amount) }}</div>
+                            <div class="pt-summary-label">Total a cobrar</div>
+                            <div class="pt-summary-amount-val">{{ $fmt($grandTotal) }}</div>
                         </div>
                     </div>
 
                     @if (! empty($quote['breakdown']))
                         <div class="pt-breakdown">
-                            <div class="pt-breakdown-head">Desglose</div>
+                            <div class="pt-breakdown-head">Desglose del parqueo</div>
                             <table>
                                 @foreach ($quote['breakdown'] as $row)
                                     <tr>
@@ -249,11 +252,66 @@
                         </div>
                     @endif
 
-                    @if ($isCovered)
+                    {{-- Servicios adicionales / productos --}}
+                    <div class="pt-extras">
+                        <div class="pt-extras-head">
+                            🛍️ Servicios adicionales / productos
+                            @if (count($exitExtras) > 0)
+                                <span class="pt-extras-total">+ {{ $fmt($extrasTotal) }}</span>
+                            @endif
+                        </div>
+
+                        <div class="pt-extras-search">
+                            <input type="text" wire:model.live.debounce.250ms="extraSearch"
+                                placeholder="Buscar producto o servicio (mín. 2 letras)..." />
+                            @if ($searchResults->count() > 0)
+                                <div class="pt-extras-results">
+                                    @foreach ($searchResults as $p)
+                                        <button type="button" wire:click="addExtra({{ $p->id }})" class="pt-extra-result">
+                                            <span class="pt-extra-result-name">
+                                                <strong>{{ $p->name }}</strong>
+                                                <span class="pt-extra-result-code">{{ $p->code }}</span>
+                                            </span>
+                                            <span class="pt-extra-result-price">{{ $fmt($p->default_sale_price) }}</span>
+                                        </button>
+                                    @endforeach
+                                </div>
+                            @elseif (strlen(trim($extraSearch)) >= 2)
+                                <div class="pt-extras-empty">Sin coincidencias para "{{ $extraSearch }}"</div>
+                            @endif
+                        </div>
+
+                        @if (count($exitExtras) > 0)
+                            <div class="pt-extras-list">
+                                @foreach ($exitExtras as $i => $extra)
+                                    <div class="pt-extra-row">
+                                        <div class="pt-extra-info">
+                                            <strong>{{ $extra['product_name'] }}</strong>
+                                            <span class="pt-extra-code">{{ $extra['product_code'] }} · {{ $fmt($extra['unit_price']) }} c/u</span>
+                                        </div>
+                                        <div class="pt-extra-qty">
+                                            <button type="button" wire:click="adjustExtraQty({{ $i }}, -1)">−</button>
+                                            <span>{{ $extra['quantity'] }}</span>
+                                            <button type="button" wire:click="adjustExtraQty({{ $i }}, 1)">+</button>
+                                        </div>
+                                        <div class="pt-extra-subtotal">{{ $fmt($extra['quantity'] * $extra['unit_price']) }}</div>
+                                        <button type="button" wire:click="removeExtra({{ $i }})" class="pt-extra-remove" title="Quitar">×</button>
+                                    </div>
+                                @endforeach
+                            </div>
+                        @endif
+                    </div>
+
+                    @if ($isCovered && $grandTotal === 0.0)
                         <div class="pt-info pt-info-green">
                             🎟️ Cubierto por mensualidad/convenio. No genera factura — se cierra la sesión sin cobro.
                         </div>
-                    @elseif ($amount > 0)
+                    @elseif ($grandTotal > 0)
+                        @if ($isCovered)
+                            <div class="pt-info pt-info-amber">
+                                🎟️ El parqueo está cubierto por mensualidad. La factura solo cobrará los productos adicionales.
+                            </div>
+                        @endif
                         <div class="pt-payment">
                             <div class="pt-payment-head">Datos del cobro</div>
                             <div class="pt-payment-grid">
@@ -455,6 +513,46 @@
 
         .pt-info { padding:10px 14px; border-radius:8px; margin-bottom:14px; font-size:13px; }
         .pt-info-green { background:#dcfce7; color:#166534; border:1px solid #16a34a; }
+        .pt-info-amber { background:#fef3c7; color:#78350f; border:1px solid #f59e0b; }
+
+        .pt-extras { margin-bottom:14px; background:#f8fafc; border:1px solid #e5e7eb; border-radius:10px; padding:12px 14px; }
+        .pt-extras-head { display:flex; justify-content:space-between; align-items:center; font-size:12px; text-transform:uppercase; color:#475569; font-weight:700; letter-spacing:.05em; margin-bottom:8px; }
+        .pt-extras-total { color:#16a34a; text-transform:none; font-size:13px; }
+
+        .pt-extras-search { position:relative; }
+        .pt-extras-search input {
+            width:100%; padding:8px 11px; border:1px solid #cbd5e1; border-radius:7px; font-size:13px; font-family:inherit;
+            background:#fff !important; color:#0f172a !important;
+        }
+        .pt-extras-search input::placeholder { color:#94a3b8 !important; }
+        .pt-extras-search input:focus { outline:none; border-color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,.15); }
+        .pt-extras-results { margin-top:6px; max-height:200px; overflow:auto; border:1px solid #e2e8f0; border-radius:7px; background:#fff; }
+        .pt-extra-result {
+            width:100%; display:flex; justify-content:space-between; align-items:center;
+            padding:8px 11px; border:0; border-bottom:1px solid #f1f5f9; background:#fff; cursor:pointer; text-align:left;
+        }
+        .pt-extra-result:hover { background:#eef2ff; }
+        .pt-extra-result:last-child { border-bottom:0; }
+        .pt-extra-result-name { display:flex; flex-direction:column; gap:1px; font-size:13px; color:#0f172a; }
+        .pt-extra-result-code { font-size:10px; color:#94a3b8; font-family:ui-monospace, monospace; }
+        .pt-extra-result-price { font-size:13px; font-weight:700; color:#16a34a; font-family:ui-monospace, monospace; }
+        .pt-extras-empty { margin-top:6px; padding:8px; text-align:center; color:#94a3b8; font-size:12px; font-style:italic; }
+
+        .pt-extras-list { margin-top:10px; display:flex; flex-direction:column; gap:6px; }
+        .pt-extra-row {
+            display:grid; grid-template-columns:1fr auto auto auto; gap:10px; align-items:center;
+            background:#fff; border:1px solid #e2e8f0; border-radius:7px; padding:7px 11px;
+        }
+        .pt-extra-info { display:flex; flex-direction:column; gap:1px; min-width:0; }
+        .pt-extra-info strong { font-size:13px; color:#0f172a; }
+        .pt-extra-code { font-size:10.5px; color:#94a3b8; font-family:ui-monospace, monospace; }
+        .pt-extra-qty { display:flex; align-items:center; gap:4px; }
+        .pt-extra-qty button { width:24px; height:24px; border:0; border-radius:5px; background:#e2e8f0; color:#1e293b; font-weight:800; cursor:pointer; font-size:14px; }
+        .pt-extra-qty button:hover { background:#cbd5e1; }
+        .pt-extra-qty span { min-width:24px; text-align:center; font-weight:700; font-size:13px; color:#0f172a; font-family:ui-monospace, monospace; }
+        .pt-extra-subtotal { font-weight:800; font-size:13px; color:#16a34a; font-family:ui-monospace, monospace; min-width:70px; text-align:right; }
+        .pt-extra-remove { width:24px; height:24px; border:0; border-radius:5px; background:#fee2e2; color:#991b1b; font-weight:800; cursor:pointer; font-size:14px; }
+        .pt-extra-remove:hover { background:#fecaca; }
 
         .pt-payment { margin-bottom:14px; }
         .pt-payment-head { font-size:11px; text-transform:uppercase; color:#6b7280; font-weight:700; margin-bottom:8px; }

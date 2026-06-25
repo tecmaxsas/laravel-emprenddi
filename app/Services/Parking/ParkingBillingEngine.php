@@ -37,12 +37,30 @@ class ParkingBillingEngine
 
     /**
      * @param  array  $payload  ['invoice_kind', 'payment_method', 'account_id',
-     *                           'paid_amount', 'third_party_id'?, 'reference'?]
+     *                           'paid_amount', 'third_party_id'?, 'reference'?,
+     *                           'extras'?]
+     *
+     *  Cada extra es un array:
+     *    ['product_id', 'quantity', 'unit_price', 'tax_id'?, 'tax_rate'?]
+     *
+     *  unit_price se interpreta como precio AL PUBLICO (incluye IVA si
+     *  el producto tiene tax). Se descompone para guardar base + impuesto.
      */
     public function issueForSession(ParkingSession $session, array $payload): SaleInvoice
     {
-        if ($session->parking_membership_id) {
-            throw new RuntimeException('La sesión está cubierta por mensualidad/convenio: no genera factura.');
+        $extras = $payload['extras'] ?? [];
+
+        $parkingCovered = (bool) $session->parking_membership_id;
+        $parkingAmount = (float) $session->amount;
+        $hasParkingCharge = ! $parkingCovered && $parkingAmount > 0;
+        $hasExtras = ! empty($extras);
+
+        if (! $hasParkingCharge && ! $hasExtras) {
+            throw new RuntimeException(
+                $parkingCovered
+                    ? 'La sesión está cubierta por mensualidad/convenio y no hay productos adicionales que facturar.'
+                    : 'La sesión tiene monto 0 y no hay productos adicionales; no requiere factura.'
+            );
         }
         if ($session->status !== ParkingSession::STATUS_CLOSED
             && $session->status !== ParkingSession::STATUS_LOST_TICKET) {
@@ -50,9 +68,6 @@ class ParkingBillingEngine
         }
         if ($session->sale_invoice_id) {
             throw new RuntimeException('Esta sesión ya tiene factura emitida.');
-        }
-        if ((float) $session->amount <= 0) {
-            throw new RuntimeException('La sesión tiene monto 0; no requiere factura.');
         }
 
         $invoiceKind = in_array($payload['invoice_kind'] ?? 'pos', ['pos', 'electronic'], true)
@@ -92,6 +107,7 @@ class ParkingBillingEngine
         return DB::transaction(function () use (
             $session, $invoiceKind, $location, $customer, $product, $company,
             $accountId, $paymentMethod, $paidAmount, $payload, $cashSession,
+            $extras, $hasParkingCharge,
         ) {
             // 1. Reservar consecutivo (resolucion POS o DIAN segun kind)
             $doc = $this->numberer->reserveForLocation((int) $location->id, $invoiceKind);
@@ -112,47 +128,51 @@ class ParkingBillingEngine
                 'payment_status' => 'pendiente',
                 'created_by_user_id' => Auth::id(),
                 'seller_user_id' => Auth::id(),
-                'description' => "Parqueo placa {$session->plate}",
+                'description' => "Parqueo placa {$session->plate}".(! empty($extras) ? ' + servicios' : ''),
             ]);
 
-            // 3. Linea unica: servicio de parqueadero (descripcion enriquecida)
-            $taxId = $product->default_sale_tax_id;
-            $taxRate = $taxId ? (float) (Tax::find($taxId)?->rate ?? 0) : 0;
-            $totalAmount = (float) $session->amount;
+            $lineNumber = 1;
 
-            // El amount de la sesion ya es el cobro final. Si el producto
-            // tiene IVA, hay que descomponer para guardar base + impuesto
-            // consistentes con el modelo contable.
-            $subtotal = $taxRate > 0 ? round($totalAmount / (1 + $taxRate / 100), 2) : $totalAmount;
-            $taxAmount = round($totalAmount - $subtotal, 2);
+            // 3. Linea de parqueo (solo si hay cargo no cubierto por mensualidad)
+            if ($hasParkingCharge) {
+                $this->createInvoiceLine(
+                    invoice: $invoice,
+                    lineNumber: $lineNumber++,
+                    productId: $product->id,
+                    description: sprintf(
+                        'Parqueo placa %s — %d min — %s a %s',
+                        $session->plate,
+                        (int) ($session->total_minutes ?? 0),
+                        $session->entry_at?->format('d/m/Y H:i') ?? '—',
+                        $session->exit_at?->format('d/m/Y H:i') ?? '—',
+                    ),
+                    quantity: 1,
+                    totalAtPublic: (float) $session->amount,
+                    taxId: $product->default_sale_tax_id,
+                );
+            }
 
-            $description = sprintf(
-                'Parqueo placa %s — %d min — %s a %s',
-                $session->plate,
-                (int) ($session->total_minutes ?? 0),
-                $session->entry_at?->format('d/m/Y H:i') ?? '—',
-                $session->exit_at?->format('d/m/Y H:i') ?? '—',
-            );
+            // 4. Lineas adicionales (productos / servicios extras)
+            foreach ($extras as $extra) {
+                $qty = max(1, (int) ($extra['quantity'] ?? 1));
+                $unitPriceAtPublic = (float) ($extra['unit_price'] ?? 0);
+                $totalAtPublic = round($qty * $unitPriceAtPublic, 2);
+                if ($totalAtPublic <= 0) continue;
+                $this->createInvoiceLine(
+                    invoice: $invoice,
+                    lineNumber: $lineNumber++,
+                    productId: (int) $extra['product_id'],
+                    description: (string) ($extra['product_name'] ?? ''),
+                    quantity: $qty,
+                    totalAtPublic: $totalAtPublic,
+                    taxId: $extra['tax_id'] ?? null,
+                );
+            }
 
-            $invoice->lines()->create([
-                'line_number' => 1,
-                'product_id' => $product->id,
-                'description' => $description,
-                'quantity' => 1,
-                'unit_price' => $subtotal,
-                'discount_percentage' => 0,
-                'discount_amount' => 0,
-                'tax_id' => $taxId,
-                'tax_rate' => $taxRate,
-                'tax_amount' => $taxAmount,
-                'subtotal' => $subtotal,
-                'total' => $totalAmount,
-            ]);
-
-            // 4. Postear (SaleInvoiceEngine recalcula totales y crea asientos)
+            // 5. Postear (SaleInvoiceEngine recalcula totales y crea asientos)
             $invoice = $this->sales->post($invoice->fresh(['lines']));
 
-            // 5. Pago
+            // 6. Pago
             if ($paidAmount > 0) {
                 $this->sales->addPayment($invoice, [
                     'amount' => min($paidAmount, (float) $invoice->fresh()->balance),
@@ -164,7 +184,7 @@ class ParkingBillingEngine
                 ]);
             }
 
-            // 6. Cerrar el bucle en la sesion
+            // 7. Cerrar el bucle en la sesion
             $session->update([
                 'sale_invoice_id' => $invoice->id,
                 'payment_method' => $paymentMethod,
@@ -173,6 +193,41 @@ class ParkingBillingEngine
 
             return $invoice->fresh();
         });
+    }
+
+    /**
+     * Crea una linea de SaleInvoice descomponiendo el precio al publico
+     * (incluye IVA) en base + impuesto, usando la tasa del Tax referenciado.
+     */
+    protected function createInvoiceLine(
+        SaleInvoice $invoice,
+        int $lineNumber,
+        int $productId,
+        string $description,
+        int $quantity,
+        float $totalAtPublic,
+        ?int $taxId,
+    ): void {
+        $taxRate = $taxId ? (float) (Tax::find($taxId)?->rate ?? 0) : 0;
+        $subtotal = $taxRate > 0
+            ? round($totalAtPublic / (1 + $taxRate / 100), 2)
+            : $totalAtPublic;
+        $taxAmount = round($totalAtPublic - $subtotal, 2);
+
+        $invoice->lines()->create([
+            'line_number' => $lineNumber,
+            'product_id' => $productId,
+            'description' => $description,
+            'quantity' => $quantity,
+            'unit_price' => $quantity > 0 ? round($subtotal / $quantity, 4) : $subtotal,
+            'discount_percentage' => 0,
+            'discount_amount' => 0,
+            'tax_id' => $taxId,
+            'tax_rate' => $taxRate,
+            'tax_amount' => $taxAmount,
+            'subtotal' => $subtotal,
+            'total' => $totalAtPublic,
+        ]);
     }
 
     /**
