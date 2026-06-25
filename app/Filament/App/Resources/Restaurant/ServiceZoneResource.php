@@ -59,11 +59,15 @@ class ServiceZoneResource extends Resource
                 ->label('Sede')
                 ->required()
                 ->options(fn () => Location::query()
+                    ->where('company_id', auth()->user()?->company_id)
                     ->where('active', true)
                     ->orderBy('name')
                     ->pluck('name', 'id')
                     ->all())
-                ->default(fn () => Location::query()->where('is_main', true)->value('id'))
+                ->default(fn () => Location::query()
+                    ->where('company_id', auth()->user()?->company_id)
+                    ->where('is_main', true)
+                    ->value('id'))
                 ->native(false),
 
             Forms\Components\ColorPicker::make('color')

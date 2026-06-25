@@ -48,10 +48,15 @@ class DeliveryDispatch extends Page
 
     public function mount(): void
     {
+        $companyId = auth()->user()?->company_id;
         $this->locationId = Location::query()
+            ->where('company_id', $companyId)
             ->where('active', true)
             ->where('is_main', true)
-            ->value('id') ?? Location::query()->where('active', true)->value('id');
+            ->value('id') ?? Location::query()
+                ->where('company_id', $companyId)
+                ->where('active', true)
+                ->value('id');
     }
 
     public function getDeliveryOrdersProperty()

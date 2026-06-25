@@ -74,6 +74,7 @@ class SalesByPeriodPage extends Page implements HasForms, HasTable
                         ->label('Sede')
                         ->placeholder('Todas')
                         ->options(fn () => Location::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('active', true)
                             ->orderBy('name')
                             ->pluck('name', 'id')

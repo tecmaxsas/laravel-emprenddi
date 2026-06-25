@@ -142,10 +142,15 @@ class RestaurantPos extends Page
 
     public function mount(): void
     {
+        $companyId = auth()->user()?->company_id;
         $this->locationId = Location::query()
+            ->where('company_id', $companyId)
             ->where('active', true)
             ->where('is_main', true)
-            ->value('id') ?? Location::query()->where('active', true)->value('id');
+            ->value('id') ?? Location::query()
+                ->where('company_id', $companyId)
+                ->where('active', true)
+                ->value('id');
 
         // Tipo de factura por defecto desde settings.pos.default_invoice_kind.
         // Empresas que solo facturan electronicamente lo dejan en 'electronic'

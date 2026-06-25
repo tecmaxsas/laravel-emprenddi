@@ -81,6 +81,7 @@ class ContractsRelationManager extends RelationManager
             Forms\Components\Select::make('work_location_id')
                 ->label('Sede de trabajo')
                 ->options(fn () => Location::query()
+                    ->where('company_id', $this->getOwnerRecord()->company_id)
                     ->where('active', true)
                     ->orderBy('name')
                     ->get()

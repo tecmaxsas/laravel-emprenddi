@@ -65,6 +65,7 @@ class ParkingLotResource extends Resource
                     Forms\Components\Select::make('default_location_id')
                         ->label('Sede de facturación')->native(false)->searchable()
                         ->options(fn () => Location::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('active', true)
                             ->orderByDesc('is_main')
                             ->orderBy('name')

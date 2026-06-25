@@ -58,6 +58,7 @@ class FixedAssetResource extends Resource
                         ->label('Sede')
                         ->placeholder('Sin asignar')
                         ->options(fn () => Location::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('active', true)
                             ->orderBy('name')
                             ->pluck('name', 'id')
@@ -248,7 +249,9 @@ class FixedAssetResource extends Resource
                 Tables\Filters\SelectFilter::make('status')->label('Estado')->options(FixedAsset::STATUSES),
                 Tables\Filters\SelectFilter::make('category')->label('Categoría')->options(FixedAsset::CATEGORIES),
                 Tables\Filters\SelectFilter::make('location_id')->label('Sede')
-                    ->options(fn () => Location::query()->orderBy('name')->pluck('name', 'id')->all()),
+                    ->options(fn () => Location::query()
+                        ->where('company_id', auth()->user()?->company_id)
+                        ->orderBy('name')->pluck('name', 'id')->all()),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),

@@ -176,6 +176,7 @@ class PosTerminal extends Page
         } else {
             // Sin sesión abierta: pre-llena la sede principal en el form de apertura
             $this->openingLocationId = Location::query()
+                ->where('company_id', Auth::user()?->company_id)
                 ->where('active', true)
                 ->orderByDesc('is_main')
                 ->orderBy('id')

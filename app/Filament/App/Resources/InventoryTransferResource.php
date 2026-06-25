@@ -66,6 +66,7 @@ class InventoryTransferResource extends Resource
                         ->required()
                         ->live()
                         ->options(fn () => Location::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('active', true)
                             ->orderBy('name')
                             ->pluck('name', 'id')
@@ -78,6 +79,7 @@ class InventoryTransferResource extends Resource
                         ->required()
                         ->live()
                         ->options(fn () => Location::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('active', true)
                             ->orderBy('name')
                             ->pluck('name', 'id')
@@ -204,11 +206,15 @@ class InventoryTransferResource extends Resource
 
                 Tables\Filters\SelectFilter::make('from_location_id')
                     ->label('Sede origen')
-                    ->options(fn () => Location::query()->orderBy('name')->pluck('name', 'id')->all()),
+                    ->options(fn () => Location::query()
+                        ->where('company_id', auth()->user()?->company_id)
+                        ->orderBy('name')->pluck('name', 'id')->all()),
 
                 Tables\Filters\SelectFilter::make('to_location_id')
                     ->label('Sede destino')
-                    ->options(fn () => Location::query()->orderBy('name')->pluck('name', 'id')->all()),
+                    ->options(fn () => Location::query()
+                        ->where('company_id', auth()->user()?->company_id)
+                        ->orderBy('name')->pluck('name', 'id')->all()),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),

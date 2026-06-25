@@ -170,6 +170,7 @@ class StockByLocationPage extends Page implements HasForms, HasTable
     public function table(Table $table): Table
     {
         $locations = Location::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('active', true)
             ->orderBy('name')
             ->get();

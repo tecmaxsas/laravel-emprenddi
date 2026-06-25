@@ -67,6 +67,7 @@ class InventoryAdjustmentResource extends Resource
                         ->required()
                         ->live()
                         ->options(fn () => Location::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('active', true)
                             ->orderBy('name')
                             ->pluck('name', 'id')
@@ -267,7 +268,9 @@ class InventoryAdjustmentResource extends Resource
                 Tables\Filters\SelectFilter::make('status')->label('Estado')->options(InventoryAdjustment::STATUSES),
                 Tables\Filters\SelectFilter::make('direction')->label('Tipo')->options(InventoryAdjustment::DIRECTIONS),
                 Tables\Filters\SelectFilter::make('location_id')->label('Sede')
-                    ->options(fn () => Location::query()->orderBy('name')->pluck('name', 'id')->all()),
+                    ->options(fn () => Location::query()
+                        ->where('company_id', auth()->user()?->company_id)
+                        ->orderBy('name')->pluck('name', 'id')->all()),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),

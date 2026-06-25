@@ -533,6 +533,7 @@ class ReportExportController extends Controller
         $companyId = Auth::user()->company_id;
 
         $locations = Location::query()
+            ->where('company_id', $companyId)
             ->where('active', true)
             ->orderBy('name')
             ->get();

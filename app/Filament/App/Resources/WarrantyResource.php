@@ -164,6 +164,7 @@ class WarrantyResource extends Resource
                         ->label('Sede que recibe')
                         ->required()
                         ->options(fn () => Location::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('active', true)
                             ->orderBy('name')
                             ->pluck('name', 'id')),
@@ -268,6 +269,7 @@ class WarrantyResource extends Resource
                 Tables\Filters\SelectFilter::make('location_id')
                     ->label('Sede')
                     ->options(fn () => Location::query()
+                        ->where('company_id', auth()->user()?->company_id)
                         ->where('active', true)
                         ->orderBy('name')
                         ->pluck('name', 'id')),

@@ -650,6 +650,7 @@ class DianSettings extends Page implements HasForms
                     Forms\Components\Select::make('assign_location_id')
                         ->label('Sede')
                         ->options(fn () => Location::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('active', true)
                             ->orderBy('name')
                             ->pluck('name', 'id'))

@@ -100,6 +100,7 @@ class KardexPage extends Page implements HasForms, HasTable
                             ->required()
                             ->live()
                             ->options(fn () => Location::query()
+                                ->where('company_id', auth()->user()?->company_id)
                                 ->where('active', true)
                                 ->orderBy('name')
                                 ->get()

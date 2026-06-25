@@ -91,11 +91,15 @@ class PurchaseReturnResource extends Resource
                         ->required()
                         ->live()
                         ->options(fn () => Location::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('active', true)
                             ->orderBy('name')
                             ->pluck('name', 'id')
                             ->all())
-                        ->default(fn () => Location::query()->where('is_main', true)->value('id'))
+                        ->default(fn () => Location::query()
+                            ->where('company_id', auth()->user()?->company_id)
+                            ->where('is_main', true)
+                            ->value('id'))
                         ->native(false)
                         ->columnSpan(2),
 
@@ -333,7 +337,9 @@ class PurchaseReturnResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('status')->label('Estado')->options(PurchaseReturn::STATUSES),
                 Tables\Filters\SelectFilter::make('location_id')->label('Sede')
-                    ->options(fn () => Location::query()->orderBy('name')->pluck('name', 'id')->all()),
+                    ->options(fn () => Location::query()
+                        ->where('company_id', auth()->user()?->company_id)
+                        ->orderBy('name')->pluck('name', 'id')->all()),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
