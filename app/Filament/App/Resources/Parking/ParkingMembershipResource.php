@@ -4,13 +4,18 @@ namespace App\Filament\App\Resources\Parking;
 
 use App\Filament\App\Resources\Parking\ParkingMembershipResource\Pages;
 use App\Filament\Concerns\ChecksPermission;
+use App\Models\Account;
+use App\Models\CashRegisterSession;
 use App\Models\Parking\ParkingLot;
 use App\Models\Parking\ParkingMembership;
 use App\Models\Parking\VehicleType;
+use App\Models\PaymentMethod;
 use App\Models\ThirdParty;
+use App\Services\Parking\ParkingBillingEngine;
 use App\Support\ModuleGate;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -167,6 +172,82 @@ class ParkingMembershipResource extends Resource
                 ->label('Vencen en ≤ 15 días')
                 ->query(fn ($query) => $query->expiringWithin(15)),
         ])->actions([
+            Tables\Actions\Action::make('billMembership')
+                ->label('Cobrar')
+                ->icon('heroicon-o-banknotes')
+                ->color('success')
+                ->visible(fn (ParkingMembership $record) => $record->status === ParkingMembership::STATUS_ACTIVE
+                    && (float) $record->amount > 0)
+                ->form([
+                    Forms\Components\Section::make('Datos del cobro')
+                        ->description(fn (ParkingMembership $record) => "Cliente: {$record->customer?->name} · Monto: $".number_format((float) $record->amount, 0, ',', '.'))
+                        ->columns(2)
+                        ->schema([
+                            Forms\Components\Select::make('payment_method')
+                                ->label('Medio de pago')->native(false)->required()
+                                ->default('cash')
+                                ->options(function () {
+                                    $companyId = auth()->user()?->company_id;
+                                    $configured = PaymentMethod::query()
+                                        ->where('company_id', $companyId)
+                                        ->where('active', true)
+                                        ->orderBy('name')->pluck('name', 'code')->all();
+                                    return ! empty($configured) ? $configured : [
+                                        'cash' => 'Efectivo', 'card' => 'Tarjeta',
+                                        'transfer' => 'Transferencia', 'credit' => 'A crédito',
+                                    ];
+                                }),
+                            Forms\Components\Select::make('account_id')
+                                ->label('Cuenta contable')->native(false)->required()->searchable()
+                                ->default(fn () => Account::query()
+                                    ->where('company_id', auth()->user()?->company_id)
+                                    ->where('accepts_movements', true)->where('active', true)
+                                    ->where(function ($q) {
+                                        $q->where('code', '110505')->orWhere('code', '1105');
+                                    })
+                                    ->orderBy('code')->value('id'))
+                                ->options(fn () => Account::query()
+                                    ->where('company_id', auth()->user()?->company_id)
+                                    ->where('accepts_movements', true)->where('active', true)
+                                    ->where(function ($q) {
+                                        $q->where('code', 'like', '11%')->orWhere('code', 'like', '12%');
+                                    })
+                                    ->orderBy('code')->limit(50)->get()
+                                    ->mapWithKeys(fn ($a) => [$a->id => "{$a->code} — {$a->name}"])
+                                    ->all()),
+                            Forms\Components\Select::make('invoice_kind')
+                                ->label('Tipo de factura')->native(false)->required()
+                                ->options(['pos' => 'POS (no electrónica)', 'electronic' => 'Electrónica DIAN'])
+                                ->default('pos'),
+                            Forms\Components\DatePicker::make('period_start')
+                                ->label('Período desde')->native(false)
+                                ->default(fn (ParkingMembership $record) => $record->start_date)
+                                ->helperText('Aparece en la descripción de la factura.'),
+                            Forms\Components\DatePicker::make('period_end')
+                                ->label('Período hasta')->native(false)
+                                ->default(fn (ParkingMembership $record) => $record->end_date),
+                        ]),
+                ])
+                ->action(function (ParkingMembership $record, array $data) {
+                    try {
+                        $invoice = app(ParkingBillingEngine::class)->issueForMembership($record, [
+                            'invoice_kind' => $data['invoice_kind'] ?? 'pos',
+                            'payment_method' => $data['payment_method'] ?? 'cash',
+                            'account_id' => (int) ($data['account_id'] ?? 0),
+                            'period_start' => $data['period_start'] ?? null,
+                            'period_end' => $data['period_end'] ?? null,
+                        ]);
+                        Notification::make()
+                            ->title('Mensualidad facturada')
+                            ->body('Factura '.$invoice->fullNumber().' · $'.number_format((float) $invoice->total, 0, ',', '.'))
+                            ->success()->send();
+                    } catch (\Throwable $e) {
+                        Notification::make()
+                            ->title('No se pudo facturar')
+                            ->body($e->getMessage())
+                            ->danger()->persistent()->send();
+                    }
+                }),
             Tables\Actions\EditAction::make(),
             Tables\Actions\DeleteAction::make(),
         ]);

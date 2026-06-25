@@ -2,6 +2,7 @@
 
 namespace App\Services\Parking;
 
+use App\Models\Account;
 use App\Models\Company;
 use App\Models\Product;
 use App\Models\Tax;
@@ -28,6 +29,19 @@ class ParkingProductProvisioner
                 ->where('code', self::CODE)
                 ->first();
             if ($product) {
+                // Backfill de sale_account_id en productos creados antes del
+                // fix (cuando quedaban en null y caia a 4135 mercancias).
+                if (! $product->sale_account_id) {
+                    $accountId = Account::query()
+                        ->where('company_id', $company->id)
+                        ->where('code', '4145')
+                        ->where('accepts_movements', true)
+                        ->where('active', true)
+                        ->value('id');
+                    if ($accountId) {
+                        $product->update(['sale_account_id' => $accountId]);
+                    }
+                }
                 return $product;
             }
 
@@ -38,6 +52,17 @@ class ParkingProductProvisioner
                 ->where('rate', 19)
                 ->where('is_active', true)
                 ->first();
+
+            // Cuenta de ingreso correcta segun PUC colombiano:
+            // 4145 — Transporte, almacenamiento y comunicaciones (incluye parqueaderos)
+            // Si no esta en el PUC de la empresa, deja null y SaleInvoiceEngine
+            // caera al fallback 4135 (mercancias) — el admin puede ajustarla.
+            $saleAccountId = Account::query()
+                ->where('company_id', $company->id)
+                ->where('code', '4145')
+                ->where('accepts_movements', true)
+                ->where('active', true)
+                ->value('id');
 
             return Product::withoutGlobalScopes()->create([
                 'company_id' => $company->id,
@@ -53,6 +78,7 @@ class ParkingProductProvisioner
                 'default_sale_price' => 0,
                 'sale_price_includes_tax' => false,
                 'default_sale_tax_id' => $tax?->id,
+                'sale_account_id' => $saleAccountId,
                 'active' => true,
             ]);
         });

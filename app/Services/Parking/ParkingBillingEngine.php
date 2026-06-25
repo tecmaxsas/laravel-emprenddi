@@ -5,6 +5,7 @@ namespace App\Services\Parking;
 use App\Models\CashRegisterSession;
 use App\Models\Company;
 use App\Models\Location;
+use App\Models\Parking\ParkingMembership;
 use App\Models\Parking\ParkingSession;
 use App\Models\SaleInvoice;
 use App\Models\Tax;
@@ -190,6 +191,137 @@ class ParkingBillingEngine
                 'payment_method' => $paymentMethod,
                 'paid_amount' => $paidAmount,
             ]);
+
+            return $invoice->fresh();
+        });
+    }
+
+    /**
+     * Emite una factura por una mensualidad o convenio corporativo. El cliente
+     * de la factura es el tercero asociado a la membresia (no Consumidor Final),
+     * para que la informacion exogena agrupe correctamente por cliente y el
+     * contador pueda hacer cartera/seguimiento.
+     *
+     * El monto facturado es membership->amount (precio al publico). Si el
+     * producto PARKING-SVC tiene IVA, se descompone.
+     *
+     * Idempotencia: no bloqueo facturar dos veces — el operador decide. Para
+     * tracking, en la descripcion del header queda el nombre de la mensualidad
+     * y el periodo de vigencia.
+     *
+     * @param  array  $payload  ['invoice_kind', 'payment_method', 'account_id',
+     *                           'paid_amount'?, 'period_start'?, 'period_end'?]
+     */
+    public function issueForMembership(ParkingMembership $membership, array $payload): SaleInvoice
+    {
+        $amount = (float) $membership->amount;
+        if ($amount <= 0) {
+            throw new RuntimeException('La mensualidad/convenio tiene monto 0; no requiere factura.');
+        }
+
+        $invoiceKind = in_array($payload['invoice_kind'] ?? 'pos', ['pos', 'electronic'], true)
+            ? $payload['invoice_kind']
+            : 'pos';
+        $paymentMethod = (string) ($payload['payment_method'] ?? 'cash');
+        $accountId = (int) ($payload['account_id'] ?? 0);
+        if ($accountId <= 0) {
+            throw new RuntimeException('Falta seleccionar la cuenta contable del cobro.');
+        }
+        $paidAmount = (float) ($payload['paid_amount'] ?? $amount);
+
+        $company = Company::find($membership->company_id);
+        if (! $company) {
+            throw new RuntimeException('Sin empresa asociada a la mensualidad.');
+        }
+
+        $lot = $membership->parkingLot()->with('defaultLocation')->first();
+        $location = $lot?->defaultLocation
+            ?? Location::query()
+                ->where('company_id', $company->id)
+                ->where('active', true)
+                ->orderByDesc('is_main')
+                ->orderBy('id')
+                ->first();
+        if (! $location) {
+            throw new RuntimeException('El parqueadero no tiene sede asignada para facturar.');
+        }
+
+        $customer = $membership->customer()->first();
+        if (! $customer) {
+            throw new RuntimeException('La mensualidad no tiene cliente asociado.');
+        }
+        if ($customer->company_id !== $company->id) {
+            throw new RuntimeException('Cliente y empresa no coinciden.');
+        }
+
+        $product = $this->products->ensure($company);
+
+        $cashSession = $this->resolveOpenCashSession();
+        if (! $cashSession) {
+            throw new RuntimeException(
+                'No tienes un turno de caja abierto. Abre tu caja antes de cobrar mensualidades.'
+            );
+        }
+
+        $periodStart = $payload['period_start'] ?? $membership->start_date?->toDateString();
+        $periodEnd = $payload['period_end'] ?? $membership->end_date?->toDateString();
+        $platesLabel = implode(', ', array_map(fn ($p) => strtoupper((string) $p), $membership->plates ?? []));
+
+        return DB::transaction(function () use (
+            $company, $location, $customer, $product, $cashSession,
+            $invoiceKind, $paymentMethod, $accountId, $paidAmount,
+            $amount, $membership, $periodStart, $periodEnd, $platesLabel,
+        ) {
+            $doc = $this->numberer->reserveForLocation((int) $location->id, $invoiceKind);
+
+            $invoice = SaleInvoice::create([
+                'company_id' => $company->id,
+                'location_id' => $location->id,
+                'third_party_id' => $customer->id,
+                'cash_register_session_id' => $cashSession->id,
+                'prefix' => $doc['prefix'],
+                'number' => $doc['number'],
+                'invoice_kind' => $doc['kind'],
+                'dian_resolution_id' => $doc['resolution_id'],
+                'date' => now()->toDateString(),
+                'currency' => 'COP',
+                'status' => 'draft',
+                'payment_status' => 'pendiente',
+                'created_by_user_id' => Auth::id(),
+                'seller_user_id' => Auth::id(),
+                'description' => "Mensualidad/Convenio: {$membership->name}",
+            ]);
+
+            $description = sprintf(
+                '%s — Placas: %s — Vigencia %s a %s',
+                $membership->name,
+                $platesLabel !== '' ? $platesLabel : '—',
+                $periodStart ?? '—',
+                $periodEnd ?? '—',
+            );
+
+            $this->createInvoiceLine(
+                invoice: $invoice,
+                lineNumber: 1,
+                productId: $product->id,
+                description: $description,
+                quantity: 1,
+                totalAtPublic: $amount,
+                taxId: $product->default_sale_tax_id,
+            );
+
+            $invoice = $this->sales->post($invoice->fresh(['lines']));
+
+            if ($paidAmount > 0) {
+                $this->sales->addPayment($invoice, [
+                    'amount' => min($paidAmount, (float) $invoice->fresh()->balance),
+                    'payment_method' => $paymentMethod,
+                    'account_id' => $accountId,
+                    'date' => now()->toDateString(),
+                    'reference' => "Mensualidad {$membership->name}",
+                    'description' => "Cobro mensualidad {$invoice->fullNumber()}",
+                ]);
+            }
 
             return $invoice->fresh();
         });
