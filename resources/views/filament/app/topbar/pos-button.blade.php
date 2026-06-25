@@ -1,20 +1,36 @@
 @php
-    // Decide a qué POS apunta el botón:
-    //  - Si la empresa tiene el módulo 'restaurant' activo Y el usuario tiene
-    //    permiso 'restaurant.use', llevamos al POS Restaurante.
-    //  - Si no, al POS regular ('pos.use').
-    //  - Si el usuario no puede usar NINGÚN POS, no rendereamos nada.
+    // Decide a qué POS apunta el botón segun los modulos activos de la
+    // empresa y los permisos del usuario. Orden de prioridad:
+    //  1. Restaurante (si esta activo + restaurant.use)
+    //  2. Parqueadero (si esta activo + parking.use Y la empresa NO tiene
+    //     ni restaurant ni pos.use — empresa parking-only)
+    //  3. POS regular (si tiene pos.use)
+    //  4. Parqueadero (fallback si no hay POS regular pero si hay parking)
+    //  5. Si no puede usar ninguno, no rendereamos nada.
     $user = auth()->user();
     $canRestaurant = \App\Support\ModuleGate::active('restaurant')
         && $user?->can('restaurant.use');
+    $canParking = \App\Support\ModuleGate::active('parking')
+        && $user?->can('parking.use');
     $canRegular = $user?->can('pos.use');
 
     if ($canRestaurant) {
         $href = route('filament.app.pages.restaurant-pos');
         $title = 'Abrir POS Restaurante';
+        $label = 'POS';
+    } elseif ($canParking && ! $canRegular) {
+        // Empresa de parqueadero pura: el "POS" lleva al terminal
+        $href = route('filament.app.pages.parking');
+        $title = 'Abrir Terminal de Parqueadero';
+        $label = 'Terminal';
     } elseif ($canRegular) {
         $href = route('filament.app.pages.pos');
         $title = 'Abrir terminal POS';
+        $label = 'POS';
+    } elseif ($canParking) {
+        $href = route('filament.app.pages.parking');
+        $title = 'Abrir Terminal de Parqueadero';
+        $label = 'Terminal';
     } else {
         $href = null;
     }
@@ -32,6 +48,6 @@
         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 00-3-3z" />
         </svg>
-        <span>POS</span>
+        <span>{{ $label }}</span>
     </a>
 @endif

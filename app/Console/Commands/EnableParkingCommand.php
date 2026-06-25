@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\Company;
+use App\Services\Onboarding\CompanyOnboarding;
 use App\Services\Parking\ParkingDefaultsProvisioner;
 use Illuminate\Console\Command;
 
@@ -22,7 +23,7 @@ class EnableParkingCommand extends Command
 
     protected $description = 'Activa el módulo parqueadero para una empresa y siembra defaults';
 
-    public function handle(ParkingDefaultsProvisioner $defaults): int
+    public function handle(ParkingDefaultsProvisioner $defaults, CompanyOnboarding $onboarding): int
     {
         $company = $this->resolveCompany();
         if (! $company) {
@@ -40,6 +41,11 @@ class EnableParkingCommand extends Command
         } else {
             $this->line("  Módulo 'parking' ya estaba activo.");
         }
+
+        // Asegura PUC, impuestos, sede principal, Consumidor Final, plantillas
+        // (idempotente — solo crea lo que falte)
+        $bootstrap = $onboarding->bootstrap($company);
+        $this->info("✓ Bootstrap: PUC={$bootstrap['puc']}, impuestos={$bootstrap['taxes']}, sede={$bootstrap['location']}, plantillas={$bootstrap['invoice_templates']}.");
 
         $r = $defaults->provision($company);
         $this->info("✓ Tipos de vehículo: {$r['created']} creados, {$r['existing']} ya existían.");

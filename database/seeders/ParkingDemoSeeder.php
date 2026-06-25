@@ -12,6 +12,7 @@ use App\Models\Parking\ParkingSpace;
 use App\Models\Parking\VehicleType;
 use App\Models\ThirdParty;
 use App\Models\User;
+use App\Services\Onboarding\CompanyOnboarding;
 use App\Services\Parking\ParkingDefaultsProvisioner;
 use Carbon\Carbon;
 use Illuminate\Database\Seeder;
@@ -53,6 +54,7 @@ class ParkingDemoSeeder extends Seeder
 
         $this->ensureCompany();
         $this->ensureAdmin();
+        $this->bootstrapCompany();
         $this->provisionVehicleTypes();
         $this->createLots();
         $this->createRates();
@@ -128,6 +130,17 @@ class ParkingDemoSeeder extends Seeder
     }
 
     /* ------------------------------------------------------------------ */
+    /*  Onboarding: PUC, impuestos, sede principal, Consumidor Final...   */
+    /* ------------------------------------------------------------------ */
+
+    protected function bootstrapCompany(): void
+    {
+        // Idempotente: si ya estan, no duplica
+        $summary = app(CompanyOnboarding::class)->bootstrap($this->company);
+        $this->command->line("   · Onboarding: PUC={$summary['puc']}, impuestos={$summary['taxes']}, sede={$summary['location']}, Consumidor Final={$summary['consumer_final']}");
+    }
+
+    /* ------------------------------------------------------------------ */
     /*  Catalogo: tipos de vehiculo                                        */
     /* ------------------------------------------------------------------ */
 
@@ -173,16 +186,28 @@ class ParkingDemoSeeder extends Seeder
             ],
         ];
 
+        $mainLocationId = \App\Models\Location::query()
+            ->where('company_id', $this->company->id)
+            ->where('active', true)
+            ->orderByDesc('is_main')
+            ->orderBy('id')
+            ->value('id');
+
         foreach ($lots as $data) {
             $lot = ParkingLot::firstOrCreate(
                 ['company_id' => $this->company->id, 'code' => $data['code']],
                 array_merge($data, [
                     'company_id' => $this->company->id,
+                    'default_location_id' => $mainLocationId,
                     'default_invoice_kind' => 'pos',
                     'active' => true,
                     'settings' => [],
                 ]),
             );
+            // Si el lot existia sin sede asignada, la setea ahora
+            if ($mainLocationId && ! $lot->default_location_id) {
+                $lot->update(['default_location_id' => $mainLocationId]);
+            }
             $this->lots[$data['code']] = $lot;
         }
     }
