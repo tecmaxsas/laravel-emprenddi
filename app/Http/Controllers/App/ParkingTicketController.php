@@ -16,8 +16,7 @@ class ParkingTicketController extends Controller
      */
     public function show(int $session)
     {
-        abort_unless(ModuleGate::active('parking'), 403);
-        abort_unless(Auth::user()?->can('parking.use'), 403);
+        abort_unless(Auth::check(), 403);
 
         $record = ParkingSession::with([
             'parkingLot:id,name,address,phone,city',
@@ -26,7 +25,13 @@ class ParkingTicketController extends Controller
             'parkingMembership:id,name',
         ])->find($session);
 
+        // Aislamiento por empresa: el ticket solo se imprime para sesiones
+        // de la misma compañia del usuario logueado.
         abort_unless($record && $record->company_id === Auth::user()->company_id, 404);
+
+        // Modulo activo en la empresa (revalida en caso de que se haya
+        // desactivado entre la entrada y la impresion).
+        abort_unless(ModuleGate::active('parking'), 403);
 
         $company = Auth::user()->company;
 
