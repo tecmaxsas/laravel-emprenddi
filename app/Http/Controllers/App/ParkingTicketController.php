@@ -4,7 +4,6 @@ namespace App\Http\Controllers\App;
 
 use App\Http\Controllers\Controller;
 use App\Models\Parking\ParkingSession;
-use App\Support\ModuleGate;
 use Illuminate\Support\Facades\Auth;
 
 class ParkingTicketController extends Controller
@@ -23,17 +22,19 @@ class ParkingTicketController extends Controller
             'vehicleType:id,name,icon,code',
             'space:id,code,zone',
             'parkingMembership:id,name',
+            'company:id,name,nit,document_type',
         ])->find($session);
 
         // Aislamiento por empresa: el ticket solo se imprime para sesiones
         // de la misma compañia del usuario logueado.
         abort_unless($record && $record->company_id === Auth::user()->company_id, 404);
 
-        // Modulo activo en la empresa (revalida en caso de que se haya
-        // desactivado entre la entrada y la impresion).
-        abort_unless(ModuleGate::active('parking'), 403);
+        // Modulo activo: chequeo directo contra la empresa (no usamos
+        // ModuleGate aqui porque esta ruta esta fuera del panel Filament y
+        // CurrentCompany no esta seteado por el middleware del panel).
+        abort_unless($record->company?->hasModule('parking'), 403);
 
-        $company = Auth::user()->company;
+        $company = $record->company;
 
         return view('parking.ticket', [
             'session' => $record,
