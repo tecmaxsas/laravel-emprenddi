@@ -181,7 +181,9 @@ class ParkingTerminal extends Page
 
     public function getPaymentMethodOptionsProperty(): array
     {
+        $companyId = auth()->user()?->company_id;
         $configured = PaymentMethod::query()
+            ->where('company_id', $companyId)
             ->where('active', true)
             ->orderBy('name')
             ->pluck('name', 'code')->all();
@@ -196,7 +198,9 @@ class ParkingTerminal extends Page
 
     public function getAccountOptionsProperty(): array
     {
+        $companyId = auth()->user()?->company_id;
         return Account::query()
+            ->where('company_id', $companyId)
             ->where('accepts_movements', true)->where('active', true)
             ->where(function ($q) {
                 $q->where('code', 'like', '11%')->orWhere('code', 'like', '12%');
@@ -230,7 +234,11 @@ class ParkingTerminal extends Page
     {
         $q = trim($this->extraSearch);
         if (strlen($q) < 2) return collect();
+        $companyId = (int) (auth()->user()?->company_id ?? 0);
+        if (! $companyId) return collect();
+
         return Product::query()
+            ->where('company_id', $companyId)  // defense in depth — no confiar solo en el scope
             ->where('is_sellable', true)
             ->where('active', true)
             ->where('code', '!=', ParkingProductProvisioner::CODE)
@@ -253,7 +261,11 @@ class ParkingTerminal extends Page
             }
         }
 
-        $product = Product::find($productId);
+        // Solo productos de la misma empresa del usuario
+        $product = Product::query()
+            ->where('id', $productId)
+            ->where('company_id', auth()->user()?->company_id)
+            ->first();
         if (! $product) return;
         $tax = $product->default_sale_tax_id ? Tax::find($product->default_sale_tax_id) : null;
 
@@ -301,7 +313,9 @@ class ParkingTerminal extends Page
 
     protected function resetExitForm(): void
     {
+        $companyId = auth()->user()?->company_id;
         $defaultAccount = Account::query()
+            ->where('company_id', $companyId)
             ->where('accepts_movements', true)->where('active', true)
             ->where(function ($q) {
                 $q->where('code', '110505')->orWhere('code', '1105');
@@ -598,7 +612,9 @@ class ParkingTerminal extends Page
     public function searchCustomer(string $query): array
     {
         if (strlen(trim($query)) < 2) return [];
+        $companyId = auth()->user()?->company_id;
         return ThirdParty::query()
+            ->where('company_id', $companyId)
             ->where('is_customer', true)
             ->where(function ($q) use ($query) {
                 $q->where('name', 'ilike', "%{$query}%")
