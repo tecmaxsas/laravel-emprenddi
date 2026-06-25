@@ -78,8 +78,8 @@ class ParkingSpaceResource extends Resource
             Tables\Columns\TextColumn::make('code')->label('Código')->fontFamily('mono')->searchable()->weight('semibold'),
             Tables\Columns\TextColumn::make('vehicleType.name')->label('Tipo')->placeholder('Cualquiera'),
             Tables\Columns\TextColumn::make('status')->label('Estado')->badge()
-                ->formatStateUsing(fn (string $s) => ParkingSpace::STATUSES[$s] ?? $s)
-                ->color(fn (string $s) => match ($s) {
+                ->formatStateUsing(fn (string $state) => ParkingSpace::STATUSES[$state] ?? $state)
+                ->color(fn (string $state) => match ($state) {
                     ParkingSpace::STATUS_FREE => 'success',
                     ParkingSpace::STATUS_OCCUPIED => 'danger',
                     ParkingSpace::STATUS_RESERVED => 'warning',

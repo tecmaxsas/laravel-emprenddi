@@ -89,7 +89,7 @@ class ParkingSessionsReport extends Page implements HasForms, HasTable
             ->defaultPaginationPageOption(50)
             ->columns([
                 Tables\Columns\TextColumn::make('id')->label('Ticket')
-                    ->formatStateUsing(fn ($s) => '#'.str_pad((string) $s, 6, '0', STR_PAD_LEFT))
+                    ->formatStateUsing(fn ($state) => '#'.str_pad((string) $state, 6, '0', STR_PAD_LEFT))
                     ->fontFamily('mono'),
                 Tables\Columns\TextColumn::make('plate')->label('Placa')->fontFamily('mono')->weight('semibold'),
                 Tables\Columns\TextColumn::make('parkingLot.name')->label('Parqueadero')->toggleable(),
@@ -99,8 +99,8 @@ class ParkingSessionsReport extends Page implements HasForms, HasTable
                 Tables\Columns\TextColumn::make('total_minutes')->label('Min')->alignEnd(),
                 Tables\Columns\TextColumn::make('amount')->label('Monto')->money('COP')->alignEnd()->weight('semibold'),
                 Tables\Columns\TextColumn::make('status')->label('Estado')->badge()
-                    ->formatStateUsing(fn (string $s) => ParkingSession::STATUSES[$s] ?? $s)
-                    ->color(fn (string $s) => match ($s) {
+                    ->formatStateUsing(fn (string $state) => ParkingSession::STATUSES[$state] ?? $state)
+                    ->color(fn (string $state) => match ($state) {
                         ParkingSession::STATUS_ACTIVE => 'info',
                         ParkingSession::STATUS_CLOSED => 'success',
                         ParkingSession::STATUS_LOST_TICKET => 'warning',
@@ -108,7 +108,7 @@ class ParkingSessionsReport extends Page implements HasForms, HasTable
                         default => 'gray',
                     }),
                 Tables\Columns\TextColumn::make('invoice_number')->label('Factura')
-                    ->state(fn (ParkingSession $r) => $r->saleInvoice?->fullNumber() ?? '—')
+                    ->state(fn (ParkingSession $record) => $record->saleInvoice?->fullNumber() ?? '—')
                     ->fontFamily('mono')->toggleable(),
             ])
             ->headerActions([

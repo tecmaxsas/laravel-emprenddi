@@ -136,10 +136,10 @@ class ParkingIncidentResource extends Resource
             Tables\Columns\TextColumn::make('created_at')->label('Reportado')->dateTime('Y-m-d H:i')->sortable(),
             Tables\Columns\TextColumn::make('parkingLot.name')->label('Parqueadero')->toggleable(),
             Tables\Columns\TextColumn::make('kind')->label('Tipo')->badge()
-                ->formatStateUsing(fn (string $s) => ParkingIncident::KINDS[$s] ?? $s),
+                ->formatStateUsing(fn (string $state) => ParkingIncident::KINDS[$state] ?? $state),
             Tables\Columns\TextColumn::make('severity')->label('Severidad')->badge()
-                ->formatStateUsing(fn (string $s) => ParkingIncident::SEVERITIES[$s] ?? $s)
-                ->color(fn (string $s) => match ($s) {
+                ->formatStateUsing(fn (string $state) => ParkingIncident::SEVERITIES[$state] ?? $state)
+                ->color(fn (string $state) => match ($state) {
                     ParkingIncident::SEVERITY_LOW => 'gray',
                     ParkingIncident::SEVERITY_MEDIUM => 'info',
                     ParkingIncident::SEVERITY_HIGH => 'warning',
@@ -149,8 +149,8 @@ class ParkingIncidentResource extends Resource
             Tables\Columns\TextColumn::make('plate')->label('Placa')->fontFamily('mono')->searchable(),
             Tables\Columns\TextColumn::make('description')->label('Descripción')->limit(50)->wrap(),
             Tables\Columns\TextColumn::make('status')->label('Estado')->badge()
-                ->formatStateUsing(fn (string $s) => ParkingIncident::STATUSES[$s] ?? $s)
-                ->color(fn (string $s) => match ($s) {
+                ->formatStateUsing(fn (string $state) => ParkingIncident::STATUSES[$state] ?? $state)
+                ->color(fn (string $state) => match ($state) {
                     ParkingIncident::STATUS_OPEN => 'danger',
                     ParkingIncident::STATUS_INVESTIGATING => 'warning',
                     ParkingIncident::STATUS_RESOLVED => 'success',

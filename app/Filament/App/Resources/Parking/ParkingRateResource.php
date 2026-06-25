@@ -168,9 +168,9 @@ class ParkingRateResource extends Resource
             Tables\Columns\TextColumn::make('parkingLot.name')->label('Parqueadero')->searchable(),
             Tables\Columns\TextColumn::make('vehicleType.name')->label('Vehículo')->placeholder('Todos'),
             Tables\Columns\TextColumn::make('kind')->label('Tipo')->badge()
-                ->formatStateUsing(fn (string $s) => ParkingRate::KINDS[$s] ?? $s),
+                ->formatStateUsing(fn (string $state) => ParkingRate::KINDS[$state] ?? $state),
             Tables\Columns\TextColumn::make('config_type')->label('Cálculo')
-                ->state(fn (ParkingRate $r) => $r->config['type'] ?? '—'),
+                ->state(fn (ParkingRate $record) => $record->config['type'] ?? '—'),
             Tables\Columns\TextColumn::make('priority')->label('Prioridad')->alignCenter(),
             Tables\Columns\TextColumn::make('valid_from')->label('Desde')->date('Y-m-d')->toggleable(),
             Tables\Columns\TextColumn::make('valid_to')->label('Hasta')->date('Y-m-d')->toggleable(),

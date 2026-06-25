@@ -135,24 +135,24 @@ class ParkingMembershipResource extends Resource
         return $table->defaultSort('end_date')->columns([
             Tables\Columns\TextColumn::make('name')->label('Convenio')->searchable()->weight('semibold')->limit(40),
             Tables\Columns\TextColumn::make('kind')->label('Tipo')->badge()
-                ->formatStateUsing(fn (string $s) => ParkingMembership::KINDS[$s] ?? $s),
+                ->formatStateUsing(fn (string $state) => ParkingMembership::KINDS[$state] ?? $state),
             Tables\Columns\TextColumn::make('customer.name')->label('Cliente')->searchable()->limit(30),
             Tables\Columns\TextColumn::make('parkingLot.name')->label('Parqueadero'),
             Tables\Columns\TextColumn::make('plates_count')
                 ->label('Placas')
-                ->state(fn (ParkingMembership $r) => count($r->plates ?? []))
+                ->state(fn (ParkingMembership $record) => count($record->plates ?? []))
                 ->alignCenter(),
             Tables\Columns\TextColumn::make('end_date')->label('Vence')->date('Y-m-d'),
             Tables\Columns\TextColumn::make('days_left')
                 ->label('Días restantes')
-                ->state(fn (ParkingMembership $r) => $r->daysToExpiration())
+                ->state(fn (ParkingMembership $record) => $record->daysToExpiration())
                 ->badge()
                 ->color(fn ($state) => $state === null ? 'gray' : ($state < 0 ? 'danger' : ($state <= 7 ? 'warning' : 'success')))
                 ->formatStateUsing(fn ($state) => $state === null ? '—' : ($state < 0 ? abs($state).' vencida' : $state.' día(s)')),
             Tables\Columns\TextColumn::make('amount')->label('Monto')->money('COP')->alignEnd(),
             Tables\Columns\TextColumn::make('status')->label('Estado')->badge()
-                ->formatStateUsing(fn (string $s) => ParkingMembership::STATUSES[$s] ?? $s)
-                ->color(fn (string $s) => match ($s) {
+                ->formatStateUsing(fn (string $state) => ParkingMembership::STATUSES[$state] ?? $state)
+                ->color(fn (string $state) => match ($state) {
                     ParkingMembership::STATUS_ACTIVE => 'success',
                     ParkingMembership::STATUS_EXPIRED => 'danger',
                     ParkingMembership::STATUS_CANCELLED => 'gray',
