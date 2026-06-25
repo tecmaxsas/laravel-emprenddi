@@ -207,8 +207,11 @@
                 <div class="small">Atendido por: {{ $seller->name ?: $seller->email }}</div>
             @endif
             {{-- QR e info DIAN solo para facturas electronicas. Para POS
-                 (no electronica) no aplica nada de esto. --}}
-            @if ($invoice->invoice_kind === 'electronic')
+                 (no electronica) no aplica nada de esto.
+                 invoice_kind=null se trata como electronica para preservar
+                 el comportamiento en facturas legacy anteriores a la
+                 migracion 2026_05_14_200000. --}}
+            @if ($invoice->invoice_kind !== 'pos')
                 @if ($get($f, 'show_qr_dian'))
                     @if ($invoice->cufe && $invoice->qr_url)
                         <img src="https://api.qrserver.com/v1/create-qr-code/?size=140x140&data={{ urlencode($invoice->qr_url) }}"
