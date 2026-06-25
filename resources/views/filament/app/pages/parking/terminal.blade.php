@@ -343,8 +343,9 @@
         .pt-scan-input {
             width:100%; padding:9px 12px; border:2px solid #6366f1; border-radius:8px;
             font-family:ui-monospace, monospace; font-size:16px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase;
-            background:#eef2ff;
+            background:#eef2ff !important; color:#0f172a !important;
         }
+        .pt-scan-input::placeholder { color:#94a3b8 !important; }
         .pt-scan-hint { position:absolute; right:8px; bottom:8px; font-size:10px; color:#6366f1; background:#fff; padding:1px 6px; border-radius:4px; opacity:.7; }
 
         .pt-kpis { display:flex; gap:6px; }
@@ -409,9 +410,11 @@
         .pt-field label { display:block; font-size:11px; text-transform:uppercase; color:#6b7280; font-weight:700; margin-bottom:5px; }
         .pt-field input[type=text], .pt-field textarea, .pt-field select {
             width:100%; padding:9px 11px; border:1px solid #cbd5e1; border-radius:7px; font-size:14px; font-family:inherit;
+            background:#fff !important; color:#0f172a !important;
         }
+        .pt-field input[type=text]::placeholder, .pt-field textarea::placeholder { color:#94a3b8 !important; }
         .pt-field input[type=text]:focus, .pt-field textarea:focus, .pt-field select:focus { outline:none; border-color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,.15); }
-        .pt-input-plate { font-family:ui-monospace, monospace !important; font-size:24px !important; font-weight:800 !important; letter-spacing:3px; text-transform:uppercase; text-align:center; }
+        .pt-input-plate { font-family:ui-monospace, monospace !important; font-size:24px !important; font-weight:800 !important; letter-spacing:3px; text-transform:uppercase; text-align:center; color:#0f172a !important; }
 
         .pt-vehicle-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(110px, 1fr)); gap:7px; }
         .pt-vehicle-btn { padding:10px 8px; background:#f1f5f9; border:2px solid transparent; border-radius:8px; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:3px; font-size:12px; font-weight:600; color:#475569; }
@@ -453,7 +456,8 @@
 
         .pt-cancel summary { cursor:pointer; font-size:12px; color:#6b7280; font-weight:600; margin-bottom:6px; }
         .pt-cancel-body { display:flex; gap:7px; margin-top:6px; }
-        .pt-cancel-body input { flex:1; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; }
+        .pt-cancel-body input { flex:1; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; background:#fff !important; color:#0f172a !important; }
+        .pt-cancel-body input::placeholder { color:#94a3b8 !important; }
 
         @media (max-width:900px) {
             .pt-bar { grid-template-columns:1fr; }
