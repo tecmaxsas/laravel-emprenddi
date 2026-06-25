@@ -81,7 +81,7 @@ class ParkingBillingEngine
 
         // Turno de caja del cajero — obligatorio. Si no hay turno abierto, no
         // se puede facturar (las ventas tienen que quedar en el cierre de caja).
-        $cashSession = $this->resolveOpenCashSession((int) $location->id);
+        $cashSession = $this->resolveOpenCashSession();
         if (! $cashSession) {
             throw new RuntimeException(
                 'No tienes un turno de caja abierto. Abre tu caja en POS → Apertura de caja '
@@ -116,7 +116,7 @@ class ParkingBillingEngine
             ]);
 
             // 3. Linea unica: servicio de parqueadero (descripcion enriquecida)
-            $taxId = $product->effectiveSaleTaxId();
+            $taxId = $product->default_sale_tax_id;
             $taxRate = $taxId ? (float) (Tax::find($taxId)?->rate ?? 0) : 0;
             $totalAmount = (float) $session->amount;
 
@@ -181,7 +181,7 @@ class ParkingBillingEngine
      * el turno no esta amarrado a la sede de la factura porque un usuario
      * puede operar varias sedes.
      */
-    protected function resolveOpenCashSession(int $locationId): ?CashRegisterSession
+    protected function resolveOpenCashSession(): ?CashRegisterSession
     {
         if (! Auth::id()) return null;
         return CashRegisterSession::query()
