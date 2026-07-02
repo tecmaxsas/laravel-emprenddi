@@ -64,6 +64,7 @@ class CategoryResource extends Resource
                         ->searchable()
                         ->helperText('Las cuentas contables se heredan desde la categoría padre si esta no las define.')
                         ->getSearchResultsUsing(fn (string $search) => Category::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('name', 'ilike', "%{$search}%")
                             ->where('id', '!=', request()->route('record'))
                             ->orderBy('name')

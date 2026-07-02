@@ -48,7 +48,12 @@ class GiftCardEngine
         $normalized = strtoupper(trim($code));
         if ($normalized === '') return null;
 
+        // Scoping explicito: el redeem por codigo es entrada de usuario,
+        // no confiar en el global scope inerte cuando CurrentCompany no
+        // esta hidratado. Un codigo colision entre empresas nunca debe
+        // permitir redimir una gift card de otra empresa.
         return GiftCard::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->redeemable()
             ->whereRaw('UPPER(code) = ?', [$normalized])
             ->first();

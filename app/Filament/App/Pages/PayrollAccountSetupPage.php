@@ -41,7 +41,9 @@ class PayrollAccountSetupPage extends Page implements HasForms
 
     public function mount(): void
     {
-        $existing = PayrollAccountMapping::query()->pluck('account_id', 'slot')->toArray();
+        $existing = PayrollAccountMapping::query()
+            ->where('company_id', auth()->user()?->company_id)
+            ->pluck('account_id', 'slot')->toArray();
         $this->form->fill($existing);
     }
 
@@ -77,6 +79,7 @@ class PayrollAccountSetupPage extends Page implements HasForms
                 ->label($info['name'])
                 ->searchable()
                 ->getSearchResultsUsing(fn (string $search) => Account::query()
+                    ->where('company_id', auth()->user()?->company_id)
                     ->where('accepts_movements', true)
                     ->where('active', true)
                     ->where(function ($q) use ($search) {
@@ -99,16 +102,20 @@ class PayrollAccountSetupPage extends Page implements HasForms
     public function save(): void
     {
         $data = $this->form->getState();
+        $companyId = auth()->user()?->company_id;
 
         foreach (PayrollAccountSlots::codes() as $slot) {
             $accountId = $data[$slot] ?? null;
             if ($accountId) {
                 PayrollAccountMapping::updateOrCreate(
-                    ['slot' => $slot],
+                    ['company_id' => $companyId, 'slot' => $slot],
                     ['account_id' => $accountId],
                 );
             } else {
-                PayrollAccountMapping::query()->where('slot', $slot)->delete();
+                PayrollAccountMapping::query()
+                    ->where('company_id', $companyId)
+                    ->where('slot', $slot)
+                    ->delete();
             }
         }
 

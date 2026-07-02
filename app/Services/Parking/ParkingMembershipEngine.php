@@ -61,11 +61,14 @@ class ParkingMembershipEngine
     /**
      * Job de mantenimiento (lo invocara un command/scheduler en commit
      * posterior): marca como expiradas las mensualidades cuyo end_date
-     * paso. Se ejecuta de noche. Idempotente.
+     * paso. Se ejecuta de noche a nivel de sistema (todas las empresas).
+     *
+     * IMPORTANTE: withoutGlobalScopes() es intencional para procesar
+     * cross-tenant desde el scheduler. NO llamar desde UI.
      */
     public function markExpired(): int
     {
-        return ParkingMembership::query()
+        return ParkingMembership::withoutGlobalScopes()
             ->where('status', ParkingMembership::STATUS_ACTIVE)
             ->whereDate('end_date', '<', now()->toDateString())
             ->update(['status' => ParkingMembership::STATUS_EXPIRED]);

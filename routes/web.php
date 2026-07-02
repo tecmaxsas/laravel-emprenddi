@@ -6,9 +6,11 @@ use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/app');
 
-// Ticket POS — vista imprimible. Detrás del middleware web (sesión + auth)
-// para que el panel App sea quien autentica.
-Route::middleware(['web', 'auth'])->group(function () {
+// Ticket POS, exports XLSX y utilidades detras del middleware web+auth.
+// Se agrega SetActiveCompany asi CurrentCompany queda hidratado y el
+// CompanyScope global filtra automaticamente por empresa del usuario —
+// evitando que reportes / prints puedan leak data cross-tenant.
+Route::middleware(['web', 'auth', \App\Http\Middleware\SetActiveCompany::class])->group(function () {
     Route::get('/app/pos/print/{invoice}', [PosPrintController::class, 'show'])
         ->name('pos.print');
 
