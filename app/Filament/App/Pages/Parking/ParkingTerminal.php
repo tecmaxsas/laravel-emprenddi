@@ -74,7 +74,9 @@ class ParkingTerminal extends Page
 
     public function mount(): void
     {
+        $companyId = auth()->user()?->company_id;
         $this->parkingLotId = ParkingLot::query()
+            ->where('company_id', $companyId)
             ->where('active', true)
             ->orderBy('id')
             ->value('id');
@@ -89,6 +91,7 @@ class ParkingTerminal extends Page
     public function getLotsProperty()
     {
         return ParkingLot::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('active', true)
             ->orderBy('name')
             ->get(['id', 'name', 'default_invoice_kind']);
@@ -97,13 +100,16 @@ class ParkingTerminal extends Page
     public function getCurrentLotProperty(): ?ParkingLot
     {
         return $this->parkingLotId
-            ? ParkingLot::find($this->parkingLotId)
+            ? ParkingLot::query()
+                ->where('company_id', auth()->user()?->company_id)
+                ->find($this->parkingLotId)
             : null;
     }
 
     public function getVehicleTypesProperty()
     {
         return VehicleType::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('active', true)
             ->orderBy('sort_order')
             ->get(['id', 'name', 'icon', 'code']);
@@ -114,6 +120,7 @@ class ParkingTerminal extends Page
         if (! $this->parkingLotId) return [];
 
         $spaces = ParkingSpace::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('parking_lot_id', $this->parkingLotId)
             ->with(['vehicleType:id,name,code', 'activeSession:id,parking_space_id,plate,entry_at'])
             ->orderBy('zone')
@@ -129,6 +136,7 @@ class ParkingTerminal extends Page
     {
         if (! $this->parkingLotId) return collect();
         return ParkingSession::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('parking_lot_id', $this->parkingLotId)
             ->where('status', ParkingSession::STATUS_ACTIVE)
             ->whereNull('parking_space_id')
@@ -143,6 +151,7 @@ class ParkingTerminal extends Page
             return ['total' => 0, 'free' => 0, 'occupied' => 0, 'other' => 0];
         }
         $counts = ParkingSpace::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('parking_lot_id', $this->parkingLotId)
             ->selectRaw('status, COUNT(*) as c')
             ->groupBy('status')
@@ -169,13 +178,19 @@ class ParkingTerminal extends Page
 
     public function getSelectedSpaceProperty(): ?ParkingSpace
     {
-        return $this->selectedSpaceId ? ParkingSpace::find($this->selectedSpaceId) : null;
+        return $this->selectedSpaceId
+            ? ParkingSpace::query()
+                ->where('company_id', auth()->user()?->company_id)
+                ->find($this->selectedSpaceId)
+            : null;
     }
 
     public function getActiveSessionProperty(): ?ParkingSession
     {
         if (! $this->activeSessionId) return null;
-        return ParkingSession::with(['vehicleType:id,name', 'parkingLot:id,name', 'parkingMembership:id,name,end_date'])
+        return ParkingSession::query()
+            ->where('company_id', auth()->user()?->company_id)
+            ->with(['vehicleType:id,name', 'parkingLot:id,name', 'parkingMembership:id,name,end_date'])
             ->find($this->activeSessionId);
     }
 
@@ -218,6 +233,7 @@ class ParkingTerminal extends Page
     {
         $this->entryForm = [
             'vehicle_type_id' => VehicleType::query()
+                ->where('company_id', auth()->user()?->company_id)
                 ->where('active', true)
                 ->where('code', VehicleType::CODE_CAR)
                 ->value('id'),
@@ -267,7 +283,11 @@ class ParkingTerminal extends Page
             ->where('company_id', auth()->user()?->company_id)
             ->first();
         if (! $product) return;
-        $tax = $product->default_sale_tax_id ? Tax::find($product->default_sale_tax_id) : null;
+        $tax = $product->default_sale_tax_id
+            ? Tax::query()
+                ->where('company_id', auth()->user()?->company_id)
+                ->find($product->default_sale_tax_id)
+            : null;
 
         $this->exitExtras[] = [
             'product_id' => $product->id,
@@ -348,7 +368,9 @@ class ParkingTerminal extends Page
      */
     public function selectSpace(int $spaceId): void
     {
+        $companyId = auth()->user()?->company_id;
         $space = ParkingSpace::query()
+            ->where('company_id', $companyId)
             ->where('id', $spaceId)
             ->where('parking_lot_id', $this->parkingLotId)
             ->first();
@@ -366,6 +388,7 @@ class ParkingTerminal extends Page
 
         if ($space->status === ParkingSpace::STATUS_OCCUPIED) {
             $session = ParkingSession::query()
+                ->where('company_id', $companyId)
                 ->where('parking_space_id', $space->id)
                 ->where('status', ParkingSession::STATUS_ACTIVE)
                 ->latest('entry_at')
@@ -395,7 +418,9 @@ class ParkingTerminal extends Page
 
     protected function openExitFor(int $sessionId): void
     {
-        $session = ParkingSession::find($sessionId);
+        $session = ParkingSession::query()
+            ->where('company_id', auth()->user()?->company_id)
+            ->find($sessionId);
         if (! $session) return;
         $this->parkingLotId = $session->parking_lot_id;
         $this->activeSessionId = $session->id;
@@ -416,8 +441,11 @@ class ParkingTerminal extends Page
         $this->scanInput = '';
         if ($input === '') return;
 
+        $companyId = auth()->user()?->company_id;
+
         if (preg_match('/^PK(\d+)$/i', $input, $m)) {
             $session = ParkingSession::query()
+                ->where('company_id', $companyId)
                 ->where('id', (int) $m[1])
                 ->where('status', ParkingSession::STATUS_ACTIVE)
                 ->first();
@@ -432,6 +460,7 @@ class ParkingTerminal extends Page
 
         $plate = strtoupper(preg_replace('/\s+/', '', $input));
         $session = ParkingSession::query()
+            ->where('company_id', $companyId)
             ->where('plate', $plate)
             ->where('status', ParkingSession::STATUS_ACTIVE)
             ->orderByDesc('entry_at')
@@ -446,7 +475,9 @@ class ParkingTerminal extends Page
     public function refreshQuote(): void
     {
         if (! $this->activeSessionId) return;
-        $session = ParkingSession::find($this->activeSessionId);
+        $session = ParkingSession::query()
+            ->where('company_id', auth()->user()?->company_id)
+            ->find($this->activeSessionId);
         if ($session) {
             $this->quote = app(ParkingSessionEngine::class)->quote($session);
         }

@@ -450,7 +450,9 @@ class PosTerminal extends Page
 
         $taxRate = 0;
         if ($product->default_sale_tax_id) {
-            $taxRate = (float) Tax::find($product->default_sale_tax_id)?->rate;
+            $taxRate = (float) Tax::query()
+                ->where('company_id', Auth::user()?->company_id)
+                ->find($product->default_sale_tax_id)?->rate;
         }
         $rawPrice = (float) $product->default_sale_price;
         $unitPrice = ($product->sale_price_includes_tax && $taxRate > 0)
@@ -534,7 +536,9 @@ class PosTerminal extends Page
 
         $taxRate = 0;
         if ($product->default_sale_tax_id) {
-            $taxRate = (float) Tax::find($product->default_sale_tax_id)?->rate;
+            $taxRate = (float) Tax::query()
+                ->where('company_id', Auth::user()?->company_id)
+                ->find($product->default_sale_tax_id)?->rate;
         }
 
         // Si el precio del producto YA incluye el impuesto, desnormalizar a
@@ -1425,8 +1429,12 @@ class PosTerminal extends Page
         }
 
         // Setting "Cliente obligatorio": rechaza venta a Consumidor Final.
+        // Filtro por company_id: customer_id es propiedad publica Livewire,
+        // no confiar en el sin re-scopear a la empresa del usuario.
         if ($this->posSettings['require_customer'] ?? false) {
-            $customer = ThirdParty::find($this->customer_id);
+            $customer = ThirdParty::query()
+                ->where('company_id', Auth::user()?->company_id)
+                ->find($this->customer_id);
             if ($customer && $customer->document_number === '222222222') {
                 $this->paymentError = 'Cliente obligatorio: la empresa no permite vender a "Consumidor Final".';
                 return;
@@ -2110,14 +2118,18 @@ class PosTerminal extends Page
     public function getCustomerNameProperty(): string
     {
         return $this->customer_id
-            ? (ThirdParty::find($this->customer_id)?->name ?? '—')
+            ? (ThirdParty::query()
+                ->where('company_id', Auth::user()?->company_id)
+                ->find($this->customer_id)?->name ?? '—')
             : '—';
     }
 
     public function getLocationNameProperty(): string
     {
         return $this->location_id
-            ? (Location::find($this->location_id)?->fullName() ?? '—')
+            ? (Location::query()
+                ->where('company_id', Auth::user()?->company_id)
+                ->find($this->location_id)?->fullName() ?? '—')
             : '—';
     }
 

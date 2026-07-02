@@ -488,7 +488,10 @@ class RestaurantPos extends Page
      */
     public function cycleItemCourse(int $itemId): void
     {
-        $item = OrderItem::find($itemId);
+        // OrderItem no tiene company_id: scopeamos via el order activo
+        // que si esta filtrado por company. Un itemId de otra empresa
+        // no encontrara match aqui.
+        $item = $this->activeOrder?->items()->find($itemId);
         if (! $item) return;
         if ($item->kitchen_status !== OrderItem::KS_PENDING) {
             Notification::make()
@@ -1162,7 +1165,7 @@ class RestaurantPos extends Page
 
     public function assignItemTab(int $itemId, string $tab): void
     {
-        $item = OrderItem::find($itemId);
+        $item = $this->activeOrder?->items()->find($itemId);
         if (! $item) return;
         $clean = trim($tab);
         if ($clean === '') return;
@@ -1173,7 +1176,7 @@ class RestaurantPos extends Page
 
     public function unassignItemTab(int $itemId): void
     {
-        $item = OrderItem::find($itemId);
+        $item = $this->activeOrder?->items()->find($itemId);
         if (! $item) return;
         app(RestaurantOrderEngine::class)->setItemTab($item, null);
     }
@@ -1699,7 +1702,7 @@ class RestaurantPos extends Page
 
     public function increaseQty(int $itemId): void
     {
-        $item = OrderItem::find($itemId);
+        $item = $this->activeOrder?->items()->find($itemId);
         if (! $item) return;
         try {
             app(RestaurantOrderEngine::class)->updateItemQuantity($item, (float) $item->quantity + 1);
@@ -1710,7 +1713,7 @@ class RestaurantPos extends Page
 
     public function decreaseQty(int $itemId): void
     {
-        $item = OrderItem::find($itemId);
+        $item = $this->activeOrder?->items()->find($itemId);
         if (! $item) return;
         $newQty = (float) $item->quantity - 1;
         try {
@@ -1722,7 +1725,7 @@ class RestaurantPos extends Page
 
     public function cancelItem(int $itemId): void
     {
-        $item = OrderItem::find($itemId);
+        $item = $this->activeOrder?->items()->find($itemId);
         if (! $item) return;
         app(RestaurantOrderEngine::class)->cancelItem($item, 'Cancelado por mesero');
         Notification::make()->title('Item cancelado')->warning()->send();
