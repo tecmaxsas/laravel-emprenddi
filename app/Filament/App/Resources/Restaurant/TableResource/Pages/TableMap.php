@@ -23,13 +23,20 @@ class TableMap extends Page
 
     public function mount(): void
     {
-        $this->locationId = Location::query()->where('is_main', true)->value('id')
-            ?? Location::query()->value('id');
+        $companyId = auth()->user()?->company_id;
+        $this->locationId = Location::query()
+            ->where('company_id', $companyId)
+            ->where('is_main', true)
+            ->value('id')
+                ?? Location::query()
+                    ->where('company_id', $companyId)
+                    ->value('id');
     }
 
     public function getLocations()
     {
         return Location::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('active', true)
             ->orderBy('name')
             ->get();

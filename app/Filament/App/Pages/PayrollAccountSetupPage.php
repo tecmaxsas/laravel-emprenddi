@@ -107,6 +107,24 @@ class PayrollAccountSetupPage extends Page implements HasForms
         foreach (PayrollAccountSlots::codes() as $slot) {
             $accountId = $data[$slot] ?? null;
             if ($accountId) {
+                // Valida ownership de la cuenta antes de persistir. Sin
+                // este guard, un id crafteado por cliente persistia una
+                // account_id de otra empresa en el mapping local, y luego
+                // el asiento de nomina se posteaba con esa cuenta ajena.
+                $ownsAccount = Account::query()
+                    ->where('company_id', $companyId)
+                    ->where('id', $accountId)
+                    ->exists();
+                if (! $ownsAccount) {
+                    Notification::make()
+                        ->danger()
+                        ->title('Cuenta inválida')
+                        ->body("La cuenta seleccionada para \"$slot\" no pertenece a la empresa.")
+                        ->persistent()
+                        ->send();
+                    continue;
+                }
+
                 PayrollAccountMapping::updateOrCreate(
                     ['company_id' => $companyId, 'slot' => $slot],
                     ['account_id' => $accountId],

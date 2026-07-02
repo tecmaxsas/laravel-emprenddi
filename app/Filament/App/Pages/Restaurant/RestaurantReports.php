@@ -269,13 +269,17 @@ class RestaurantReports extends Page
 
     /**
      * Items de las ordenes anuladas/sin factura para el preview.
+     * Livewire public: orderId lo pasa el cliente; scope via join con
+     * restaurant_orders.company_id.
      */
     public function voidedOrderItems(int $orderId): array
     {
-        return DB::table('restaurant_order_items')
-            ->where('restaurant_order_id', $orderId)
-            ->select(['description', 'quantity', 'total', 'kitchen_status'])
-            ->orderBy('line_number')
+        return DB::table('restaurant_order_items as oi')
+            ->join('restaurant_orders as o', 'o.id', '=', 'oi.restaurant_order_id')
+            ->where('o.company_id', auth()->user()?->company_id)
+            ->where('oi.restaurant_order_id', $orderId)
+            ->select(['oi.description', 'oi.quantity', 'oi.total', 'oi.kitchen_status'])
+            ->orderBy('oi.line_number')
             ->get()
             ->toArray();
     }

@@ -57,9 +57,12 @@ class ViewPayrollSettlement extends ViewRecord
                             ->get()
                             ->mapWithKeys(fn (Account $a) => [$a->id => "{$a->code} — {$a->name}"])
                             ->all())
-                        ->getOptionLabelUsing(fn ($value) => Account::find($value)
-                            ? Account::find($value)->code.' — '.Account::find($value)->name
-                            : null),
+                        ->getOptionLabelUsing(function ($value) {
+                            $a = Account::query()
+                                ->where('company_id', auth()->user()?->company_id)
+                                ->find($value);
+                            return $a ? "{$a->code} — {$a->name}" : null;
+                        }),
 
                     Forms\Components\DatePicker::make('payment_date')
                         ->label('Fecha de pago')
@@ -68,9 +71,22 @@ class ViewPayrollSettlement extends ViewRecord
                 ])
                 ->action(function (array $data, PayrollSettlement $record) {
                     try {
+                        // Valida que la cuenta pertenezca a la misma empresa
+                        // que el settlement. Sin este guard, un account_id
+                        // crafteado por cliente podia postear una cuenta de
+                        // otra empresa en el asiento contable local.
+                        $accountId = (int) $data['account_id'];
+                        $accountOwned = Account::query()
+                            ->where('company_id', $record->company_id)
+                            ->where('id', $accountId)
+                            ->exists();
+                        if (! $accountOwned) {
+                            throw new \RuntimeException('La cuenta seleccionada no pertenece a esta empresa.');
+                        }
+
                         $settlement = app(PayrollSettlementService::class)->pay(
                             $record,
-                            (int) $data['account_id'],
+                            $accountId,
                             $data['payment_date'],
                         );
                         Notification::make()

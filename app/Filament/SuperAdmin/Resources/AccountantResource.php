@@ -71,8 +71,15 @@ class AccountantResource extends Resource
                 ->default(true)
                 ->inline(false),
 
-            Forms\Components\Hidden::make('is_accountant_portal')->default(true),
-            Forms\Components\Hidden::make('is_super_admin')->default(false),
+            // Solo se dehidratan al crear; en edit no queremos que
+            // pisemos silenciosamente is_super_admin del registro
+            // existente (una regresion accidental de privilegios).
+            Forms\Components\Hidden::make('is_accountant_portal')
+                ->default(true)
+                ->dehydrated(fn (string $operation) => $operation === 'create'),
+            Forms\Components\Hidden::make('is_super_admin')
+                ->default(false)
+                ->dehydrated(fn (string $operation) => $operation === 'create'),
         ]);
     }
 

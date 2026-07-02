@@ -88,21 +88,30 @@ class KitchenDisplay extends Page
 
     public function startPreparing(int $itemId): void
     {
-        $item = OrderItem::find($itemId);
+        // OrderItem no tiene company_id: scopeamos via el order.
+        $item = OrderItem::whereHas('order', fn ($q) => $q
+            ->where('company_id', auth()->user()?->company_id)
+        )->find($itemId);
         if (! $item) return;
         app(RestaurantOrderEngine::class)->markItemPreparing($item);
     }
 
     public function markReady(int $itemId): void
     {
-        $item = OrderItem::find($itemId);
+        // OrderItem no tiene company_id: scopeamos via el order.
+        $item = OrderItem::whereHas('order', fn ($q) => $q
+            ->where('company_id', auth()->user()?->company_id)
+        )->find($itemId);
         if (! $item) return;
         app(RestaurantOrderEngine::class)->markItemReady($item);
     }
 
     public function markServed(int $itemId): void
     {
-        $item = OrderItem::find($itemId);
+        // OrderItem no tiene company_id: scopeamos via el order.
+        $item = OrderItem::whereHas('order', fn ($q) => $q
+            ->where('company_id', auth()->user()?->company_id)
+        )->find($itemId);
         if (! $item) return;
         app(RestaurantOrderEngine::class)->markItemServed($item);
 
@@ -119,7 +128,10 @@ class KitchenDisplay extends Page
      */
     public function regressItem(int $itemId): void
     {
-        $item = OrderItem::find($itemId);
+        // OrderItem no tiene company_id: scopeamos via el order.
+        $item = OrderItem::whereHas('order', fn ($q) => $q
+            ->where('company_id', auth()->user()?->company_id)
+        )->find($itemId);
         if (! $item) return;
 
         $prev = match ($item->kitchen_status) {

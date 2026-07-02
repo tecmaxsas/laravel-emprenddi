@@ -23,7 +23,12 @@ class CreatePayrollSettlement extends CreateRecord
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
-        $employee = Employee::find($data['employee_id']);
+        // Valida ownership del empleado. Sin este guard un employee_id
+        // crafteado creaba una liquidacion sobre un empleado ajeno con
+        // company_id del usuario actual — mix de datos peligroso.
+        $employee = Employee::query()
+            ->where('company_id', Auth::user()?->company_id)
+            ->find($data['employee_id']);
         $contract = $employee?->contracts()->first();
         if (! $contract) {
             throw ValidationException::withMessages([

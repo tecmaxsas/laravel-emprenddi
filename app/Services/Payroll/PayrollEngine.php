@@ -69,12 +69,18 @@ class PayrollEngine
             );
         }
 
+        // Scope explicito por company del period. Si el engine corre desde
+        // queue/artisan sin CurrentCompany hidratado, el scope global esta
+        // inerte y liquidaria empleados de OTRAS empresas bajo el company
+        // del period. Defense in depth critico.
         $employees = Employee::query()
+            ->where('company_id', $period->company_id)
             ->where('status', Employee::STATUS_ACTIVE)
             ->with('activeContract')
             ->get();
 
         $noveltiesByEmployee = PayrollNovelty::query()
+            ->where('company_id', $period->company_id)
             ->where('payroll_period_id', $period->id)
             ->get()
             ->groupBy('employee_id');
