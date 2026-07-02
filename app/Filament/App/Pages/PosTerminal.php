@@ -249,7 +249,7 @@ class PosTerminal extends Page
 
     public function getCurrentSessionProperty(): ?CashRegisterSession
     {
-        return $this->session_id ? CashRegisterSession::find($this->session_id) : null;
+        return $this->session_id ? CashRegisterSession::query()->where('company_id', auth()->user()?->company_id)->find($this->session_id) : null;
     }
 
     public function getHasOpenSessionProperty(): bool
@@ -305,6 +305,7 @@ class PosTerminal extends Page
     public function getCategoriesProperty()
     {
         return Category::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('active', true)
             ->withCount(['products' => fn ($q) => $q->where('active', true)->where('is_sellable', true)])
             ->orderBy('name')
@@ -315,6 +316,7 @@ class PosTerminal extends Page
     public function getProductsProperty()
     {
         $query = Product::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('active', true)
             ->where('is_sellable', true)
             ->where('type', '!=', 'variable');
@@ -370,6 +372,7 @@ class PosTerminal extends Page
         // tenga UN solo input para barcode y serial — el sistema discrimina.
         if (\App\Support\SerialsSettings::enabled()) {
             $serial = \App\Models\ProductSerial::query()
+                ->where('company_id', auth()->user()?->company_id)
                 ->where('serial_number', $code)
                 ->where('status', \App\Models\ProductSerial::STATUS_IN_STOCK)
                 ->with('product')
@@ -395,6 +398,7 @@ class PosTerminal extends Page
 
         // 2. Fallback: búsqueda por barcode/code del producto
         $product = Product::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('active', true)
             ->where('is_sellable', true)
             ->where('type', '!=', 'variable')
@@ -477,7 +481,7 @@ class PosTerminal extends Page
 
     public function addProductToCart(int $productId): void
     {
-        $product = Product::find($productId);
+        $product = Product::query()->where('company_id', auth()->user()?->company_id)->find($productId);
         if (! $product || ! $product->is_sellable) {
             return;
         }
@@ -875,6 +879,7 @@ class PosTerminal extends Page
     public function addRetention(int $taxId): void
     {
         $tax = Tax::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('id', $taxId)
             ->where('is_active', true)
             ->whereIn('type', ['income_withholding', 'vat_withholding', 'ica_withholding'])
@@ -928,6 +933,7 @@ class PosTerminal extends Page
     public function getAvailableRetentionTaxesProperty()
     {
         return Tax::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('is_active', true)
             ->whereIn('type', ['income_withholding', 'vat_withholding', 'ica_withholding'])
             ->whereIn('applies_to', ['sale', 'both'])
@@ -943,6 +949,7 @@ class PosTerminal extends Page
     public function getAvailableLineTaxesProperty()
     {
         return Tax::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('is_active', true)
             ->whereIn('applies_to', ['sale', 'both'])
             ->whereNotIn('type', ['income_withholding', 'vat_withholding', 'ica_withholding'])
@@ -968,7 +975,7 @@ class PosTerminal extends Page
         $taxId = $taxId === '' || $taxId === null ? null : (int) $taxId;
         $rate = 0.0;
         if ($taxId) {
-            $rate = (float) (Tax::query()->whereKey($taxId)->value('rate') ?? 0);
+            $rate = (float) (Tax::query()->where('company_id', auth()->user()?->company_id)->whereKey($taxId)->value('rate') ?? 0);
         }
 
         $this->cart[$i]['tax_id'] = $taxId;
@@ -980,6 +987,7 @@ class PosTerminal extends Page
     {
         // 1. PaymentMethod configurado por la empresa (si existe)
         $configured = PaymentMethod::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('code', $method)
             ->where('active', true)
             ->value('account_id');
@@ -992,6 +1000,7 @@ class PosTerminal extends Page
         $code = $method === 'cash' ? '110505' : '1110';
 
         return Account::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('accepts_movements', true)
             ->where('active', true)
             ->where('code', 'like', $code.'%')
@@ -1145,7 +1154,7 @@ class PosTerminal extends Page
                 continue;
             }
 
-            $product = Product::find($productId);
+            $product = Product::query()->where('company_id', auth()->user()?->company_id)->find($productId);
             $lines[$idx] = new \App\Services\Promotions\CartLine(
                 productId: $productId,
                 categoryId: $product?->category_id,
@@ -1545,7 +1554,7 @@ class PosTerminal extends Page
                 $giftCardLiabilityAccountId = \App\Support\GiftCardsSettings::liabilityAccountId();
 
                 foreach ($this->appliedGiftCards as $applied) {
-                    $card = \App\Models\GiftCard::find($applied['gift_card_id']);
+                    $card = \App\Models\GiftCard::query()->where('company_id', auth()->user()?->company_id)->find($applied['gift_card_id']);
                     if (! $card) continue;
                     $amount = (float) $applied['amount'];
                     if ($amount <= 0) continue;
@@ -1599,7 +1608,7 @@ class PosTerminal extends Page
                     // Reconstruir un PromotionResult sintetico para recordUsages
                     $result = new \App\Services\Promotions\PromotionResult($this->buildCartContext($this->couponCode));
                     foreach ($this->appliedPromotions as $a) {
-                        $p = \App\Models\Promotion::find($a['promotion_id']);
+                        $p = \App\Models\Promotion::query()->where('company_id', auth()->user()?->company_id)->find($a['promotion_id']);
                         if ($p) $result->registerApplied($p, (float) $a['discount']);
                     }
                     $promoEngine->recordUsages($result, $invoice->id, Auth::id());
@@ -2040,6 +2049,7 @@ class PosTerminal extends Page
     public function recoverSale(int $id): void
     {
         $suspended = SuspendedSale::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('id', $id)
             ->where('location_id', $this->location_id)
             ->first();
@@ -2074,6 +2084,7 @@ class PosTerminal extends Page
     public function deleteSuspendedSale(int $id): void
     {
         SuspendedSale::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('id', $id)
             ->where('location_id', $this->location_id)
             ->delete();
@@ -2084,6 +2095,7 @@ class PosTerminal extends Page
     public function getSuspendedSalesProperty()
     {
         return SuspendedSale::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('location_id', $this->location_id)
             ->with('customer:id,name', 'seller:id,name,email')
             ->orderByDesc('created_at')
@@ -2116,6 +2128,7 @@ class PosTerminal extends Page
     public function getPaymentMethodsProperty(): array
     {
         $methods = PaymentMethod::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('active', true)
             ->orderBy('sort_order')
             ->orderBy('name')

@@ -138,6 +138,7 @@ class ModifierGroupResource extends Resource
                         ->preload()
                         ->searchable()
                         ->options(fn () => Product::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('active', true)
                             ->where('is_sellable', true)
                             ->orderBy('name')

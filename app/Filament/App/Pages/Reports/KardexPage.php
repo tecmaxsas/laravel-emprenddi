@@ -79,6 +79,7 @@ class KardexPage extends Page implements HasForms, HasTable
                             ->live()
                             ->searchable()
                             ->getSearchResultsUsing(fn (string $search) => Product::query()
+                                ->where('company_id', auth()->user()?->company_id)
                                 ->where('active', true)
                                 ->where(function ($q) use ($search) {
                                     $q->where('code', 'ilike', "%{$search}%")

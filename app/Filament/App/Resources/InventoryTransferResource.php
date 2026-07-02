@@ -103,6 +103,7 @@ class InventoryTransferResource extends Resource
                                 ->searchable()
                                 ->live()
                                 ->getSearchResultsUsing(fn (string $search) => Product::query()
+                                    ->where('company_id', auth()->user()?->company_id)
                                     ->where('track_inventory', true)
                                     ->where('active', true)
                                     ->where(function ($q) use ($search) {

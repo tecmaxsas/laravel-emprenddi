@@ -78,6 +78,7 @@ class WarrantyResource extends Resource
                         ->afterStateUpdated(function ($state, Forms\Set $set) {
                             if (! $state) return;
                             $serial = ProductSerial::query()
+                                ->where('company_id', auth()->user()?->company_id)
                                 ->where('serial_number', trim($state))
                                 ->with(['product', 'saleLine.invoice'])
                                 ->first();
@@ -96,6 +97,7 @@ class WarrantyResource extends Resource
                         ->label('Factura de venta (opcional)')
                         ->searchable()
                         ->getSearchResultsUsing(fn (string $search) => SaleInvoice::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('status', 'posted')
                             ->where(function ($q) use ($search) {
                                 $q->where('number', 'ilike', "%{$search}%")
@@ -110,11 +112,11 @@ class WarrantyResource extends Resource
                                 $i->id => $i->fullNumber().' · '.$i->customer?->name.' · '.$i->date?->format('Y-m-d'),
                             ]))
                         ->getOptionLabelUsing(fn ($value) => $value
-                            ? optional(SaleInvoice::find($value))->fullNumber()
+                            ? optional(SaleInvoice::query()->where('company_id', auth()->user()?->company_id)->find($value))->fullNumber()
                             : null)
                         ->afterStateUpdated(function ($state, Forms\Set $set) {
                             if (! $state) return;
-                            $invoice = SaleInvoice::find($state);
+                            $invoice = SaleInvoice::query()->where('company_id', auth()->user()?->company_id)->find($state);
                             if (! $invoice) return;
                             $set('third_party_id', $invoice->third_party_id);
                             $set('location_id', $invoice->location_id);
@@ -126,6 +128,7 @@ class WarrantyResource extends Resource
                         ->required()
                         ->searchable()
                         ->getSearchResultsUsing(fn (string $search) => Product::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('active', true)
                             ->where(function ($q) use ($search) {
                                 $q->where('code', 'ilike', "%{$search}%")
@@ -135,7 +138,7 @@ class WarrantyResource extends Resource
                             ->limit(30)
                             ->get()
                             ->mapWithKeys(fn (Product $p) => [$p->id => "{$p->code} — {$p->name}"]))
-                        ->getOptionLabelUsing(fn ($value) => optional(Product::find($value))->name)
+                        ->getOptionLabelUsing(fn ($value) => optional(Product::query()->where('company_id', auth()->user()?->company_id)->find($value))->name)
                         ->columnSpan(2),
 
                     Forms\Components\Select::make('third_party_id')
@@ -143,6 +146,7 @@ class WarrantyResource extends Resource
                         ->required()
                         ->searchable()
                         ->getSearchResultsUsing(fn (string $search) => ThirdParty::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where(function ($q) use ($search) {
                                 $q->where('name', 'ilike', "%{$search}%")
                                   ->orWhere('document_number', 'ilike', "%{$search}%");
@@ -152,7 +156,7 @@ class WarrantyResource extends Resource
                             ->mapWithKeys(fn (ThirdParty $t) => [
                                 $t->id => "{$t->name} · {$t->document_number}",
                             ]))
-                        ->getOptionLabelUsing(fn ($value) => optional(ThirdParty::find($value))->name),
+                        ->getOptionLabelUsing(fn ($value) => optional(ThirdParty::query()->where('company_id', auth()->user()?->company_id)->find($value))->name),
 
                     Forms\Components\Hidden::make('product_serial_id'),
                 ]),

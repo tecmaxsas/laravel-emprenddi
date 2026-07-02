@@ -53,6 +53,7 @@ class KitchenDisplay extends Page
     public function getPrintersProperty()
     {
         return Printer::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('active', true)
             ->whereIn('purpose', ['kitchen', 'bar'])
             ->orderBy('name')

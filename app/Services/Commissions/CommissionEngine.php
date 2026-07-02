@@ -109,6 +109,7 @@ class CommissionEngine
         // Pre-cargar categorias de los productos de la factura
         $productIds = $invoice->lines->pluck('product_id')->filter()->unique()->all();
         $categoryByProduct = Product::query()
+            ->where('company_id', $invoice->company_id)
             ->whereIn('id', $productIds)
             ->pluck('category_id', 'id');
 

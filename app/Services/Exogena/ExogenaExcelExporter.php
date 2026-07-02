@@ -50,7 +50,9 @@ class ExogenaExcelExporter
         $columnCodes = array_keys($valueColumns);
 
         $partyIds = collect($engineRows)->pluck('third_party_id')->filter()->unique()->all();
-        $parties = ThirdParty::query()->whereIn('id', $partyIds)->get()->keyBy('id');
+        $parties = ThirdParty::query()
+            ->where('company_id', auth()->user()?->company_id)
+            ->whereIn('id', $partyIds)->get()->keyBy('id');
 
         // Cuantías mínimas: terceros bajo el tope se reportan agrupados.
         $belowThreshold = [];

@@ -109,6 +109,7 @@ class CashClosingsPage extends Page implements HasForms, HasTable
                 $to = $this->filters['to'] ?? now()->endOfMonth()->toDateString();
 
                 return CashRegisterSession::query()
+                    ->where('company_id', auth()->user()?->company_id)
                     ->where('status', CashRegisterSession::STATUS_CLOSED)
                     ->whereDate('closed_at', '>=', $from)
                     ->whereDate('closed_at', '<=', $to)

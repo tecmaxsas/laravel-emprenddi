@@ -40,6 +40,7 @@ class NoveltiesRelationManager extends RelationManager
             Forms\Components\Select::make('employee_id')
                 ->label('Empleado')
                 ->options(fn () => Employee::query()
+                    ->where('company_id', auth()->user()?->company_id)
                     ->where('status', Employee::STATUS_ACTIVE)
                     ->orderBy('first_name')
                     ->get()

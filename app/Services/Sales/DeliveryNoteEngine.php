@@ -140,7 +140,9 @@ class DeliveryNoteEngine
                 $taxId = $line->product?->default_sale_tax_id;
                 $taxRate = 0;
                 if ($taxId) {
-                    $tax = \App\Models\Tax::find($taxId);
+                    $tax = \App\Models\Tax::query()
+                        ->where('company_id', $note->company_id)
+                        ->find($taxId);
                     $taxRate = (float) ($tax?->rate ?? 0);
                 }
 

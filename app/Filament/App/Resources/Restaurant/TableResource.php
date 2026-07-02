@@ -80,6 +80,7 @@ class TableResource extends Resource
                         ->label('Zona')
                         ->placeholder('Sin zona')
                         ->options(fn (Forms\Get $get) => ServiceZone::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('active', true)
                             ->when($get('location_id'), fn ($q, $loc) => $q->where('location_id', $loc))
                             ->orderBy('display_order')
@@ -195,7 +196,9 @@ class TableResource extends Resource
             ->filters([
                 Tables\Filters\TernaryFilter::make('active')->label('Activa')->default(true),
                 Tables\Filters\SelectFilter::make('zone_id')->label('Zona')
-                    ->options(fn () => ServiceZone::query()->orderBy('name')->pluck('name', 'id')->all()),
+                    ->options(fn () => ServiceZone::query()
+                        ->where('company_id', auth()->user()?->company_id)
+                        ->orderBy('name')->pluck('name', 'id')->all()),
                 Tables\Filters\SelectFilter::make('status')->label('Estado')->options(RTable::STATUSES),
             ])
             ->actions([

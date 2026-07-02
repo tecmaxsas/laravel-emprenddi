@@ -70,6 +70,7 @@ class PurchaseInvoiceResource extends Resource
                         ->live()
                         ->searchable()
                         ->getSearchResultsUsing(fn (string $search) => ThirdParty::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('is_supplier', true)
                             ->where('active', true)
                             ->where(function ($q) use ($search) {
@@ -144,6 +145,7 @@ class PurchaseInvoiceResource extends Resource
                                 ->searchable()
                                 ->live()
                                 ->getSearchResultsUsing(fn (string $search) => Product::query()
+                                    ->where('company_id', auth()->user()?->company_id)
                                     ->where('active', true)
                                     ->where('is_purchasable', true)
                                     ->where('type', '!=', 'variable')
@@ -212,6 +214,7 @@ class PurchaseInvoiceResource extends Resource
                                 ->live()
                                 ->searchable()
                                 ->getSearchResultsUsing(fn (string $search) => Tax::query()
+                                    ->where('company_id', auth()->user()?->company_id)
                                     ->where('is_active', true)
                                     ->whereIn('applies_to', ['purchase', 'both'])
                                     ->where(function ($q) use ($search) {
@@ -253,7 +256,7 @@ class PurchaseInvoiceResource extends Resource
                                 ->helperText(fn (Forms\Get $get) => 'Debes capturar la misma cantidad de seriales que de unidades ('.((int) ($get('quantity') ?? 0)).').')
                                 ->visible(fn (Forms\Get $get) => \App\Support\SerialsSettings::enabled()
                                     && ($pid = $get('product_id'))
-                                    && (bool) \App\Models\Product::query()->whereKey($pid)->value('tracks_serials'))
+                                    && (bool) \App\Models\Product::query()->where('company_id', auth()->user()?->company_id)->whereKey($pid)->value('tracks_serials'))
                                 ->columnSpanFull(),
                         ])
                         ->columns(16)

@@ -475,6 +475,7 @@ class Settings extends Page implements HasForms
                         ->label('Cuenta de propinas por pagar (mesero/staff)')
                         ->helperText('Al cobrar una orden con propina, el sistema crea un asiento DR Caja / CR esta cuenta — así la propina queda registrada como pasivo a pagar al staff. Si no se configura, las propinas siguen contándose en order.tip_amount pero NO se genera asiento. Default sugerido: cuenta 218505.')
                         ->options(fn () => \App\Models\Account::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('accepts_movements', true)
                             ->where('active', true)
                             ->where('code', 'like', '21%')   // pasivos
@@ -658,6 +659,7 @@ class Settings extends Page implements HasForms
                     ->label($meta['label'])
                     ->helperText($meta['description'])
                     ->options(fn () => \App\Models\Account::query()
+                        ->where('company_id', auth()->user()?->company_id)
                         ->where('accepts_movements', true)
                         ->where('active', true)
                         ->where('code', 'like', '24%')   // pasivos a corto plazo
@@ -798,6 +800,7 @@ class Settings extends Page implements HasForms
                         ->label(CommissionsSettings::FEATURES['expense_account_id']['label'])
                         ->helperText(CommissionsSettings::FEATURES['expense_account_id']['description'])
                         ->options(fn () => \App\Models\Account::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('accepts_movements', true)->where('active', true)
                             ->where(fn ($q) => $q->where('code', 'like', '51%')->orWhere('code', 'like', '52%')->orWhere('code', 'like', '53%'))
                             ->orderBy('code')->get()
@@ -809,6 +812,7 @@ class Settings extends Page implements HasForms
                         ->label(CommissionsSettings::FEATURES['payable_account_id']['label'])
                         ->helperText(CommissionsSettings::FEATURES['payable_account_id']['description'])
                         ->options(fn () => \App\Models\Account::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('accepts_movements', true)->where('active', true)
                             ->where('code', 'like', '23%')
                             ->orderBy('code')->get()

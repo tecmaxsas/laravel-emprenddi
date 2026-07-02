@@ -643,7 +643,9 @@ class DianSettings extends Page implements HasForms
                         ->native(false)
                         ->live()
                         ->afterStateUpdated(function ($state, Forms\Set $set) {
-                            $resolution = $state ? Resolution::find($state) : null;
+                            $resolution = $state
+                                ? Resolution::query()->where('company_id', auth()->user()?->company_id)->find($state)
+                                : null;
                             $set('assign_current_consecutive', $resolution?->range_from);
                         }),
 

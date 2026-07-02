@@ -38,6 +38,7 @@ class TableMap extends Page
     public function getZones()
     {
         return ServiceZone::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('active', true)
             ->when($this->locationId, fn ($q) => $q->where('location_id', $this->locationId))
             ->orderBy('display_order')
@@ -47,6 +48,7 @@ class TableMap extends Page
     public function getTables()
     {
         return Table::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('active', true)
             ->when($this->locationId, fn ($q) => $q->where('location_id', $this->locationId))
             ->when($this->zoneId, fn ($q) => $q->where('zone_id', $this->zoneId))
@@ -60,7 +62,7 @@ class TableMap extends Page
      */
     public function savePosition(int $tableId, int $x, int $y): void
     {
-        $table = Table::find($tableId);
+        $table = Table::query()->where('company_id', auth()->user()?->company_id)->find($tableId);
         if (! $table) return;
 
         $table->update([

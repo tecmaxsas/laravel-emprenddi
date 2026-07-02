@@ -52,6 +52,7 @@ class ViewFixedAsset extends ViewRecord
                         ->searchable()
                         ->visible(fn (Forms\Get $get) => (float) ($get('sale_price') ?? 0) > 0)
                         ->getSearchResultsUsing(fn (string $search) => Account::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('accepts_movements', true)
                             ->where('active', true)
                             ->where('code', 'like', '11%')
@@ -71,6 +72,7 @@ class ViewFixedAsset extends ViewRecord
                         ->searchable()
                         ->helperText('Si vende por encima del valor en libros: 4250 Otros ingresos. Si por debajo: 5310 Pérdida en venta de activos.')
                         ->getSearchResultsUsing(fn (string $search) => Account::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('accepts_movements', true)
                             ->where('active', true)
                             ->where(function ($q) use ($search) {

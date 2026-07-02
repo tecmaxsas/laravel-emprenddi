@@ -79,6 +79,7 @@ class GeneralLedgerPage extends Page implements HasForms, HasTable
                             ->required()
                             ->live()
                             ->getSearchResultsUsing(fn (string $search) => Account::query()
+                                ->where('company_id', auth()->user()?->company_id)
                                 ->where('accepts_movements', true)
                                 ->where('active', true)
                                 ->where(function ($q) use ($search) {
@@ -111,6 +112,7 @@ class GeneralLedgerPage extends Page implements HasForms, HasTable
                             ->searchable()
                             ->live()
                             ->getSearchResultsUsing(fn (string $search) => \App\Models\CostCenter::query()
+                                ->where('company_id', auth()->user()?->company_id)
                                 ->where('active', true)
                                 ->where(function ($q) use ($search) {
                                     $q->where('code', 'ilike', "%{$search}%")
@@ -131,6 +133,7 @@ class GeneralLedgerPage extends Page implements HasForms, HasTable
                             ->searchable()
                             ->live()
                             ->getSearchResultsUsing(fn (string $search) => \App\Models\ThirdParty::query()
+                                ->where('company_id', auth()->user()?->company_id)
                                 ->where(function ($q) use ($search) {
                                     $q->where('name', 'ilike', "%{$search}%")
                                       ->orWhere('document_number', 'like', "%{$search}%");

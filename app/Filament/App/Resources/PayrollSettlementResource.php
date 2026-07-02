@@ -46,6 +46,7 @@ class PayrollSettlementResource extends Resource
                     Forms\Components\Select::make('employee_id')
                         ->label('Empleado')
                         ->options(fn () => Employee::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->orderBy('first_name')
                             ->get()
                             ->mapWithKeys(fn (Employee $e) => [$e->id => $e->fullName()])

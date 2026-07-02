@@ -81,6 +81,7 @@ class ExogenaMappingResource extends Resource
                         ->required()
                         ->searchable()
                         ->getSearchResultsUsing(fn (string $search) => Account::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('accepts_movements', true)
                             ->where('active', true)
                             ->where(function ($q) use ($search) {

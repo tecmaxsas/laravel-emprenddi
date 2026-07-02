@@ -81,6 +81,7 @@ class InventoryOpeningResource extends Resource
                         ->searchable()
                         ->helperText('Sugerido: 3705 Resultados de ejercicios anteriores, 3115 Capital social, o 1305 Cuentas por cobrar si se compensa con otra entidad.')
                         ->getSearchResultsUsing(fn (string $search) => Account::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('accepts_movements', true)
                             ->where('active', true)
                             ->where(function ($q) use ($search) {
@@ -110,6 +111,7 @@ class InventoryOpeningResource extends Resource
                                 ->searchable()
                                 ->live()
                                 ->getSearchResultsUsing(fn (string $search) => Product::query()
+                                    ->where('company_id', auth()->user()?->company_id)
                                     ->where('track_inventory', true)
                                     ->where('active', true)
                                     ->where(function ($q) use ($search) {

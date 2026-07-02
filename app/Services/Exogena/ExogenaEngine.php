@@ -199,6 +199,7 @@ class ExogenaEngine
 
         $tpIds = collect($bucket)->pluck('third_party_id')->filter()->unique()->all();
         $parties = ThirdParty::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->whereIn('id', $tpIds)
             ->get(['id', 'name', 'document_number'])
             ->keyBy('id');

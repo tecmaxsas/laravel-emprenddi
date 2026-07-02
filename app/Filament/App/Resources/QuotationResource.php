@@ -64,6 +64,7 @@ class QuotationResource extends Resource
                         ->live()
                         ->searchable()
                         ->getSearchResultsUsing(fn (string $search) => ThirdParty::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('is_customer', true)
                             ->where('active', true)
                             ->where(function ($q) use ($search) {
@@ -144,6 +145,7 @@ class QuotationResource extends Resource
                                 ->searchable()
                                 ->live()
                                 ->getSearchResultsUsing(fn (string $search) => Product::query()
+                                    ->where('company_id', auth()->user()?->company_id)
                                     ->where('active', true)
                                     ->where('is_sellable', true)
                                     ->where('type', '!=', 'variable')
@@ -212,6 +214,7 @@ class QuotationResource extends Resource
                                 ->live()
                                 ->searchable()
                                 ->getSearchResultsUsing(fn (string $search) => Tax::query()
+                                    ->where('company_id', auth()->user()?->company_id)
                                     ->where('is_active', true)
                                     ->whereIn('applies_to', ['sale', 'both'])
                                     ->where(function ($q) use ($search) {

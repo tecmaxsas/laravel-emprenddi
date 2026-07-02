@@ -195,6 +195,7 @@ class EmployeeResource extends Resource
                         ->placeholder('Sin vincular')
                         ->searchable()
                         ->getSearchResultsUsing(fn (string $search) => ThirdParty::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where(function ($q) use ($search) {
                                 $q->where('name', 'ilike', "%{$search}%")
                                   ->orWhere('document_number', 'like', "%{$search}%");

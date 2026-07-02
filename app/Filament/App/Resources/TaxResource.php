@@ -75,6 +75,7 @@ class TaxResource extends Resource
                         ->label('Impuesto alternativo "para llevar" (restaurante)')
                         ->helperText('Solo aplica al módulo restaurante. Si una orden es para llevar/domicilio, el sistema usa este impuesto en vez del actual. Ej: INC 8% (comer aquí) → IVA 19% (para llevar). Dejar vacío si la tasa no cambia.')
                         ->options(fn ($record) => \App\Models\Tax::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('is_active', true)
                             ->when($record, fn ($q) => $q->whereKeyNot($record->getKey()))
                             ->orderBy('name')

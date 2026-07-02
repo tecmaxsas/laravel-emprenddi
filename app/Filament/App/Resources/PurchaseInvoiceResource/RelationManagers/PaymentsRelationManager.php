@@ -60,6 +60,7 @@ class PaymentsRelationManager extends RelationManager
             Forms\Components\Select::make('payment_method')
                 ->label('Método de pago')
                 ->options(fn () => PaymentMethod::query()
+                    ->where('company_id', auth()->user()?->company_id)
                     ->where('active', true)
                     ->orderBy('sort_order')
                     ->orderBy('name')
@@ -71,6 +72,7 @@ class PaymentsRelationManager extends RelationManager
                 ->live()
                 ->afterStateUpdated(function ($state, Forms\Set $set) {
                     $accountId = PaymentMethod::query()
+                        ->where('company_id', auth()->user()?->company_id)
                         ->where('code', $state)
                         ->where('active', true)
                         ->value('account_id');
@@ -84,6 +86,7 @@ class PaymentsRelationManager extends RelationManager
                 ->required()
                 ->searchable()
                 ->getSearchResultsUsing(fn (string $search) => Account::query()
+                    ->where('company_id', auth()->user()?->company_id)
                     ->where('accepts_movements', true)
                     ->where('active', true)
                     ->where('code', 'like', '11%')

@@ -117,6 +117,7 @@ class LocationResource extends Resource
                     Forms\Components\Select::make('invoice_template_id')
                         ->label('Plantilla de impresión')
                         ->options(fn () => InvoiceTemplate::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('active', true)
                             ->orderByDesc('is_default')
                             ->orderBy('name')

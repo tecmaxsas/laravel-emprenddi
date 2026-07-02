@@ -126,6 +126,7 @@ class ParkingExit extends Page implements HasForms
                         ->label('Cliente (opcional)')->native(false)->searchable()
                         ->placeholder('Consumidor Final')
                         ->getSearchResultsUsing(fn (string $search) => \App\Models\ThirdParty::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('is_customer', true)
                             ->where(function ($q) use ($search) {
                                 $q->where('name', 'ilike', "%{$search}%")
@@ -154,6 +155,7 @@ class ParkingExit extends Page implements HasForms
         // Si la empresa tiene metodos de pago definidos, los listamos; si
         // no, opciones genericas.
         $configured = PaymentMethod::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('active', true)
             ->orderBy('name')->pluck('name', 'code')->all();
         if (! empty($configured)) return $configured;

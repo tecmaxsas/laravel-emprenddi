@@ -89,6 +89,7 @@ class ExpenseResource extends Resource
                         ->label('Proveedor (opcional)')
                         ->searchable()
                         ->getSearchResultsUsing(fn (string $search) => ThirdParty::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('active', true)
                             ->where(function ($q) use ($search) {
                                 $q->where('document_number', 'ilike', "%{$search}%")
@@ -99,8 +100,8 @@ class ExpenseResource extends Resource
                             ->get()
                             ->mapWithKeys(fn (ThirdParty $t) => [$t->id => "{$t->document_number} — {$t->name}"])
                             ->all())
-                        ->getOptionLabelUsing(fn ($value) => ThirdParty::find($value)
-                            ? ThirdParty::find($value)->document_number.' — '.ThirdParty::find($value)->name
+                        ->getOptionLabelUsing(fn ($value) => ThirdParty::query()->where('company_id', auth()->user()?->company_id)->find($value)
+                            ? ThirdParty::query()->where('company_id', auth()->user()?->company_id)->find($value)->document_number.' — '.ThirdParty::query()->where('company_id', auth()->user()?->company_id)->find($value)->name
                             : null)
                         ->columnSpan(2),
 
@@ -125,6 +126,7 @@ class ExpenseResource extends Resource
                         ->required()
                         ->searchable()
                         ->getSearchResultsUsing(fn (string $search) => Account::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('type', 'gasto')
                             ->where('accepts_movements', true)
                             ->where('active', true)
@@ -137,7 +139,7 @@ class ExpenseResource extends Resource
                             ->get()
                             ->mapWithKeys(fn (Account $a) => [$a->id => $a->fullName()])
                             ->all())
-                        ->getOptionLabelUsing(fn ($value) => Account::find($value)?->fullName())
+                        ->getOptionLabelUsing(fn ($value) => Account::query()->where('company_id', auth()->user()?->company_id)->find($value)?->fullName())
                         ->helperText('Cuenta clase 5 (p. ej. 5135 Servicios, 5145 Mantenimiento)'),
 
                     Forms\Components\Select::make('cost_center_id')
@@ -145,6 +147,7 @@ class ExpenseResource extends Resource
                         ->searchable()
                         ->placeholder('Sin centro de costo')
                         ->getSearchResultsUsing(fn (string $search) => CostCenter::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('active', true)
                             ->where('accepts_movements', true)
                             ->where(function ($q) use ($search) {
@@ -156,7 +159,7 @@ class ExpenseResource extends Resource
                             ->get()
                             ->mapWithKeys(fn (CostCenter $c) => [$c->id => $c->fullName()])
                             ->all())
-                        ->getOptionLabelUsing(fn ($value) => CostCenter::find($value)?->fullName())
+                        ->getOptionLabelUsing(fn ($value) => CostCenter::query()->where('company_id', auth()->user()?->company_id)->find($value)?->fullName())
                         ->helperText('Para reportes de gastos por área / sucursal / proyecto.')
                         ->columnSpanFull(),
 
@@ -165,6 +168,7 @@ class ExpenseResource extends Resource
                         ->required()
                         ->searchable()
                         ->getSearchResultsUsing(fn (string $search) => Account::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('type', 'activo')
                             ->where('accepts_movements', true)
                             ->where('active', true)
@@ -178,7 +182,7 @@ class ExpenseResource extends Resource
                             ->get()
                             ->mapWithKeys(fn (Account $a) => [$a->id => $a->fullName()])
                             ->all())
-                        ->getOptionLabelUsing(fn ($value) => Account::find($value)?->fullName())
+                        ->getOptionLabelUsing(fn ($value) => Account::query()->where('company_id', auth()->user()?->company_id)->find($value)?->fullName())
                         ->helperText('Caja (1105) o banco (1110) de donde sale el dinero.'),
                 ]),
 
@@ -200,6 +204,7 @@ class ExpenseResource extends Resource
                         ->live()
                         ->searchable()
                         ->getSearchResultsUsing(fn (string $search) => Tax::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('is_active', true)
                             ->whereIn('applies_to', ['purchase', 'both'])
                             ->where(function ($q) use ($search) {
@@ -210,8 +215,8 @@ class ExpenseResource extends Resource
                             ->get()
                             ->mapWithKeys(fn (Tax $t) => [$t->id => "{$t->code} ({$t->rate}%)"])
                             ->all())
-                        ->getOptionLabelUsing(fn ($value) => Tax::find($value)
-                            ? Tax::find($value)->code.' ('.Tax::find($value)->rate.'%)'
+                        ->getOptionLabelUsing(fn ($value) => Tax::query()->where('company_id', auth()->user()?->company_id)->find($value)
+                            ? Tax::query()->where('company_id', auth()->user()?->company_id)->find($value)->code.' ('.Tax::query()->where('company_id', auth()->user()?->company_id)->find($value)->rate.'%)'
                             : null)
                         ->afterStateUpdated(fn (Forms\Set $set, Forms\Get $get) => self::recomputeTotals($set, $get)),
 

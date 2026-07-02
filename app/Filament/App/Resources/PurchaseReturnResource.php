@@ -70,6 +70,7 @@ class PurchaseReturnResource extends Resource
                         ->live()
                         ->searchable()
                         ->getSearchResultsUsing(fn (string $search) => ThirdParty::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('is_supplier', true)
                             ->where('active', true)
                             ->where(function ($q) use ($search) {
@@ -147,6 +148,7 @@ class PurchaseReturnResource extends Resource
                                 ->searchable()
                                 ->live()
                                 ->getSearchResultsUsing(fn (string $search) => Product::query()
+                                    ->where('company_id', auth()->user()?->company_id)
                                     ->where('track_inventory', true)
                                     ->where('active', true)
                                     ->where(function ($q) use ($search) {
@@ -203,6 +205,7 @@ class PurchaseReturnResource extends Resource
                                 ->live()
                                 ->searchable()
                                 ->getSearchResultsUsing(fn (string $search) => Tax::query()
+                                    ->where('company_id', auth()->user()?->company_id)
                                     ->where('is_active', true)
                                     ->whereIn('applies_to', ['purchase', 'both'])
                                     ->where(function ($q) use ($search) {

@@ -100,6 +100,7 @@ class InventoryAdjustmentResource extends Resource
                             ? 'Cuenta de ingreso/recuperación (CR). Sugerido: 4255 Recuperaciones.'
                             : 'Cuenta de pérdida/gasto (DR). Sugerido: 5295 Diversos o 6135 Costo de mercancías perdidas.')
                         ->getSearchResultsUsing(fn (string $search) => Account::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('accepts_movements', true)
                             ->where('active', true)
                             ->where(function ($q) use ($search) {
@@ -134,6 +135,7 @@ class InventoryAdjustmentResource extends Resource
                                 ->searchable()
                                 ->live()
                                 ->getSearchResultsUsing(fn (string $search) => Product::query()
+                                    ->where('company_id', auth()->user()?->company_id)
                                     ->where('track_inventory', true)
                                     ->where('active', true)
                                     ->where(function ($q) use ($search) {
@@ -198,7 +200,7 @@ class InventoryAdjustmentResource extends Resource
                                 ->helperText(fn (Forms\Get $get) => 'Cantidad de seriales debe ser '.((int) ($get('quantity') ?? 0)).'.')
                                 ->visible(fn (Forms\Get $get) => \App\Support\SerialsSettings::enabled()
                                     && ($pid = $get('product_id'))
-                                    && (bool) \App\Models\Product::query()->whereKey($pid)->value('tracks_serials'))
+                                    && (bool) \App\Models\Product::query()->where('company_id', auth()->user()?->company_id)->whereKey($pid)->value('tracks_serials'))
                                 ->columnSpanFull(),
                         ])
                         ->columns(12)

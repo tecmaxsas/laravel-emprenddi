@@ -44,6 +44,7 @@ class ViewPayrollSettlement extends ViewRecord
                         ->required()
                         ->searchable()
                         ->getSearchResultsUsing(fn (string $search) => Account::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('accepts_movements', true)
                             ->where('active', true)
                             ->where('code', 'like', '11%')

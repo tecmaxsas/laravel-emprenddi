@@ -99,12 +99,13 @@ class ProductResource extends Resource
                                 ->live()
                                 ->helperText('La categoría aporta las cuentas contables por defecto; puedes sobrescribirlas en este producto si hace falta. Los impuestos (IVA) se configuran producto por producto.')
                                 ->getSearchResultsUsing(fn (string $search) => Category::query()
+                                    ->where('company_id', auth()->user()?->company_id)
                                     ->where('name', 'ilike', "%{$search}%")
                                     ->orderBy('name')
                                     ->limit(20)
                                     ->pluck('name', 'id')
                                     ->all())
-                                ->getOptionLabelUsing(fn ($value) => Category::find($value)?->fullName())
+                                ->getOptionLabelUsing(fn ($value) => Category::query()->where('company_id', auth()->user()?->company_id)->find($value)?->fullName())
                                 ->placeholder('— sin categoría —'),
 
                             Forms\Components\Select::make('type')
@@ -216,6 +217,7 @@ class ProductResource extends Resource
                                 ->label('Impuesto compra (default)')
                                 ->searchable()
                                 ->getSearchResultsUsing(fn (string $search) => Tax::query()
+                                    ->where('company_id', auth()->user()?->company_id)
                                     ->where('is_active', true)
                                     ->whereIn('applies_to', ['purchase', 'both'])
                                     ->where(function ($q) use ($search) {
@@ -236,6 +238,7 @@ class ProductResource extends Resource
                                 ->live()
                                 ->searchable()
                                 ->getSearchResultsUsing(fn (string $search) => Tax::query()
+                                    ->where('company_id', auth()->user()?->company_id)
                                     ->where('is_active', true)
                                     ->whereIn('applies_to', ['sale', 'both'])
                                     ->where(function ($q) use ($search) {
@@ -497,7 +500,7 @@ class ProductResource extends Resource
         if (! $resolvedId) {
             return "Vacío = heredar (la categoría \"{$category->name}\" no tiene esta cuenta configurada).";
         }
-        $account = \App\Models\Account::find($resolvedId);
+        $account = \App\Models\Account::query()->where('company_id', auth()->user()?->company_id)->find($resolvedId);
         return $account
             ? "Vacío = heredar de la categoría → {$account->code} — {$account->name}"
             : $fallback;
@@ -510,6 +513,7 @@ class ProductResource extends Resource
             ->helperText($help)
             ->searchable()
             ->getSearchResultsUsing(fn (string $search) => Account::query()
+                ->where('company_id', auth()->user()?->company_id)
                 ->where('accepts_movements', true)
                 ->where('active', true)
                 ->where(function ($q) use ($search) {

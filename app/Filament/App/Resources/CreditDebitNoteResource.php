@@ -103,6 +103,7 @@ class CreditDebitNoteResource extends Resource
                         ->label('Cliente')
                         ->required()
                         ->options(fn (Forms\Get $get) => ThirdParty::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('is_customer', true)
                             ->orderBy('name')
                             ->limit(50)
@@ -163,6 +164,7 @@ class CreditDebitNoteResource extends Resource
                                 ->searchable()
                                 ->live()
                                 ->getSearchResultsUsing(fn (string $search) => Product::query()
+                                    ->where('company_id', auth()->user()?->company_id)
                                     ->where('active', true)
                                     ->where(function ($q) use ($search) {
                                         $q->where('code', 'ilike', "%{$search}%")
@@ -214,6 +216,7 @@ class CreditDebitNoteResource extends Resource
                                 ->live()
                                 ->searchable()
                                 ->getSearchResultsUsing(fn (string $search) => Tax::query()
+                                    ->where('company_id', auth()->user()?->company_id)
                                     ->where('is_active', true)
                                     ->whereIn('applies_to', ['sale', 'both'])
                                     ->where(function ($q) use ($search) {

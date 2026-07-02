@@ -53,6 +53,7 @@ class CostCenterResource extends Resource
                 ->placeholder('Sin padre — centro raíz')
                 ->searchable()
                 ->getSearchResultsUsing(fn (string $search) => CostCenter::query()
+                    ->where('company_id', auth()->user()?->company_id)
                     ->where(function ($q) use ($search) {
                         $q->where('code', 'ilike', "%{$search}%")
                           ->orWhere('name', 'ilike', "%{$search}%");

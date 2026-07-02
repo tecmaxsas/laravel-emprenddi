@@ -93,7 +93,7 @@ class CommissionRuleResource extends Resource
                         ->searchable()
                         ->required(fn (Forms\Get $get) => $get('scope') === CommissionRule::SCOPE_PRODUCT)
                         ->visible(fn (Forms\Get $get) => $get('scope') === CommissionRule::SCOPE_PRODUCT)
-                        ->options(fn () => Product::query()->where('active', true)->orderBy('name')->limit(500)->pluck('name', 'id')),
+                        ->options(fn () => Product::query()->where('company_id', auth()->user()?->company_id)->where('active', true)->orderBy('name')->limit(500)->pluck('name', 'id')),
 
                     Forms\Components\Toggle::make('active')
                         ->label('Activa')

@@ -63,6 +63,7 @@ class DeliveryNoteResource extends Resource
                         ->live()
                         ->searchable()
                         ->getSearchResultsUsing(fn (string $search) => ThirdParty::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('is_customer', true)
                             ->where('active', true)
                             ->where(function ($q) use ($search) {
@@ -144,6 +145,7 @@ class DeliveryNoteResource extends Resource
                                 ->searchable()
                                 ->live()
                                 ->getSearchResultsUsing(fn (string $search) => Product::query()
+                                    ->where('company_id', auth()->user()?->company_id)
                                     ->where('active', true)
                                     ->where('is_sellable', true)
                                     ->where('type', '!=', 'variable')

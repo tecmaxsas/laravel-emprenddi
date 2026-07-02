@@ -80,6 +80,7 @@ class SupportDocumentResource extends Resource
                         ->live()
                         ->searchable()
                         ->getSearchResultsUsing(fn (string $search) => ThirdParty::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('active', true)
                             ->where(function ($q) use ($search) {
                                 $q->where('document_number', 'ilike', "%{$search}%")
@@ -153,6 +154,7 @@ class SupportDocumentResource extends Resource
                                 ->searchable()
                                 ->live()
                                 ->getSearchResultsUsing(fn (string $search) => Product::query()
+                                    ->where('company_id', auth()->user()?->company_id)
                                     ->where('active', true)
                                     ->where('is_purchasable', true)
                                     ->where('type', '!=', 'variable')
@@ -221,6 +223,7 @@ class SupportDocumentResource extends Resource
                                 ->live()
                                 ->searchable()
                                 ->getSearchResultsUsing(fn (string $search) => Tax::query()
+                                    ->where('company_id', auth()->user()?->company_id)
                                     ->where('is_active', true)
                                     ->whereIn('applies_to', ['purchase', 'both'])
                                     ->where(function ($q) use ($search) {

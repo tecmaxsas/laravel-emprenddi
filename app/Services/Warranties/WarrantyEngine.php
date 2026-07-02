@@ -61,7 +61,9 @@ class WarrantyEngine
             // (a) producto con warranty_days y (b) fecha de venta.
             $expiration = $data['expiration_date'] ?? null;
             if (! $expiration && ! empty($data['product_id'])) {
-                $product = \App\Models\Product::find($data['product_id']);
+                $product = \App\Models\Product::query()
+                    ->where('company_id', $company->id)
+                    ->find($data['product_id']);
                 $warrantyDays = (int) ($product->warranty_days ?? 0);
                 if ($warrantyDays > 0) {
                     $startDate = null;

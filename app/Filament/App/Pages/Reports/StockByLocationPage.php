@@ -84,6 +84,7 @@ class StockByLocationPage extends Page implements HasForms, HasTable
                         ->label('Categoría')
                         ->placeholder('Todas')
                         ->options(fn () => Category::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->orderBy('name')
                             ->pluck('name', 'id')
                             ->all())
@@ -196,6 +197,7 @@ class StockByLocationPage extends Page implements HasForms, HasTable
         return $table
             ->query(function () {
                 return Product::query()
+                    ->where('company_id', auth()->user()?->company_id)
                     ->where('track_inventory', true)
                     ->where('active', true)
                     ->when($this->filters['category_id'] ?? null, fn (Builder $q, $v) => $q->where('category_id', $v))

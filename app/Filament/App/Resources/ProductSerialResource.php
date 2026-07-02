@@ -127,6 +127,7 @@ class ProductSerialResource extends Resource
                     ->label('Producto')
                     ->searchable()
                     ->getSearchResultsUsing(fn (string $search) => Product::query()
+                        ->where('company_id', auth()->user()?->company_id)
                         ->where('tracks_serials', true)
                         ->where(function ($q) use ($search) {
                             $q->where('code', 'ilike', "%{$search}%")

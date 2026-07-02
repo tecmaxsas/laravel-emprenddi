@@ -76,6 +76,7 @@ class AccountsReceivablePage extends Page implements HasForms, HasTable
                         ->placeholder('Todos')
                         ->searchable()
                         ->getSearchResultsUsing(fn (string $search) => ThirdParty::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('is_customer', true)
                             ->where(function ($q) use ($search) {
                                 $q->where('name', 'ilike', "%{$search}%")

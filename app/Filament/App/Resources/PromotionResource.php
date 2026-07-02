@@ -128,7 +128,7 @@ class PromotionResource extends Resource
                                 ->multiple()
                                 ->searchable()
                                 ->preload()
-                                ->options(fn () => Category::query()->where('active', true)->orderBy('name')->pluck('name', 'id'))
+                                ->options(fn () => Category::query()->where('company_id', auth()->user()?->company_id)->where('active', true)->orderBy('name')->pluck('name', 'id'))
                                 ->visible(fn (Forms\Get $get) => $get('scope') === Promotion::SCOPE_CATEGORIES)
                                 ->helperText('La promoción aplica a productos de estas categorías.'),
 
@@ -138,6 +138,7 @@ class PromotionResource extends Resource
                                 ->searchable()
                                 ->preload()
                                 ->options(fn () => Product::query()
+                                    ->where('company_id', auth()->user()?->company_id)
                                     ->where('active', true)
                                     ->orderBy('name')
                                     ->limit(500)
@@ -410,6 +411,7 @@ class PromotionResource extends Resource
                             Forms\Components\Select::make('product_id')
                                 ->label('Producto')
                                 ->options(fn () => Product::query()
+                                    ->where('company_id', auth()->user()?->company_id)
                                     ->where('active', true)
                                     ->orderBy('name')
                                     ->limit(500)

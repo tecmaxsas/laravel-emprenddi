@@ -273,6 +273,7 @@ class MenuResource extends Resource
                                                 ->label('Vincular a producto (opcional)')
                                                 ->searchable()
                                                 ->getSearchResultsUsing(fn (string $search) => Product::query()
+                                                    ->where('company_id', auth()->user()?->company_id)
                                                     ->where('active', true)
                                                     ->where('is_sellable', true)
                                                     ->where(function ($q) use ($search) {

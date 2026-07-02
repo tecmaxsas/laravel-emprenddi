@@ -64,6 +64,7 @@ class DeliveryDispatch extends Page
         if (! $this->locationId) return collect();
 
         return Order::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->whereIn('status', [Order::STATUS_OPEN, Order::STATUS_IN_KITCHEN, Order::STATUS_SERVED, Order::STATUS_BILLING])
             ->where('location_id', $this->locationId)
             ->where('is_delivery', true)
@@ -75,6 +76,7 @@ class DeliveryDispatch extends Page
     public function getDriversProperty()
     {
         return Driver::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('active', true)
             ->orderBy('name')
             ->get();
@@ -82,9 +84,9 @@ class DeliveryDispatch extends Page
 
     public function assignDriver(int $orderId, ?int $driverId): void
     {
-        $order = Order::find($orderId);
+        $order = Order::query()->where('company_id', auth()->user()?->company_id)->find($orderId);
         if (! $order || ! $order->is_delivery) return;
-        $driver = $driverId ? Driver::find($driverId) : null;
+        $driver = $driverId ? Driver::query()->where('company_id', auth()->user()?->company_id)->find($driverId) : null;
         try {
             app(RestaurantOrderEngine::class)->assignDeliveryDriver($order, $driver);
             Notification::make()
@@ -99,7 +101,7 @@ class DeliveryDispatch extends Page
 
     public function setStatus(int $orderId, string $status): void
     {
-        $order = Order::find($orderId);
+        $order = Order::query()->where('company_id', auth()->user()?->company_id)->find($orderId);
         if (! $order) return;
         try {
             app(RestaurantOrderEngine::class)->setDeliveryStatus($order, $status);

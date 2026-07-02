@@ -134,6 +134,7 @@ class PrinterResource extends Resource
                         ->searchable()
                         ->preload()
                         ->options(fn () => Category::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->where('active', true)
                             ->orderBy('name')
                             ->pluck('name', 'id')

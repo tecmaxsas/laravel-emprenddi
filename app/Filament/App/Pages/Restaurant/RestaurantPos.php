@@ -233,6 +233,7 @@ class RestaurantPos extends Page
 
         // Bloquear el cierre si quedan órdenes abiertas en esta caja.
         $openOrders = Order::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('cash_register_session_id', $session->id)
             ->whereIn('status', [
                 Order::STATUS_OPEN, Order::STATUS_IN_KITCHEN,
@@ -286,6 +287,7 @@ class RestaurantPos extends Page
     public function getZonesProperty()
     {
         return ServiceZone::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('active', true)
             ->when($this->locationId, fn ($q) => $q->where('location_id', $this->locationId))
             ->orderBy('display_order')
@@ -295,6 +297,7 @@ class RestaurantPos extends Page
     public function getTablesProperty()
     {
         return Table::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('active', true)
             ->when($this->locationId, fn ($q) => $q->where('location_id', $this->locationId))
             ->when($this->activeZoneId, fn ($q) => $q->where('zone_id', $this->activeZoneId))
@@ -306,12 +309,16 @@ class RestaurantPos extends Page
     public function getActiveOrderProperty(): ?Order
     {
         if (! $this->activeOrderId) return null;
-        return Order::with(['items.product', 'table', 'zone', 'server'])->find($this->activeOrderId);
+        return Order::query()
+            ->where('company_id', auth()->user()?->company_id)
+            ->with(['items.product', 'table', 'zone', 'server'])
+            ->find($this->activeOrderId);
     }
 
     public function getCategoriesProperty()
     {
         return Category::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('active', true)
             ->orderBy('name')
             ->get();
@@ -320,6 +327,7 @@ class RestaurantPos extends Page
     public function getCatalogProperty()
     {
         return Product::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('active', true)
             ->where('is_sellable', true)
             ->when($this->activeCategoryId, fn ($q) => $q->where('category_id', $this->activeCategoryId))
@@ -340,7 +348,7 @@ class RestaurantPos extends Page
 
     public function selectTable(int $tableId): void
     {
-        $table = Table::find($tableId);
+        $table = Table::query()->where('company_id', auth()->user()?->company_id)->find($tableId);
         if (! $table) return;
 
         $order = $table->activeOrder();
@@ -394,7 +402,7 @@ class RestaurantPos extends Page
         $order = $this->activeOrder;
         if (! $order) return;
 
-        $product = Product::find($productId);
+        $product = Product::query()->where('company_id', auth()->user()?->company_id)->find($productId);
         if (! $product) return;
 
         // Si es el producto especial 'Tarjeta Regalo', abrir modal de emision
@@ -499,7 +507,9 @@ class RestaurantPos extends Page
     public function getModifierProductProperty(): ?Product
     {
         if (! $this->modifierProductId) return null;
-        return Product::with(['modifierGroups.modifiers' => fn ($q) => $q->where('active', true)])
+        return Product::query()
+            ->where('company_id', auth()->user()?->company_id)
+            ->with(['modifierGroups.modifiers' => fn ($q) => $q->where('active', true)])
             ->find($this->modifierProductId);
     }
 
@@ -549,7 +559,7 @@ class RestaurantPos extends Page
         // Resolver snapshot desde la BD (NO confiar en datos del front)
         $modifiers = [];
         if ($selectedIds) {
-            foreach (Modifier::with('group')->whereIn('id', $selectedIds)->get() as $m) {
+            foreach (Modifier::query()->where('company_id', auth()->user()?->company_id)->with('group')->whereIn('id', $selectedIds)->get() as $m) {
                 $modifiers[] = [
                     'group_id' => $m->restaurant_modifier_group_id,
                     'group_name' => $m->group?->name,
@@ -611,10 +621,12 @@ class RestaurantPos extends Page
     {
         if (! $this->halfAProductId) return collect();
 
-        $a = Product::find($this->halfAProductId);
+        $companyId = auth()->user()?->company_id;
+        $a = Product::query()->where('company_id', $companyId)->find($this->halfAProductId);
         if (! $a || ! $a->category_id) return collect();
 
         return Product::query()
+            ->where('company_id', $companyId)
             ->where('active', true)
             ->where('is_sellable', true)
             ->where('category_id', $a->category_id)
@@ -629,6 +641,7 @@ class RestaurantPos extends Page
     public function getHalfAOptionsProperty()
     {
         return Product::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('active', true)
             ->where('is_sellable', true)
             ->whereNotNull('category_id')
@@ -640,11 +653,14 @@ class RestaurantPos extends Page
     {
         if (! $this->halfAProductId || ! $this->halfBProductId) return null;
 
-        $a = Product::find($this->halfAProductId);
-        $b = Product::find($this->halfBProductId);
+        $companyId = auth()->user()?->company_id;
+        $a = Product::query()->where('company_id', $companyId)->find($this->halfAProductId);
+        $b = Product::query()->where('company_id', $companyId)->find($this->halfBProductId);
         if (! $a || ! $b) return null;
 
-        $location = $this->activeOrder?->location_id ? \App\Models\Location::find($this->activeOrder->location_id) : null;
+        $location = $this->activeOrder?->location_id
+            ? \App\Models\Location::query()->where('company_id', $companyId)->find($this->activeOrder->location_id)
+            : null;
         $priceA = (float) $a->priceForLocation($location);
         $priceB = (float) $b->priceForLocation($location);
 
@@ -667,8 +683,9 @@ class RestaurantPos extends Page
             return;
         }
 
-        $a = Product::find($this->halfAProductId);
-        $b = Product::find($this->halfBProductId);
+        $companyId = auth()->user()?->company_id;
+        $a = Product::query()->where('company_id', $companyId)->find($this->halfAProductId);
+        $b = Product::query()->where('company_id', $companyId)->find($this->halfBProductId);
         if (! $a || ! $b) {
             Notification::make()->title('Productos invalidos')->danger()->send();
             return;
@@ -720,6 +737,7 @@ class RestaurantPos extends Page
         if (! $order) return collect();
 
         return Table::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('active', true)
             ->where('location_id', $order->location_id)
             ->where('id', '!=', $order->table_id)
@@ -737,7 +755,7 @@ class RestaurantPos extends Page
             return;
         }
 
-        $newTable = Table::find($this->transferTargetTableId);
+        $newTable = Table::query()->where('company_id', auth()->user()?->company_id)->find($this->transferTargetTableId);
         if (! $newTable) {
             Notification::make()->title('Mesa invalida')->danger()->send();
             return;
@@ -781,6 +799,7 @@ class RestaurantPos extends Page
         if (! $order) return collect();
 
         return Order::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->whereIn('status', [Order::STATUS_OPEN, Order::STATUS_IN_KITCHEN, Order::STATUS_SERVED])
             ->where('location_id', $order->location_id)
             ->where('id', '!=', $order->id)
@@ -797,7 +816,7 @@ class RestaurantPos extends Page
             return;
         }
 
-        $secondary = Order::find($this->mergeTargetOrderId);
+        $secondary = Order::query()->where('company_id', auth()->user()?->company_id)->find($this->mergeTargetOrderId);
         if (! $secondary) {
             Notification::make()->title('Orden invalida')->danger()->send();
             return;
@@ -839,7 +858,7 @@ class RestaurantPos extends Page
     {
         if (! $this->locationId) return;
 
-        $location = Location::find($this->locationId);
+        $location = Location::query()->where('company_id', auth()->user()?->company_id)->find($this->locationId);
         if (! $location) {
             Notification::make()->title('Sede inválida')->danger()->send();
             return;
@@ -906,7 +925,7 @@ class RestaurantPos extends Page
     {
         if (! $this->locationId) return;
 
-        $location = Location::find($this->locationId);
+        $location = Location::query()->where('company_id', auth()->user()?->company_id)->find($this->locationId);
         if (! $location) {
             Notification::make()->title('Sede inválida')->danger()->send();
             return;
@@ -952,6 +971,7 @@ class RestaurantPos extends Page
         if (! $this->locationId) return collect();
 
         return Order::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->whereIn('status', [Order::STATUS_OPEN, Order::STATUS_IN_KITCHEN, Order::STATUS_SERVED, Order::STATUS_BILLING])
             ->where('location_id', $this->locationId)
             ->where('is_delivery', true)
@@ -970,6 +990,7 @@ class RestaurantPos extends Page
         if (! $this->locationId) return collect();
 
         return Order::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->whereIn('status', [Order::STATUS_OPEN, Order::STATUS_IN_KITCHEN, Order::STATUS_SERVED, Order::STATUS_BILLING])
             ->where('location_id', $this->locationId)
             ->where('is_takeaway', true)
@@ -990,6 +1011,7 @@ class RestaurantPos extends Page
 
         $now = now();
         return Reservation::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('location_id', $this->locationId)
             ->whereIn('status', [Reservation::STATUS_PENDING, Reservation::STATUS_CONFIRMED])
             ->whereBetween('reserved_for', [
@@ -1007,7 +1029,8 @@ class RestaurantPos extends Page
      */
     public function seatReservation(int $reservationId): void
     {
-        $reservation = Reservation::find($reservationId);
+        $companyId = auth()->user()?->company_id;
+        $reservation = Reservation::query()->where('company_id', $companyId)->find($reservationId);
         if (! $reservation) return;
         if (! $reservation->isActive()) {
             Notification::make()->title('Reserva no activa')->warning()->send();
@@ -1028,7 +1051,7 @@ class RestaurantPos extends Page
             return;
         }
 
-        $table = Table::find($reservation->table_id);
+        $table = Table::query()->where('company_id', $companyId)->find($reservation->table_id);
         if (! $table) {
             Notification::make()->title('Mesa de la reserva ya no existe')->danger()->send();
             return;
@@ -1084,7 +1107,7 @@ class RestaurantPos extends Page
 
     public function markReservationNoShow(int $reservationId): void
     {
-        $reservation = Reservation::find($reservationId);
+        $reservation = Reservation::query()->where('company_id', auth()->user()?->company_id)->find($reservationId);
         if (! $reservation || ! $reservation->isActive()) return;
         $reservation->update([
             'status' => Reservation::STATUS_NO_SHOW,
@@ -1291,6 +1314,7 @@ class RestaurantPos extends Page
     public function getCashAccountOptionsProperty()
     {
         return Account::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('accepts_movements', true)
             ->where('active', true)
             ->where(function ($q) {
@@ -1303,9 +1327,12 @@ class RestaurantPos extends Page
 
     protected function defaultCashAccountId(?string $method = null): ?int
     {
+        $companyId = auth()->user()?->company_id;
+
         // 1. Si el metodo tiene PaymentMethod configurado, usar su account_id
         if ($method) {
             $configured = PaymentMethod::query()
+                ->where('company_id', $companyId)
                 ->where('code', $method)
                 ->where('active', true)
                 ->value('account_id');
@@ -1314,10 +1341,12 @@ class RestaurantPos extends Page
 
         // 2. Fallback: caja general o primera cuenta disponible
         return Account::query()
+            ->where('company_id', $companyId)
             ->where('accepts_movements', true)
             ->where('active', true)
             ->where('code', 'like', '110505%')
             ->value('id') ?? Account::query()
+                ->where('company_id', $companyId)
                 ->where('accepts_movements', true)
                 ->where('active', true)
                 ->where('code', 'like', '11%')
@@ -1516,7 +1545,7 @@ class RestaurantPos extends Page
             $gcEngine = app(\App\Services\GiftCards\GiftCardEngine::class);
             $firstInvoice = $invoices[0] ?? null;
             foreach ($this->appliedGiftCards as $applied) {
-                $card = \App\Models\GiftCard::find($applied['gift_card_id']);
+                $card = \App\Models\GiftCard::query()->where('company_id', auth()->user()?->company_id)->find($applied['gift_card_id']);
                 if (! $card) continue;
                 $amount = (float) $applied['amount'];
                 if ($amount <= 0) continue;
@@ -1570,7 +1599,7 @@ class RestaurantPos extends Page
                     $this->buildOrderCartContext($order, $this->couponCode),
                 );
                 foreach ($this->appliedPromotions as $a) {
-                    $p = \App\Models\Promotion::find($a['promotion_id']);
+                    $p = \App\Models\Promotion::query()->where('company_id', auth()->user()?->company_id)->find($a['promotion_id']);
                     if ($p) $result->registerApplied($p, (float) $a['discount']);
                 }
                 $promoEngine->recordUsages($result, $firstInvoice->id, Auth::id());
