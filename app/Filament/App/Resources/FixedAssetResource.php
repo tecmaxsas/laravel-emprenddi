@@ -46,7 +46,10 @@ class FixedAssetResource extends Resource
                         ->required()
                         ->maxLength(30)
                         ->placeholder('AF-001')
-                        ->unique(ignoreRecord: true)
+                        ->unique(
+                            ignoreRecord: true,
+                            modifyRuleUsing: fn ($rule) => $rule->where('company_id', auth()->user()->company_id)
+                        )
                         ->columnSpan(2),
 
                     Forms\Components\Select::make('category')

@@ -93,9 +93,12 @@ class ExogenaMappingResource extends Resource
                             ->get()
                             ->mapWithKeys(fn (Account $a) => [$a->id => "{$a->code} — {$a->name}"])
                             ->all())
-                        ->getOptionLabelUsing(fn ($value) => Account::find($value)
-                            ? Account::find($value)->code.' — '.Account::find($value)->name
-                            : null)
+                        ->getOptionLabelUsing(function ($value) {
+                            $account = Account::query()
+                                ->where('company_id', auth()->user()?->company_id)
+                                ->find($value);
+                            return $account ? "{$account->code} — {$account->name}" : null;
+                        })
                         ->unique(
                             table: ExogenaAccountMapping::class,
                             column: 'account_id',

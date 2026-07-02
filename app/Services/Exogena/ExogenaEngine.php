@@ -52,8 +52,14 @@ class ExogenaEngine
             return [];
         }
 
+        // Raw join sobre journal_entries: agregar company_id explicito
+        // porque JournalEntryLine no lo tiene y el join raw no dispara
+        // el global scope del JournalEntry.
+        $companyId = auth()->user()?->company_id;
+
         $rows = JournalEntryLine::query()
             ->join('journal_entries', 'journal_entries.id', '=', 'journal_entry_lines.journal_entry_id')
+            ->where('journal_entries.company_id', $companyId)
             ->whereIn('journal_entry_lines.account_id', $mappings->keys())
             ->where('journal_entries.status', 'posted')
             ->whereYear('journal_entries.date', $year)
@@ -75,8 +81,10 @@ class ExogenaEngine
             return [];
         }
 
+        $companyId = auth()->user()?->company_id;
         $rows = JournalEntryLine::query()
             ->join('journal_entries', 'journal_entries.id', '=', 'journal_entry_lines.journal_entry_id')
+            ->where('journal_entries.company_id', $companyId)
             ->whereIn('journal_entry_lines.account_id', $mappings->keys())
             ->where('journal_entries.status', 'posted')
             ->whereDate('journal_entries.date', '<=', "{$year}-12-31")
@@ -96,7 +104,11 @@ class ExogenaEngine
         $cutoff = Carbon::create($year, 12, 31)->endOfDay();
 
         $out = [];
-        foreach (Partner::query()->with('movements')->get() as $partner) {
+        $companyId = auth()->user()?->company_id;
+        foreach (Partner::query()
+            ->where('company_id', $companyId)
+            ->with('movements')
+            ->get() as $partner) {
             $amount = round((float) $partner->movements
                 ->filter(fn ($m) => $m->date && $m->date->lte($cutoff))
                 ->sum('amount'), 2);
@@ -128,6 +140,7 @@ class ExogenaEngine
     protected function buildFromManual(string $formatCode, int $year): array
     {
         $entries = ExogenaManualEntry::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('format_code', $formatCode)
             ->where('fiscal_year', $year)
             ->orderBy('concept_code')
@@ -158,6 +171,7 @@ class ExogenaEngine
     protected function mappingsFor(string $formatCode): Collection
     {
         return ExogenaAccountMapping::query()
+            ->where('company_id', auth()->user()?->company_id)
             ->where('format_code', $formatCode)
             ->get(['account_id', 'concept_code', 'value_column'])
             ->keyBy('account_id');

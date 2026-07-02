@@ -137,6 +137,7 @@ class KardexPage extends Page implements HasForms, HasTable
                 }
 
                 return InventoryMovement::query()
+                    ->where('company_id', auth()->user()?->company_id)
                     ->where('product_id', $productId)
                     ->where('location_id', $locationId)
                     ->whereDate('date', '>=', $this->filters['from'])

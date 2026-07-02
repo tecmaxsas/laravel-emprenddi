@@ -180,8 +180,15 @@ class BankReconciliationPage extends Page implements HasForms, HasTable
                     return JournalEntryLine::query()->whereRaw('1 = 0');
                 }
 
+                // CRITICO multitenancy: JournalEntryLine no lleva company_id
+                // en la tabla, asi que un raw join no dispara el global scope
+                // de JournalEntry (Eloquent no lo aplica en joins raw).
+                // Sin este guard, un accountId de otra empresa vaciaba el
+                // libro mayor ajeno; peor: las acciones de bulk reconcile
+                // podian ESCRIBIR bank_reconciled en filas de otro tenant.
                 return JournalEntryLine::query()
                     ->join('journal_entries', 'journal_entries.id', '=', 'journal_entry_lines.journal_entry_id')
+                    ->where('journal_entries.company_id', auth()->user()?->company_id)
                     ->where('journal_entry_lines.account_id', $accountId)
                     ->where('journal_entries.status', 'posted')
                     ->whereDate('journal_entries.date', '>=', $this->filters['from'])

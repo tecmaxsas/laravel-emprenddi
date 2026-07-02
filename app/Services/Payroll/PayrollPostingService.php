@@ -37,7 +37,12 @@ class PayrollPostingService
             throw new RuntimeException('El período no tiene desprendibles. Liquidá la nómina primero.');
         }
 
-        $accounts = PayrollAccountMapping::query()->pluck('account_id', 'slot');
+        // Scope explicito por company_id del period. Si este servicio corre
+        // desde una queue/artisan sin CurrentCompany hidratado, el scope
+        // global esta inerte y podria pluckear mappings de otras empresas.
+        $accounts = PayrollAccountMapping::query()
+            ->where('company_id', $period->company_id)
+            ->pluck('account_id', 'slot');
         // 'expense_severance' solo lo usa la liquidación de prestaciones,
         // no la nómina mensual.
         $required = array_diff(PayrollAccountSlots::codes(), ['expense_severance']);

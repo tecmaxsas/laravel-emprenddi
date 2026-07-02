@@ -114,7 +114,17 @@ class InventoryEngine
 
     public function lastMovement(int $productId, int $locationId): ?InventoryMovement
     {
+        // withoutGlobalScopes() se usa a proposito para evitar depender del
+        // singleton CurrentCompany en contextos donde no esta hidratado
+        // (queue, artisan, closures Filament). Sin embargo, hay que scopear
+        // explicitamente porque los args son ints crudos y podrian venir de
+        // input del cliente (POS, forms Livewire). Un product/location
+        // crafteado no debe leak el saldo o costo promedio de otra empresa.
+        $companyId = app(\App\Support\CurrentCompany::class)->id()
+            ?? auth()->user()?->company_id;
+
         return InventoryMovement::withoutGlobalScopes()
+            ->where('company_id', $companyId)
             ->where('product_id', $productId)
             ->where('location_id', $locationId)
             ->orderBy('date', 'desc')

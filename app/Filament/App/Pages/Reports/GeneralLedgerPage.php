@@ -231,12 +231,17 @@ class GeneralLedgerPage extends Page implements HasForms, HasTable
                     return JournalEntryLine::query()->whereRaw('1 = 0');
                 }
 
+                // CRITICO multitenancy: JournalEntryLine sin company_id +
+                // raw join no aplica el global scope de JournalEntry.
+                // Sin este guard, un accountId de otra empresa exponia el
+                // libro mayor completo de ese tenant.
                 return JournalEntryLine::query()
                     ->select([
                         'journal_entry_lines.*',
                         DB::raw($initial.' + SUM(debit - credit) OVER (ORDER BY journal_entries.date, journal_entries.id, journal_entry_lines.line_number) AS running_balance'),
                     ])
                     ->join('journal_entries', 'journal_entries.id', '=', 'journal_entry_lines.journal_entry_id')
+                    ->where('journal_entries.company_id', auth()->user()?->company_id)
                     ->where('account_id', $accountId)
                     ->when($costCenterId, fn ($q) => $q->where('journal_entry_lines.cost_center_id', $costCenterId))
                     ->when($thirdPartyId, fn ($q) => $q->where('journal_entry_lines.third_party_id', $thirdPartyId))

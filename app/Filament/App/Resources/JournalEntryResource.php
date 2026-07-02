@@ -114,7 +114,11 @@ class JournalEntryResource extends Resource
                                 ->live()
                                 ->afterStateUpdated(function ($state, Forms\Set $set) {
                                     if (! $state) return;
-                                    $account = Account::withoutGlobalScopes()->find($state);
+                                    // Scope explicito: no confiar en el
+                                    // withoutGlobalScopes con id de cliente.
+                                    $account = Account::query()
+                                        ->where('company_id', auth()->user()?->company_id)
+                                        ->find($state);
                                     if ($account?->requires_third_party) {
                                         $set('_requires_third_party', true);
                                     } else {

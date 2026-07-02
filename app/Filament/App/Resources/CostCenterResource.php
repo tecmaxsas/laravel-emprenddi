@@ -40,7 +40,10 @@ class CostCenterResource extends Resource
                 ->required()
                 ->maxLength(20)
                 ->placeholder('Ej. CC-001, ADMIN, VENTAS')
-                ->unique(ignoreRecord: true),
+                ->unique(
+                    ignoreRecord: true,
+                    modifyRuleUsing: fn ($rule) => $rule->where('company_id', auth()->user()->company_id)
+                ),
 
             Forms\Components\TextInput::make('name')
                 ->label('Nombre')

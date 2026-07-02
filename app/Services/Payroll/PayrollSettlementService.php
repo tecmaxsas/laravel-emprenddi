@@ -40,7 +40,9 @@ class PayrollSettlementService
             'expense_severance' => (float) $settlement->amount_indemnizacion,
         ], fn ($amount) => $amount > 0);
 
-        $accounts = PayrollAccountMapping::query()->pluck('account_id', 'slot');
+        $accounts = PayrollAccountMapping::query()
+            ->where('company_id', $settlement->company_id)
+            ->pluck('account_id', 'slot');
         $missing = array_diff(array_keys($components), $accounts->keys()->all());
         if (! empty($missing)) {
             $names = array_map(fn ($slot) => PayrollAccountSlots::name($slot), $missing);
