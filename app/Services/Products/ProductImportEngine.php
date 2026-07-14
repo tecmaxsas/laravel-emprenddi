@@ -92,24 +92,38 @@ class ProductImportEngine
         }
 
         // Segunda validacion: los variation_of_code deben apuntar a un
-        // padre existente en DB o presente en el archivo.
+        // padre existente en DB o presente en el archivo. Se puede
+        // referenciar por CODE o por NAME (util cuando el padre no tiene
+        // code y sera auto-generado).
         $codesInFile = collect($rows)->pluck('data.code')->filter()->values()->all();
+        $variableNamesInFile = collect($rows)
+            ->filter(fn ($r) => ($r['data']['type'] ?? '') === 'variable')
+            ->pluck('data.name')->filter()
+            ->map(fn ($n) => strtolower(trim((string) $n)))
+            ->values()->all();
+
         foreach ($rows as &$r) {
             $vof = $r['data']['variation_of_code'] ?? null;
             if (! $vof) continue;
             if (in_array($vof, $codesInFile, true)) continue;
-            $exists = Product::query()
+            if (in_array(strtolower(trim((string) $vof)), $variableNamesInFile, true)) continue;
+            $existsByCode = Product::query()
                 ->where('company_id', $companyId)
                 ->where('code', $vof)
                 ->where('type', 'variable')
                 ->exists();
-            if (! $exists) {
-                $r['errors'][] = "El padre '{$vof}' no existe ni viene en el archivo. Debe ser un producto tipo=variable ya creado o incluido en esta importación.";
+            $existsByName = Product::query()
+                ->where('company_id', $companyId)
+                ->where('name', $vof)
+                ->where('type', 'variable')
+                ->exists();
+            if (! $existsByCode && ! $existsByName) {
+                $r['errors'][] = "El padre '{$vof}' no existe ni viene en el archivo. Debe ser un producto tipo=variable ya creado o incluido en esta importación (referéncialo por code o por name).";
             }
         }
         unset($r);
 
-        // Detecta duplicados de code dentro del archivo
+        // Detecta duplicados de code dentro del archivo (solo entre codes NO vacios)
         $dupCodes = collect($rows)->pluck('data.code')
             ->filter()->countBy()->filter(fn ($n) => $n > 1)->keys()->all();
         if (! empty($dupCodes)) {
@@ -183,8 +197,11 @@ class ProductImportEngine
      */
     protected function readInitialStockSheet($sheet, int $companyId, array $productRows): array
     {
+        // Referencias validas dentro del archivo: por CODE o por NAME
         $codesInFile = collect($productRows)->pluck('data.code')->filter()
-            ->map(fn ($c) => strtoupper((string) $c))->all();
+            ->map(fn ($c) => strtolower(trim((string) $c)))->all();
+        $namesInFile = collect($productRows)->pluck('data.name')->filter()
+            ->map(fn ($n) => strtolower(trim((string) $n)))->all();
 
         $lines = [];
         $rowNum = 0;
@@ -210,11 +227,13 @@ class ProductImportEngine
                 $idx = array_search($col, $headers, true);
                 $data[$col] = $idx !== false ? ($cells[$idx] ?? null) : null;
             }
-            $data['product_code'] = strtoupper(trim((string) ($data['product_code'] ?? '')));
+            // Conserva el valor original — puede ser code o name (el
+            // lookup en createInitialStockOpenings acepta ambos).
+            $data['product_code'] = trim((string) ($data['product_code'] ?? ''));
             $data['location_code'] = trim((string) ($data['location_code'] ?? ''));
 
             $errors = [];
-            if (! $data['product_code']) $errors[] = 'product_code es obligatorio';
+            if (! $data['product_code']) $errors[] = 'product_code es obligatorio (puede ser el code o el name del producto)';
             if (! $data['location_code']) $errors[] = 'location_code es obligatorio';
             if (! is_numeric($data['qty']) || (float) $data['qty'] <= 0) {
                 $errors[] = 'qty debe ser un número > 0';
@@ -223,15 +242,23 @@ class ProductImportEngine
                 $errors[] = 'unit_cost debe ser un número >= 0';
             }
 
-            // Validar referencias
-            if ($data['product_code'] && ! in_array($data['product_code'], $codesInFile, true)) {
-                // No esta en el archivo — debe existir en DB
-                $existsInDb = Product::query()
-                    ->where('company_id', $companyId)
-                    ->where('code', $data['product_code'])
-                    ->exists();
-                if (! $existsInDb) {
-                    $errors[] = "product_code '{$data['product_code']}' no existe (ni en el archivo ni en la base)";
+            // Validar referencia: primero en el archivo (code o name),
+            // luego en DB (code o name).
+            if ($data['product_code']) {
+                $refLower = strtolower($data['product_code']);
+                $inFile = in_array($refLower, $codesInFile, true)
+                       || in_array($refLower, $namesInFile, true);
+                if (! $inFile) {
+                    $existsInDb = Product::query()
+                        ->where('company_id', $companyId)
+                        ->where(function ($q) use ($data) {
+                            $q->where('code', $data['product_code'])
+                              ->orWhere('name', $data['product_code']);
+                        })
+                        ->exists();
+                    if (! $existsInDb) {
+                        $errors[] = "product_code '{$data['product_code']}' no existe (ni en el archivo ni en la base — puedes usar el code o el name)";
+                    }
                 }
             }
 
@@ -277,6 +304,11 @@ class ProductImportEngine
 
         // Filtra filas validas
         $valid = array_values(array_filter($rows, fn ($r) => empty($r['errors'])));
+
+        // Pre-genera codes para filas con code vacio. Se hace ANTES de
+        // dividir en pases porque las variantes pueden referenciar a un
+        // padre que se acaba de codigar.
+        $valid = $this->assignAutoCodes($valid, $companyId);
 
         // Pasada 1: padres/simples (no variantes)
         $pass1 = array_filter($valid, fn ($r) => empty($r['data']['variation_of_code']));
@@ -372,9 +404,15 @@ class ProductImportEngine
                 // Crear lineas
                 $lineNum = 1;
                 foreach ($lines as $sl) {
+                    // Match por code primero, luego por name (para productos
+                    // con code auto-generado que el usuario referencia por
+                    // nombre en la hoja Stock).
+                    $ref = $sl['data']['product_code'];
                     $product = Product::query()
                         ->where('company_id', $companyId)
-                        ->where('code', $sl['data']['product_code'])
+                        ->where(function ($q) use ($ref) {
+                            $q->where('code', $ref)->orWhere('name', $ref);
+                        })
                         ->first();
                     if (! $product) {
                         $errors[] = [
@@ -445,15 +483,20 @@ class ProductImportEngine
 
         $payload = $this->buildPayload($data, $companyId);
 
-        // Si es variante, agrega parent_product_id
+        // Si es variante, agrega parent_product_id. El match es por code
+        // primero, luego por name (para soportar padres sin codigo que
+        // fueron auto-generados o cuando el usuario referencia por nombre).
         if (! empty($data['variation_of_code'])) {
+            $vof = $data['variation_of_code'];
             $parent = Product::query()
                 ->where('company_id', $companyId)
-                ->where('code', $data['variation_of_code'])
                 ->where('type', 'variable')
+                ->where(function ($q) use ($vof) {
+                    $q->where('code', $vof)->orWhere('name', $vof);
+                })
                 ->first();
             if (! $parent) {
-                throw new \RuntimeException("Padre '{$data['variation_of_code']}' no existe.");
+                throw new \RuntimeException("Padre '{$vof}' no existe (busqué por code y por name).");
             }
             $payload['parent_product_id'] = $parent->id;
         }
@@ -464,6 +507,69 @@ class ProductImportEngine
         }
         Product::create(array_merge(['company_id' => $companyId], $payload));
         return false; // create
+    }
+
+    /**
+     * Asigna codes generados a filas con code vacio. Formato: PROD-NNNN
+     * secuencial por empresa. Considera codes existentes en DB para no
+     * colisionar. Tambien resuelve `variation_of_code` en variantes que
+     * apuntan al padre por NAME cuando el padre no tiene code: cambia el
+     * variation_of_code al nuevo code generado del padre para que
+     * createOrUpdateProduct resuelva por code (mas rapido).
+     */
+    protected function assignAutoCodes(array $valid, int $companyId): array
+    {
+        // Filas sin code (por generar)
+        $needCode = array_filter($valid, fn ($r) => empty(trim((string) ($r['data']['code'] ?? ''))));
+        if (empty($needCode)) return $valid;
+
+        // Encuentra el siguiente numero disponible (driver-agnostic: extrae
+        // el numero en PHP en vez de usar SUBSTRING nativo, que difiere
+        // entre postgres/mysql).
+        $lastNum = 0;
+        Product::withoutGlobalScopes()
+            ->where('company_id', $companyId)
+            ->where('code', 'like', 'PROD-%')
+            ->pluck('code')
+            ->each(function ($code) use (&$lastNum) {
+                if (preg_match('/^PROD-(\d+)$/', $code, $m)) {
+                    $n = (int) $m[1];
+                    if ($n > $lastNum) $lastNum = $n;
+                }
+            });
+
+        // Mapa: temp_key (nombre normalizado del padre) => code generado
+        $parentNameToCode = [];
+
+        foreach ($valid as $i => &$r) {
+            if (empty(trim((string) ($r['data']['code'] ?? '')))) {
+                $lastNum++;
+                $newCode = 'PROD-'.str_pad((string) $lastNum, 4, '0', STR_PAD_LEFT);
+                $r['data']['code'] = $newCode;
+                $r['data']['_auto_generated_code'] = true;
+
+                // Si es padre variable, guarda mapping name -> new code
+                if (($r['data']['type'] ?? '') === 'variable' && ! empty($r['data']['name'])) {
+                    $parentNameToCode[strtolower(trim($r['data']['name']))] = $newCode;
+                }
+            }
+        }
+        unset($r);
+
+        // Segunda pasada: reemplaza variation_of_code que apuntan por nombre
+        // al code recien generado del padre. Asi createOrUpdateProduct
+        // resuelve por code directo.
+        foreach ($valid as &$r) {
+            $vof = $r['data']['variation_of_code'] ?? null;
+            if (! $vof) continue;
+            $key = strtolower(trim((string) $vof));
+            if (isset($parentNameToCode[$key])) {
+                $r['data']['variation_of_code'] = $parentNameToCode[$key];
+            }
+        }
+        unset($r);
+
+        return $valid;
     }
 
     protected function buildPayload(array $data, int $companyId): array
@@ -512,7 +618,7 @@ class ProductImportEngine
     {
         $errors = [];
 
-        if (! ($data['code'] ?? null)) $errors[] = 'code (SKU) es obligatorio';
+        // code es OPCIONAL — si viene vacio, el engine lo genera al importar.
         if (! ($data['name'] ?? null)) $errors[] = 'name es obligatorio';
         $type = strtolower(trim((string) ($data['type'] ?? '')));
         if (! $type) $errors[] = 'type es obligatorio';
