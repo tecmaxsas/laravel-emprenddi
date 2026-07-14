@@ -4,6 +4,7 @@ namespace App\Services\Products;
 
 use App\Models\Account;
 use App\Models\Category;
+use App\Models\Location;
 use App\Models\Tax;
 use OpenSpout\Common\Entity\Row;
 use OpenSpout\Common\Entity\Style\Style;
@@ -24,6 +25,14 @@ use OpenSpout\Writer\XLSX\Writer;
  */
 class ProductImportTemplateGenerator
 {
+    /** Columnas de la hoja "Inventario Inicial" — orden exacto. */
+    public const STOCK_COLUMNS = [
+        'product_code',
+        'location_code',
+        'qty',
+        'unit_cost',
+    ];
+
     /** Columnas de la hoja "Productos" — orden exacto. */
     public const COLUMNS = [
         'code',
@@ -61,9 +70,11 @@ class ProductImportTemplateGenerator
 
             $this->writeInstructionsSheet($writer);
             $this->writeProductsSheet($writer);
+            $this->writeInitialStockSheet($writer);
             $this->writeCategoriesRefSheet($writer, $companyId);
             $this->writeTaxesRefSheet($writer, $companyId);
             $this->writeAccountsRefSheet($writer, $companyId);
+            $this->writeLocationsRefSheet($writer, $companyId);
 
             $writer->close();
         };
@@ -131,10 +142,23 @@ class ProductImportTemplateGenerator
             ['blank', ''],
             ['warn', 'IMPORTANTE: si un producto con el mismo code ya existe, se ACTUALIZARÁN sus campos con los datos del archivo. Deja vacío lo que NO quieras cambiar.'],
             ['blank', ''],
+            ['section', 'Inventario inicial (opcional)'],
+            ['text', 'La hoja "Inventario Inicial" permite cargar el saldo de arranque de cada producto por sede.'],
+            ['text', 'Columnas:'],
+            ['text', '  product_code*    Código del producto (debe existir en la hoja "Productos" o en la BD)'],
+            ['text', '  location_code*   Código de la sede (ver hoja "Sedes")'],
+            ['text', '  qty*             Cantidad (número > 0)'],
+            ['text', '  unit_cost*       Costo unitario (para valorar el inventario)'],
+            ['text', 'Reglas:'],
+            ['text', '  • Solo productos con track_inventory = SI pueden tener stock inicial.'],
+            ['text', '  • Una fila por combinación (producto, sede). Puedes cargar el mismo producto en varias sedes.'],
+            ['text', '  • Al importar te pediremos la CUENTA CONTRAPARTIDA (crédito del asiento). Sugerido: 3705 — Resultados de ejercicios anteriores.'],
+            ['text', '  • Se crea una apertura de inventario (SI-###) por cada sede con las líneas correspondientes, y se contabiliza automáticamente.'],
+            ['blank', ''],
             ['section', 'Después de importar'],
             ['text', '• El sistema valida cada fila y muestra un preview con errores antes de confirmar.'],
             ['text', '• Solo se guardan los productos SI presionas "Confirmar importación" tras revisar el preview.'],
-            ['text', '• El stock inicial y precios por sede se configuran DESPUÉS de importar, desde cada producto.'],
+            ['text', '• Los precios por sede (min/max stock, punto reorden) se configuran DESPUÉS desde cada producto.'],
         ];
 
         foreach ($lines as [$kind, $text]) {
@@ -210,7 +234,35 @@ class ProductImportTemplateGenerator
     }
 
     /* ------------------------------------------------------------------ */
-    /*  Hoja 3-5 — Referencias (categorias, impuestos, cuentas)            */
+    /*  Hoja 3 — Inventario Inicial (headers + ejemplos)                   */
+    /* ------------------------------------------------------------------ */
+
+    protected function writeInitialStockSheet(Writer $writer): void
+    {
+        $writer->addNewSheetAndMakeItCurrent()->setName('Inventario Inicial');
+
+        $headerStyle = (new Style())
+            ->setFontBold()
+            ->setBackgroundColor('16A34A')
+            ->setFontColor('FFFFFF');
+
+        $writer->addRow(Row::fromValues(self::STOCK_COLUMNS, $headerStyle));
+
+        // Ejemplos coherentes con los productos de la hoja "Productos"
+        $examples = [
+            ['AGUA600',       'PRINCIPAL', 50,  1800],   // 50 botellas en la principal
+            ['AGUA600',       'SUCURSAL',  30,  1800],   // mismo producto, otra sede
+            ['CAMISA-M-AZUL', 'PRINCIPAL', 20,  42000],
+            ['CAMISA-L-ROJO', 'PRINCIPAL', 15,  42000],
+        ];
+
+        foreach ($examples as $ex) {
+            $writer->addRow(Row::fromValues($ex));
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /*  Hoja 4-7 — Referencias (categorias, impuestos, cuentas, sedes)     */
     /* ------------------------------------------------------------------ */
 
     protected function writeCategoriesRefSheet(Writer $writer, int $companyId): void
@@ -288,6 +340,27 @@ class ProductImportTemplateGenerator
                     default => '',
                 };
                 $writer->addRow(Row::fromValues([$a->code, $a->name, $hint]));
+            });
+    }
+
+    protected function writeLocationsRefSheet(Writer $writer, int $companyId): void
+    {
+        $writer->addNewSheetAndMakeItCurrent()->setName('Sedes (ref)');
+        $header = (new Style())->setFontBold()->setBackgroundColor('E0E7FF');
+        $writer->addRow(Row::fromValues(['code', 'name', 'is_main'], $header));
+
+        Location::query()
+            ->where('company_id', $companyId)
+            ->where('active', true)
+            ->orderByDesc('is_main')
+            ->orderBy('name')
+            ->get(['code', 'name', 'is_main'])
+            ->each(function ($l) use ($writer) {
+                $writer->addRow(Row::fromValues([
+                    $l->code ?? '',
+                    $l->name,
+                    $l->is_main ? 'SI' : '',
+                ]));
             });
     }
 }

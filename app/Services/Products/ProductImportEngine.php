@@ -4,8 +4,13 @@ namespace App\Services\Products;
 
 use App\Models\Account;
 use App\Models\Category;
+use App\Models\InventoryOpening;
+use App\Models\Location;
 use App\Models\Product;
 use App\Models\Tax;
+use App\Services\Inventory\InventoryOpeningEngine;
+use App\Services\Inventory\InventoryOpeningNumberer;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use OpenSpout\Reader\XLSX\Reader;
 
@@ -36,6 +41,13 @@ class ProductImportEngine
     protected array $taxCache = [];
     /** @var array<string,int|null> */
     protected array $accountCache = [];
+    /** @var array<string,int|null> */
+    protected array $locationCache = [];
+
+    public function __construct(
+        protected InventoryOpeningEngine $openingEngine,
+        protected InventoryOpeningNumberer $openingNumberer,
+    ) {}
 
     /**
      * Parsea el archivo y valida cada fila. NO persiste nada.
@@ -50,43 +62,30 @@ class ProductImportEngine
         $reader->open($filePath);
 
         $rows = [];
-        $rowNum = 0;
-        $headers = null;
+        $stockRows = [];
         $productsSheetFound = false;
 
         foreach ($reader->getSheetIterator() as $sheet) {
-            // Busca la hoja "Productos" (nombre exacto o starts with)
             $name = trim($sheet->getName());
-            if (! preg_match('/^productos/i', $name)) continue;
-            $productsSheetFound = true;
 
-            foreach ($sheet->getRowIterator() as $row) {
-                $rowNum++;
-                $cells = array_map(
-                    fn ($c) => is_object($c) && method_exists($c, 'getValue') ? $c->getValue() : $c,
-                    $row->getCells(),
-                );
-
-                if ($rowNum === 1) {
-                    $headers = array_map(fn ($h) => strtolower(trim((string) $h)), $cells);
-                    continue;
-                }
-
-                // Fila totalmente vacia — skip
-                $allEmpty = ! array_filter($cells, fn ($v) => $v !== null && $v !== '');
-                if ($allEmpty) continue;
-
-                $data = $this->rowToAssoc($headers, $cells);
-                $rows[] = $this->validateRow($data, $rowNum, $companyId);
+            if (preg_match('/^productos/i', $name)) {
+                $productsSheetFound = true;
+                $rows = $this->readProductsSheet($sheet, $companyId);
+                continue;
             }
-            break; // solo procesamos la primera hoja Productos
+
+            if (preg_match('/^inventario\s*inicial/i', $name)) {
+                $stockRows = $this->readInitialStockSheet($sheet, $companyId, $rows);
+                continue;
+            }
         }
         $reader->close();
 
         if (! $productsSheetFound) {
             return [
                 'rows' => [],
-                'summary' => ['total' => 0, 'ok' => 0, 'errors' => 0, 'to_create' => 0, 'to_update' => 0],
+                'stock_rows' => [],
+                'summary' => ['total' => 0, 'ok' => 0, 'errors' => 0, 'to_create' => 0, 'to_update' => 0, 'stock_lines' => 0, 'stock_locations' => 0, 'stock_errors' => 0],
                 'valid' => false,
                 'fatal' => 'No se encontró la hoja "Productos" en el archivo. Usa la plantilla oficial.',
             ];
@@ -123,24 +122,158 @@ class ProductImportEngine
         }
 
         $summary = $this->summarize($rows, $companyId);
+
+        // Agregar metrics de stock inicial al summary
+        $stockErrors = 0;
+        $stockLocations = [];
+        foreach ($stockRows as $sr) {
+            if (! empty($sr['errors'])) $stockErrors++;
+            if (! empty($sr['data']['location_code'])) {
+                $stockLocations[strtolower($sr['data']['location_code'])] = true;
+            }
+        }
+        $summary['stock_lines'] = count($stockRows);
+        $summary['stock_locations'] = count($stockLocations);
+        $summary['stock_errors'] = $stockErrors;
+
+        $valid = $summary['errors'] === 0 && $stockErrors === 0 && $summary['total'] > 0;
+
         return [
             'rows' => $rows,
+            'stock_rows' => $stockRows,
             'summary' => $summary,
-            'valid' => $summary['errors'] === 0 && $summary['total'] > 0,
+            'valid' => $valid,
         ];
+    }
+
+    /**
+     * Lee la hoja "Productos" y devuelve el array validado.
+     */
+    protected function readProductsSheet($sheet, int $companyId): array
+    {
+        $rows = [];
+        $rowNum = 0;
+        $headers = null;
+
+        foreach ($sheet->getRowIterator() as $row) {
+            $rowNum++;
+            $cells = array_map(
+                fn ($c) => is_object($c) && method_exists($c, 'getValue') ? $c->getValue() : $c,
+                $row->getCells(),
+            );
+
+            if ($rowNum === 1) {
+                $headers = array_map(fn ($h) => strtolower(trim((string) $h)), $cells);
+                continue;
+            }
+
+            $allEmpty = ! array_filter($cells, fn ($v) => $v !== null && $v !== '');
+            if ($allEmpty) continue;
+
+            $data = $this->rowToAssoc($headers, $cells);
+            $rows[] = $this->validateRow($data, $rowNum, $companyId);
+        }
+        return $rows;
+    }
+
+    /**
+     * Lee la hoja "Inventario Inicial" y devuelve las lineas validadas.
+     * Valida que el product_code exista (en la hoja o en DB) y la
+     * location_code sea real en la empresa.
+     */
+    protected function readInitialStockSheet($sheet, int $companyId, array $productRows): array
+    {
+        $codesInFile = collect($productRows)->pluck('data.code')->filter()
+            ->map(fn ($c) => strtoupper((string) $c))->all();
+
+        $lines = [];
+        $rowNum = 0;
+        $headers = null;
+
+        foreach ($sheet->getRowIterator() as $row) {
+            $rowNum++;
+            $cells = array_map(
+                fn ($c) => is_object($c) && method_exists($c, 'getValue') ? $c->getValue() : $c,
+                $row->getCells(),
+            );
+
+            if ($rowNum === 1) {
+                $headers = array_map(fn ($h) => strtolower(trim((string) $h)), $cells);
+                continue;
+            }
+
+            $allEmpty = ! array_filter($cells, fn ($v) => $v !== null && $v !== '');
+            if ($allEmpty) continue;
+
+            $data = [];
+            foreach (ProductImportTemplateGenerator::STOCK_COLUMNS as $col) {
+                $idx = array_search($col, $headers, true);
+                $data[$col] = $idx !== false ? ($cells[$idx] ?? null) : null;
+            }
+            $data['product_code'] = strtoupper(trim((string) ($data['product_code'] ?? '')));
+            $data['location_code'] = trim((string) ($data['location_code'] ?? ''));
+
+            $errors = [];
+            if (! $data['product_code']) $errors[] = 'product_code es obligatorio';
+            if (! $data['location_code']) $errors[] = 'location_code es obligatorio';
+            if (! is_numeric($data['qty']) || (float) $data['qty'] <= 0) {
+                $errors[] = 'qty debe ser un número > 0';
+            }
+            if (! is_numeric($data['unit_cost']) || (float) $data['unit_cost'] < 0) {
+                $errors[] = 'unit_cost debe ser un número >= 0';
+            }
+
+            // Validar referencias
+            if ($data['product_code'] && ! in_array($data['product_code'], $codesInFile, true)) {
+                // No esta en el archivo — debe existir en DB
+                $existsInDb = Product::query()
+                    ->where('company_id', $companyId)
+                    ->where('code', $data['product_code'])
+                    ->exists();
+                if (! $existsInDb) {
+                    $errors[] = "product_code '{$data['product_code']}' no existe (ni en el archivo ni en la base)";
+                }
+            }
+
+            if ($data['location_code']
+                && $this->resolveLocationId($data['location_code'], $companyId) === null) {
+                $errors[] = "location_code '{$data['location_code']}' no existe";
+            }
+
+            $lines[] = [
+                'row_number' => $rowNum,
+                'data' => $data,
+                'errors' => $errors,
+            ];
+        }
+        return $lines;
     }
 
     /**
      * Importa las filas validadas. Debe llamarse solo si parseAndValidate
      * retorno valid=true. Dos pasadas: primero padres/simples, luego variantes.
      *
-     * @return array{created:int, updated:int, errors:array}
+     * Si se pasan stockRows y counterpartAccountId, tras crear los productos
+     * se generan y postean InventoryOpening (una por sede) con las lineas
+     * correspondientes.
+     *
+     * @param array $rows           Filas validadas de la hoja Productos
+     * @param int $companyId
+     * @param array $stockRows      Filas validadas de la hoja Inventario Inicial
+     * @param int|null $counterpartAccountId  Cuenta contrapartida CR (ej. 3705)
+     *
+     * @return array{created:int, updated:int, errors:array, openings:array}
      */
-    public function import(array $rows, int $companyId): array
-    {
+    public function import(
+        array $rows,
+        int $companyId,
+        array $stockRows = [],
+        ?int $counterpartAccountId = null,
+    ): array {
         $created = 0;
         $updated = 0;
         $errors = [];
+        $openingsCreated = [];
 
         // Filtra filas validas
         $valid = array_values(array_filter($rows, fn ($r) => empty($r['errors'])));
@@ -150,7 +283,10 @@ class ProductImportEngine
         // Pasada 2: variantes
         $pass2 = array_filter($valid, fn ($r) => ! empty($r['data']['variation_of_code']));
 
-        DB::transaction(function () use (&$created, &$updated, &$errors, $pass1, $pass2, $companyId) {
+        DB::transaction(function () use (
+            &$created, &$updated, &$errors, &$openingsCreated,
+            $pass1, $pass2, $companyId, $stockRows, $counterpartAccountId,
+        ) {
             foreach ([$pass1, $pass2] as $batch) {
                 foreach ($batch as $r) {
                     try {
@@ -165,9 +301,137 @@ class ProductImportEngine
                     }
                 }
             }
+
+            // Stock inicial — solo si hay filas y cuenta contrapartida
+            $validStock = array_values(array_filter($stockRows, fn ($r) => empty($r['errors'])));
+            if (! empty($validStock) && $counterpartAccountId) {
+                $openingsCreated = $this->createInitialStockOpenings(
+                    $validStock,
+                    $companyId,
+                    $counterpartAccountId,
+                    $errors,
+                );
+            }
         });
 
-        return ['created' => $created, 'updated' => $updated, 'errors' => $errors];
+        return [
+            'created' => $created,
+            'updated' => $updated,
+            'errors' => $errors,
+            'openings' => $openingsCreated,
+        ];
+    }
+
+    /**
+     * Agrupa las lineas de stock por location y crea/postea una
+     * InventoryOpening por sede. Retorna lista de openings creadas.
+     * Errores se acumulan en el array pasado por referencia.
+     */
+    protected function createInitialStockOpenings(
+        array $validStockLines,
+        int $companyId,
+        int $counterpartAccountId,
+        array &$errors,
+    ): array {
+        // Agrupa por location_code (normalizado)
+        $byLocation = [];
+        foreach ($validStockLines as $sl) {
+            $key = strtoupper(trim($sl['data']['location_code']));
+            $byLocation[$key][] = $sl;
+        }
+
+        $openings = [];
+        $companyModel = \App\Models\Company::find($companyId);
+
+        foreach ($byLocation as $locCode => $lines) {
+            $locationId = $this->resolveLocationId($locCode, $companyId);
+            if (! $locationId) {
+                $errors[] = [
+                    'row_number' => $lines[0]['row_number'] ?? 0,
+                    'code' => "STOCK/{$locCode}",
+                    'message' => "Sede '{$locCode}' no encontrada al crear apertura de inventario.",
+                ];
+                continue;
+            }
+
+            try {
+                // Crear cabecera
+                $number = $this->openingNumberer->next($companyModel, 'SI');
+                $opening = InventoryOpening::create([
+                    'company_id' => $companyId,
+                    'location_id' => $locationId,
+                    'counterpart_account_id' => $counterpartAccountId,
+                    'prefix' => 'SI',
+                    'number' => $number,
+                    'date' => now()->toDateString(),
+                    'status' => InventoryOpening::STATUS_DRAFT,
+                    'notes' => 'Apertura automática desde importación masiva de productos',
+                    'created_by_user_id' => Auth::id(),
+                ]);
+
+                // Crear lineas
+                $lineNum = 1;
+                foreach ($lines as $sl) {
+                    $product = Product::query()
+                        ->where('company_id', $companyId)
+                        ->where('code', $sl['data']['product_code'])
+                        ->first();
+                    if (! $product) {
+                        $errors[] = [
+                            'row_number' => $sl['row_number'],
+                            'code' => 'STOCK/'.$sl['data']['product_code'],
+                            'message' => "Producto no encontrado despues del import.",
+                        ];
+                        continue;
+                    }
+                    if (! $product->track_inventory) {
+                        $errors[] = [
+                            'row_number' => $sl['row_number'],
+                            'code' => 'STOCK/'.$sl['data']['product_code'],
+                            'message' => "Producto no controla inventario (track_inventory=false).",
+                        ];
+                        continue;
+                    }
+                    $opening->lines()->create([
+                        'line_number' => $lineNum++,
+                        'product_id' => $product->id,
+                        'quantity' => (float) $sl['data']['qty'],
+                        'unit_cost' => (float) $sl['data']['unit_cost'],
+                    ]);
+                }
+
+                // Postear la apertura (contabiliza + crea movimientos)
+                $this->openingEngine->post($opening->fresh(['lines']));
+
+                $openings[] = [
+                    'location_code' => $locCode,
+                    'number' => "SI-{$number}",
+                    'lines' => count($lines),
+                ];
+            } catch (\Throwable $e) {
+                $errors[] = [
+                    'row_number' => $lines[0]['row_number'] ?? 0,
+                    'code' => "STOCK/{$locCode}",
+                    'message' => "Error al postear apertura: {$e->getMessage()}",
+                ];
+            }
+        }
+        return $openings;
+    }
+
+    protected function resolveLocationId(?string $code, int $companyId): ?int
+    {
+        if (! $code) return null;
+        $key = strtolower($code);
+        if (array_key_exists($key, $this->locationCache)) return $this->locationCache[$key];
+        $id = Location::query()
+            ->where('company_id', $companyId)
+            ->where('active', true)
+            ->where(function ($q) use ($code) {
+                $q->where('code', $code)->orWhere('name', $code);
+            })
+            ->value('id');
+        return $this->locationCache[$key] = $id ? (int) $id : null;
     }
 
     /* ------------------------------------------------------------------ */
@@ -331,6 +595,7 @@ class ProductImportEngine
         $this->categoryCache = [];
         $this->taxCache = [];
         $this->accountCache = [];
+        $this->locationCache = [];
     }
 
     protected function rowToAssoc(array $headers, array $cells): array

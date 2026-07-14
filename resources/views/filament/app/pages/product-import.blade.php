@@ -53,7 +53,20 @@
                     <div style="font-size:11px; opacity:.85; text-transform:uppercase; font-weight:700;">Con errores</div>
                     <div style="font-size:24px; font-weight:900;">{{ $s['errors'] }}</div>
                 </div>
+                @if (($s['stock_lines'] ?? 0) > 0)
+                    <div style="background:#7c3aed; color:#fff; border-radius:10px; padding:12px 14px;">
+                        <div style="font-size:11px; opacity:.85; text-transform:uppercase; font-weight:700;">Stock inicial</div>
+                        <div style="font-size:22px; font-weight:900;">{{ $s['stock_lines'] }} <span style="font-size:12px; font-weight:600; opacity:.85;">líneas</span></div>
+                        <div style="font-size:11px; opacity:.85; margin-top:2px;">{{ $s['stock_locations'] }} sede(s){{ $s['stock_errors'] > 0 ? ' · '.$s['stock_errors'].' error(es)' : '' }}</div>
+                    </div>
+                @endif
             </div>
+
+            @if (($s['stock_lines'] ?? 0) > 0)
+                <div style="margin-top:12px; background:#faf5ff; border:1px solid #7c3aed; border-radius:8px; padding:10px 14px; font-size:12.5px; color:#4c1d95;">
+                    💡 <strong>Se crearán {{ $s['stock_locations'] }} apertura(s) de inventario</strong> (una por sede) para cargar las {{ $s['stock_lines'] }} líneas de stock inicial. Verifica la cuenta contrapartida en el formulario de arriba antes de confirmar.
+                </div>
+            @endif
 
             @if ($s['errors'] > 0)
                 <div style="margin-top:14px; background:#fef3c7; color:#78350f; border:1px solid #f59e0b; padding:10px 14px; border-radius:8px; font-size:13px;">
@@ -139,6 +152,17 @@
                     · <span style="color:#991b1b;"><strong>{{ count($result['errors']) }}</strong> con error</span>
                 @endif
             </div>
+
+            @if (! empty($result['openings']))
+                <div style="margin-top:10px; padding:10px 12px; background:#faf5ff; border:1px solid #7c3aed; border-radius:8px;">
+                    <div style="font-weight:700; color:#4c1d95; font-size:12.5px; margin-bottom:4px;">📦 Aperturas de inventario creadas y contabilizadas:</div>
+                    <ul style="margin:2px 0 0 16px; color:#4c1d95; font-size:12px;">
+                        @foreach ($result['openings'] as $op)
+                            <li><code>{{ $op['number'] }}</code> — Sede {{ $op['location_code'] }} — {{ $op['lines'] }} línea(s)</li>
+                        @endforeach
+                    </ul>
+                </div>
+            @endif
             @if (! empty($result['errors']))
                 <div style="margin-top:10px; background:#fff; padding:10px 12px; border-radius:8px; max-height:200px; overflow:auto;">
                     <div style="font-weight:700; color:#991b1b; font-size:12.5px; margin-bottom:4px;">Errores:</div>

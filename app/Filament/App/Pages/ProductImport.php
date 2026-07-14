@@ -32,7 +32,7 @@ class ProductImport extends Page implements HasForms
 
     protected static string $view = 'filament.app.pages.product-import';
 
-    public ?array $data = ['file' => null];
+    public ?array $data = ['file' => null, 'counterpart_account_id' => null];
     public ?array $preview = null;
     public ?array $result = null;
 
@@ -43,7 +43,19 @@ class ProductImport extends Page implements HasForms
 
     public function mount(): void
     {
-        $this->form->fill(['file' => null]);
+        // Precarga cuenta contrapartida sugerida (3705 Resultados de
+        // ejercicios anteriores) si existe.
+        $companyId = auth()->user()?->company_id;
+        $defaultCounterpart = \App\Models\Account::query()
+            ->where('company_id', $companyId)
+            ->where('accepts_movements', true)
+            ->where('active', true)
+            ->where('code', '3705')
+            ->value('id');
+        $this->form->fill([
+            'file' => null,
+            'counterpart_account_id' => $defaultCounterpart,
+        ]);
     }
 
     public function form(Form $form): Form
@@ -63,6 +75,30 @@ class ProductImport extends Page implements HasForms
                         ->disk('local')
                         ->directory('tmp/product-imports')
                         ->visibility('private'),
+
+                    Forms\Components\Select::make('counterpart_account_id')
+                        ->label('Cuenta contrapartida (CR) — para el asiento del inventario inicial')
+                        ->helperText('Solo se usa si la hoja "Inventario Inicial" tiene filas. Sugerido: 3705 Resultados de ejercicios anteriores o 3115 Capital social.')
+                        ->searchable()
+                        ->getSearchResultsUsing(fn (string $search) => \App\Models\Account::query()
+                            ->where('company_id', auth()->user()?->company_id)
+                            ->where('accepts_movements', true)
+                            ->where('active', true)
+                            ->where(function ($q) use ($search) {
+                                $q->where('code', 'like', "%{$search}%")
+                                    ->orWhere('name', 'ilike', "%{$search}%");
+                            })
+                            ->orderBy('code')
+                            ->limit(30)
+                            ->get(['id', 'code', 'name'])
+                            ->mapWithKeys(fn ($a) => [$a->id => "{$a->code} — {$a->name}"])
+                            ->all())
+                        ->getOptionLabelUsing(function ($value) {
+                            $a = \App\Models\Account::query()
+                                ->where('company_id', auth()->user()?->company_id)
+                                ->find($value);
+                            return $a ? "{$a->code} — {$a->name}" : null;
+                        }),
                 ]),
         ])->statePath('data');
     }
@@ -102,19 +138,37 @@ class ProductImport extends Page implements HasForms
             return;
         }
 
+        $stockRows = $this->preview['stock_rows'] ?? [];
+        $counterpartId = null;
+        if (! empty($stockRows)) {
+            $counterpartId = (int) ($this->data['counterpart_account_id'] ?? 0) ?: null;
+            if (! $counterpartId) {
+                Notification::make()
+                    ->title('Selecciona la cuenta contrapartida')
+                    ->body('Hay filas en la hoja "Inventario Inicial" pero no se eligió la cuenta CR para el asiento contable.')
+                    ->warning()->send();
+                return;
+            }
+        }
+
         try {
             $this->result = app(ProductImportEngine::class)->import(
                 $this->preview['rows'],
                 (int) auth()->user()->company_id,
+                $stockRows,
+                $counterpartId,
             );
 
-            $msg = "Creados: {$this->result['created']} · Actualizados: {$this->result['updated']}";
+            $parts = ["Creados: {$this->result['created']}", "Actualizados: {$this->result['updated']}"];
+            if (! empty($this->result['openings'])) {
+                $parts[] = 'Aperturas de inventario: '.count($this->result['openings']);
+            }
             if (! empty($this->result['errors'])) {
-                $msg .= ' · Errores: '.count($this->result['errors']);
+                $parts[] = 'Errores: '.count($this->result['errors']);
             }
             Notification::make()
                 ->title('Importación completada')
-                ->body($msg)
+                ->body(implode(' · ', $parts))
                 ->success()
                 ->duration(5000)
                 ->send();
