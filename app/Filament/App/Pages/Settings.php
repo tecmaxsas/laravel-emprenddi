@@ -82,6 +82,7 @@ class Settings extends Page implements HasForms
 
             // Etiquetas (settings.labels.*)
             'labels_enabled' => (bool) data_get($settings, 'labels.enabled', false),
+            'labels_print_mode' => (string) data_get($settings, 'labels.print_mode', 'sheet'),
             'labels_fields' => (array) data_get($settings, 'labels.fields', \App\Support\LabelsSettings::DEFAULT_FIELDS),
             'labels_barcode_type' => (string) data_get($settings, 'labels.barcode_type', 'CODE128'),
             'labels_columns_per_sheet' => (int) data_get($settings, 'labels.columns_per_sheet', 3),
@@ -306,6 +307,18 @@ class Settings extends Page implements HasForms
                         ->visible(fn (Forms\Get $get) => (bool) $get('labels_enabled'))
                         ->columns(2)
                         ->schema([
+                            Forms\Components\Select::make('labels_print_mode')
+                                ->label('Modo de impresión')
+                                ->required()
+                                ->native(false)
+                                ->live()
+                                ->options(\App\Support\LabelsSettings::PRINT_MODES)
+                                ->default('sheet')
+                                ->helperText(fn ($state) => $state === 'roll'
+                                    ? '🖨️ Rollo: cada etiqueta se envía como una página con dimensiones exactas. Ideal para Zebra, Brother QL, TSC, Xprinter, etc.'
+                                    : '📄 Hoja: N etiquetas por fila en una hoja A4. Ideal para etiquetas autoadhesivas Avery.')
+                                ->columnSpanFull(),
+
                             Forms\Components\CheckboxList::make('labels_fields')
                                 ->label('Campos que aparecen en la etiqueta')
                                 ->options(\App\Support\LabelsSettings::AVAILABLE_FIELDS)
@@ -321,23 +334,44 @@ class Settings extends Page implements HasForms
                                 ->helperText('CODE128 acepta cualquier texto (código o barcode). EAN-13 exige 12 dígitos.'),
 
                             Forms\Components\TextInput::make('labels_columns_per_sheet')
-                                ->label('Etiquetas por fila')
-                                ->numeric()->minValue(1)->maxValue(10)->default(3),
+                                ->label('Etiquetas por fila (solo modo Hoja)')
+                                ->numeric()->minValue(1)->maxValue(10)->default(3)
+                                ->disabled(fn (Forms\Get $get) => $get('labels_print_mode') === 'roll')
+                                ->helperText(fn (Forms\Get $get) => $get('labels_print_mode') === 'roll'
+                                    ? 'Ignorado en modo rollo: siempre 1 por página.'
+                                    : ''),
 
                             Forms\Components\TextInput::make('labels_width_mm')
                                 ->label('Ancho (mm)')
                                 ->numeric()->minValue(20)->maxValue(200)->default(50)
-                                ->helperText('Tamaños comunes: 50, 40, 60, 80.'),
+                                ->helperText('Tamaños comunes térmica: 40, 50, 60, 80, 100.'),
 
                             Forms\Components\TextInput::make('labels_height_mm')
                                 ->label('Alto (mm)')
                                 ->numeric()->minValue(10)->maxValue(150)->default(30)
-                                ->helperText('Tamaños comunes: 30, 20, 40, 50.'),
+                                ->helperText('Tamaños comunes térmica: 20, 25, 30, 40, 50.'),
 
                             Forms\Components\Toggle::make('labels_show_currency_symbol')
                                 ->label('Mostrar símbolo $ en el precio')
                                 ->default(true)
                                 ->columnSpanFull(),
+
+                            Forms\Components\Placeholder::make('printer_tips')
+                                ->label('')
+                                ->columnSpanFull()
+                                ->visible(fn (Forms\Get $get) => $get('labels_print_mode') === 'roll')
+                                ->content(new \Illuminate\Support\HtmlString(
+                                    '<div style="background:#fef3c7; border-left:4px solid #f59e0b; padding:12px 14px; border-radius:6px; font-size:13px; color:#78350f; line-height:1.55;">'
+                                    .'<strong>💡 Configuración de la impresora de etiquetas (una sola vez por PC):</strong>'
+                                    .'<ol style="margin:6px 0 0 20px;">'
+                                    .'<li>En Windows/Mac ve a <em>Impresoras y escáneres</em> → selecciona tu impresora → <em>Preferencias de impresión</em>.</li>'
+                                    .'<li>En "Tamaño de papel" define un tamaño personalizado con las mismas dimensiones que configures aquí (ancho × alto en mm).</li>'
+                                    .'<li>En el diálogo de impresión del navegador: <strong>desactiva "Ajustar a la página"</strong> ("Fit to page" / "Escalar al tamaño del papel"). Selecciona <strong>Márgenes: Ninguno</strong>.</li>'
+                                    .'<li>Preferiblemente usa <strong>Chrome</strong> — respeta mejor el <code>@page size</code> de CSS que Firefox/Safari.</li>'
+                                    .'<li>Para Zebra ZPL nativo: en el driver marca "Passthrough" o "Send as bitmap" según el modelo.</li>'
+                                    .'</ol>'
+                                    .'</div>'
+                                )),
 
                             Forms\Components\Actions::make([
                                 Forms\Components\Actions\Action::make('previewLabels')
@@ -461,6 +495,9 @@ class Settings extends Page implements HasForms
         ]);
         $settings['labels'] = array_merge($settings['labels'] ?? [], [
             'enabled' => (bool) ($state['labels_enabled'] ?? false),
+            'print_mode' => in_array($state['labels_print_mode'] ?? 'sheet', ['sheet', 'roll'], true)
+                ? $state['labels_print_mode']
+                : 'sheet',
             'fields' => array_values((array) ($state['labels_fields'] ?? \App\Support\LabelsSettings::DEFAULT_FIELDS)),
             'barcode_type' => (string) ($state['labels_barcode_type'] ?? 'CODE128'),
             'columns_per_sheet' => max(1, min(10, (int) ($state['labels_columns_per_sheet'] ?? 3))),

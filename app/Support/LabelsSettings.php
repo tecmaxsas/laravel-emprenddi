@@ -48,6 +48,20 @@ class LabelsSettings
         'custom' => 'Personalizado',
     ];
 
+    /**
+     * Modo de impresión:
+     *  - sheet: hoja completa A4 con grilla de N columnas (Avery, etiquetas
+     *    autoadhesivas en hoja).
+     *  - roll:  UNA etiqueta por página con dimensiones exactas del label
+     *    (impresoras térmicas de rollo tipo Zebra, Brother QL, etc.).
+     *    El navegador manda 1 etiqueta = 1 "página" al driver de la impresora
+     *    con margen 0 para evitar recortes.
+     */
+    public const PRINT_MODES = [
+        'sheet' => 'Hoja completa A4 (Avery / autoadhesivas)',
+        'roll' => 'Rollo continuo (impresora térmica de etiquetas)',
+    ];
+
     public static function enabled(?Company $company = null): bool
     {
         $company ??= self::currentCompany();
@@ -67,6 +81,7 @@ class LabelsSettings
             'barcode_type' => (string) data_get($settings, 'labels.barcode_type', 'CODE128'),
             'columns_per_sheet' => (int) data_get($settings, 'labels.columns_per_sheet', 3),
             'show_currency_symbol' => (bool) data_get($settings, 'labels.show_currency_symbol', true),
+            'print_mode' => (string) data_get($settings, 'labels.print_mode', 'sheet'),
         ];
     }
 
