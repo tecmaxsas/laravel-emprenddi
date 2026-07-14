@@ -613,8 +613,44 @@ class ProductResource extends Resource
                 Tables\Filters\TernaryFilter::make('active')->label('Activo')->default(true),
             ])
             ->actions([
+                Tables\Actions\Action::make('printLabels')
+                    ->label('Imprimir etiquetas')
+                    ->icon('heroicon-o-qr-code')
+                    ->color('gray')
+                    ->visible(fn () => \App\Support\LabelsSettings::enabled())
+                    ->form([
+                        Forms\Components\TextInput::make('qty')
+                            ->label('Cantidad de etiquetas')
+                            ->numeric()->minValue(1)->maxValue(1000)->default(1)
+                            ->required(),
+                    ])
+                    ->action(function (Product $record, array $data, $livewire) {
+                        $qty = max(1, (int) ($data['qty'] ?? 1));
+                        $url = route('labels.print', ['products' => "{$record->id}:{$qty}"]);
+                        $livewire->js('window.open('.json_encode($url).", '_blank')");
+                    }),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkAction::make('printLabelsBulk')
+                    ->label('Imprimir etiquetas')
+                    ->icon('heroicon-o-qr-code')
+                    ->color('gray')
+                    ->visible(fn () => \App\Support\LabelsSettings::enabled())
+                    ->form([
+                        Forms\Components\TextInput::make('qty_per_product')
+                            ->label('Etiquetas por cada producto seleccionado')
+                            ->numeric()->minValue(1)->maxValue(1000)->default(1)
+                            ->required(),
+                    ])
+                    ->action(function ($records, array $data, $livewire) {
+                        $qty = max(1, (int) ($data['qty_per_product'] ?? 1));
+                        $spec = $records->map(fn ($r) => "{$r->id}:{$qty}")->implode(',');
+                        $url = route('labels.print', ['products' => $spec]);
+                        $livewire->js('window.open('.json_encode($url).", '_blank')");
+                    })
+                    ->deselectRecordsAfterCompletion(),
             ]);
     }
 

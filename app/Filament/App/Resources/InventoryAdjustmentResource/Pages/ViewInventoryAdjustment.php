@@ -50,6 +50,36 @@ class ViewInventoryAdjustment extends ViewRecord
                     }
                 }),
 
+            Actions\Action::make('printLabels')
+                ->label('Imprimir etiquetas')
+                ->icon('heroicon-o-qr-code')
+                ->color('info')
+                ->visible(fn (InventoryAdjustment $r) => \App\Support\LabelsSettings::enabled()
+                    && $r->isPosted()
+                    && $r->direction === 'in')
+                ->modalHeading('Imprimir etiquetas de los productos ajustados')
+                ->modalDescription('Se imprime una etiqueta por unidad ingresada al inventario. Aplica solo a ajustes de tipo "Entrada".')
+                ->form([
+                    Forms\Components\TextInput::make('multiplier')
+                        ->label('Multiplicador de cantidad')
+                        ->numeric()->minValue(1)->maxValue(100)->default(1)
+                        ->required(),
+                ])
+                ->action(function (InventoryAdjustment $r, array $data, $livewire) {
+                    $mult = max(1, (int) ($data['multiplier'] ?? 1));
+                    $spec = $r->lines()
+                        ->whereNotNull('product_id')
+                        ->get(['product_id', 'quantity'])
+                        ->map(fn ($l) => $l->product_id.':'.max(1, (int) round((float) $l->quantity) * $mult))
+                        ->implode(',');
+                    if (! $spec) {
+                        Notification::make()->title('Sin productos con SKU')->warning()->send();
+                        return;
+                    }
+                    $url = route('labels.print', ['products' => $spec]);
+                    $livewire->js('window.open('.json_encode($url).", '_blank')");
+                }),
+
             Actions\Action::make('cancel')
                 ->label('Anular')
                 ->icon('heroicon-o-x-circle')

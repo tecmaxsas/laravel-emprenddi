@@ -80,6 +80,15 @@ class Settings extends Page implements HasForms
             // Garantías (settings.warranties.*)
             'warranties_enabled' => (bool) data_get($settings, 'warranties.enabled', false),
 
+            // Etiquetas (settings.labels.*)
+            'labels_enabled' => (bool) data_get($settings, 'labels.enabled', false),
+            'labels_fields' => (array) data_get($settings, 'labels.fields', \App\Support\LabelsSettings::DEFAULT_FIELDS),
+            'labels_barcode_type' => (string) data_get($settings, 'labels.barcode_type', 'CODE128'),
+            'labels_columns_per_sheet' => (int) data_get($settings, 'labels.columns_per_sheet', 3),
+            'labels_width_mm' => (int) data_get($settings, 'labels.width_mm', 50),
+            'labels_height_mm' => (int) data_get($settings, 'labels.height_mm', 30),
+            'labels_show_currency_symbol' => (bool) data_get($settings, 'labels.show_currency_symbol', true),
+
             // POS settings (settings.pos.*)
             'pos_default_invoice_kind' => (string) data_get($settings, 'pos.default_invoice_kind', 'pos'),
             'pos_allow_price_modification' => (bool) data_get($settings, 'pos.allow_price_modification', true),
@@ -285,6 +294,61 @@ class Settings extends Page implements HasForms
                         ->helperText('Si lo desactivas no se borran los tickets existentes, solo se oculta el menú.'),
                 ]),
 
+            Forms\Components\Section::make('Etiquetas con código de barras')
+                ->description('Al activarlo, aparecen botones "Imprimir etiquetas" en el listado de productos y al postear compras o ajustes de inventario. Elige qué información va en la etiqueta y sus dimensiones.')
+                ->schema([
+                    Forms\Components\Toggle::make('labels_enabled')
+                        ->label('Activar impresión de etiquetas')
+                        ->live()
+                        ->helperText('Cuando está activo, verás la opción de imprimir etiquetas en varios puntos de la app.'),
+
+                    Forms\Components\Group::make()
+                        ->visible(fn (Forms\Get $get) => (bool) $get('labels_enabled'))
+                        ->columns(2)
+                        ->schema([
+                            Forms\Components\CheckboxList::make('labels_fields')
+                                ->label('Campos que aparecen en la etiqueta')
+                                ->options(\App\Support\LabelsSettings::AVAILABLE_FIELDS)
+                                ->default(\App\Support\LabelsSettings::DEFAULT_FIELDS)
+                                ->columns(2)
+                                ->columnSpanFull(),
+
+                            Forms\Components\Select::make('labels_barcode_type')
+                                ->label('Tipo de código de barras')
+                                ->options(\App\Support\LabelsSettings::BARCODE_TYPES)
+                                ->default('CODE128')
+                                ->native(false)
+                                ->helperText('CODE128 acepta cualquier texto (código o barcode). EAN-13 exige 12 dígitos.'),
+
+                            Forms\Components\TextInput::make('labels_columns_per_sheet')
+                                ->label('Etiquetas por fila')
+                                ->numeric()->minValue(1)->maxValue(10)->default(3),
+
+                            Forms\Components\TextInput::make('labels_width_mm')
+                                ->label('Ancho (mm)')
+                                ->numeric()->minValue(20)->maxValue(200)->default(50)
+                                ->helperText('Tamaños comunes: 50, 40, 60, 80.'),
+
+                            Forms\Components\TextInput::make('labels_height_mm')
+                                ->label('Alto (mm)')
+                                ->numeric()->minValue(10)->maxValue(150)->default(30)
+                                ->helperText('Tamaños comunes: 30, 20, 40, 50.'),
+
+                            Forms\Components\Toggle::make('labels_show_currency_symbol')
+                                ->label('Mostrar símbolo $ en el precio')
+                                ->default(true)
+                                ->columnSpanFull(),
+
+                            Forms\Components\Actions::make([
+                                Forms\Components\Actions\Action::make('previewLabels')
+                                    ->label('Ver preview con la configuración actual')
+                                    ->icon('heroicon-o-eye')
+                                    ->color('info')
+                                    ->url(fn () => route('labels.print', ['preview' => 1]), shouldOpenInNewTab: true),
+                            ])->columnSpanFull(),
+                        ]),
+                ]),
+
             Forms\Components\Actions::make([
                 Forms\Components\Actions\Action::make('saveCompany')
                     ->label('Guardar datos de empresa')
@@ -394,6 +458,15 @@ class Settings extends Page implements HasForms
         ]);
         $settings['warranties'] = array_merge($settings['warranties'] ?? [], [
             'enabled' => (bool) ($state['warranties_enabled'] ?? false),
+        ]);
+        $settings['labels'] = array_merge($settings['labels'] ?? [], [
+            'enabled' => (bool) ($state['labels_enabled'] ?? false),
+            'fields' => array_values((array) ($state['labels_fields'] ?? \App\Support\LabelsSettings::DEFAULT_FIELDS)),
+            'barcode_type' => (string) ($state['labels_barcode_type'] ?? 'CODE128'),
+            'columns_per_sheet' => max(1, min(10, (int) ($state['labels_columns_per_sheet'] ?? 3))),
+            'width_mm' => max(20, min(200, (int) ($state['labels_width_mm'] ?? 50))),
+            'height_mm' => max(10, min(150, (int) ($state['labels_height_mm'] ?? 30))),
+            'show_currency_symbol' => (bool) ($state['labels_show_currency_symbol'] ?? true),
         ]);
 
         $company->update([

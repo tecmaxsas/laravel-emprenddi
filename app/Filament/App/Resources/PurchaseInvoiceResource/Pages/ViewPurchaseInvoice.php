@@ -6,6 +6,7 @@ use App\Filament\App\Resources\PurchaseInvoiceResource;
 use App\Models\PurchaseInvoice;
 use App\Services\Purchases\PurchaseInvoiceEngine;
 use Filament\Actions;
+use Filament\Forms;
 use Filament\Infolists;
 use Filament\Infolists\Infolist;
 use Filament\Notifications\Notification;
@@ -57,6 +58,37 @@ class ViewPurchaseInvoice extends ViewRecord
                             ->persistent()
                             ->send();
                     }
+                }),
+
+            Actions\Action::make('printLabels')
+                ->label('Imprimir etiquetas')
+                ->icon('heroicon-o-qr-code')
+                ->color('info')
+                ->visible(fn (PurchaseInvoice $record) => \App\Support\LabelsSettings::enabled()
+                    && $record->status === 'posted')
+                ->modalHeading('Imprimir etiquetas de los productos comprados')
+                ->modalDescription('Se generará una etiqueta por cada unidad recibida (usando la cantidad de cada línea). Puedes ajustar el multiplicador si necesitas más o menos.')
+                ->form([
+                    Forms\Components\TextInput::make('multiplier')
+                        ->label('Multiplicador de cantidad')
+                        ->numeric()->minValue(1)->maxValue(100)->default(1)
+                        ->helperText('1 = una etiqueta por unidad recibida. 2 = doble. Etc.')
+                        ->required(),
+                ])
+                ->action(function (PurchaseInvoice $record, array $data, $livewire) {
+                    $mult = max(1, (int) ($data['multiplier'] ?? 1));
+                    $spec = $record->lines()
+                        ->whereNotNull('product_id')
+                        ->get(['product_id', 'quantity'])
+                        ->map(fn ($l) => $l->product_id.':'.max(1, (int) round((float) $l->quantity) * $mult))
+                        ->implode(',');
+                    if (! $spec) {
+                        \Filament\Notifications\Notification::make()
+                            ->title('Sin productos con SKU en esta factura')->warning()->send();
+                        return;
+                    }
+                    $url = route('labels.print', ['products' => $spec]);
+                    $livewire->js('window.open('.json_encode($url).", '_blank')");
                 }),
 
             Actions\Action::make('cancel')

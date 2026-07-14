@@ -64,6 +64,12 @@ Route::middleware(['web', 'auth', \App\Http\Middleware\SetActiveCompany::class])
         [\App\Http\Controllers\App\ReportExportController::class, 'cashClosings'])
         ->name('reports.export.cash_closings');
 
+    // Impresion de etiquetas con codigo de barras.
+    // ?products=id:qty,id:qty,...  |  ?preview=1
+    Route::get('/app/labels/print',
+        [\App\Http\Controllers\App\LabelPrintController::class, 'print'])
+        ->name('labels.print');
+
     // Descarga de la plantilla XLSX para importacion masiva de productos.
     Route::get('/app/products/import/template',
         [\App\Http\Controllers\App\ProductImportController::class, 'template'])
