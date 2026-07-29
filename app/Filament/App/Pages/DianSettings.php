@@ -797,16 +797,29 @@ class DianSettings extends Page implements HasForms
             }
         }
 
-        // Respuesta SOAP-like de apidian:
-        // Body.GetNumberingRangeResponse.GetNumberingRangeResult.ResponseList.NumberRangeResponse
-        $nrr = data_get($data, 'Body.GetNumberingRangeResponse.GetNumberingRangeResult.ResponseList.NumberRangeResponse');
-        if (is_array($nrr) && ! empty($nrr)) {
-            // Puede venir como objeto único (asociativo) o como array de objetos
-            if ($this->looksLikeResolutionRow($nrr)) {
-                return [$nrr];
+        // Busqueda recursiva: recorre el arbol completo del JSON buscando
+        // claves conocidas de la respuesta SOAP-like de apidian. Tolera
+        // wrappers Envelope/data/response que puedan aparecer en distintos
+        // deployments.
+        $keysToFind = ['NumberRangeResponse', 'ResolutionList', 'ResponseList'];
+        foreach ($keysToFind as $key) {
+            $found = $this->deepFind($data, $key);
+            if (! $found) continue;
+
+            // Si es objeto asociativo (una sola resolucion), envuelve en array
+            if ($this->looksLikeResolutionRow($found)) {
+                return [$found];
             }
-            if ($this->looksLikeResolutionList($nrr)) {
-                return $nrr;
+            // Si es lista de resoluciones, devuelve tal cual
+            if (is_array($found) && $this->looksLikeResolutionList($found)) {
+                return $found;
+            }
+            // Si es un contenedor con NumberRangeResponse dentro (ResponseList
+            // puede ser {NumberRangeResponse: {...}} en vez de directamente el row)
+            if (is_array($found) && isset($found['NumberRangeResponse'])) {
+                $inner = $found['NumberRangeResponse'];
+                if ($this->looksLikeResolutionRow($inner)) return [$inner];
+                if (is_array($inner) && $this->looksLikeResolutionList($inner)) return $inner;
             }
         }
 
@@ -815,6 +828,25 @@ class DianSettings extends Page implements HasForms
             return [$data];
         }
         return [];
+    }
+
+    /**
+     * Busqueda recursiva por clave en un array anidado. Devuelve el primer
+     * valor encontrado o null. Usado para tolerar wrappers desconocidos
+     * (Envelope, data, response, etc.).
+     */
+    protected function deepFind(array $arr, string $key)
+    {
+        if (array_key_exists($key, $arr)) {
+            return $arr[$key];
+        }
+        foreach ($arr as $value) {
+            if (is_array($value)) {
+                $found = $this->deepFind($value, $key);
+                if ($found !== null) return $found;
+            }
+        }
+        return null;
     }
 
     protected function looksLikeResolutionList(array $rows): bool
