@@ -772,13 +772,15 @@ class DianSettings extends Page implements HasForms
     }
 
     /**
-     * Recorre la respuesta de la API buscando el array de resoluciones,
-     * sin importar la key con la que venga (ResolutionList, resolutions,
-     * data, items, etc.). Si la raíz ya es un array de objetos, lo retorna.
+     * Recorre la respuesta de la API buscando el array de resoluciones.
+     * Ubicaciones planas (ResolutionList, resolutions, data, items) + rutas
+     * anidadas de la respuesta SOAP-like de apidian:
+     *   Body → GetNumberingRangeResponse → GetNumberingRangeResult →
+     *     ResponseList → NumberRangeResponse (objeto O array)
      */
     protected function extractResolutionItems(array $data): array
     {
-        // Posibles ubicaciones del array
+        // Posibles ubicaciones directas del array
         $candidates = [
             $data['ResolutionList'] ?? null,
             $data['resolutions'] ?? null,
@@ -792,6 +794,19 @@ class DianSettings extends Page implements HasForms
         foreach ($candidates as $candidate) {
             if (is_array($candidate) && ! empty($candidate) && $this->looksLikeResolutionList($candidate)) {
                 return $candidate;
+            }
+        }
+
+        // Respuesta SOAP-like de apidian:
+        // Body.GetNumberingRangeResponse.GetNumberingRangeResult.ResponseList.NumberRangeResponse
+        $nrr = data_get($data, 'Body.GetNumberingRangeResponse.GetNumberingRangeResult.ResponseList.NumberRangeResponse');
+        if (is_array($nrr) && ! empty($nrr)) {
+            // Puede venir como objeto único (asociativo) o como array de objetos
+            if ($this->looksLikeResolutionRow($nrr)) {
+                return [$nrr];
+            }
+            if ($this->looksLikeResolutionList($nrr)) {
+                return $nrr;
             }
         }
 
@@ -812,7 +827,9 @@ class DianSettings extends Page implements HasForms
     {
         return isset($row['Prefix']) || isset($row['prefix'])
             || isset($row['TypeDocumentId']) || isset($row['type_document_id'])
-            || isset($row['Resolution']) || isset($row['resolution']);
+            || isset($row['Resolution']) || isset($row['resolution'])
+            || isset($row['ResolutionNumber']) || isset($row['resolution_number'])
+            || isset($row['FromNumber']) || isset($row['ToNumber']);
     }
 
     /**
@@ -831,17 +848,25 @@ class DianSettings extends Page implements HasForms
             $docTypeName = Resolution::DOCUMENT_TYPES[$docTypeId] ?? '';
         }
 
+        // Si no vino document_type_id explicito, asumimos Factura Electronica (1)
+        // — la consulta getNumberRanges de apidian solo devuelve resoluciones de
+        // facturacion sin decorar el tipo. El usuario puede editar despues.
+        if (! $docTypeId) {
+            $docTypeId = 1;
+            $docTypeName = $docTypeName ?: (Resolution::DOCUMENT_TYPES[1] ?? 'Factura Electrónica');
+        }
+
         return [
             'document_type_id' => $docTypeId ?: null,
             'document_type_name' => $docTypeName ?: null,
             'prefix' => (string) ($pick(['prefix', 'Prefix']) ?? ''),
-            'resolution_number' => (string) ($pick(['resolution', 'Resolution', 'resolution_number']) ?? ''),
+            'resolution_number' => (string) ($pick(['resolution', 'Resolution', 'resolution_number', 'ResolutionNumber']) ?? ''),
             'resolution_date' => $this->parseDateOrNull($pick(['resolution_date', 'ResolutionDate'])),
             'technical_key' => (string) ($pick(['technical_key', 'TechnicalKey']) ?? ''),
-            'range_from' => (int) ($pick(['from', 'From', 'range_from']) ?? 0),
-            'range_to' => (int) ($pick(['to', 'To', 'range_to']) ?? 0),
-            'date_from' => $this->parseDateOrNull($pick(['date_from', 'DateFrom'])),
-            'date_to' => $this->parseDateOrNull($pick(['date_to', 'DateTo'])),
+            'range_from' => (int) ($pick(['from', 'From', 'range_from', 'FromNumber']) ?? 0),
+            'range_to' => (int) ($pick(['to', 'To', 'range_to', 'ToNumber']) ?? 0),
+            'date_from' => $this->parseDateOrNull($pick(['date_from', 'DateFrom', 'ValidDateFrom'])),
+            'date_to' => $this->parseDateOrNull($pick(['date_to', 'DateTo', 'ValidDateTo'])),
         ];
     }
 
