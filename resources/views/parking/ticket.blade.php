@@ -51,10 +51,53 @@
         }
         .toolbar button:hover { background:#4f46e5; }
 
+        /* Impresion en termica: negro puro en todo, sin fondos rellenos y con
+           bordes solidos. Los grises salen tenues porque el thermal head
+           interpreta color medio como puntos dispersos (efecto "sucio").
+           Los bloques con background oscuro sobrecalientan el cabezal y salen
+           mas palidos que el texto normal — mejor evitarlos por completo. */
         @media print {
-            body { background:#fff; padding:0; }
+            /* Forzar impresion de colores tal cual (evita "auto-optimizacion" del navegador) */
+            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+            body { background:#fff !important; padding:0; color:#000 !important; font-weight:600; }
             .ticket { box-shadow:none; border:0; width:80mm; padding:8px 10px; margin:0; }
             .toolbar { display:none; }
+
+            /* Todo negro, todo en negrita — la termica solo entiende "hay
+               punto o no hay punto"; los grises se vuelven ruido. */
+            .head .co, .head .meta,
+            .lot-name, .lot-addr, .ticket-num,
+            .row .lbl, .row .val,
+            .qr-hint, .qr-code,
+            .foot p {
+                color:#000 !important;
+                font-weight:700 !important;
+            }
+            .head .meta, .lot-addr, .qr-hint, .foot p { font-weight:600 !important; }
+
+            /* Bordes solidos gruesos en vez de dashed gris — se leen mejor */
+            .head, .lot, .qr-wrap { border-color:#000 !important; border-style:solid !important; }
+            .head { border-bottom-width:1.5px !important; padding-bottom:8px; }
+            .lot { border-bottom-width:1.5px !important; padding:8px 0; }
+            .qr-wrap { border-top-width:1.5px !important; border-bottom-width:1.5px !important; padding:10px 0; }
+
+            /* Placa: en pantalla es fondo negro con texto blanco. Para imprimir
+               invertimos: fondo blanco + texto negro grande + borde grueso.
+               Un fondo negro grande en termica sale palido y desperdicia papel. */
+            .plate {
+                background:#fff !important;
+                color:#000 !important;
+                border:2px solid #000 !important;
+                padding:10px !important;
+                margin:10px 0 !important;
+            }
+            .plate-label { color:#000 !important; opacity:1 !important; font-weight:700 !important; }
+            .plate-value { color:#000 !important; font-weight:900 !important; font-size:34px !important; }
+
+            /* Aumentar un pelo el tamaño base para que se lea sin lupa */
+            .row { font-size:13px !important; padding:4px 0 !important; }
+
             @page { size:80mm auto; margin:0; }
         }
     </style>
