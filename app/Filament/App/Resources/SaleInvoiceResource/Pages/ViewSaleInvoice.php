@@ -29,6 +29,13 @@ class ViewSaleInvoice extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            Actions\Action::make('print')
+                ->label('Imprimir')
+                ->icon('heroicon-o-printer')
+                ->color('gray')
+                ->url(fn (SaleInvoice $record) => route('pos.print', ['invoice' => $record->id]))
+                ->openUrlInNewTab(),
+
             Actions\EditAction::make()
                 ->visible(fn (SaleInvoice $record) => $record->status === 'draft'),
 

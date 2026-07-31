@@ -542,6 +542,12 @@ class SaleInvoiceResource extends Resource
             ->actions([
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make()->visible(fn (SaleInvoice $record) => $record->status === 'draft'),
+                Tables\Actions\Action::make('print')
+                    ->label('Imprimir')
+                    ->icon('heroicon-o-printer')
+                    ->color('gray')
+                    ->url(fn (SaleInvoice $record) => route('pos.print', ['invoice' => $record->id]))
+                    ->openUrlInNewTab(),
             ]);
     }
 
