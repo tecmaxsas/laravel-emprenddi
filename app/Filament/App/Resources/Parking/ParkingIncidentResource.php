@@ -58,7 +58,9 @@ class ParkingIncidentResource extends Resource
                 ->schema([
                     Forms\Components\Select::make('parking_lot_id')
                         ->label('Parqueadero')->required()->native(false)->searchable()
-                        ->options(fn () => ParkingLot::query()->where('active', true)
+                        ->options(fn () => ParkingLot::query()
+                            ->where('company_id', auth()->user()?->company_id)
+                            ->where('active', true)
                             ->orderBy('name')->pluck('name', 'id')->all()),
 
                     Forms\Components\Select::make('kind')
@@ -163,7 +165,9 @@ class ParkingIncidentResource extends Resource
             Tables\Filters\SelectFilter::make('kind')->options(ParkingIncident::KINDS),
             Tables\Filters\SelectFilter::make('severity')->options(ParkingIncident::SEVERITIES),
             Tables\Filters\SelectFilter::make('parking_lot_id')->label('Parqueadero')
-                ->options(fn () => ParkingLot::query()->orderBy('name')->pluck('name', 'id')->all()),
+                ->options(fn () => ParkingLot::query()
+                    ->where('company_id', auth()->user()?->company_id)
+                    ->orderBy('name')->pluck('name', 'id')->all()),
         ])->actions([
             Tables\Actions\EditAction::make(),
             Tables\Actions\DeleteAction::make(),

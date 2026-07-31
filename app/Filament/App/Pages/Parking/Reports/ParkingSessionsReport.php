@@ -73,6 +73,7 @@ class ParkingSessionsReport extends Page implements HasForms, HasTable
                     Forms\Components\Select::make('parking_lot_id')
                         ->label('Parqueadero')->placeholder('Todos')->live()
                         ->options(fn () => ParkingLot::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->orderBy('name')->pluck('name', 'id')->all()),
                     Forms\Components\Select::make('status')
                         ->label('Estado')->placeholder('Todos')->live()

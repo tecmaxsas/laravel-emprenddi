@@ -44,9 +44,15 @@ class ParkingEntry extends Page implements HasForms
 
     public function mount(): void
     {
+        $companyId = auth()->user()?->company_id;
+
         $this->data = [
-            'parking_lot_id' => ParkingLot::query()->where('active', true)->orderBy('id')->value('id'),
-            'vehicle_type_id' => VehicleType::query()->where('active', true)
+            'parking_lot_id' => ParkingLot::query()
+                ->where('company_id', $companyId)
+                ->where('active', true)->orderBy('id')->value('id'),
+            'vehicle_type_id' => VehicleType::query()
+                ->where('company_id', $companyId)
+                ->where('active', true)
                 ->where('code', VehicleType::CODE_CAR)->value('id'),
             'parking_space_id' => null,
             'plate' => '',
@@ -63,13 +69,17 @@ class ParkingEntry extends Page implements HasForms
                 ->schema([
                     Forms\Components\Select::make('parking_lot_id')
                         ->label('Parqueadero')->required()->native(false)->live()
-                        ->options(fn () => ParkingLot::query()->where('active', true)
+                        ->options(fn () => ParkingLot::query()
+                            ->where('company_id', auth()->user()?->company_id)
+                            ->where('active', true)
                             ->orderBy('name')->pluck('name', 'id')->all())
                         ->afterStateUpdated(fn (Forms\Set $set) => $set('parking_space_id', null)),
 
                     Forms\Components\Select::make('vehicle_type_id')
                         ->label('Tipo de vehículo')->required()->native(false)
-                        ->options(fn () => VehicleType::query()->where('active', true)
+                        ->options(fn () => VehicleType::query()
+                            ->where('company_id', auth()->user()?->company_id)
+                            ->where('active', true)
                             ->orderBy('sort_order')->pluck('name', 'id')->all()),
 
                     Forms\Components\Select::make('parking_space_id')

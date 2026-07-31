@@ -44,7 +44,9 @@ class ParkingOccupancy extends Page implements HasForms
     public function mount(): void
     {
         $this->data = [
-            'parking_lot_id' => ParkingLot::query()->where('active', true)->orderBy('id')->value('id'),
+            'parking_lot_id' => ParkingLot::query()
+                ->where('company_id', auth()->user()?->company_id)
+                ->where('active', true)->orderBy('id')->value('id'),
         ];
         $this->form->fill($this->data);
     }
@@ -57,7 +59,9 @@ class ParkingOccupancy extends Page implements HasForms
                 ->schema([
                     Forms\Components\Select::make('parking_lot_id')
                         ->label('Parqueadero')->required()->native(false)->live()
-                        ->options(fn () => ParkingLot::query()->where('active', true)
+                        ->options(fn () => ParkingLot::query()
+                            ->where('company_id', auth()->user()?->company_id)
+                            ->where('active', true)
                             ->orderBy('name')->pluck('name', 'id')->all())
                         ->columnSpan(2),
                     Forms\Components\Actions::make([

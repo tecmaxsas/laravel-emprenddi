@@ -54,13 +54,17 @@ class ParkingRateResource extends Resource
 
                     Forms\Components\Select::make('parking_lot_id')
                         ->label('Parqueadero')->required()->native(false)->searchable()
-                        ->options(fn () => ParkingLot::query()->where('active', true)
+                        ->options(fn () => ParkingLot::query()
+                            ->where('company_id', auth()->user()?->company_id)
+                            ->where('active', true)
                             ->orderBy('name')->pluck('name', 'id')->all()),
 
                     Forms\Components\Select::make('vehicle_type_id')
                         ->label('Tipo de vehículo')->native(false)->searchable()
                         ->placeholder('Cualquiera (default)')
-                        ->options(fn () => VehicleType::query()->where('active', true)
+                        ->options(fn () => VehicleType::query()
+                            ->where('company_id', auth()->user()?->company_id)
+                            ->where('active', true)
                             ->orderBy('sort_order')->pluck('name', 'id')->all())
                         ->helperText('Vacío = aplica a cualquier tipo del parqueadero.'),
 
@@ -177,7 +181,9 @@ class ParkingRateResource extends Resource
             Tables\Columns\IconColumn::make('active')->label('Activa')->boolean(),
         ])->filters([
             Tables\Filters\SelectFilter::make('parking_lot_id')->label('Parqueadero')
-                ->options(fn () => ParkingLot::query()->orderBy('name')->pluck('name', 'id')->all()),
+                ->options(fn () => ParkingLot::query()
+                    ->where('company_id', auth()->user()?->company_id)
+                    ->orderBy('name')->pluck('name', 'id')->all()),
             Tables\Filters\SelectFilter::make('kind')->options(ParkingRate::KINDS),
             Tables\Filters\TernaryFilter::make('active')->default(true),
         ])->actions([

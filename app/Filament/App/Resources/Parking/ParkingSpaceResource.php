@@ -43,13 +43,17 @@ class ParkingSpaceResource extends Resource
         return $form->columns(2)->schema([
             Forms\Components\Select::make('parking_lot_id')
                 ->label('Parqueadero')->required()->native(false)->searchable()
-                ->options(fn () => ParkingLot::query()->where('active', true)
+                ->options(fn () => ParkingLot::query()
+                    ->where('company_id', auth()->user()?->company_id)
+                    ->where('active', true)
                     ->orderBy('name')->pluck('name', 'id')->all()),
 
             Forms\Components\Select::make('vehicle_type_id')
                 ->label('Tipo de vehículo')->native(false)->searchable()
                 ->placeholder('Cualquier tipo')
-                ->options(fn () => VehicleType::query()->where('active', true)
+                ->options(fn () => VehicleType::query()
+                    ->where('company_id', auth()->user()?->company_id)
+                    ->where('active', true)
                     ->orderBy('sort_order')->pluck('name', 'id')->all())
                 ->helperText('Vacío = cualquier vehículo. Útil para zonas exclusivas (motos, camiones).'),
 
@@ -90,7 +94,9 @@ class ParkingSpaceResource extends Resource
                 ->label('Accesible')->boolean()->toggleable(),
         ])->filters([
             Tables\Filters\SelectFilter::make('parking_lot_id')->label('Parqueadero')
-                ->options(fn () => ParkingLot::query()->orderBy('name')->pluck('name', 'id')->all()),
+                ->options(fn () => ParkingLot::query()
+                    ->where('company_id', auth()->user()?->company_id)
+                    ->orderBy('name')->pluck('name', 'id')->all()),
             Tables\Filters\SelectFilter::make('status')->options(ParkingSpace::STATUSES),
             Tables\Filters\TernaryFilter::make('is_accessibility')->label('Accesible'),
         ])->actions([

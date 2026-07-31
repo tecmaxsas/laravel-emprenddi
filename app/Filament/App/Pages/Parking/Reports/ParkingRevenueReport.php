@@ -59,6 +59,7 @@ class ParkingRevenueReport extends Page implements HasForms
                     Forms\Components\Select::make('parking_lot_id')
                         ->label('Parqueadero')->placeholder('Todos')->live()
                         ->options(fn () => ParkingLot::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->orderBy('name')->pluck('name', 'id')->all()),
                 ]),
         ])->statePath('filters');
