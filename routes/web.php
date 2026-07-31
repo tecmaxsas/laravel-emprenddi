@@ -75,6 +75,11 @@ Route::middleware(['web', 'auth', \App\Http\Middleware\SetActiveCompany::class])
         [\App\Http\Controllers\App\ProductImportController::class, 'template'])
         ->name('products.import.template');
 
+    // Descarga de la plantilla XLSX para importacion masiva de terceros.
+    Route::get('/app/third-parties/import/template',
+        [\App\Http\Controllers\App\ThirdPartyImportController::class, 'template'])
+        ->name('third-parties.import.template');
+
     // Ticket imprimible de entrada al parqueadero (con QR para salida).
     Route::get('/app/parking/tickets/{session}/print',
         [\App\Http\Controllers\App\ParkingTicketController::class, 'show'])
