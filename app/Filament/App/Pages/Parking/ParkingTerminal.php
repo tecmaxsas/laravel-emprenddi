@@ -241,6 +241,15 @@ class ParkingTerminal extends Page
         }
 
         $this->showCloseSessionModal = false;
+        $this->closingCounted = 0.0;
+        $this->closingNotes = '';
+
+        // Invalidar el cache de las magic properties para que el banner del
+        // turno y los stats se re-rendericen con el estado nuevo (sin turno).
+        unset(
+            $this->openCashSession,
+            $this->sessionTotals,
+        );
 
         // Respetar el setting blind_cash_close: cajeros no admin solo ven "cerrada".
         $company = auth()->user()?->company;
