@@ -195,6 +195,13 @@ class PosTerminal extends Page
         if ($appointmentId > 0) {
             $this->loadAppointment($appointmentId);
         }
+
+        // Disparador desde otros modulos: ?close=1 abre directo el modal de cierre.
+        // Usado por ParkingTerminal.blade para que el operador cierre caja sin
+        // navegar manualmente por el POS.
+        if ($session && (int) request()->query('close') === 1) {
+            $this->openCloseSessionModal();
+        }
     }
 
     /**

@@ -25,11 +25,18 @@
     @if ($cashSession)
         <div style="border:1px solid #16a34a; background:#dcfce7; color:#166534; border-radius:8px; padding:8px 14px; font-size:12.5px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
             <div>💰 <strong>Turno abierto</strong> · {{ $cashSession->opened_at->format('d/m/Y H:i') }} · Base {{ $fmt($cashSession->opening_amount) }} · Sede {{ $cashSession->location?->name ?? '—' }}</div>
+            <a href="{{ route('filament.app.pages.pos') }}?close=1"
+               style="background:#166534; color:#fff; padding:6px 12px; border-radius:6px; text-decoration:none; font-weight:700; font-size:12px;">
+                🔒 Cerrar caja
+            </a>
         </div>
     @else
-        <div style="border:1px solid #dc2626; background:#fee2e2; color:#991b1b; border-radius:8px; padding:10px 14px; font-size:13px; margin-bottom:12px;">
-            🚨 <strong>Sin turno de caja abierto.</strong> Las salidas con cobro fallarán hasta que abras caja.
-            <a href="{{ route('filament.app.pages.pos') }}" style="color:#991b1b; text-decoration:underline; font-weight:700; margin-left:6px;">Abrir caja</a>
+        <div style="border:1px solid #dc2626; background:#fee2e2; color:#991b1b; border-radius:8px; padding:10px 14px; font-size:13px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+            <div>🚨 <strong>Sin turno de caja abierto.</strong> Las salidas con cobro fallarán hasta que abras caja.</div>
+            <a href="{{ route('filament.app.pages.pos') }}"
+               style="background:#991b1b; color:#fff; padding:6px 12px; border-radius:6px; text-decoration:none; font-weight:700; font-size:12px;">
+                🔓 Abrir caja
+            </a>
         </div>
     @endif
 
