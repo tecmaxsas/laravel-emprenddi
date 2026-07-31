@@ -245,7 +245,12 @@ class TaxResource extends Resource
             ->actions([
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make()
-                    ->visible(fn (Tax $record) => ! $record->is_system),
+                    ->requiresConfirmation()
+                    ->modalHeading('¿Eliminar impuesto?')
+                    ->modalDescription(fn (Tax $record) => $record->is_system
+                        ? 'Este impuesto viene del bootstrap del sistema. Si lo eliminas, se recreará automáticamente si vuelves a ejecutar el bootstrap. Los documentos históricos que lo referencian conservan la tarifa aplicada en ese momento.'
+                        : 'El impuesto se eliminará. Los documentos históricos que lo referencian conservan la tarifa aplicada en ese momento.')
+                    ->modalSubmitActionLabel('Sí, eliminar'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -258,6 +263,12 @@ class TaxResource extends Resource
                         ->label('Desactivar')
                         ->icon('heroicon-o-x-mark')
                         ->action(fn ($records) => $records->each->update(['is_active' => false])),
+
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->requiresConfirmation()
+                        ->modalHeading('¿Eliminar los impuestos seleccionados?')
+                        ->modalDescription('Los que vienen del bootstrap del sistema se recrearán si vuelves a ejecutarlo. Los documentos históricos conservan la tarifa aplicada en ese momento.')
+                        ->modalSubmitActionLabel('Sí, eliminar'),
                 ]),
             ]);
     }
