@@ -96,12 +96,37 @@ class ParkingRateResource extends Resource
                             'per_hour' => 'Por hora',
                             'per_day' => 'Por día (24h)',
                             'tiered' => 'Escalonada (rangos)',
+                            'cyclic_cap' => 'Cíclica con plena',
                         ])->default('per_hour'),
 
                     Forms\Components\TextInput::make('amount')
-                        ->label('Monto')->numeric()->minValue(0)->prefix('$')
-                        ->visible(fn (Forms\Get $get) => in_array($get('type'), ['flat', 'per_minute', 'per_hour', 'per_day'], true))
-                        ->helperText('Monto por unidad (sesión, minuto, hora o día).'),
+                        ->label(fn (Forms\Get $get) => $get('type') === 'cyclic_cap'
+                            ? 'Tarifa por unidad ($ por min/hora)'
+                            : 'Monto')
+                        ->numeric()->minValue(0)->prefix('$')
+                        ->visible(fn (Forms\Get $get) => in_array($get('type'), ['flat', 'per_minute', 'per_hour', 'per_day', 'cyclic_cap'], true))
+                        ->helperText(fn (Forms\Get $get) => $get('type') === 'cyclic_cap'
+                            ? 'Se cobra por unidad hasta llegar al monto de la plena; ahí se topa.'
+                            : 'Monto por unidad (sesión, minuto, hora o día).'),
+
+                    Forms\Components\Select::make('base_type')
+                        ->label('Unidad de la tarifa base')->native(false)
+                        ->options([
+                            'per_minute' => 'Por minuto',
+                            'per_hour' => 'Por hora',
+                        ])
+                        ->default('per_minute')
+                        ->visible(fn (Forms\Get $get) => $get('type') === 'cyclic_cap'),
+
+                    Forms\Components\TextInput::make('cycle_amount')
+                        ->label('Monto de la plena')->numeric()->minValue(0)->prefix('$')
+                        ->helperText('Tope máximo del ciclo. Al superarlo, se topa.')
+                        ->visible(fn (Forms\Get $get) => $get('type') === 'cyclic_cap'),
+
+                    Forms\Components\TextInput::make('cycle_hours')
+                        ->label('Duración del ciclo (horas)')->numeric()->minValue(1)->default(12)
+                        ->helperText('Cada X horas se acumula otra plena y arranca un nuevo ciclo.')
+                        ->visible(fn (Forms\Get $get) => $get('type') === 'cyclic_cap'),
 
                     Forms\Components\Select::make('rounding')
                         ->label('Redondeo')->native(false)
@@ -112,11 +137,12 @@ class ParkingRateResource extends Resource
                             'none' => 'Proporcional (sin redondeo)',
                         ])
                         ->default('ceil')
-                        ->visible(fn (Forms\Get $get) => in_array($get('type'), ['per_minute', 'per_hour'], true)),
+                        ->visible(fn (Forms\Get $get) => in_array($get('type'), ['per_minute', 'per_hour', 'cyclic_cap'], true)),
 
                     Forms\Components\TextInput::make('rounding_unit_min')
                         ->label('Redondear a múltiplos de N min')->numeric()->minValue(1)->default(1)
-                        ->visible(fn (Forms\Get $get) => $get('type') === 'per_minute'),
+                        ->visible(fn (Forms\Get $get) => $get('type') === 'per_minute'
+                            || ($get('type') === 'cyclic_cap' && $get('base_type') === 'per_minute')),
 
                     Forms\Components\Repeater::make('tiers')
                         ->label('Escalones')

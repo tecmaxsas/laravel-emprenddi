@@ -13,7 +13,8 @@ use Carbon\CarbonInterface;
  * SCHEMA del campo config (JSON) en parking_rates
  * ============================================================
  *
- *  type           string   "flat" | "per_minute" | "per_hour" | "per_day" | "tiered"
+ *  type           string   "flat" | "per_minute" | "per_hour" | "per_day"
+ *                          | "tiered" | "cyclic_cap"
  *  amount         number   monto base segun type (no aplica a tiered)
  *  free_minutes   int      minutos de cortesia iniciales (no se cobran)
  *  rounding       string   "ceil" | "floor" | "round" | "none"  (default ceil)
@@ -27,6 +28,13 @@ use Carbon\CarbonInterface;
  *      { from_min: 60, to_min: 180, type: "per_hour",   amount: 1000, rounding: "ceil" },
  *      { from_min: 180, to_min: null, type: "per_hour", amount: 2000 }
  *    ]
+ *
+ *  Campos exclusivos de type=cyclic_cap (cobra por unidad hasta llegar a la
+ *  plena, ahi se topa; cada `cycle_hours` acumula otra plena y reinicia):
+ *    base_type     string   "per_minute" | "per_hour"  (unidad de cobro base)
+ *    amount        number   tarifa por unidad ($ por minuto o por hora)
+ *    cycle_amount  number   monto de la tarifa plena
+ *    cycle_hours   number   duracion del ciclo (default 12)
  *
  * ============================================================
  * SALIDA del metodo calculate()
@@ -72,6 +80,7 @@ class ParkingRateEngine
             'per_hour' => $this->calculatePerHour($config, $chargeMinutes),
             'per_day' => $this->calculatePerDay($config, $chargeMinutes),
             'tiered' => $this->calculateTiered($config, $chargeMinutes),
+            'cyclic_cap' => $this->calculateCyclicCap($config, $chargeMinutes),
             default => ['amount' => 0.0, 'breakdown' => []],
         };
 
@@ -304,6 +313,113 @@ class ParkingRateEngine
         }
 
         return ['amount' => $amount, 'breakdown' => $breakdown];
+    }
+
+    /**
+     * Ciclica con plena. Se cobra por unidad (minuto u hora) hasta que el
+     * acumulado del ciclo llega a `cycle_amount`; ahi se topa. Cuando pasan
+     * `cycle_hours`, se acumula otra plena y arranca un nuevo ciclo — sin
+     * limite superior (cubre estadias de 3h, 30h o 3 semanas por igual).
+     *
+     * Ejemplo carro ($120/min, plena $22.000, ciclo 12h):
+     *   2h  → 120×120 = $14.400
+     *   3h  → 180×120 = $21.600
+     *   4h  → topado a $22.000
+     *   13h → $22.000 (1 plena) + 60×120 = $29.200
+     *   24h → $44.000 (2 plenas)
+     *   30h → $44.000 + 6h por minuto (topado a $22.000) = $66.000 (3 plenas)
+     */
+    protected function calculateCyclicCap(array $config, int $minutes): array
+    {
+        $baseType = (string) ($config['base_type'] ?? 'per_minute');
+        $unitRate = (float) ($config['amount'] ?? 0);
+        $cycleAmount = (float) ($config['cycle_amount'] ?? 0);
+        $cycleHours = (float) ($config['cycle_hours'] ?? 12);
+        $cycleMinutes = (int) round($cycleHours * 60);
+        $rounding = (string) ($config['rounding'] ?? 'ceil');
+        $roundingUnitMin = (int) ($config['rounding_unit_min'] ?? 1);
+
+        if ($cycleMinutes <= 0 || $cycleAmount <= 0 || $unitRate <= 0) {
+            return ['amount' => 0.0, 'breakdown' => []];
+        }
+
+        $completeCycles = intdiv($minutes, $cycleMinutes);
+        $partialMinutes = $minutes - ($completeCycles * $cycleMinutes);
+
+        $breakdown = [];
+        $amount = 0.0;
+
+        if ($completeCycles > 0) {
+            $cyclesTotal = $completeCycles * $cycleAmount;
+            $breakdown[] = [
+                'label' => "{$completeCycles} × plena de {$cycleHours}h × $"
+                    .number_format($cycleAmount, 0, ',', '.'),
+                'amount' => $cyclesTotal,
+            ];
+            $amount += $cyclesTotal;
+        }
+
+        if ($partialMinutes > 0) {
+            [$partialCharge, $partialLabel] = $this->cyclicPartialCharge(
+                $baseType, $unitRate, $partialMinutes, $rounding, $roundingUnitMin,
+            );
+
+            if ($partialCharge >= $cycleAmount) {
+                $breakdown[] = [
+                    'label' => 'Ciclo en curso topado a $'
+                        .number_format($cycleAmount, 0, ',', '.')." (plena)",
+                    'amount' => $cycleAmount,
+                ];
+                $amount += $cycleAmount;
+            } else {
+                $breakdown[] = [
+                    'label' => 'Ciclo en curso: '.$partialLabel,
+                    'amount' => $partialCharge,
+                ];
+                $amount += $partialCharge;
+            }
+        }
+
+        return ['amount' => $amount, 'breakdown' => $breakdown];
+    }
+
+    /**
+     * Calcula el cobro del ciclo parcial (antes de aplicar el tope). Devuelve
+     * [monto, etiqueta] para mostrar en el breakdown.
+     *
+     * @return array{0: float, 1: string}
+     */
+    protected function cyclicPartialCharge(
+        string $baseType,
+        float $unitRate,
+        int $minutes,
+        string $rounding,
+        int $roundingUnitMin,
+    ): array {
+        if ($baseType === 'per_hour') {
+            $hoursExact = $minutes / 60;
+            if ($rounding === 'none') {
+                $charge = $unitRate * $hoursExact;
+                $label = number_format($hoursExact, 2).' h × $'
+                    .number_format($unitRate, 0, ',', '.').'/h';
+                return [$charge, $label];
+            }
+            $billableHours = match ($rounding) {
+                'ceil' => (int) ceil($hoursExact),
+                'floor' => (int) floor($hoursExact),
+                'round' => (int) round($hoursExact),
+                default => (int) ceil($hoursExact),
+            };
+            $billableHours = max(1, $billableHours);
+            $charge = $unitRate * $billableHours;
+            $label = "{$billableHours} h × $".number_format($unitRate, 0, ',', '.').'/h';
+            return [$charge, $label];
+        }
+
+        $billableMin = $this->applyRounding($minutes, $rounding, $roundingUnitMin);
+        $charge = $unitRate * $billableMin;
+        $label = "{$billableMin} min × $".number_format($unitRate, 0, ',', '.').'/min';
+        return [$charge, $label];
     }
 
     // ============================================================
