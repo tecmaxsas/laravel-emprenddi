@@ -66,6 +66,11 @@ class ParkingTerminal extends Page
     public array $exitExtras = [];
     public string $extraSearch = '';
 
+    /** Cierre de caja: modal + inputs */
+    public bool $showCloseSessionModal = false;
+    public float $closingCounted = 0.0;
+    public string $closingNotes = '';
+
     public static function canAccess(): bool
     {
         if (! ModuleGate::active('parking')) return false;
@@ -183,6 +188,80 @@ class ParkingTerminal extends Page
             ->where('status', CashRegisterSession::STATUS_OPEN)
             ->latest('opened_at')
             ->first();
+    }
+
+    public function getSessionTotalsProperty(): ?array
+    {
+        $session = $this->openCashSession;
+        if (! $session) return null;
+        return app(\App\Services\Cash\CashSessionSummary::class)->compute($session);
+    }
+
+    public function openCloseSessionModal(): void
+    {
+        $session = $this->openCashSession;
+        if (! $session) {
+            Notification::make()->title('No hay caja abierta')->danger()->send();
+            return;
+        }
+        $this->closingCounted = 0.0;
+        $this->closingNotes = '';
+        $this->showCloseSessionModal = true;
+    }
+
+    public function closeCloseSessionModal(): void
+    {
+        $this->showCloseSessionModal = false;
+    }
+
+    public function closeCashSession(): void
+    {
+        $session = $this->openCashSession;
+        if (! $session) {
+            Notification::make()->title('No hay caja abierta')->danger()->send();
+            return;
+        }
+        if (! auth()->user()->can('pos.cash_close')) {
+            Notification::make()->title('Sin permiso para cerrar caja')->danger()->send();
+            return;
+        }
+
+        try {
+            $result = app(\App\Services\Cash\CashSessionCloser::class)->close(
+                $session,
+                (float) ($this->closingCounted ?? 0),
+                $this->closingNotes,
+            );
+        } catch (\Throwable $e) {
+            Notification::make()
+                ->title('No se pudo cerrar la caja')
+                ->body($e->getMessage())
+                ->danger()->persistent()->send();
+            return;
+        }
+
+        $this->showCloseSessionModal = false;
+
+        // Respetar el setting blind_cash_close: cajeros no admin solo ven "cerrada".
+        $company = auth()->user()?->company;
+        $blindClose = (bool) data_get($company?->settings, 'pos.blind_cash_close', false)
+            && ! auth()->user()->hasAnyRole(['admin', 'manager']);
+
+        if ($blindClose) {
+            Notification::make()->title('Caja cerrada')->success()->send();
+            return;
+        }
+
+        Notification::make()
+            ->title('Caja cerrada')
+            ->body(sprintf(
+                'Esperado $%s · Contado $%s · Diferencia $%s',
+                number_format($result['expected'], 2),
+                number_format($result['counted'], 2),
+                number_format($result['difference'], 2),
+            ))
+            ->{$result['difference'] === 0.0 ? 'success' : 'warning'}()
+            ->send();
     }
 
     public function getSelectedSpaceProperty(): ?ParkingSpace

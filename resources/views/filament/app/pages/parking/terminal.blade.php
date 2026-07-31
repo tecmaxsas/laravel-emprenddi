@@ -25,10 +25,10 @@
     @if ($cashSession)
         <div style="border:1px solid #16a34a; background:#dcfce7; color:#166534; border-radius:8px; padding:8px 14px; font-size:12.5px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
             <div>💰 <strong>Turno abierto</strong> · {{ $cashSession->opened_at->format('d/m/Y H:i') }} · Base {{ $fmt($cashSession->opening_amount) }} · Sede {{ $cashSession->location?->name ?? '—' }}</div>
-            <a href="{{ route('filament.app.pages.pos') }}?close=1"
-               style="background:#166534; color:#fff; padding:6px 12px; border-radius:6px; text-decoration:none; font-weight:700; font-size:12px;">
+            <button type="button" wire:click="openCloseSessionModal"
+               style="background:#166534; color:#fff; padding:6px 12px; border:0; border-radius:6px; cursor:pointer; font-weight:700; font-size:12px;">
                 🔒 Cerrar caja
-            </a>
+            </button>
         </div>
     @else
         <div style="border:1px solid #dc2626; background:#fee2e2; color:#991b1b; border-radius:8px; padding:10px 14px; font-size:13px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
@@ -575,4 +575,73 @@
             .pt-modal-foot-exit { justify-content:flex-end; }
         }
     </style>
+
+    {{-- Modal de cierre de caja --}}
+    @if ($showCloseSessionModal)
+        @php
+            $totals = $this->sessionTotals;
+            $expected = $totals['expected_cash'] ?? 0;
+            $salesTotal = $totals['sales']['total'] ?? 0;
+            $salesCount = $totals['sales']['count'] ?? 0;
+            $company = auth()->user()?->company;
+            $blindClose = (bool) data_get($company?->settings, 'pos.blind_cash_close', false)
+                && ! auth()->user()->hasAnyRole(['admin', 'manager']);
+        @endphp
+        <div style="position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:9999; display:flex; align-items:center; justify-content:center; padding:16px;"
+             wire:click.self="closeCloseSessionModal">
+            <div style="background:#fff; border-radius:12px; max-width:520px; width:100%; padding:20px 22px; box-shadow:0 20px 50px -12px rgba(0,0,0,.5);"
+                 wire:click.stop>
+                <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:12px; border-bottom:1px solid #e2e8f0;">
+                    <h2 style="margin:0; font-size:18px; font-weight:800; color:#991b1b;">🔒 Cerrar caja</h2>
+                    <button type="button" wire:click="closeCloseSessionModal"
+                            style="background:none; border:0; color:#64748b; font-size:20px; cursor:pointer; padding:0 4px;">✕</button>
+                </div>
+
+                <div style="margin-top:14px; padding:12px 14px; background:#f8fafc; border-radius:8px; font-size:13px; color:#334155;">
+                    <div style="display:flex; justify-content:space-between; padding:3px 0;">
+                        <span>Ventas del turno</span>
+                        <strong style="color:#0f172a;">$ {{ number_format($salesTotal, 0, ',', '.') }} · {{ $salesCount }} facturas</strong>
+                    </div>
+                    @if (! $blindClose)
+                        <div style="display:flex; justify-content:space-between; padding:3px 0;">
+                            <span>Efectivo esperado en caja</span>
+                            <strong style="color:#166534; font-size:15px;">$ {{ number_format($expected, 0, ',', '.') }}</strong>
+                        </div>
+                    @else
+                        <div style="color:#94a3b8; font-size:12px;">Modo ciego activo — no se muestra el esperado.</div>
+                    @endif
+                </div>
+
+                <div style="margin-top:14px;">
+                    <label style="display:block; font-size:12px; font-weight:700; color:#334155; margin-bottom:4px;">
+                        Efectivo contado *
+                    </label>
+                    <input type="number" wire:model.defer="closingCounted" min="0" step="0.01"
+                           style="width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:8px; font-size:16px; font-weight:700; color:#0f172a; background:#fff;"
+                           placeholder="0">
+                </div>
+
+                <div style="margin-top:12px;">
+                    <label style="display:block; font-size:12px; font-weight:700; color:#334155; margin-bottom:4px;">
+                        Notas (opcional)
+                    </label>
+                    <textarea wire:model.defer="closingNotes" rows="2"
+                              style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; background:#fff; color:#0f172a; resize:vertical;"
+                              placeholder="Observaciones del cierre..."></textarea>
+                </div>
+
+                <div style="display:flex; gap:8px; margin-top:16px; justify-content:flex-end;">
+                    <button type="button" wire:click="closeCloseSessionModal"
+                            style="padding:10px 16px; background:#e2e8f0; color:#334155; border:0; border-radius:8px; font-weight:700; font-size:13px; cursor:pointer;">
+                        Cancelar
+                    </button>
+                    <button type="button" wire:click="closeCashSession"
+                            onclick="return confirm('¿Confirmar cierre de caja?')"
+                            style="padding:10px 20px; background:#991b1b; color:#fff; border:0; border-radius:8px; font-weight:800; font-size:13px; cursor:pointer;">
+                        ✓ Confirmar cierre
+                    </button>
+                </div>
+            </div>
+        </div>
+    @endif
 </x-filament-panels::page>

@@ -195,13 +195,6 @@ class PosTerminal extends Page
         if ($appointmentId > 0) {
             $this->loadAppointment($appointmentId);
         }
-
-        // Disparador desde otros modulos: ?close=1 abre directo el modal de cierre.
-        // Usado por ParkingTerminal.blade para que el operador cierre caja sin
-        // navegar manualmente por el POS.
-        if ($session && (int) request()->query('close') === 1) {
-            $this->openCloseSessionModal();
-        }
     }
 
     /**
@@ -1943,25 +1936,11 @@ class PosTerminal extends Page
             return;
         }
 
-        // Summary unificado: ventas (ingresos), compras + gastos (egresos) y
-        // breakdown global por método. Solo el efectivo afecta closing_expected.
-        $summary = app(\App\Services\Cash\CashSessionSummary::class)->compute($session);
-        $counted = (float) ($this->closingCounted ?? 0);
-        $expected = $summary['expected_cash'];
-        $difference = round($counted - $expected, 2);
-
-        $session->update([
-            'status' => CashRegisterSession::STATUS_CLOSED,
-            'closed_at' => now(),
-            'closed_by_user_id' => Auth::id(),
-            'closing_expected' => $expected,
-            'closing_counted' => $counted,
-            'closing_difference' => $difference,
-            'total_sales' => $summary['sales']['total'],
-            'invoice_count' => $summary['sales']['count'],
-            'payment_breakdown' => $summary['payment_breakdown'],
-            'closing_notes' => trim($this->closingNotes) ?: null,
-        ]);
+        $result = app(\App\Services\Cash\CashSessionCloser::class)->close(
+            $session,
+            (float) ($this->closingCounted ?? 0),
+            $this->closingNotes,
+        );
 
         // Reset POS state — fuerza re-login a la caja
         $this->session_id = null;
@@ -1978,11 +1957,11 @@ class PosTerminal extends Page
                 ->title('Caja cerrada')
                 ->body(sprintf(
                     'Esperado $%s · Contado $%s · Diferencia $%s',
-                    number_format($expected, 2),
-                    number_format($counted, 2),
-                    number_format($difference, 2),
+                    number_format($result['expected'], 2),
+                    number_format($result['counted'], 2),
+                    number_format($result['difference'], 2),
                 ))
-                ->{$difference === 0.0 ? 'success' : 'warning'}()
+                ->{$result['difference'] === 0.0 ? 'success' : 'warning'}()
                 ->send();
         }
     }
