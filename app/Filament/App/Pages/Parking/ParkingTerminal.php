@@ -119,13 +119,22 @@ class ParkingTerminal extends Page
     {
         if (! $this->parkingLotId) return [];
 
+        // Orden natural: "M-2" antes de "M-10" (SQL ORDER BY seria lexicografico
+        // y pondria M-10 antes de M-2 porque compara caracter por caracter).
         $spaces = ParkingSpace::query()
             ->where('company_id', auth()->user()?->company_id)
             ->where('parking_lot_id', $this->parkingLotId)
             ->with(['vehicleType:id,name,code', 'activeSession:id,parking_space_id,plate,entry_at'])
-            ->orderBy('zone')
-            ->orderBy('code')
-            ->get();
+            ->get()
+            ->sort(function ($a, $b) {
+                $zoneA = (string) ($a->zone ?? '');
+                $zoneB = (string) ($b->zone ?? '');
+                if ($zoneA !== $zoneB) {
+                    return strcmp($zoneA, $zoneB);
+                }
+                return strnatcasecmp((string) $a->code, (string) $b->code);
+            })
+            ->values();
 
         return $spaces
             ->groupBy(fn ($space) => $space->zone ?: 'Sin zona')

@@ -89,7 +89,13 @@ class ParkingEntry extends Page implements HasForms
                             ? ParkingSpace::query()
                                 ->where('parking_lot_id', $get('parking_lot_id'))
                                 ->where('status', ParkingSpace::STATUS_FREE)
-                                ->orderBy('zone')->orderBy('code')->get()
+                                ->get()
+                                ->sort(function ($a, $b) {
+                                    $zoneA = (string) ($a->zone ?? '');
+                                    $zoneB = (string) ($b->zone ?? '');
+                                    if ($zoneA !== $zoneB) return strcmp($zoneA, $zoneB);
+                                    return strnatcasecmp((string) $a->code, (string) $b->code);
+                                })
                                 ->mapWithKeys(fn (ParkingSpace $s) => [
                                     $s->id => trim(($s->zone ? "[{$s->zone}] " : '').$s->code.($s->is_accessibility ? ' ♿' : '')),
                                 ])

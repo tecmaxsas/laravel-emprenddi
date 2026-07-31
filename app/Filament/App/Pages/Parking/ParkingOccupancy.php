@@ -82,12 +82,18 @@ class ParkingOccupancy extends Page implements HasForms
         }
 
         $lot = ParkingLot::find($lotId);
+        // Orden natural: "M-2" antes de "M-10".
         $spaces = ParkingSpace::query()
             ->where('parking_lot_id', $lotId)
             ->with(['vehicleType:id,name,code', 'activeSession:id,parking_space_id,plate,entry_at'])
-            ->orderBy('zone')
-            ->orderBy('code')
-            ->get();
+            ->get()
+            ->sort(function ($a, $b) {
+                $zoneA = (string) ($a->zone ?? '');
+                $zoneB = (string) ($b->zone ?? '');
+                if ($zoneA !== $zoneB) return strcmp($zoneA, $zoneB);
+                return strnatcasecmp((string) $a->code, (string) $b->code);
+            })
+            ->values();
 
         $zones = $spaces->groupBy(fn ($s) => $s->zone ?: 'Sin zona');
 
