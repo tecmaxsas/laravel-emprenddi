@@ -7,6 +7,7 @@ use App\Support\ModuleGate;
 use App\Support\AppointmentsSettings;
 use App\Support\CommissionsSettings;
 use App\Support\GiftCardsSettings;
+use App\Support\ParkingSettings;
 use App\Support\PromotionsSettings;
 use App\Support\RestaurantSettings;
 use Filament\Forms;
@@ -156,6 +157,9 @@ class Settings extends Page implements HasForms
             );
         }
 
+        // Parking settings (settings.parking.*)
+        $this->data['parking_show_qr'] = (bool) data_get($settings, 'parking.show_qr', true);
+
         $this->form->fill($this->data);
     }
 
@@ -201,6 +205,12 @@ class Settings extends Page implements HasForms
                             ->icon('heroicon-o-calendar-days')
                             ->visible(fn () => auth()->user()?->can('company.settings'))
                             ->schema($this->appointmentsTabSchema()),
+
+                        Forms\Components\Tabs\Tab::make('Parqueadero')
+                            ->icon('heroicon-o-truck')
+                            ->visible(fn () => ModuleGate::active('parking')
+                                && auth()->user()?->can('company.settings'))
+                            ->schema($this->parkingTabSchema()),
                     ]),
             ])
             ->statePath('data');
@@ -1064,6 +1074,48 @@ class Settings extends Page implements HasForms
         app(\App\Support\CurrentCompany::class)->set($company->fresh());
 
         Notification::make()->title('Configuración de Citas guardada')->success()->send();
+    }
+
+    protected function parkingTabSchema(): array
+    {
+        return [
+            Forms\Components\Section::make('Ticket de entrada')
+                ->description('Personaliza qué aparece en el ticket que se imprime al ingresar un vehículo.')
+                ->schema([
+                    Forms\Components\Toggle::make('parking_show_qr')
+                        ->label('Mostrar código QR')
+                        ->helperText('Al desactivar, el ticket sale sin QR. El operador tendrá que registrar la salida buscando la placa a mano en el terminal.')
+                        ->default(true),
+                ]),
+
+            Forms\Components\Actions::make([
+                Forms\Components\Actions\Action::make('saveParking')
+                    ->label('Guardar configuración de Parqueadero')
+                    ->icon('heroicon-o-check-circle')
+                    ->color('primary')
+                    ->action('saveParking'),
+            ])->alignEnd(),
+        ];
+    }
+
+    public function saveParking(): void
+    {
+        if (! auth()->user()->can('company.settings')) {
+            $this->errorNotif('Sin permiso para editar configuración');
+            return;
+        }
+
+        $company = $this->getCompany();
+        $settings = $company->settings ?? [];
+        $parking = $settings['parking'] ?? [];
+
+        $parking['show_qr'] = (bool) ($this->data['parking_show_qr'] ?? true);
+
+        $settings['parking'] = $parking;
+        $company->update(['settings' => $settings]);
+        app(\App\Support\CurrentCompany::class)->set($company->fresh());
+
+        Notification::make()->title('Configuración de Parqueadero guardada')->success()->send();
     }
 
     protected function getCompany(): Company

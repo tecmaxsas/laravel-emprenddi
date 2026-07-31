@@ -10,7 +10,9 @@
     <meta charset="UTF-8">
     <title>Ticket #{{ $session->id }} · {{ $company->name }}</title>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap">
-    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+    @if ($show_qr)
+        <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+    @endif
     <style>
         * { box-sizing:border-box; margin:0; padding:0; }
         body { font-family:'Inter',system-ui,sans-serif; background:#f1f5f9; color:#1e293b; line-height:1.4; padding:20px; }
@@ -135,11 +137,13 @@
             </div>
         @endif
 
-        <div class="qr-wrap">
-            <div id="qrcode" class="qr"></div>
-            <div class="qr-hint">Escanea este código al salir</div>
-            <div class="qr-code">{{ $qr_payload }}</div>
-        </div>
+        @if ($show_qr)
+            <div class="qr-wrap">
+                <div id="qrcode" class="qr"></div>
+                <div class="qr-hint">Escanea este código al salir</div>
+                <div class="qr-code">{{ $qr_payload }}</div>
+            </div>
+        @endif
 
         <div class="foot">
             <p>Conserve este ticket. Es requerido para la salida del vehículo.<br>
@@ -152,16 +156,18 @@
     </div>
 
     <script>
-        // Genera el QR con tamaño optimizado para impresion termica
         (function () {
-            var typeNumber = 0; // auto
-            var errorCorrectionLevel = 'M';
-            var qr = qrcode(typeNumber, errorCorrectionLevel);
-            qr.addData('{{ $qr_payload }}');
-            qr.make();
-            document.getElementById('qrcode').innerHTML = qr.createSvgTag({
-                cellSize: 5, margin: 0, scalable: false,
-            });
+            @if ($show_qr)
+                // Genera el QR con tamaño optimizado para impresion termica
+                var typeNumber = 0; // auto
+                var errorCorrectionLevel = 'M';
+                var qr = qrcode(typeNumber, errorCorrectionLevel);
+                qr.addData('{{ $qr_payload }}');
+                qr.make();
+                document.getElementById('qrcode').innerHTML = qr.createSvgTag({
+                    cellSize: 5, margin: 0, scalable: false,
+                });
+            @endif
             // Imprimir automaticamente al cargar
             setTimeout(function () { window.print(); }, 350);
         })();

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\App;
 
 use App\Http\Controllers\Controller;
 use App\Models\Parking\ParkingSession;
+use App\Support\ParkingSettings;
 use Illuminate\Support\Facades\Auth;
 
 class ParkingTicketController extends Controller
@@ -41,6 +42,7 @@ class ParkingTicketController extends Controller
             'company' => $company,
             'qr_payload' => 'PK'.$record->id,
             'ticket_number' => '#'.str_pad((string) $record->id, 6, '0', STR_PAD_LEFT),
+            'show_qr' => ParkingSettings::showQr($company),
         ]);
     }
 }
