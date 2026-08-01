@@ -3,9 +3,11 @@
 namespace App\Filament\App\Resources\SaleInvoiceResource\Pages;
 
 use App\Filament\App\Resources\SaleInvoiceResource;
+use App\Models\Location;
 use App\Services\Sales\DocumentNumberer;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
 
 class CreateSaleInvoice extends CreateRecord
 {
@@ -13,15 +15,30 @@ class CreateSaleInvoice extends CreateRecord
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
-        $data['company_id'] = Auth::user()->company_id;
+        $companyId = (int) Auth::user()->company_id;
+        $data['company_id'] = $companyId;
         $data['created_by_user_id'] = Auth::id();
         $data['status'] = 'draft';
         $data['payment_status'] = 'pendiente';
 
+        // Blindaje multitenancy: la sede seleccionada debe ser de la misma
+        // empresa del usuario. Sin esto, un superadmin o un request manipulado
+        // podria emitir factura con la resolucion de otra empresa.
+        $locationId = (int) ($data['location_id'] ?? 0);
+        $locationOwnedByCompany = Location::query()
+            ->where('id', $locationId)
+            ->where('company_id', $companyId)
+            ->exists();
+        if (! $locationOwnedByCompany) {
+            throw ValidationException::withMessages([
+                'location_id' => 'La sede seleccionada no pertenece a tu empresa.',
+            ]);
+        }
+
         // Consecutivo de la resolución (POS o Electrónica) de la sede.
         $kind = $data['invoice_kind'] ?? 'electronic';
         $doc = app(DocumentNumberer::class)->reserveForLocation(
-            (int) $data['location_id'],
+            $locationId,
             $kind,
         );
         $data['prefix'] = $doc['prefix'];
