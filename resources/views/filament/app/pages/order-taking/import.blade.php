@@ -12,11 +12,16 @@
 
     <form wire:submit.prevent>{{ $this->form }}</form>
 
-    <div style="margin-top:14px; display:flex; justify-content:flex-end; gap:8px;">
+    <div style="margin-top:14px; display:flex; justify-content:flex-end; gap:8px; align-items:center;">
+        <span wire:loading wire:target="confirmImport" style="color:#4c1d95; font-size:13px; font-weight:700;">
+            ⏳ Procesando... no cierres esta pestaña
+        </span>
         <button type="button" wire:click="confirmImport"
-                onclick="return confirm('¿Confirmar importación? Esto crea/actualiza productos, precios y clientes.')"
+                wire:confirm="¿Confirmar importación? Esto crea/actualiza productos, precios y clientes."
+                wire:loading.attr="disabled" wire:target="confirmImport"
                 style="padding:12px 24px; background:#16a34a; color:#fff; border:0; border-radius:8px; font-weight:800; font-size:14px; cursor:pointer;">
-            ✓ Ejecutar importación
+            <span wire:loading.remove wire:target="confirmImport">✓ Ejecutar importación</span>
+            <span wire:loading wire:target="confirmImport">Importando...</span>
         </button>
     </div>
 
