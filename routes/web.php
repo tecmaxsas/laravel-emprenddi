@@ -90,6 +90,12 @@ Route::middleware(['web', 'auth', \App\Http\Middleware\SetActiveCompany::class])
         [\App\Http\Controllers\App\OrderTakingPdfController::class, 'show'])
         ->name('order-taking.orders.pdf');
 
+    // Fallback HTTP puro para importar catalogo MAC DULCES (cuando Livewire
+    // falla con 'This page has expired').
+    Route::post('/app/order-taking/import/submit',
+        [\App\Http\Controllers\App\OrderTakingImportController::class, 'submit'])
+        ->name('order-taking.import.submit');
+
     // Exportacion XLSX de reportes del modulo de parqueadero.
     Route::get('/app/parking/reports/export/sessions',
         [\App\Http\Controllers\App\ParkingReportExportController::class, 'sessions'])

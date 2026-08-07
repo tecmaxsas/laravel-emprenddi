@@ -38,4 +38,57 @@
             </table>
         </div>
     @endif
+
+    {{-- ============================================================
+         FALLBACK: form HTML puro sin Livewire.
+         Solo aparece si el flujo Livewire de arriba falla con
+         'This page has expired'. Este form hace POST directo al
+         controller OrderTakingImportController y devuelve redirect
+         con session flash — sin dependencia de checksums Livewire.
+         ============================================================ --}}
+    <div style="margin-top:24px; padding-top:16px; border-top:1px dashed #cbd5e1;">
+        <details style="background:#fef9c3; border:1px solid #eab308; border-radius:10px; padding:12px 16px;">
+            <summary style="cursor:pointer; font-weight:800; color:#713f12; font-size:13px;">
+                🛟 ¿Sale "This page has expired"? Usa este formulario alternativo
+            </summary>
+            <div style="margin-top:10px; font-size:12.5px; color:#713f12;">
+                Este formulario hace la importación por una vía HTTP tradicional, sin
+                depender de Livewire. Úsalo si el botón verde de arriba te da error.
+            </div>
+
+            @if (session('import_result'))
+                @php $r = session('import_result'); @endphp
+                <div style="margin-top:12px; padding:10px 12px; background:#dcfce7; border:1px solid #16a34a; border-radius:8px; font-size:12.5px; color:#166534;">
+                    ✓ Importación completada · Productos: {{ $r['products_created'] }} nuevos + {{ $r['products_updated'] }} actualizados ·
+                    Precios: {{ $r['price_items'] }} · Clientes: {{ $r['customers_created'] }} nuevos + {{ $r['customers_updated'] }} actualizados
+                </div>
+            @endif
+
+            @if (session('import_error'))
+                <div style="margin-top:12px; padding:10px 12px; background:#fee2e2; border:1px solid #dc2626; border-radius:8px; font-size:12.5px; color:#991b1b;">
+                    ✕ Error: {{ session('import_error') }}
+                </div>
+            @endif
+
+            <form method="POST" action="{{ route('order-taking.import.submit') }}"
+                  enctype="multipart/form-data"
+                  style="margin-top:12px; display:flex; flex-direction:column; gap:8px;">
+                @csrf
+                <div>
+                    <label style="font-size:11px; font-weight:700; color:#713f12; text-transform:uppercase; display:block;">LISTAS DE PRECIOS (.xlsx)</label>
+                    <input type="file" name="precios" accept=".xlsx" required
+                           style="padding:6px; border:1px solid #eab308; border-radius:6px; background:#fff; width:100%; font-size:12.5px;">
+                </div>
+                <div>
+                    <label style="font-size:11px; font-weight:700; color:#713f12; text-transform:uppercase; display:block;">CATALOGO DE CLIENTES (.xlsx)</label>
+                    <input type="file" name="clientes" accept=".xlsx" required
+                           style="padding:6px; border:1px solid #eab308; border-radius:6px; background:#fff; width:100%; font-size:12.5px;">
+                </div>
+                <button type="submit"
+                        style="padding:10px 18px; background:#713f12; color:#fff; border:0; border-radius:8px; font-weight:800; font-size:13px; cursor:pointer; align-self:flex-end;">
+                    ⚡ Importar (vía HTTP directo)
+                </button>
+            </form>
+        </details>
+    </div>
 </x-filament-panels::page>
