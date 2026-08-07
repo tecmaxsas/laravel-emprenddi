@@ -2,23 +2,27 @@
 
 namespace App\Filament\SuperAdmin\Resources\CompanyResource\RelationManagers;
 
+use App\Models\User;
 use Filament\Forms;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
+use Spatie\Permission\Models\Role;
 
 /**
  * Gestion de usuarios de una empresa desde el SuperAdmin.
  *
  * Acciones criticas:
+ *  - Crear usuario admin: bootstrap del primer usuario de la empresa
+ *    (chicken-and-egg — sin admin nadie puede crear usuarios desde el
+ *    panel de la propia empresa).
+ *  - Editar datos basicos (nombre, email, roles, activo).
  *  - Reset password: util cuando el cliente perdio su clave o llama por
  *    soporte. Genera una nueva password aleatoria o usa una dictada.
  *  - Toggle activo: bloquea login sin borrar el historial.
- *
- * Crear usuario NO esta aqui — los usuarios se registran a si mismos
- * via /app/register o el admin de la empresa los crea desde Configuraciones.
  */
 class UsersRelationManager extends RelationManager
 {
@@ -53,7 +57,119 @@ class UsersRelationManager extends RelationManager
             ->filters([
                 Tables\Filters\TernaryFilter::make('active')->label('Estado'),
             ])
+            ->headerActions([
+                // Bootstrap del primer usuario admin. Sin esta accion, una
+                // empresa recien creada quedaba sin nadie que pueda entrar.
+                Tables\Actions\Action::make('createUser')
+                    ->label('Crear usuario')
+                    ->icon('heroicon-o-user-plus')
+                    ->color('primary')
+                    ->modalHeading('Crear usuario para esta empresa')
+                    ->modalDescription('Se creará con la contraseña que definas. Marca "admin" para dar acceso completo a las configuraciones de la empresa.')
+                    ->form([
+                        Forms\Components\TextInput::make('name')
+                            ->label('Nombres')->required()->maxLength(150),
+                        Forms\Components\TextInput::make('last_name')
+                            ->label('Apellidos')->maxLength(150),
+                        Forms\Components\TextInput::make('email')
+                            ->label('Email')->required()->email()->maxLength(150)
+                            ->rules(['email'])
+                            ->afterStateUpdated(fn ($state, Forms\Set $set) => $set('email', strtolower(trim((string) $state)))),
+                        Forms\Components\Toggle::make('generate_random')
+                            ->label('Generar contraseña aleatoria')->default(true)->live(),
+                        Forms\Components\TextInput::make('password')
+                            ->label('Contraseña')->password()->revealable()->minLength(8)
+                            ->required(fn (Forms\Get $get) => ! $get('generate_random'))
+                            ->visible(fn (Forms\Get $get) => ! $get('generate_random'))
+                            ->helperText('Mínimo 8 caracteres.'),
+                        Forms\Components\CheckboxList::make('roles')
+                            ->label('Roles')
+                            ->options(fn () => Role::query()->orderBy('name')->pluck('name', 'name')->all())
+                            ->default(['admin'])
+                            ->columns(3)
+                            ->required(),
+                        Forms\Components\Toggle::make('active')->label('Activo')->default(true),
+                    ])
+                    ->action(function (array $data) {
+                        $companyId = $this->getOwnerRecord()->id;
+
+                        // Validar email unico global (Users no scope por empresa aqui;
+                        // el email es unico en users.email)
+                        $emailExists = User::query()->where('email', $data['email'])->exists();
+                        if ($emailExists) {
+                            Notification::make()->danger()
+                                ->title('Email ya registrado')
+                                ->body('Ya existe un usuario con ese email en el sistema.')
+                                ->send();
+                            return;
+                        }
+
+                        $password = $data['generate_random']
+                            ? self::generateReadablePassword()
+                            : $data['password'];
+
+                        $user = User::create([
+                            'company_id' => $companyId,
+                            'name' => trim($data['name']),
+                            'last_name' => trim($data['last_name'] ?? ''),
+                            'email' => strtolower(trim($data['email'])),
+                            'password' => Hash::make($password),
+                            'active' => (bool) ($data['active'] ?? true),
+                        ]);
+                        $user->syncRoles($data['roles'] ?? []);
+
+                        Notification::make()->success()
+                            ->title('Usuario creado')
+                            ->body("Email: {$user->email}\nContraseña: {$password}\n\nComparte por canal seguro — es la única vez que se muestra.")
+                            ->persistent()->send();
+                    }),
+            ])
             ->actions([
+                // Editar datos basicos: nombre, email, roles, activo (sin password).
+                Tables\Actions\Action::make('editUser')
+                    ->label('Editar')
+                    ->icon('heroicon-o-pencil-square')
+                    ->color('gray')
+                    ->modalHeading(fn ($record) => "Editar usuario {$record->email}")
+                    ->fillForm(fn ($record) => [
+                        'name' => $record->name,
+                        'last_name' => $record->last_name,
+                        'email' => $record->email,
+                        'roles' => $record->roles->pluck('name')->all(),
+                        'active' => $record->active,
+                    ])
+                    ->form([
+                        Forms\Components\TextInput::make('name')->label('Nombres')->required()->maxLength(150),
+                        Forms\Components\TextInput::make('last_name')->label('Apellidos')->maxLength(150),
+                        Forms\Components\TextInput::make('email')->label('Email')->required()->email()->maxLength(150),
+                        Forms\Components\CheckboxList::make('roles')
+                            ->label('Roles')
+                            ->options(fn () => Role::query()->orderBy('name')->pluck('name', 'name')->all())
+                            ->columns(3),
+                        Forms\Components\Toggle::make('active')->label('Activo'),
+                    ])
+                    ->action(function (array $data, $record) {
+                        $newEmail = strtolower(trim($data['email']));
+                        // Validar email unico si cambio
+                        if ($newEmail !== $record->email) {
+                            $exists = User::query()->where('email', $newEmail)->where('id', '!=', $record->id)->exists();
+                            if ($exists) {
+                                Notification::make()->danger()->title('Email ya registrado por otro usuario')->send();
+                                return;
+                            }
+                        }
+
+                        $record->update([
+                            'name' => trim($data['name']),
+                            'last_name' => trim($data['last_name'] ?? ''),
+                            'email' => $newEmail,
+                            'active' => (bool) ($data['active'] ?? true),
+                        ]);
+                        $record->syncRoles($data['roles'] ?? []);
+
+                        Notification::make()->success()->title('Usuario actualizado')->send();
+                    }),
+
                 // Reset / cambio de password — accion principal del SuperAdmin
                 // para soporte. Permite generar password aleatoria o dictarla.
                 Tables\Actions\Action::make('resetPassword')
