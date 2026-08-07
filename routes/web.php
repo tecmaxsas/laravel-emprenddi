@@ -92,6 +92,9 @@ Route::middleware(['web', 'auth', \App\Http\Middleware\SetActiveCompany::class])
 
     // Fallback HTTP puro para importar catalogo MAC DULCES (cuando Livewire
     // falla con 'This page has expired').
+    Route::get('/app/order-taking/quick-import',
+        [\App\Http\Controllers\App\OrderTakingImportController::class, 'form'])
+        ->name('order-taking.import.form');
     Route::post('/app/order-taking/import/submit',
         [\App\Http\Controllers\App\OrderTakingImportController::class, 'submit'])
         ->name('order-taking.import.submit');

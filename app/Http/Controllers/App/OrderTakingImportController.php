@@ -5,6 +5,7 @@ namespace App\Http\Controllers\App;
 use App\Http\Controllers\Controller;
 use App\Services\OrderTaking\MacDulcesImporter;
 use App\Support\ModuleGate;
+use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -18,6 +19,19 @@ use Illuminate\Support\Facades\Storage;
  */
 class OrderTakingImportController extends Controller
 {
+    /**
+     * Pagina standalone (sin Filament ni Livewire) con form HTML puro.
+     * Se usa cuando la UI de Filament falla por checksum invalidado.
+     */
+    public function form(): View
+    {
+        abort_unless(Auth::check(), 403);
+        abort_unless(Auth::user()->can('order_taking.manage'), 403);
+        abort_unless(ModuleGate::active('order_taking'), 403);
+
+        return view('order-taking.quick-import');
+    }
+
     public function submit(Request $request, MacDulcesImporter $importer): RedirectResponse
     {
         abort_unless(Auth::check(), 403);
@@ -51,9 +65,11 @@ class OrderTakingImportController extends Controller
                 $disk->path($clientesRelative),
             );
         } catch (\Throwable $e) {
-            return redirect()->back()->with('import_error', $e->getMessage());
+            return redirect()->route('order-taking.import.form')
+                ->with('import_error', $e->getMessage());
         }
 
-        return redirect()->back()->with('import_result', $result);
+        return redirect()->route('order-taking.import.form')
+            ->with('import_result', $result);
     }
 }
