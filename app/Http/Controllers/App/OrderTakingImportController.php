@@ -8,6 +8,7 @@ use App\Support\ModuleGate;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Fallback HTTP puro para el importador MAC DULCES cuando Livewire falla
@@ -28,14 +29,16 @@ class OrderTakingImportController extends Controller
             'clientes' => 'required|file|mimes:xlsx,xls|max:10240',
         ]);
 
-        // Guardamos temporalmente en storage/app/tmp/ y pasamos el path
-        // absoluto al importador. El importador lee via OpenSpout desde disk.
-        $preciosPath = $request->file('precios')->storeAs(
+        // Guardamos temporalmente en el disk 'local' (storage/app/) y
+        // resolvemos el path absoluto via Storage::path() — evita bugs de
+        // storage_path() cuando el docroot del container no es /var/www/html.
+        $disk = Storage::disk('local');
+        $preciosRelative = $request->file('precios')->storeAs(
             'tmp/order-taking-imports',
             'precios_'.time().'.xlsx',
             'local',
         );
-        $clientesPath = $request->file('clientes')->storeAs(
+        $clientesRelative = $request->file('clientes')->storeAs(
             'tmp/order-taking-imports',
             'clientes_'.time().'.xlsx',
             'local',
@@ -44,8 +47,8 @@ class OrderTakingImportController extends Controller
         try {
             $result = $importer->import(
                 (int) Auth::user()->company_id,
-                storage_path('app/'.$preciosPath),
-                storage_path('app/'.$clientesPath),
+                $disk->path($preciosRelative),
+                $disk->path($clientesRelative),
             );
         } catch (\Throwable $e) {
             return redirect()->back()->with('import_error', $e->getMessage());
