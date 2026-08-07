@@ -118,9 +118,12 @@ class MacDulcesImporter
                     'code' => $code,
                     'name' => $desc,
                     'category_id' => $category->id,
-                    'type' => 'simple',
-                    'unit' => 'unidad',
-                    'sale_price' => 0,
+                    'type' => 'good',
+                    'unit_of_measure' => 'unit',
+                    'default_sale_price' => 0,
+                    'default_purchase_price' => 0,
+                    'is_sellable' => true,
+                    'is_purchasable' => true,
                     'active' => true,
                 ]);
                 $productsCreated++;
