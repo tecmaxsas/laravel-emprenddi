@@ -4,7 +4,6 @@ namespace App\Http\Controllers\App;
 
 use App\Http\Controllers\Controller;
 use App\Models\OrderTaking\Order;
-use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -27,7 +26,13 @@ class OrderTakingPdfController extends Controller
 
         $company = Auth::user()->company;
 
-        $pdf = Pdf::loadView('order-taking.order-pdf', [
+        abort_unless(
+            class_exists(\Barryvdh\DomPDF\Facade\Pdf::class),
+            500,
+            'El paquete barryvdh/laravel-dompdf no está instalado. Ejecuta composer install en el container.',
+        );
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('order-taking.order-pdf', [
             'order' => $record,
             'company' => $company,
         ])->setPaper('a4');

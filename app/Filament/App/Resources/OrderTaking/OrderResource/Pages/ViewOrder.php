@@ -9,7 +9,6 @@ use App\Models\OrderTaking\EmailLog;
 use App\Models\OrderTaking\Order;
 use App\Models\OrderTaking\Payment;
 use App\Services\OrderTaking\OrderEngine;
-use Barryvdh\DomPDF\Facade\Pdf;
 use Filament\Actions;
 use Filament\Forms;
 use Filament\Infolists;
@@ -63,7 +62,15 @@ class ViewOrder extends ViewRecord
                     $cc = array_filter(array_map('trim', $data['cc'] ?? []));
 
                     try {
-                        $pdf = Pdf::loadView('order-taking.order-pdf', [
+                        if (! class_exists(\Barryvdh\DomPDF\Facade\Pdf::class)) {
+                            Notification::make()
+                                ->danger()
+                                ->title('Falta instalar el paquete de PDF')
+                                ->body('Ejecuta en la VM: composer install en el container app.')
+                                ->persistent()->send();
+                            return;
+                        }
+                        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('order-taking.order-pdf', [
                             'order' => $r->load(['items.product', 'customer', 'priceList', 'seller']),
                             'company' => $company,
                         ]);
