@@ -99,6 +99,12 @@ Route::middleware(['web', 'auth', \App\Http\Middleware\SetActiveCompany::class])
         [\App\Http\Controllers\App\OrderTakingImportController::class, 'submit'])
         ->name('order-taking.import.submit');
 
+    // TEMPORAL: endpoint de diagnostico para el 500 al abrir un pedido.
+    // Eliminar cuando se resuelva.
+    Route::get('/app/order-taking/debug/{order}',
+        [\App\Http\Controllers\App\OrderTakingDebugController::class, 'show'])
+        ->name('order-taking.debug');
+
     // Exportacion XLSX de reportes del modulo de parqueadero.
     Route::get('/app/parking/reports/export/sessions',
         [\App\Http\Controllers\App\ParkingReportExportController::class, 'sessions'])
