@@ -242,45 +242,43 @@ class ViewOrder extends ViewRecord
                 ->columns(4)
                 ->schema([
                     Infolists\Components\TextEntry::make('full_number')
-                        ->label('Número')->state(fn (Order $r) => $r->fullNumber())
+                        ->label('Número')
+                        ->state(fn ($record) => $record->fullNumber())
                         ->fontFamily('mono')->weight('bold'),
                     Infolists\Components\TextEntry::make('order_date')->label('Fecha')->date('Y-m-d'),
                     Infolists\Components\TextEntry::make('delivery_date_expected')
                         ->label('Entrega esperada')->date('Y-m-d')->placeholder('—'),
                     Infolists\Components\TextEntry::make('status')
                         ->label('Estado')->badge()
-                        ->formatStateUsing(fn (string $s) => Order::STATUSES[$s] ?? $s)
-                        ->color(fn (string $s) => match ($s) {
+                        ->formatStateUsing(fn ($state) => Order::STATUSES[$state] ?? (string) $state)
+                        ->color(fn ($state) => match ($state) {
                             'draft' => 'gray', 'confirmed' => 'info',
                             'partial_delivered' => 'warning', 'fully_delivered' => 'success',
                             'cancelled' => 'danger', default => 'gray',
                         }),
                     Infolists\Components\TextEntry::make('customer.name')->label('Cliente')->columnSpan(2),
                     Infolists\Components\TextEntry::make('customer.document_number')->label('NIT / Documento')->fontFamily('mono'),
-                    Infolists\Components\TextEntry::make('priceList.name')->label('Lista de precios')->badge()->color('info'),
-                    Infolists\Components\TextEntry::make('customer.address')->label('Dirección')->columnSpan(2),
-                    Infolists\Components\TextEntry::make('customer.city')->label('Ciudad'),
-                    Infolists\Components\TextEntry::make('customer.payment_terms')->label('Forma de pago'),
-                    Infolists\Components\TextEntry::make('customer.delivery_horario')->label('Horario recibo')->columnSpan(2),
-                    Infolists\Components\TextEntry::make('seller.name')->label('Vendedor'),
+                    Infolists\Components\TextEntry::make('priceList.name')->label('Lista de precios')->badge()->color('info')->placeholder('—'),
+                    Infolists\Components\TextEntry::make('customer.address')->label('Dirección')->columnSpan(2)->placeholder('—'),
+                    Infolists\Components\TextEntry::make('customer.city')->label('Ciudad')->placeholder('—'),
+                    Infolists\Components\TextEntry::make('customer.payment_terms')->label('Forma de pago')->placeholder('—'),
+                    Infolists\Components\TextEntry::make('customer.delivery_horario')->label('Horario recibo')->columnSpan(2)->placeholder('—'),
+                    Infolists\Components\TextEntry::make('seller.name')->label('Vendedor')->placeholder('—'),
                     Infolists\Components\TextEntry::make('notes')->label('Notas')->columnSpanFull()->placeholder('—'),
                 ]),
 
             Infolists\Components\Section::make('Líneas')
                 ->schema([
                     Infolists\Components\RepeatableEntry::make('items')
-                        ->label('')
+                        ->hiddenLabel()
                         ->schema([
-                            Infolists\Components\TextEntry::make('product.code')->label('SKU')->fontFamily('mono')->columnSpan(1),
+                            Infolists\Components\TextEntry::make('product.code')->label('SKU')->fontFamily('mono')->columnSpan(1)->placeholder('—'),
                             Infolists\Components\TextEntry::make('description')->label('Descripción')->columnSpan(3),
-                            Infolists\Components\TextEntry::make('quantity_ordered')->label('Pedido')->numeric(decimalPlaces: 0)->columnSpan(1),
-                            Infolists\Components\TextEntry::make('quantity_delivered')->label('Entregado')->numeric(decimalPlaces: 0)->columnSpan(1)->color('success'),
-                            Infolists\Components\TextEntry::make('pendiente')->label('Pendiente')
-                                ->state(fn ($record) => $record->pendingQuantity())
-                                ->numeric(decimalPlaces: 0)->columnSpan(1)->color('warning'),
+                            Infolists\Components\TextEntry::make('quantity_ordered')->label('Pedido')->columnSpan(1),
+                            Infolists\Components\TextEntry::make('quantity_delivered')->label('Entregado')->columnSpan(1)->color('success'),
                             Infolists\Components\TextEntry::make('unit_price_at_public')->label('Precio')->money('COP')->columnSpan(2),
                             Infolists\Components\TextEntry::make('total')->label('Total')->money('COP')->weight('semibold')->columnSpan(2),
-                        ])->columns(11),
+                        ])->columns(10),
                 ]),
 
             Infolists\Components\Section::make('Totales')
@@ -292,52 +290,10 @@ class ViewOrder extends ViewRecord
                     Infolists\Components\TextEntry::make('paid_amount')->label('Pagado')->money('COP')->color('success'),
                     Infolists\Components\TextEntry::make('balance')->label('Saldo')->money('COP')->color('warning')->weight('bold'),
                     Infolists\Components\TextEntry::make('payment_status')->label('Pago')->badge()
-                        ->formatStateUsing(fn (string $s) => Order::PAYMENT_STATUSES[$s] ?? $s)
-                        ->color(fn (string $s) => match ($s) {
+                        ->formatStateUsing(fn ($state) => Order::PAYMENT_STATUSES[$state] ?? (string) $state)
+                        ->color(fn ($state) => match ($state) {
                             'pendiente' => 'gray', 'parcial' => 'warning', 'pagado' => 'success', default => 'gray',
                         }),
-                ]),
-
-            Infolists\Components\Section::make('Despachos')
-                ->visible(fn (Order $r) => $r->deliveries()->exists())
-                ->schema([
-                    Infolists\Components\RepeatableEntry::make('deliveries')
-                        ->label('')
-                        ->schema([
-                            Infolists\Components\TextEntry::make('delivery_date')->label('Fecha')->date('Y-m-d'),
-                            Infolists\Components\TextEntry::make('delivery_number')->label('Remisión')->placeholder('—')->fontFamily('mono'),
-                            Infolists\Components\TextEntry::make('deliveredBy.name')->label('Despachado por')->placeholder('—'),
-                            Infolists\Components\TextEntry::make('notes')->label('Notas')->placeholder('—')->columnSpan(2),
-                        ])->columns(5),
-                ]),
-
-            Infolists\Components\Section::make('Pagos')
-                ->visible(fn (Order $r) => $r->payments()->exists())
-                ->schema([
-                    Infolists\Components\RepeatableEntry::make('payments')
-                        ->label('')
-                        ->schema([
-                            Infolists\Components\TextEntry::make('payment_date')->label('Fecha')->date('Y-m-d'),
-                            Infolists\Components\TextEntry::make('amount')->label('Monto')->money('COP')->weight('semibold'),
-                            Infolists\Components\TextEntry::make('payment_method')->label('Método')->badge()
-                                ->formatStateUsing(fn ($s) => Payment::METHODS[$s] ?? $s),
-                            Infolists\Components\TextEntry::make('reference')->label('Referencia')->placeholder('—'),
-                            Infolists\Components\TextEntry::make('createdBy.name')->label('Registró')->placeholder('—'),
-                        ])->columns(5),
-                ]),
-
-            Infolists\Components\Section::make('Envíos por correo')
-                ->visible(fn (Order $r) => $r->emailLogs()->exists())
-                ->schema([
-                    Infolists\Components\RepeatableEntry::make('emailLogs')
-                        ->label('')
-                        ->schema([
-                            Infolists\Components\TextEntry::make('sent_at')->label('Fecha')->dateTime('Y-m-d H:i'),
-                            Infolists\Components\TextEntry::make('to_address')->label('Para'),
-                            Infolists\Components\TextEntry::make('cc_addresses')->label('CC')->placeholder('—')->columnSpan(2),
-                            Infolists\Components\TextEntry::make('status')->label('Estado')->badge()
-                                ->color(fn ($s) => $s === 'sent' ? 'success' : 'danger'),
-                        ])->columns(5),
                 ]),
         ]);
     }
