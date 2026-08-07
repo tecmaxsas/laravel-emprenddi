@@ -15,7 +15,9 @@ class OrderTakingImportMacDulces extends Command
 {
     protected $signature = 'order-taking:import-mac-dulces
         {--company= : ID de la empresa target}
-        {--dir= : Directorio con los 3 XLSX (default: Descargas del usuario)}';
+        {--dir= : Directorio con los 2 XLSX (nombres estandar MAC DULCES)}
+        {--precios= : Ruta absoluta al XLSX de listas de precios (alternativa a --dir)}
+        {--clientes= : Ruta absoluta al XLSX de clientes (alternativa a --dir)}';
 
     protected $description = 'Importa productos, listas de precios y clientes de MAC DULCES';
 
@@ -32,12 +34,19 @@ class OrderTakingImportMacDulces extends Command
             return self::FAILURE;
         }
 
-        $dir = $this->option('dir') ?: 'C:/Users/Usuario/Downloads';
-        $clientesPath = $dir.DIRECTORY_SEPARATOR.'2. CATALOGO DE CLIENTES MAC DULCES.xlsx';
-        $preciosPath = $dir.DIRECTORY_SEPARATOR.'3. LISTAS DE PRECIOS ENE 2026.xlsx';
+        // Resolver paths: si vinieron --precios/--clientes se usan directo;
+        // sino se arma desde --dir con los nombres estandar MAC DULCES.
+        $preciosPath = $this->option('precios');
+        $clientesPath = $this->option('clientes');
+        if (! $preciosPath || ! $clientesPath) {
+            $dir = $this->option('dir') ?: 'C:/Users/Usuario/Downloads';
+            $preciosPath = $preciosPath ?: $dir.DIRECTORY_SEPARATOR.'3. LISTAS DE PRECIOS ENE 2026.xlsx';
+            $clientesPath = $clientesPath ?: $dir.DIRECTORY_SEPARATOR.'2. CATALOGO DE CLIENTES MAC DULCES.xlsx';
+        }
 
         $this->info("Empresa: {$company->name} (ID {$companyId})");
-        $this->info("Directorio: {$dir}");
+        $this->info("Precios: {$preciosPath}");
+        $this->info("Clientes: {$clientesPath}");
         $this->newLine();
 
         try {
