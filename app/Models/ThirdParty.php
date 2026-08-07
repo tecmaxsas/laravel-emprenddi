@@ -72,6 +72,11 @@ class ThirdParty extends Model
         'website',
         'contact_person',
         'contact_phone',
+        'default_price_list_id',
+        'business_name',
+        'delivery_horario',
+        'payment_terms',
+        'retention_percent',
         'regime_type',
         'is_self_withholder',
         'is_iva_withholder',
@@ -106,9 +111,15 @@ class ThirdParty extends Model
             'credit_limit' => 'decimal:2',
             'credit_days' => 'integer',
             'payment_terms_days' => 'integer',
+            'retention_percent' => 'decimal:4',
             'birth_date' => 'date',
             'active' => 'boolean',
         ];
+    }
+
+    public function defaultPriceList(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\OrderTaking\PriceList::class, 'default_price_list_id');
     }
 
     public function defaultReceivableAccount(): BelongsTo

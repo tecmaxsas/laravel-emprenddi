@@ -85,6 +85,11 @@ Route::middleware(['web', 'auth', \App\Http\Middleware\SetActiveCompany::class])
         [\App\Http\Controllers\App\ParkingTicketController::class, 'show'])
         ->name('parking.tickets.print');
 
+    // PDF descargable del pedido (modulo Toma pedidos).
+    Route::get('/app/order-taking/orders/{order}/pdf',
+        [\App\Http\Controllers\App\OrderTakingPdfController::class, 'show'])
+        ->name('order-taking.orders.pdf');
+
     // Exportacion XLSX de reportes del modulo de parqueadero.
     Route::get('/app/parking/reports/export/sessions',
         [\App\Http\Controllers\App\ParkingReportExportController::class, 'sessions'])

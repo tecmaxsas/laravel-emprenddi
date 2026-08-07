@@ -148,6 +148,11 @@ class PermissionsCatalog
                 'parking.reports' => 'Ver reportes de parqueadero',
                 'parking.incidents' => 'Registrar y gestionar incidentes',
             ],
+            'Toma pedidos' => [
+                'order_taking.use' => 'Tomar pedidos, registrar despachos y pagos',
+                'order_taking.manage' => 'Configurar listas de precios y anular pedidos',
+                'order_taking.send_email' => 'Enviar PDF del pedido por correo',
+            ],
             'Administración' => [
                 'users.view' => 'Ver usuarios de la empresa',
                 'users.manage' => 'Crear / editar / desactivar usuarios',
@@ -237,6 +242,8 @@ class PermissionsCatalog
                 'appointments.view', 'appointments.manage',
                 // Parqueadero: el cajero opera entrada/salida y puede anular
                 'parking.use', 'parking.cancel',
+                // Toma pedidos: el cajero registra pagos de pedidos
+                'order_taking.use',
             ],
             // Contador externo del Portal Contador. Lectura amplia + edición
             // contable (postear, anular, ajustes). No puede crear ventas/POS
@@ -273,6 +280,7 @@ class PermissionsCatalog
                 'inventory.view',
                 'serials.view',
                 'appointments.view', 'appointments.manage',
+                'order_taking.use', 'order_taking.send_email',
             ],
             default => [],
         };

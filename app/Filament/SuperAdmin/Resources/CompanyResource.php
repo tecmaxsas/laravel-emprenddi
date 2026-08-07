@@ -146,6 +146,7 @@ class CompanyResource extends Resource
                         ->options([
                             'restaurant' => 'Restaurante (mesas, comandas, cocina, delivery)',
                             'parking' => 'Parqueadero (tarifas, espacios, mensualidades, incidentes)',
+                            'order_taking' => 'Toma pedidos B2B (listas de precios, pedidos, despachos, cartera)',
                             'pharmacy' => 'Farmacia (próximamente)',
                             'retail' => 'Retail / Tiendas (próximamente)',
                             'services' => 'Servicios profesionales (próximamente)',
