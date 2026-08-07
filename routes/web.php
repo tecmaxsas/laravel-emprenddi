@@ -101,6 +101,9 @@ Route::middleware(['web', 'auth', \App\Http\Middleware\SetActiveCompany::class])
 
     // TEMPORAL: endpoint de diagnostico para el 500 al abrir un pedido.
     // Eliminar cuando se resuelva.
+    Route::get('/app/order-taking/debug/list',
+        [\App\Http\Controllers\App\OrderTakingDebugController::class, 'index'])
+        ->name('order-taking.debug.list');
     Route::get('/app/order-taking/debug/{order}',
         [\App\Http\Controllers\App\OrderTakingDebugController::class, 'show'])
         ->name('order-taking.debug');

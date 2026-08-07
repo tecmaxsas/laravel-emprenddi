@@ -16,6 +16,38 @@ use Illuminate\Support\Facades\Auth;
  */
 class OrderTakingDebugController extends Controller
 {
+    public function index(): Response
+    {
+        abort_unless(Auth::check(), 403);
+        $companyId = (int) Auth::user()->company_id;
+
+        $out = [];
+        $out[] = "=== DEBUG LISTADO PEDIDOS ===";
+        $out[] = "Empresa: {$companyId}";
+        $out[] = "Usuario: ".Auth::user()->email;
+        $out[] = '';
+
+        try {
+            $orders = Order::query()
+                ->with(['customer:id,name', 'priceList:id,name', 'seller:id,name'])
+                ->limit(10)
+                ->get();
+            $out[] = "✓ Pedidos cargados: ".$orders->count();
+            foreach ($orders as $o) {
+                $out[] = "  [{$o->id}] {$o->fullNumber()} status={$o->status} customer=".
+                    ($o->customer ? $o->customer->name : 'NULL').
+                    " total={$o->total}";
+            }
+        } catch (\Throwable $e) {
+            $out[] = "✗ EXCEPCION: ".get_class($e).': '.$e->getMessage();
+            $out[] = "En: ".$e->getFile().':'.$e->getLine();
+            $trace = explode("\n", $e->getTraceAsString());
+            foreach (array_slice($trace, 0, 15) as $l) $out[] = $l;
+        }
+
+        return response(implode("\n", $out), 200, ['Content-Type' => 'text/plain; charset=utf-8']);
+    }
+
     public function show(int $order): Response
     {
         abort_unless(Auth::check(), 403);
