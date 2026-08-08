@@ -3,9 +3,11 @@
 namespace App\Services\Parking;
 
 use App\Models\Parking\ParkingLot;
+use App\Models\Parking\ParkingMembership;
 use App\Models\Parking\ParkingSession;
 use App\Models\Parking\ParkingSpace;
 use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -113,14 +115,12 @@ class ParkingSessionEngine
             throw new RuntimeException('La hora de salida no puede ser anterior a la de entrada.');
         }
 
-        // Si la sesion tiene mensualidad activa, no se cobra al cliente: la
-        // mensualidad se factura por separado. Se cierra con amount=0 y un
-        // breakdown explicativo para que quede trazabilidad.
-        if ($session->parking_membership_id) {
+        // Si la sesion esta cubierta por mensualidad/convenio, no se cobra al
+        // cliente: la mensualidad se factura por separado. Se cierra con
+        // amount=0 y un breakdown explicativo para que quede trazabilidad.
+        $membership = $this->resolveCoverage($session, $exitAt);
+        if ($membership) {
             $minutes = max(0, (int) $session->entry_at->diffInMinutes($exitAt));
-            $membership = $session->relationLoaded('parkingMembership')
-                ? $session->parkingMembership
-                : $session->parkingMembership()->first();
             DB::transaction(function () use ($session, $exitAt, $minutes, $membership) {
                 $session->update([
                     'exit_at' => $exitAt,
@@ -131,7 +131,7 @@ class ParkingSessionEngine
                     'amount' => 0,
                     'cap_applied' => false,
                     'breakdown' => [[
-                        'label' => 'Cubierto por '.($membership?->name ?? 'mensualidad/convenio'),
+                        'label' => 'Cubierto por '.$membership->name,
                         'amount' => 0.0,
                     ]],
                     'closed_by_user_id' => Auth::id(),
@@ -269,9 +269,9 @@ class ParkingSessionEngine
         $exitAt = $exitAt ?: now();
 
         // Si esta cubierta por mensualidad/convenio, el monto es 0
-        if ($session->parking_membership_id) {
+        $membership = $this->resolveCoverage($session, $exitAt);
+        if ($membership) {
             $minutes = max(0, (int) $session->entry_at->diffInMinutes($exitAt));
-            $membership = $session->parkingMembership()->first();
             return [
                 'minutes' => $minutes,
                 'free_minutes' => $minutes,
@@ -279,7 +279,7 @@ class ParkingSessionEngine
                 'amount' => 0.0,
                 'cap_applied' => false,
                 'breakdown' => [[
-                    'label' => 'Cubierto por '.($membership?->name ?? 'mensualidad/convenio'),
+                    'label' => 'Cubierto por '.$membership->name,
                     'amount' => 0.0,
                 ]],
                 'rate' => null,
@@ -305,6 +305,51 @@ class ParkingSessionEngine
             $this->rates->calculate($rate, $session->entry_at, $exitAt),
             ['rate' => $rate],
         );
+    }
+
+    /**
+     * Devuelve la mensualidad/convenio que cubre la sesion, o null.
+     *
+     * La cobertura se sella en el checkIn, pero puede aparecer despues: la
+     * mensualidad se creo o se renovo con el vehiculo ya adentro, o la placa
+     * no matcheo al entrar. Por eso, si la sesion no la trae, se vuelve a
+     * buscar aqui — a la hora de salida y, si no, a la de entrada — y se
+     * sella en la sesion para que quote() y checkOut() no se contradigan.
+     *
+     * Solo sella sesiones activas: una sesion ya cerrada no se reescribe.
+     */
+    protected function resolveCoverage(ParkingSession $session, ?CarbonInterface $at = null): ?ParkingMembership
+    {
+        if ($session->parking_membership_id) {
+            return $session->relationLoaded('parkingMembership')
+                ? $session->parkingMembership
+                : $session->parkingMembership()->first();
+        }
+
+        if (! $session->isActive() || ! $session->plate) {
+            return null;
+        }
+
+        $at = $at ?: now();
+        $lotId = (int) $session->parking_lot_id;
+        $plate = (string) $session->plate;
+
+        $membership = $this->memberships->findCoverageFor($plate, $lotId, $at);
+
+        // Estadia larga: la mensualidad pudo estar vigente al entrar y haber
+        // vencido durante la estadia. Se respeta la cobertura de la entrada.
+        if (! $membership && $session->entry_at && ! $session->entry_at->isSameDay($at)) {
+            $membership = $this->memberships->findCoverageFor($plate, $lotId, $session->entry_at);
+        }
+
+        if (! $membership) {
+            return null;
+        }
+
+        $session->forceFill(['parking_membership_id' => $membership->id])->save();
+        $session->setRelation('parkingMembership', $membership);
+
+        return $membership;
     }
 
     protected function normalizePlate(string $plate): string
