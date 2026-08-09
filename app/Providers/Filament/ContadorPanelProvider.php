@@ -62,6 +62,10 @@ class ContadorPanelProvider extends PanelProvider
                 SubstituteBindings::class,
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
+                // Igual que en el panel App: las requests de Livewire no pasan
+                // por authMiddleware, y sin esto la empresa activa del contador
+                // no llega al singleton en esas peticiones.
+                SetAccountantActiveCompany::class,
             ])
             ->authMiddleware([
                 Authenticate::class,

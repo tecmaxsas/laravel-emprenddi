@@ -89,6 +89,56 @@ class ParkingMembershipResource extends Resource
                             ->mapWithKeys(fn ($c) => [$c->id => trim(($c->document_number ?: '—').' · '.$c->name)])
                             ->all())
                         ->getOptionLabelUsing(fn ($v) => ThirdParty::find($v)?->name)
+                        // Alta rápida sin salir de la mensualidad: solo lo
+                        // mínimo obligatorio del tercero. El resto (dirección,
+                        // responsabilidades DIAN, etc.) se completa después
+                        // desde Terceros si hace falta facturarle.
+                        ->createOptionForm([
+                            Forms\Components\Select::make('person_type')
+                                ->label('Tipo de persona')->native(false)
+                                ->options(ThirdParty::PERSON_TYPES)
+                                ->default('natural')->required(),
+                            Forms\Components\Select::make('document_type')
+                                ->label('Tipo de documento')->native(false)
+                                ->options(ThirdParty::DOCUMENT_TYPES)
+                                ->default('cc')->required(),
+                            Forms\Components\TextInput::make('document_number')
+                                ->label('Número de documento')
+                                ->required()->maxLength(30),
+                            Forms\Components\TextInput::make('name')
+                                ->label('Nombre completo / Razón social')
+                                ->required()->maxLength(200)->columnSpanFull(),
+                            Forms\Components\TextInput::make('mobile')
+                                ->label('Celular')->tel()->maxLength(30),
+                            Forms\Components\TextInput::make('email')
+                                ->label('Correo')->email()->maxLength(150),
+                        ])
+                        ->createOptionUsing(function (array $data): int {
+                            $companyId = auth()->user()?->company_id;
+
+                            // Si ya existe con ese documento, se reutiliza en
+                            // vez de crear un duplicado — y se marca como
+                            // cliente por si estaba solo como proveedor.
+                            $existing = ThirdParty::query()
+                                ->where('company_id', $companyId)
+                                ->where('document_number', $data['document_number'])
+                                ->first();
+
+                            if ($existing) {
+                                if (! $existing->is_customer) {
+                                    $existing->update(['is_customer' => true]);
+                                }
+
+                                return $existing->id;
+                            }
+
+                            return ThirdParty::create([
+                                ...$data,
+                                'company_id' => $companyId,
+                                'is_customer' => true,
+                            ])->id;
+                        })
+                        ->createOptionModalHeading('Nuevo cliente')
                         ->columnSpan(2),
 
                     Forms\Components\TextInput::make('amount')

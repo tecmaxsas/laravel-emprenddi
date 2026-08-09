@@ -19,12 +19,15 @@ trait BelongsToCompany
                 return;
             }
 
-            // 1. Singleton CurrentCompany seteado por middleware SetActiveCompany
-            $companyId = app(CurrentCompany::class)->id();
+            // Misma resolución que usa CompanyScope para leer, así lo que se
+            // crea siempre cae en la empresa cuyos datos se están viendo.
+            // Incluye el fallback al usuario autenticado, necesario en las
+            // requests de Livewire (el middleware de empresa no corre ahí).
+            $companyId = app(CurrentCompany::class)->scopeId() ?: null;
 
-            // 2. Fallback: company del usuario autenticado (cubre Livewire requests
-            //    donde el middleware authMiddleware quizás no aplique).
-            if (! $companyId) {
+            // En el portal contador la empresa activa vive en sesión: si no
+            // se pudo resolver, NO se cae a la empresa propia del contador.
+            if (! $companyId && ! Auth::user()?->isAccountantPortal()) {
                 $companyId = Auth::user()?->company_id;
             }
 

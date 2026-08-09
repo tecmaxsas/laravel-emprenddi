@@ -61,6 +61,11 @@ class AppPanelProvider extends PanelProvider
                 SubstituteBindings::class,
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
+                // Va también aquí (y no solo en authMiddleware) porque las
+                // peticiones de Livewire —donde las tablas cargan, buscan y
+                // paginan— no pasan por el authMiddleware del panel. Sin esto
+                // CurrentCompany llega vacío en esas requests.
+                SetActiveCompany::class,
             ])
             ->authMiddleware([
                 Authenticate::class,
