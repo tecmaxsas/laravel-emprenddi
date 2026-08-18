@@ -2,6 +2,7 @@
 
 namespace App\Filament\App\Pages\OrderTaking;
 
+use App\Filament\Concerns\ResolvesUploadedFile;
 use App\Services\OrderTaking\MacDulcesImporter;
 use App\Support\ModuleGate;
 use Filament\Forms;
@@ -11,7 +12,6 @@ use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * Importa los 3 XLSX de MAC DULCES desde la UI. El usuario sube los 2
@@ -23,7 +23,7 @@ use Illuminate\Support\Facades\Storage;
  */
 class ImportMacDulces extends Page implements HasForms
 {
-    use InteractsWithForms;
+    use InteractsWithForms, ResolvesUploadedFile;
 
     protected static ?string $navigationIcon = 'heroicon-o-arrow-up-tray';
     protected static ?string $navigationLabel = 'Importar catálogo';
@@ -91,8 +91,13 @@ class ImportMacDulces extends Page implements HasForms
             return;
         }
 
-        $preciosAbs = Storage::disk('local')->path($precios);
-        $clientesAbs = Storage::disk('local')->path($clientes);
+        $preciosAbs = $this->resolveUploadedFile($precios);
+        $clientesAbs = $this->resolveUploadedFile($clientes);
+
+        if (! $preciosAbs || ! $clientesAbs) {
+            Notification::make()->title('No se encuentran los archivos subidos')->danger()->send();
+            return;
+        }
 
         try {
             $this->result = app(MacDulcesImporter::class)->import(

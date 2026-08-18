@@ -2,6 +2,7 @@
 
 namespace App\Filament\App\Pages;
 
+use App\Filament\Concerns\ResolvesUploadedFile;
 use App\Services\Products\ProductImportEngine;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
@@ -9,7 +10,6 @@ use Filament\Forms\Contracts\HasForms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * Importacion masiva de productos desde XLSX.
@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\Storage;
  */
 class ProductImport extends Page implements HasForms
 {
-    use InteractsWithForms;
+    use InteractsWithForms, ResolvesUploadedFile;
 
     protected static ?string $navigationIcon = 'heroicon-o-arrow-up-tray';
     protected static ?string $navigationLabel = 'Importar productos';
@@ -111,8 +111,8 @@ class ProductImport extends Page implements HasForms
             return;
         }
 
-        $absolute = Storage::disk('local')->path($path);
-        if (! file_exists($absolute)) {
+        $absolute = $this->resolveUploadedFile($path);
+        if (! $absolute) {
             Notification::make()->title('El archivo no se encuentra')->danger()->send();
             return;
         }
