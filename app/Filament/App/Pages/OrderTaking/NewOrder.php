@@ -105,20 +105,45 @@ class NewOrder extends Page
 
     public function getFoundProductsProperty()
     {
-        if (! $this->priceListId || strlen(trim($this->productSearch)) < 2) return collect();
+        $search = trim($this->productSearch);
+        if (! $this->priceListId || mb_strlen($search) < 2) return collect();
+
+        // Cada palabra debe aparecer en alguno de los campos buscables (AND entre
+        // palabras, OR entre campos): asi "coca 350" encuentra "Coca Cola 350ml".
+        $terms = preg_split('/\s+/', $search, -1, PREG_SPLIT_NO_EMPTY) ?: [$search];
+        $escape = fn (string $t) => str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $t);
 
         $companyId = Auth::user()?->company_id;
+        $table = (new PriceListItem)->getTable();
+
         return PriceListItem::query()
             ->where('company_id', $companyId)
             ->where('price_list_id', $this->priceListId)
-            ->with('product:id,code,name')
-            ->whereHas('product', function ($q) {
-                $s = trim($this->productSearch);
-                $q->where(function ($qq) use ($s) {
-                    $qq->where('name', 'like', "%{$s}%")
-                       ->orWhere('code', 'like', "%{$s}%");
-                });
+            ->with('product:id,code,name,barcode,brand,category_id', 'product.category:id,name')
+            ->whereHas('product', function ($q) use ($terms, $escape) {
+                foreach ($terms as $term) {
+                    $like = '%' . $escape($term) . '%';
+                    $q->where(function ($qq) use ($like) {
+                        $qq->where('name', 'ilike', $like)
+                           ->orWhere('code', 'ilike', $like)
+                           ->orWhere('barcode', 'ilike', $like)
+                           ->orWhere('brand', 'ilike', $like)
+                           ->orWhere('description', 'ilike', $like)
+                           ->orWhereHas('category', fn ($c) => $c->where('name', 'ilike', $like));
+                    });
+                }
             })
+            // Primero coincidencias exactas de codigo/barcode, luego las que empiezan
+            // por lo escrito, y de ultimo el resto ordenado por nombre.
+            ->orderByRaw(
+                "(SELECT CASE
+                    WHEN p.code ILIKE ? OR p.barcode ILIKE ? THEN 0
+                    WHEN p.code ILIKE ? OR p.barcode ILIKE ? THEN 1
+                    ELSE 2 END
+                  FROM products p WHERE p.id = \"{$table}\".product_id)",
+                [$escape($search), $escape($search), $escape($search) . '%', $escape($search) . '%']
+            )
+            ->orderByRaw("(SELECT p.name FROM products p WHERE p.id = \"{$table}\".product_id)")
             ->limit(20)
             ->get();
     }

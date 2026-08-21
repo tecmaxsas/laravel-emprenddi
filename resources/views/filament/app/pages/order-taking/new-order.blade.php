@@ -66,7 +66,7 @@
             <div style="margin-top:14px; background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:14px 16px;">
                 <label style="font-size:11px; font-weight:700; color:#334155; text-transform:uppercase;">Buscar producto</label>
                 <input type="text" wire:model.live.debounce.300ms="productSearch"
-                       placeholder="Escribe nombre o código..."
+                       placeholder="Nombre, código, código de barras, marca, categoría..."
                        style="width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:8px; background:#fff; color:#0f172a; font-size:14px;"
                        {{ !$priceListId ? 'disabled' : '' }}>
                 @if (!$priceListId)
@@ -79,8 +79,18 @@
                             <button type="button" wire:click="addProduct({{ $item->id }})"
                                     style="width:100%; text-align:left; padding:9px 12px; border:0; border-bottom:1px solid #f1f5f9; background:#fff; cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
                                 <div>
-                                    <div style="font-family:ui-monospace,monospace; font-size:11px; color:#64748b;">{{ $item->product?->code }}</div>
+                                    <div style="font-family:ui-monospace,monospace; font-size:11px; color:#64748b;">
+                                        {{ $item->product?->code }}
+                                        @if ($item->product?->barcode)
+                                            <span style="color:#94a3b8;">· {{ $item->product->barcode }}</span>
+                                        @endif
+                                    </div>
                                     <div style="font-weight:600; color:#0f172a; font-size:13px;">{{ $item->product?->name }}</div>
+                                    @if ($item->product?->brand || $item->product?->category?->name)
+                                        <div style="font-size:11px; color:#94a3b8;">
+                                            {{ collect([$item->product?->brand, $item->product?->category?->name])->filter()->implode(' · ') }}
+                                        </div>
+                                    @endif
                                 </div>
                                 <div style="font-weight:700; color:#166534;">{{ $fmt($item->price_at_public) }}</div>
                             </button>
