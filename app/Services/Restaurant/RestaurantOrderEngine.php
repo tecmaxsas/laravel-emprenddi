@@ -2,7 +2,6 @@
 
 namespace App\Services\Restaurant;
 
-use App\Jobs\SendInvoiceToDian;
 use App\Models\Company;
 use App\Models\Product;
 use App\Models\Restaurant\KitchenTicket;
@@ -12,6 +11,7 @@ use App\Models\Restaurant\Printer;
 use App\Models\Restaurant\Table;
 use App\Models\SaleInvoice;
 use App\Models\Tax;
+use App\Services\Dian\PosDianTransmitter;
 use App\Services\Sales\SaleInvoiceEngine;
 use App\Services\Sales\SaleInvoiceNumberer;
 use App\Support\CashSessionGate;
@@ -1115,9 +1115,6 @@ class RestaurantOrderEngine
                 $invoice = $invoice->fresh();
                 $invoices[] = $invoice;
 
-                // Facturacion electronica: una por tab si la cuenta se dividio.
-                // Va en cola para no hacer esperar al mesero en el cobro.
-                SendInvoiceToDian::dispatchFor($invoice);
 
                 // Encolar impresión del recibo (se ejecuta tras el commit)
                 $receiptJobs[] = [
@@ -1157,6 +1154,17 @@ class RestaurantOrderEngine
 
             return $invoices;
         });
+
+        // Facturacion electronica ANTES de imprimir y fuera de la transaccion:
+        // se espera la respuesta de DIAN para que el recibo salga con CUFE y
+        // QR. Una factura por tab si la cuenta se dividio.
+        $transmitter = app(PosDianTransmitter::class);
+        foreach ($receiptJobs as $i => $job) {
+            $result = $transmitter->transmit($job['invoice']);
+            if ($result['accepted']) {
+                $receiptJobs[$i]['invoice'] = $job['invoice']->fresh();
+            }
+        }
 
         // Imprimir recibos POR ESC/POS tras el commit. Si falla (impresora
         // apagada, sin impresora de caja), no aborta — la venta ya está hecha.

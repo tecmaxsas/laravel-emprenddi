@@ -5,11 +5,11 @@ namespace App\Services\Parking;
 use App\Models\CashRegisterSession;
 use App\Models\Company;
 use App\Models\Location;
-use App\Jobs\SendInvoiceToDian;
 use App\Models\Parking\ParkingMembership;
 use App\Models\Parking\ParkingSession;
 use App\Models\SaleInvoice;
 use App\Models\Tax;
+use App\Services\Dian\PosDianTransmitter;
 use App\Models\ThirdParty;
 use App\Services\Sales\DocumentNumberer;
 use App\Services\Sales\SaleInvoiceEngine;
@@ -106,7 +106,7 @@ class ParkingBillingEngine
             );
         }
 
-        return DB::transaction(function () use (
+        $invoice = DB::transaction(function () use (
             $session, $invoiceKind, $location, $customer, $product, $company,
             $accountId, $paymentMethod, $paidAmount, $payload, $cashSession,
             $extras, $hasParkingCharge,
@@ -193,13 +193,15 @@ class ParkingBillingEngine
                 'paid_amount' => $paidAmount,
             ]);
 
-            $invoice = $invoice->fresh();
-
-            // Facturacion electronica en cola: la talanquera no espera a DIAN.
-            SendInvoiceToDian::dispatchFor($invoice);
-
-            return $invoice;
+            return $invoice->fresh();
         });
+
+        // Facturacion electronica fuera de la transaccion: es una llamada HTTP
+        // de varios segundos y adentro mantendria los locks abiertos. Se espera
+        // la respuesta para que el tiquete salga con CUFE y QR.
+        app(PosDianTransmitter::class)->transmit($invoice);
+
+        return $invoice->fresh();
     }
 
     /**
@@ -273,7 +275,7 @@ class ParkingBillingEngine
         $periodEnd = $payload['period_end'] ?? $membership->end_date?->toDateString();
         $platesLabel = implode(', ', array_map(fn ($p) => strtoupper((string) $p), $membership->plates ?? []));
 
-        return DB::transaction(function () use (
+        $invoice = DB::transaction(function () use (
             $company, $location, $customer, $product, $cashSession,
             $invoiceKind, $paymentMethod, $accountId, $paidAmount,
             $amount, $membership, $periodStart, $periodEnd, $platesLabel,
@@ -329,12 +331,15 @@ class ParkingBillingEngine
                 ]);
             }
 
-            $invoice = $invoice->fresh();
-
-            SendInvoiceToDian::dispatchFor($invoice);
-
-            return $invoice;
+            return $invoice->fresh();
         });
+
+        // Facturacion electronica fuera de la transaccion: es una llamada HTTP
+        // de varios segundos y adentro mantendria los locks abiertos. Se espera
+        // la respuesta para que el tiquete salga con CUFE y QR.
+        app(PosDianTransmitter::class)->transmit($invoice);
+
+        return $invoice->fresh();
     }
 
     /**

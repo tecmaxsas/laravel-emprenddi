@@ -55,7 +55,12 @@ class DianInvoiceSender
 
     /**
      * Normaliza respuesta de apidian + actualiza la factura con CUFE/status.
-     * Devuelve ['ok' => bool, 'message' => string, 'cufe' => ?string, 'status_code' => ?string]
+     *
+     * reached_dian distingue "DIAN respondio" (aunque sea rechazando) de "nunca
+     * llegamos a DIAN" (red caida, error de validacion de apidian). Solo el
+     * segundo caso tiene sentido reintentarlo.
+     *
+     * @return array{ok:bool, message:string, cufe:?string, status_code:?string, reached_dian:bool}
      */
     protected function processResponse(SaleInvoice $invoice, array $result): array
     {
@@ -73,6 +78,7 @@ class DianInvoiceSender
                 'message' => $result['error'] ?? 'Error de conexión',
                 'cufe' => null,
                 'status_code' => null,
+                'reached_dian' => false,
             ];
         }
 
@@ -89,6 +95,7 @@ class DianInvoiceSender
                 'message' => 'Errores de validación: '.$messages,
                 'cufe' => null,
                 'status_code' => null,
+                'reached_dian' => false,
             ];
         }
 
@@ -104,6 +111,7 @@ class DianInvoiceSender
                 'message' => 'Excepción del API: '.($data['exception'] ?? ''),
                 'cufe' => null,
                 'status_code' => null,
+                'reached_dian' => false,
             ];
         }
 
@@ -122,6 +130,7 @@ class DianInvoiceSender
                 'message' => 'Sin respuesta de DIAN',
                 'cufe' => $cufe,
                 'status_code' => null,
+                'reached_dian' => false,
             ];
         }
 
@@ -147,6 +156,7 @@ class DianInvoiceSender
                 'message' => 'Factura aceptada por DIAN',
                 'cufe' => $cufe,
                 'status_code' => $statusCode,
+                'reached_dian' => true,
             ];
         }
 
@@ -166,6 +176,7 @@ class DianInvoiceSender
             'message' => $errorMsg,
             'cufe' => $cufe,
             'status_code' => $statusCode,
+            'reached_dian' => true,
         ];
     }
 

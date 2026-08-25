@@ -5,8 +5,8 @@ namespace App\Filament\App\Pages;
 use App\Models\Account;
 use App\Models\CashRegisterSession;
 use App\Models\Category;
-use App\Jobs\SendInvoiceToDian;
 use App\Models\Company;
+use App\Services\Dian\PosDianTransmitter;
 use App\Models\Location;
 use App\Models\Payment;
 use App\Models\PaymentMethod;
@@ -1633,9 +1633,13 @@ class PosTerminal extends Page
             $issuedGiftCards = $invoice['issued_gift_cards'] ?? [];
             $invoice = $invoice['invoice'];
 
-            // Facturacion electronica: se encola para no hacer esperar al
-            // cajero los ~4s del roundtrip a DIAN. Las POS no se transmiten.
-            $queuedToDian = SendInvoiceToDian::dispatchFor($invoice);
+            // Facturacion electronica: se espera la respuesta de DIAN para
+            // poder imprimir el tiquete ya con CUFE y QR. Va fuera de la
+            // transaccion de arriba, que ya cerro. Las POS no se transmiten.
+            $dian = app(PosDianTransmitter::class)->transmit($invoice);
+            if ($dian['accepted']) {
+                $invoice = $invoice->fresh();
+            }
 
             // Notificacion: si emitimos gift cards, incluir sus codigos para
             // que el cajero los entregue al cliente. Persistente cuando hay
@@ -1644,8 +1648,8 @@ class PosTerminal extends Page
             if ($totals['change'] > 0) {
                 $body .= ' Vuelto: $' . number_format($totals['change'], 2) . '.';
             }
-            if ($queuedToDian) {
-                $body .= ' Factura electrónica en trámite ante la DIAN.';
+            if ($dian['accepted']) {
+                $body .= ' Factura electrónica autorizada por la DIAN.';
             }
             if (! empty($issuedGiftCards)) {
                 $body .= "\n\n🎁 Gift Cards emitidas:";
@@ -1666,6 +1670,18 @@ class PosTerminal extends Page
                 $notif->persistent();
             }
             $notif->send();
+
+            // Aviso aparte y persistente si la factura electronica no quedo
+            // autorizada: el cajero tiene que saber que el tiquete que va a
+            // entregar sale sin CUFE.
+            if ($aviso = app(PosDianTransmitter::class)->cashierNotice($dian)) {
+                Notification::make()
+                    ->title('Factura electrónica sin autorizar')
+                    ->body($aviso)
+                    ->warning()
+                    ->persistent()
+                    ->send();
+            }
 
             // Disparo de impresión: gobernado por settings.pos.print_after_sale.
             // Si está desactivado, el cajero abre el ticket manualmente desde
