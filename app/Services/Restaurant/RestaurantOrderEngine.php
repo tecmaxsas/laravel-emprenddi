@@ -953,6 +953,10 @@ class RestaurantOrderEngine
                     'created_by_user_id' => Auth::id(),
                     'seller_user_id' => $order->server_user_id ?? Auth::id(),
                     'cash_register_session_id' => $order->cash_register_session_id,
+                    // Informativa: no suma al total ni al net_payable (la
+                    // propina no es ingreso). Sirve para declararla a DIAN
+                    // como cargo y para que la grafica cuadre con lo cobrado.
+                    'tip_amount' => round($tipShare, 2),
                     'notes' => $notes,
                 ]);
 

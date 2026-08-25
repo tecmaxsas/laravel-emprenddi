@@ -80,6 +80,9 @@ class SaleInvoiceUblBuilder
     /** Fallback de regimen cuando el tercero no lo tiene definido. */
     public const DEFAULT_REGIME_ID = 2;
 
+    /** type_discount_id con el que el proveedor identifica la propina. */
+    public const TIP_CHARGE_ID = 4;
+
     /**
      * Default municipio fallback (149 = Bogotá D.C. en el catálogo DIAN, igual
      * que usa el código de referencia previo).
@@ -112,10 +115,15 @@ class SaleInvoiceUblBuilder
         $document['customer'] = $this->buildCustomer($invoice->customer);
         $document['payment_form'] = $this->buildPaymentForms($invoice);
 
-        // Sin allowance_charges de documento: todos los descuentos de este
-        // modelo son de linea (SaleInvoiceEngine::recalculateTotals arma
-        // discount_total sumando line.discount_amount) y ya viajan en el
-        // allowance_charges de cada linea.
+        // Sin descuentos de documento: todos los de este modelo son de linea
+        // (SaleInvoiceEngine::recalculateTotals arma discount_total sumando
+        // line.discount_amount) y ya viajan en el allowance_charges de cada
+        // linea. Lo unico que va aqui es la propina, que DIAN recibe como
+        // CARGO (charge_indicator = true), no como descuento.
+        $charges = $this->buildTipCharge($invoice);
+        if ($charges !== []) {
+            $document['allowance_charges'] = $charges;
+        }
 
         // Tax totals agrupados (IVA, INC)
         $document['tax_totals'] = $this->buildTaxTotals($invoice);
@@ -357,6 +365,27 @@ class SaleInvoiceUblBuilder
      * recalcula nada, asi que todo se suma desde las lineas en vez de leer
      * los agregados de la factura.
      */
+    /**
+     * La propina viaja como cargo del documento. base_amount es el total
+     * facturado sobre el que se calculo, tal como lo espera el proveedor.
+     */
+    protected function buildTipCharge(SaleInvoice $invoice): array
+    {
+        $tip = round((float) $invoice->tip_amount, 2);
+
+        if ($tip <= 0) {
+            return [];
+        }
+
+        return [[
+            'type_discount_id' => self::TIP_CHARGE_ID,
+            'charge_indicator' => true,
+            'allowance_charge_reason' => 'propina',
+            'amount' => number_format($tip, 2, '.', ''),
+            'base_amount' => number_format((float) $invoice->total, 2, '.', ''),
+        ]];
+    }
+
     protected function buildLegalMonetaryTotals(SaleInvoice $invoice): array
     {
         $lineExtension = 0.0;
@@ -377,6 +406,10 @@ class SaleInvoiceUblBuilder
 
         $taxInclusive = $lineExtension + $taxTotal;
 
+        // La propina es un cargo: no toca las bases ni los impuestos, pero si
+        // el total a pagar. Por eso no entra en tax_inclusive.
+        $charges = round((float) $invoice->tip_amount, 2);
+
         return [
             'line_extension_amount' => number_format($lineExtension, 2, '.', ''),
             'tax_exclusive_amount' => number_format($taxExclusive, 2, '.', ''),
@@ -386,10 +419,10 @@ class SaleInvoiceUblBuilder
             // de cada linea. Reportarlos otra vez aqui los contaria dos veces
             // y rompe la formula de arriba.
             'allowance_total_amount' => '0.00',
-            'charge_total_amount' => '0.00',
+            'charge_total_amount' => number_format($charges, 2, '.', ''),
             // payable = tax_inclusive + cargos - descuentos - anticipos.
             // Las retenciones NO lo reducen: viajan en with_holding_tax_total.
-            'payable_amount' => number_format($taxInclusive, 2, '.', ''),
+            'payable_amount' => number_format($taxInclusive + $charges, 2, '.', ''),
         ];
     }
 
