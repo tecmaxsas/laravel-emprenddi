@@ -5,6 +5,7 @@ namespace App\Services\Parking;
 use App\Models\CashRegisterSession;
 use App\Models\Company;
 use App\Models\Location;
+use App\Jobs\SendInvoiceToDian;
 use App\Models\Parking\ParkingMembership;
 use App\Models\Parking\ParkingSession;
 use App\Models\SaleInvoice;
@@ -192,7 +193,12 @@ class ParkingBillingEngine
                 'paid_amount' => $paidAmount,
             ]);
 
-            return $invoice->fresh();
+            $invoice = $invoice->fresh();
+
+            // Facturacion electronica en cola: la talanquera no espera a DIAN.
+            SendInvoiceToDian::dispatchFor($invoice);
+
+            return $invoice;
         });
     }
 
@@ -323,7 +329,11 @@ class ParkingBillingEngine
                 ]);
             }
 
-            return $invoice->fresh();
+            $invoice = $invoice->fresh();
+
+            SendInvoiceToDian::dispatchFor($invoice);
+
+            return $invoice;
         });
     }
 

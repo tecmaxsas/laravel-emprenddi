@@ -10,6 +10,7 @@ use App\Models\SaleInvoice;
 use App\Services\Dian\DianInvoiceSender;
 use App\Services\Sales\CreditDebitNoteNumberer;
 use App\Services\Sales\SaleInvoiceEngine;
+use App\Support\Dian\DianInvoiceActions;
 use Filament\Actions;
 use Filament\Infolists;
 use Filament\Infolists\Infolist;
@@ -115,6 +116,28 @@ class ViewSaleInvoice extends ViewRecord
                             ->send();
                     }
                 }),
+
+            Actions\Action::make('checkDianStatus')
+                ->label('Consultar estado DIAN')
+                ->icon('heroicon-o-arrow-path')
+                ->color('gray')
+                ->visible(fn (SaleInvoice $record) => DianInvoiceActions::isManageable($record))
+                ->action(function (SaleInvoice $record) {
+                    DianInvoiceActions::checkStatus($record);
+                    $this->refreshFormData(['dian_status', 'dian_status_code', 'qr_url', 'dian_error_message']);
+                }),
+
+            Actions\Action::make('resendDianEmail')
+                ->label('Reenviar por correo')
+                ->icon('heroicon-o-envelope')
+                ->color('gray')
+                ->visible(fn (SaleInvoice $record) => DianInvoiceActions::isManageable($record))
+                ->modalHeading(fn (SaleInvoice $record) => 'Reenviar factura '.$record->fullNumber())
+                ->modalDescription('Se reenvían el PDF y el XML de la factura electrónica desde apidian.')
+                ->modalSubmitActionLabel('Reenviar')
+                ->fillForm(fn (SaleInvoice $record) => DianInvoiceActions::resendEmailDefaults($record))
+                ->form(DianInvoiceActions::resendEmailForm())
+                ->action(fn (SaleInvoice $record, array $data) => DianInvoiceActions::resendEmail($record, $data)),
 
             Actions\Action::make('cancel')
                 ->label('Anular factura')

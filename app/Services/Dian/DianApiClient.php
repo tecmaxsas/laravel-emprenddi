@@ -108,6 +108,33 @@ class DianApiClient
     }
 
     /**
+     * Consulta el estado de un documento ya emitido, por CUFE/UUID.
+     *
+     * OJO: la respuesta trae GetStatusZipResponse (no SendBillSyncResponse) y
+     * un `success: true` solo dice que la consulta corrió — el estado real ante
+     * DIAN lo mandan IsValid y StatusCode dentro de ResponseDian.
+     *
+     * @param  string  $uuidCufe  CUFE del documento (campo cufe / uuid_dian)
+     */
+    public function checkDocumentStatus(string $uuidCufe, array $options = []): array
+    {
+        return $this->request('post', "/api/ubl2.1/status/document/{$uuidCufe}", [
+            'sendmail' => (bool) ($options['sendmail'] ?? false),
+            'is_payroll' => (bool) ($options['is_payroll'] ?? false),
+            'is_eqdoc' => (bool) ($options['is_eqdoc'] ?? false),
+        ]);
+    }
+
+    /**
+     * Reenvía el PDF + XML de un documento emitido a un correo alternativo.
+     * No aplica para nómina.
+     */
+    public function sendDocumentEmail(array $payload): array
+    {
+        return $this->request('post', '/api/ubl2.1/send-email', $payload);
+    }
+
+    /**
      * Tab 5 — Cambiar entre Pruebas (2) y Producción (1).
      * El API requiere los 3 IDs de ambiente (factura, nómina, equivalentes).
      */

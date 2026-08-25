@@ -11,12 +11,15 @@ use App\Models\SaleInvoice;
 use App\Models\Tax;
 use App\Models\ThirdParty;
 use App\Models\User;
+use App\Support\Dian\DianInvoiceActions;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
 
 class SaleInvoiceResource extends Resource
@@ -508,6 +511,13 @@ class SaleInvoiceResource extends Resource
                         'cancelled' => 'danger',
                     }),
 
+                Tables\Columns\TextColumn::make('invoice_kind')
+                    ->label('Tipo')
+                    ->formatStateUsing(fn (?string $state) => $state === 'pos' ? 'POS' : 'Electrónica')
+                    ->badge()
+                    ->color(fn (?string $state) => $state === 'pos' ? 'gray' : 'info')
+                    ->toggleable(),
+
                 Tables\Columns\TextColumn::make('dian_status')
                     ->label('DIAN')
                     ->formatStateUsing(fn (?string $state) => $state ? (SaleInvoice::DIAN_STATUSES[$state] ?? $state) : '—')
@@ -524,6 +534,21 @@ class SaleInvoiceResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('status')->label('Estado')->options(SaleInvoice::STATUSES),
                 Tables\Filters\SelectFilter::make('payment_status')->label('Pago')->options(SaleInvoice::PAYMENT_STATUSES),
+                Tables\Filters\SelectFilter::make('invoice_kind')
+                    ->label('Tipo de factura')
+                    ->options([
+                        'electronic' => 'Electrónica (DIAN)',
+                        'pos' => 'POS (no va a DIAN)',
+                    ])
+                    // Las facturas viejas quedaron con invoice_kind null y son
+                    // electronicas, igual que las trata SaleInvoice::isPosInvoice().
+                    ->query(fn (Builder $query, array $data) => $query->when(
+                        $data['value'] ?? null,
+                        fn (Builder $q, string $kind) => $kind === 'pos'
+                            ? $q->where('invoice_kind', 'pos')
+                            : $q->where(fn (Builder $sub) => $sub->where('invoice_kind', 'electronic')->orWhereNull('invoice_kind')),
+                    )),
+
                 Tables\Filters\SelectFilter::make('dian_status')->label('DIAN')->options(SaleInvoice::DIAN_STATUSES),
                 Tables\Filters\SelectFilter::make('location_id')
                     ->label('Sede')
@@ -548,6 +573,85 @@ class SaleInvoiceResource extends Resource
                     ->color('gray')
                     ->url(fn (SaleInvoice $record) => route('pos.print', ['invoice' => $record->id]))
                     ->openUrlInNewTab(),
+
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\Action::make('checkDianStatus')
+                        ->label('Consultar estado DIAN')
+                        ->icon('heroicon-o-arrow-path')
+                        ->color('gray')
+                        ->action(fn (SaleInvoice $record) => DianInvoiceActions::checkStatus($record)),
+
+                    Tables\Actions\Action::make('resendDianEmail')
+                        ->label('Reenviar por correo')
+                        ->icon('heroicon-o-envelope')
+                        ->color('gray')
+                        ->modalHeading(fn (SaleInvoice $record) => 'Reenviar factura '.$record->fullNumber())
+                        ->modalSubmitActionLabel('Reenviar')
+                        ->fillForm(fn (SaleInvoice $record) => DianInvoiceActions::resendEmailDefaults($record))
+                        ->form(DianInvoiceActions::resendEmailForm())
+                        ->action(fn (SaleInvoice $record, array $data) => DianInvoiceActions::resendEmail($record, $data)),
+                ])
+                    ->label('DIAN')
+                    ->icon('heroicon-o-document-check')
+                    ->visible(fn (SaleInvoice $record) => DianInvoiceActions::isManageable($record)),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkAction::make('checkDianStatusBulk')
+                    ->label('Consultar estado en DIAN')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('gray')
+                    ->deselectRecordsAfterCompletion()
+                    ->modalHeading('Consultar estado en DIAN')
+                    ->modalDescription('Se consulta una por una contra la DIAN y se actualiza el estado guardado. Las facturas POS y las que aún no tienen CUFE se omiten.')
+                    ->modalSubmitActionLabel('Consultar')
+                    ->action(function (Collection $records) {
+                        $accepted = $rejected = $pending = $skipped = $failed = 0;
+
+                        foreach ($records as $record) {
+                            if (! DianInvoiceActions::isManageable($record)) {
+                                $skipped++;
+
+                                continue;
+                            }
+
+                            $result = DianInvoiceActions::checkStatus($record, notify: false);
+
+                            if (! $result['ok']) {
+                                $failed++;
+
+                                continue;
+                            }
+
+                            match ($result['status']) {
+                                SaleInvoice::DIAN_ACCEPTED => $accepted++,
+                                SaleInvoice::DIAN_REJECTED => $rejected++,
+                                default => $pending++,
+                            };
+                        }
+
+                        $parts = [];
+                        if ($accepted) {
+                            $parts[] = "{$accepted} autorizada(s)";
+                        }
+                        if ($rejected) {
+                            $parts[] = "{$rejected} rechazada(s)";
+                        }
+                        if ($pending) {
+                            $parts[] = "{$pending} en validación";
+                        }
+                        if ($skipped) {
+                            $parts[] = "{$skipped} omitida(s) (POS o sin CUFE)";
+                        }
+                        if ($failed) {
+                            $parts[] = "{$failed} sin respuesta";
+                        }
+
+                        Notification::make()
+                            ->title('Consulta finalizada')
+                            ->body($parts ? implode(' · ', $parts) : 'No había facturas que consultar.')
+                            ->status($rejected > 0 || $failed > 0 ? 'warning' : 'success')
+                            ->send();
+                    }),
             ]);
     }
 

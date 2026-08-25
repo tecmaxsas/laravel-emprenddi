@@ -2,6 +2,7 @@
 
 namespace App\Services\Restaurant;
 
+use App\Jobs\SendInvoiceToDian;
 use App\Models\Company;
 use App\Models\Product;
 use App\Models\Restaurant\KitchenTicket;
@@ -1113,6 +1114,10 @@ class RestaurantOrderEngine
 
                 $invoice = $invoice->fresh();
                 $invoices[] = $invoice;
+
+                // Facturacion electronica: una por tab si la cuenta se dividio.
+                // Va en cola para no hacer esperar al mesero en el cobro.
+                SendInvoiceToDian::dispatchFor($invoice);
 
                 // Encolar impresión del recibo (se ejecuta tras el commit)
                 $receiptJobs[] = [

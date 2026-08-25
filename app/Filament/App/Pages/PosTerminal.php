@@ -5,6 +5,7 @@ namespace App\Filament\App\Pages;
 use App\Models\Account;
 use App\Models\CashRegisterSession;
 use App\Models\Category;
+use App\Jobs\SendInvoiceToDian;
 use App\Models\Company;
 use App\Models\Location;
 use App\Models\Payment;
@@ -1632,12 +1633,19 @@ class PosTerminal extends Page
             $issuedGiftCards = $invoice['issued_gift_cards'] ?? [];
             $invoice = $invoice['invoice'];
 
+            // Facturacion electronica: se encola para no hacer esperar al
+            // cajero los ~4s del roundtrip a DIAN. Las POS no se transmiten.
+            $queuedToDian = SendInvoiceToDian::dispatchFor($invoice);
+
             // Notificacion: si emitimos gift cards, incluir sus codigos para
             // que el cajero los entregue al cliente. Persistente cuando hay
             // gift cards porque el codigo NO debe perderse.
             $body = sprintf('Total $%s.', number_format($invoice->total, 2));
             if ($totals['change'] > 0) {
                 $body .= ' Vuelto: $' . number_format($totals['change'], 2) . '.';
+            }
+            if ($queuedToDian) {
+                $body .= ' Factura electrónica en trámite ante la DIAN.';
             }
             if (! empty($issuedGiftCards)) {
                 $body .= "\n\n🎁 Gift Cards emitidas:";
