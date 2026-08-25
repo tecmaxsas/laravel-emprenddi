@@ -112,11 +112,10 @@ class SaleInvoiceUblBuilder
         $document['customer'] = $this->buildCustomer($invoice->customer);
         $document['payment_form'] = $this->buildPaymentForms($invoice);
 
-        // Descuento general (si hay)
-        $allowanceCharges = $this->buildDocumentAllowanceCharges($invoice);
-        if (! empty($allowanceCharges)) {
-            $document['allowance_charges'] = $allowanceCharges;
-        }
+        // Sin allowance_charges de documento: todos los descuentos de este
+        // modelo son de linea (SaleInvoiceEngine::recalculateTotals arma
+        // discount_total sumando line.discount_amount) y ya viajan en el
+        // allowance_charges de cada linea.
 
         // Tax totals agrupados (IVA, INC)
         $document['tax_totals'] = $this->buildTaxTotals($invoice);
@@ -261,38 +260,40 @@ class SaleInvoiceUblBuilder
         };
     }
 
-    protected function buildDocumentAllowanceCharges(SaleInvoice $invoice): array
-    {
-        if ((float) $invoice->discount_total <= 0) {
-            return [];
-        }
-
-        return [[
-            'discount_id' => 10,
-            'charge_indicator' => false,
-            'allowance_charge_reason' => 'DESCUENTO GENERAL',
-            'amount' => number_format((float) $invoice->discount_total, 2, '.', ''),
-            'base_amount' => number_format((float) $invoice->subtotal, 2, '.', ''),
-        ]];
-    }
-
     /**
      * Agrupa impuestos NO-retención por tasa para tax_totals del documento.
      */
+    /**
+     * ¿Esta linea declara impuesto ante DIAN?
+     *
+     * Es EL criterio: lo usan el tax_totals de la linea, el consolidado del
+     * documento y el tax_exclusive_amount. Si los tres no coinciden, DIAN
+     * rechaza con FAU04 ("Base Imponible es distinto a la suma de los valores
+     * de las bases imponibles de todas lineas de detalle").
+     *
+     * Basta con que la linea tenga un impuesto asignado: una linea exenta
+     * (0%) tambien se declara, con percent 0. Solo quedan fuera las lineas
+     * sin impuesto y las retenciones, que van en with_holding_tax_total.
+     */
+    protected function lineDeclaresTax($line): bool
+    {
+        if (! $line->tax) {
+            return false;
+        }
+
+        return ! in_array(self::TAX_ID_MAP[$line->tax->type] ?? 1, [5, 6, 7], true);
+    }
+
     protected function buildTaxTotals(SaleInvoice $invoice): array
     {
         $grouped = [];
 
         foreach ($invoice->lines as $line) {
-            if ((float) $line->tax_amount <= 0 || ! $line->tax) {
+            if (! $this->lineDeclaresTax($line)) {
                 continue;
             }
 
             $taxId = self::TAX_ID_MAP[$line->tax->type] ?? 1;
-            // Solo no-retenciones aquí
-            if (in_array($taxId, [5, 6, 7], true)) {
-                continue;
-            }
 
             $key = $taxId.'_'.$line->tax_rate;
             if (! isset($grouped[$key])) {
@@ -351,19 +352,44 @@ class SaleInvoiceUblBuilder
         ])->all();
     }
 
+    /**
+     * Totales del documento. DIAN valida la coherencia aritmetica y no
+     * recalcula nada, asi que todo se suma desde las lineas en vez de leer
+     * los agregados de la factura.
+     */
     protected function buildLegalMonetaryTotals(SaleInvoice $invoice): array
     {
-        $lineExtension = (float) $invoice->subtotal - (float) $invoice->discount_total;
-        $taxExclusive = $lineExtension;
-        $taxInclusive = $lineExtension + (float) $invoice->tax_total;
+        $lineExtension = 0.0;
+        $taxExclusive = 0.0;
+        $taxTotal = 0.0;
+
+        foreach ($invoice->lines as $line) {
+            $base = (float) $line->subtotal - (float) $line->discount_amount;
+            $lineExtension += $base;
+            $taxTotal += (float) $line->tax_amount;
+
+            // Solo las lineas que declaran impuesto suman a la base gravable.
+            // Incluir aqui una linea sin impuesto es lo que dispara FAU04.
+            if ($this->lineDeclaresTax($line)) {
+                $taxExclusive += $base;
+            }
+        }
+
+        $taxInclusive = $lineExtension + $taxTotal;
 
         return [
             'line_extension_amount' => number_format($lineExtension, 2, '.', ''),
             'tax_exclusive_amount' => number_format($taxExclusive, 2, '.', ''),
             'tax_inclusive_amount' => number_format($taxInclusive, 2, '.', ''),
-            'allowance_total_amount' => number_format((float) $invoice->discount_total, 2, '.', ''),
+            // Los descuentos de este modelo son SIEMPRE de linea: ya estan
+            // restados del line_extension y declarados en el allowance_charges
+            // de cada linea. Reportarlos otra vez aqui los contaria dos veces
+            // y rompe la formula de arriba.
+            'allowance_total_amount' => '0.00',
             'charge_total_amount' => '0.00',
-            'payable_amount' => number_format((float) ($invoice->net_payable ?: $invoice->total), 2, '.', ''),
+            // payable = tax_inclusive + cargos - descuentos - anticipos.
+            // Las retenciones NO lo reducen: viajan en with_holding_tax_total.
+            'payable_amount' => number_format($taxInclusive, 2, '.', ''),
         ];
     }
 
@@ -398,17 +424,14 @@ class SaleInvoiceUblBuilder
                 ]];
             }
 
-            // Tax totals por línea (IVA, INC)
-            if ((float) $line->tax_amount > 0 && $line->tax) {
-                $taxId = self::TAX_ID_MAP[$line->tax->type] ?? 1;
-                if (! in_array($taxId, [5, 6, 7], true)) {
-                    $linePayload['tax_totals'] = [[
-                        'tax_id' => $taxId,
-                        'tax_amount' => number_format((float) $line->tax_amount, 2, '.', ''),
-                        'percent' => (float) $line->tax_rate,
-                        'taxable_amount' => number_format((float) $line->subtotal - (float) $line->discount_amount, 2, '.', ''),
-                    ]];
-                }
+            // Tax totals por línea (IVA, INC). Las exentas tambien se declaran.
+            if ($this->lineDeclaresTax($line)) {
+                $linePayload['tax_totals'] = [[
+                    'tax_id' => self::TAX_ID_MAP[$line->tax->type] ?? 1,
+                    'tax_amount' => number_format((float) $line->tax_amount, 2, '.', ''),
+                    'percent' => (float) $line->tax_rate,
+                    'taxable_amount' => number_format((float) $line->subtotal - (float) $line->discount_amount, 2, '.', ''),
+                ]];
             }
 
             $lines[] = $linePayload;
