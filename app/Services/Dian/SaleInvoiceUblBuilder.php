@@ -103,7 +103,10 @@ class SaleInvoiceUblBuilder
             'time' => $invoice->posted_at?->format('H:i:s') ?? now()->format('H:i:s'),
             'resolution_number' => $this->resolveResolutionNumber($invoice),
             'notes' => $invoice->notes ?: null,
-            'sendmail' => true,
+            // Solo pedimos el envio de correo cuando hay a quien mandarselo:
+            // el consumidor final no tiene correo y apidian falla en silencio.
+            'sendmail' => ! $this->isFinalConsumer($invoice->customer)
+                && filter_var($invoice->customer?->email, FILTER_VALIDATE_EMAIL) !== false,
         ];
 
         $document['customer'] = $this->buildCustomer($invoice->customer);
@@ -145,31 +148,44 @@ class SaleInvoiceUblBuilder
         return $assignment?->resolution?->resolution_number ?? '';
     }
 
+    /**
+     * Consumidor final: apidian espera SOLO tres campos (identificacion,
+     * nombre y matricula mercantil). Si se le mandan ademas tipo de documento,
+     * regimen, organizacion o municipio, los valida y rechaza la factura con
+     * "customer.type document identification id es invalido" — para el
+     * consumidor final esos atributos no aplican.
+     *
+     * El numero es 222222222222 (doce dos) segun DIAN, aunque internamente el
+     * tercero se crea con 222222222.
+     */
+    public const FINAL_CONSUMER_DOCUMENT = '222222222222';
+
+    /**
+     * ¿Es el tercero generico de mostrador? Se reconoce por un documento
+     * compuesto solo de dos, sin importar cuantos, porque distintos modulos
+     * lo sembraron con longitudes diferentes.
+     */
+    protected function isFinalConsumer(?ThirdParty $customer): bool
+    {
+        $document = preg_replace('/\D/', '', (string) $customer?->document_number);
+
+        return $document !== '' && strlen($document) >= 9 && trim($document, '2') === '';
+    }
+
     protected function buildCustomer(?ThirdParty $customer): array
     {
-        if (! $customer) {
-            // Fallback: consumidor final genérico (no debería pasar — siempre hay default)
+        if (! $customer || $this->isFinalConsumer($customer)) {
             return [
-                'identification_number' => '222222222',
-                'name' => 'Consumidor Final',
-                'email' => 'consumidorfinal@gmail.com',
+                'identification_number' => self::FINAL_CONSUMER_DOCUMENT,
+                'name' => 'CONSUMIDOR FINAL',
                 'merchant_registration' => '0000000-00',
-                'type_document_identification_id' => self::DOCUMENT_TYPE_MAP['cc'],
-                'type_organization_id' => 2,
-                'type_liability_id' => self::DEFAULT_LIABILITY_ID,
-                'type_regime_id' => self::DEFAULT_REGIME_ID,
-                'municipality_id' => self::DEFAULT_MUNICIPALITY_ID,
             ];
         }
-
-        $isFinalConsumer = $customer->document_number === '222222222';
 
         $payload = [
             'identification_number' => $customer->document_number,
             'name' => $customer->name,
-            'email' => $isFinalConsumer
-                ? 'consumidorfinal@gmail.com'
-                : (filter_var($customer->email, FILTER_SANITIZE_EMAIL) ?: 'sin@email.com'),
+            'email' => filter_var($customer->email, FILTER_SANITIZE_EMAIL) ?: 'sin@email.com',
             'merchant_registration' => '0000000-00',
             'type_document_identification_id' => self::DOCUMENT_TYPE_MAP[$customer->document_type] ?? self::DOCUMENT_TYPE_MAP['cc'],
             'type_organization_id' => $customer->person_type === 'juridica' ? 1 : 2,
