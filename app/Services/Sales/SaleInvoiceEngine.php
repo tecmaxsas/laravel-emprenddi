@@ -51,11 +51,10 @@ class SaleInvoiceEngine
         return DB::transaction(function () use ($invoice) {
             $this->recalculateTotals($invoice);
 
-            // 1. Si la sede tiene resolución DIAN activa, tomamos el consecutivo
-            //    del rango autorizado y sobreescribimos el número interno + prefijo.
-            //    Esto pasa antes de crear movimientos para que la referencia
-            //    en el inventory_movement use el número final.
-            $this->reserveDianNumberIfApplicable($invoice);
+            // 1. El consecutivo YA viene reservado por DocumentNumberer desde
+            //    quien crea la factura (POS, restaurante, parqueadero, alta
+            //    manual). Aqui solo se marca el estado DIAN inicial.
+            $this->markPendingDianIfApplicable($invoice);
 
             // 2. Salida de inventario + acumulación del costo total para COGS.
             // Si la factura viene de una remisión (from_delivery_note_id != null),
@@ -296,37 +295,24 @@ class SaleInvoiceEngine
     }
 
     /**
-     * Si la sede tiene LocationResolution activa para Factura Electrónica,
-     * reserva atómicamente el siguiente consecutivo y reescribe prefix+number
-     * de la factura. Si no hay resolución, el número manual se mantiene.
+     * Marca la factura electronica como pendiente de envio a DIAN.
+     *
+     * Antes este metodo ademas reservaba un consecutivo y reescribia
+     * prefix+number, de cuando el numero se asignaba al contabilizar. Hoy
+     * TODOS los caminos que crean una factura (POS, restaurante, parqueadero
+     * y el alta manual) piden el numero a DocumentNumberer antes de crearla,
+     * asi que aquella reserva era una segunda: se quemaba un consecutivo por
+     * factura (del 8544 saltaba al 8546) y ademas podia renumerar con la
+     * resolucion equivocada, porque activeResolution() no distingue POS de
+     * electronica.
      */
-    protected function reserveDianNumberIfApplicable(SaleInvoice $invoice): void
+    protected function markPendingDianIfApplicable(SaleInvoice $invoice): void
     {
-        $assignment = $invoice->location->activeResolution(documentTypeId: 1);
-        if (! $assignment) {
+        if ($invoice->isPosInvoice() || $invoice->dian_status) {
             return;
         }
 
-        $resolution = $assignment->resolution;
-        $next = $assignment->reserveNextNumber();
-
-        if ($next > $resolution->range_to) {
-            throw new RuntimeException(sprintf(
-                'Consecutivo agotado para la resolución %s (rango %s-%s). Solicita uno nuevo a DIAN antes de seguir facturando.',
-                $resolution->resolution_number ?: '?',
-                number_format($resolution->range_from),
-                number_format($resolution->range_to),
-            ));
-        }
-
-        $invoice->update([
-            'prefix' => $resolution->prefix ?: $invoice->prefix,
-            'number' => $next,
-            'dian_resolution_id' => $resolution->id,
-            'dian_status' => SaleInvoice::DIAN_PENDING,
-        ]);
-
-        // refresh in-memory para que createSaleJournalEntry use el número nuevo
+        $invoice->update(['dian_status' => SaleInvoice::DIAN_PENDING]);
         $invoice->refresh();
         $invoice->load(['lines.product', 'lines.tax', 'retentions.tax', 'customer', 'location']);
     }
