@@ -194,9 +194,25 @@ class SaleInvoice extends Model
         return $this->belongsTo(DeliveryNote::class, 'from_delivery_note_id');
     }
 
+    /**
+     * Numero visible del documento.
+     *
+     * En una factura electronica es el identificador con el que el documento
+     * queda registrado ante DIAN: prefijo y consecutivo pegados, sin guion ni
+     * ceros de relleno (FETR6002). La representacion grafica que se le entrega
+     * al cliente tiene que mostrar exactamente ese numero, y es tambien el que
+     * viaja en el billing_reference de las notas credito/debito.
+     *
+     * Las facturas POS no se transmiten a DIAN, asi que conservan el formato
+     * legible de siempre (ME-000123).
+     */
     public function fullNumber(): string
     {
-        return $this->prefix.'-'.str_pad((string) $this->number, 6, '0', STR_PAD_LEFT);
+        if ($this->isPosInvoice()) {
+            return $this->prefix.'-'.str_pad((string) $this->number, 6, '0', STR_PAD_LEFT);
+        }
+
+        return $this->prefix.$this->number;
     }
 
     /**

@@ -158,9 +158,14 @@ class CreditDebitNote extends Model
         return $this->belongsTo(\App\Models\Dian\Resolution::class, 'dian_resolution_id');
     }
 
+    /**
+     * Las notas credito/debito siempre son documentos electronicos, asi que
+     * el numero visible es el identificador DIAN: prefijo y consecutivo
+     * pegados, sin guion ni relleno (NC1).
+     */
     public function fullNumber(): string
     {
-        return $this->prefix.'-'.str_pad((string) $this->number, 6, '0', STR_PAD_LEFT);
+        return $this->prefix.$this->number;
     }
 
     public function isCredit(): bool { return $this->type === self::TYPE_CREDIT; }
