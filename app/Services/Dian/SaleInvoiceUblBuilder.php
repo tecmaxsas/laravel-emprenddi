@@ -44,28 +44,41 @@ class SaleInvoiceUblBuilder
     ];
 
     /**
-     * Mapping de ThirdParty::document_type → DIAN type_document_identification_id
+     * Mapping de ThirdParty::document_type → type_document_identification_id.
+     *
+     * OJO: son los IDs del catalogo de apidian, NO los codigos oficiales del
+     * anexo tecnico DIAN (donde CC=13 y NIT=31). apidian lleva su propia tabla
+     * numerada de 1 a 11 y rechaza los codigos DIAN con
+     * "customer.type document identification id es invalido".
+     * El catalogo completo se consulta con POST /reports/master/database.
      */
     public const DOCUMENT_TYPE_MAP = [
-        'cc' => 13,        // Cédula de ciudadanía
-        'ce' => 22,        // Cédula de extranjería
-        'ti' => 12,        // Tarjeta de identidad
-        'nit' => 31,       // NIT
-        'pasaporte' => 41, // Pasaporte
-        'rut' => 31,       // RUT (mismo que NIT)
-        'nuip' => 91,      // NUIP
-        'die' => 42,       // Documento de identificación extranjero
+        'cc' => 3,         // Cédula de ciudadanía
+        'ce' => 5,         // Cédula de extranjería
+        'ti' => 2,         // Tarjeta de identidad
+        'nit' => 6,        // NIT
+        'pasaporte' => 7,  // Pasaporte
+        'rut' => 6,        // RUT (mismo que NIT)
+        'nuip' => 11,      // NUIP
+        'die' => 8,        // Documento de identificación extranjero
     ];
 
     /**
-     * Mapping de ThirdParty::regime_type → DIAN type_regime_id
+     * Mapping de ThirdParty::regime_type → type_regime_id.
+     *
+     * Igual que el mapa de documentos: apidian usa 1 y 2, no los codigos 48/49
+     * del anexo DIAN, y devuelve "customer.type regime id es invalido" si le
+     * llegan esos.
      */
     public const REGIME_MAP = [
-        'comun' => 48,                 // Responsable de IVA
-        'gran_contribuyente' => 48,    // Responsable de IVA (gran contribuyente)
-        'no_responsable_iva' => 49,    // No responsable de IVA
-        'simplificado' => 49,          // Régimen simplificado = No responsable
+        'comun' => 1,                  // Responsable de IVA
+        'gran_contribuyente' => 1,     // Responsable de IVA (gran contribuyente)
+        'no_responsable_iva' => 2,     // No responsable de IVA
+        'simplificado' => 2,           // Régimen simplificado = No responsable
     ];
+
+    /** Fallback de regimen cuando el tercero no lo tiene definido. */
+    public const DEFAULT_REGIME_ID = 2;
 
     /**
      * Default municipio fallback (149 = Bogotá D.C. en el catálogo DIAN, igual
@@ -144,7 +157,7 @@ class SaleInvoiceUblBuilder
                 'type_document_identification_id' => self::DOCUMENT_TYPE_MAP['cc'],
                 'type_organization_id' => 2,
                 'type_liability_id' => self::DEFAULT_LIABILITY_ID,
-                'type_regime_id' => 49,
+                'type_regime_id' => self::DEFAULT_REGIME_ID,
                 'municipality_id' => self::DEFAULT_MUNICIPALITY_ID,
             ];
         }
@@ -161,7 +174,7 @@ class SaleInvoiceUblBuilder
             'type_document_identification_id' => self::DOCUMENT_TYPE_MAP[$customer->document_type] ?? self::DOCUMENT_TYPE_MAP['cc'],
             'type_organization_id' => $customer->person_type === 'juridica' ? 1 : 2,
             'type_liability_id' => self::DEFAULT_LIABILITY_ID,
-            'type_regime_id' => self::REGIME_MAP[$customer->regime_type] ?? 49,
+            'type_regime_id' => self::REGIME_MAP[$customer->regime_type] ?? self::DEFAULT_REGIME_ID,
             'municipality_id' => $customer->dian_municipality_id ?? self::DEFAULT_MUNICIPALITY_ID,
         ];
 
