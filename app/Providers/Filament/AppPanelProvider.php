@@ -120,6 +120,11 @@ class AppPanelProvider extends PanelProvider
                 PanelsRenderHook::BODY_END,
                 fn (): string => view('filament.receipt-print-bridge')->render(),
             )
+            // Boton flotante de soporte tecnico por WhatsApp.
+            ->renderHook(
+                PanelsRenderHook::BODY_END,
+                fn (): string => view('filament.support-whatsapp')->render(),
+            )
             // Reemplaza el chevron del botón de colapso del sidebar por
             // un icono hamburguesa. El bundle de Filament no expone forma
             // declarativa de cambiar ese icono — usamos CSS con mask para

@@ -28,9 +28,9 @@ class CashRegisterSessionResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Sesiones de caja';
 
-    protected static ?string $navigationGroup = 'Ventas';
+    protected static ?string $navigationGroup = 'Reportes operativos';
 
-    protected static ?int $navigationSort = 60;
+    protected static ?int $navigationSort = 55;
 
     public static function table(Table $table): Table
     {

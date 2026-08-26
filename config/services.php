@@ -35,6 +35,12 @@ return [
         ],
     ],
 
+    // Contacto de soporte que muestra el boton flotante de WhatsApp.
+    // En .env se puede cambiar sin tocar codigo: SUPPORT_WHATSAPP=57...
+    'support' => [
+        'whatsapp' => env('SUPPORT_WHATSAPP', '573246415947'),
+    ],
+
     'dian' => [
         // URL del API UBL 2.1 (apidian.emprenddi.com de Tecmax).
         'api_url' => env('DIAN_API_URL', 'https://apidian.emprenddi.com'),
