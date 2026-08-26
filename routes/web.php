@@ -14,6 +14,11 @@ Route::middleware(['web', 'auth', \App\Http\Middleware\SetActiveCompany::class])
     Route::get('/app/pos/print/{invoice}', [PosPrintController::class, 'show'])
         ->name('pos.print');
 
+    // Comanda de cocina imprimible por navegador: se usa cuando ninguna
+    // impresora activa enruta los productos de la orden.
+    Route::get('/app/restaurant/kot/print/{ticket}', [\App\Http\Controllers\KitchenTicketPrintController::class, 'show'])
+        ->name('restaurant.kot.print');
+
     // Comprobante imprimible de garantía (constancia de recepción)
     Route::get('/app/warranties/{warranty}/print', [\App\Http\Controllers\WarrantyPrintController::class, 'show'])
         ->name('warranties.print');

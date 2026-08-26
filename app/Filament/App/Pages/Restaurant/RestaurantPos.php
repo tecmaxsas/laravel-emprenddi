@@ -1753,18 +1753,32 @@ class RestaurantPos extends Page
 
         try {
             $tickets = app(RestaurantOrderEngine::class)->sendPendingToKitchen($order, $course);
-            $count = count($tickets);
             $label = $course
                 ? (OrderItem::COURSES[$course] ?? 'Curso '.$course)
                 : 'Todo lo pendiente';
 
+            // Las comandas que no tienen impresora se imprimen por el
+            // navegador: se abre una ventana por cada una.
+            $sinImpresora = collect($tickets)->whereNull('restaurant_printer_id');
+            $conImpresora = count($tickets) - $sinImpresora->count();
+
+            $detalle = [];
+            if ($conImpresora > 0) {
+                $detalle[] = "{$conImpresora} ticket(s) enviado(s) a impresora.";
+            }
+            if ($sinImpresora->isNotEmpty()) {
+                $detalle[] = $sinImpresora->count().' comanda(s) se abren para imprimir por el navegador.';
+            }
+
             Notification::make()
                 ->title("Comanda enviada · {$label}")
-                ->body($count > 0
-                    ? "{$count} ticket(s) generado(s) por impresora."
-                    : "Items marcados como enviados (sin impresora asignada).")
+                ->body(implode(' ', $detalle) ?: 'Ítems marcados como enviados.')
                 ->success()
                 ->send();
+
+            if ($sinImpresora->isNotEmpty()) {
+                $this->dispatch('kot-print-browser', ticketIds: $sinImpresora->pluck('id')->all());
+            }
 
             $this->flushBrowserPrintJobs();
         } catch (\Throwable $e) {

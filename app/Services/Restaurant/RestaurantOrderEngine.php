@@ -622,18 +622,11 @@ class RestaurantOrderEngine
             $tickets = [];
 
             foreach ($byPrinter as $printerId => $items) {
-                // Items sin impresora asignada: igual los marcamos enviados
-                // pero NO generamos ticket (no hay destino).
-                if (! $printerId) {
-                    foreach ($items as $it) {
-                        $it->update([
-                            'kitchen_status' => OrderItem::KS_SENT,
-                            'sent_to_kitchen_at' => now(),
-                            'kot_batch' => $nextBatch,
-                        ]);
-                    }
-                    continue;
-                }
+                // printerId puede venir vacio (ninguna impresora activa enruta
+                // esa categoria). Antes esos items se marcaban enviados sin
+                // generar ticket y la cocina se quedaba sin comanda; ahora el
+                // ticket se crea igual y se imprime por el navegador.
+                $printerId = $printerId ?: null;
 
                 $snapshot = $items->map(fn (OrderItem $i) => [
                     'line_number' => $i->line_number,
@@ -671,11 +664,15 @@ class RestaurantOrderEngine
                 $order->update(['status' => Order::STATUS_IN_KITCHEN]);
             }
 
-            // Disparar impresión REAL (network/cups). Si falla, el ticket
+            // Disparar impresión REAL (network/cups/QZ). Si falla, el ticket
             // queda status='failed' con error_message pero la orden ya
             // está enviada — el cocinero puede ver desde el KDS.
+            // Los que no tienen impresora no se tocan aquí: los imprime el
+            // navegador desde la pagina del POS.
             foreach ($tickets as $ticket) {
-                $this->ticketPrinter->print($ticket);
+                if ($ticket->restaurant_printer_id) {
+                    $this->ticketPrinter->print($ticket);
+                }
             }
 
             return $tickets;
