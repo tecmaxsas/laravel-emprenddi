@@ -503,10 +503,15 @@ class Settings extends Page implements HasForms
         $settings['warranties'] = array_merge($settings['warranties'] ?? [], [
             'enabled' => (bool) ($state['warranties_enabled'] ?? false),
         ]);
+        // Los campos de etiquetas viven en un Group con ->visible(): cuando el
+        // toggle esta apagado, Filament los deja FUERA de getState() y leerlos
+        // directo revienta. Se resuelve el valor una sola vez, con default.
+        $labelsPrintMode = $state['labels_print_mode'] ?? 'sheet';
+
         $settings['labels'] = array_merge($settings['labels'] ?? [], [
             'enabled' => (bool) ($state['labels_enabled'] ?? false),
-            'print_mode' => in_array($state['labels_print_mode'] ?? 'sheet', ['sheet', 'roll'], true)
-                ? $state['labels_print_mode']
+            'print_mode' => in_array($labelsPrintMode, ['sheet', 'roll'], true)
+                ? $labelsPrintMode
                 : 'sheet',
             'fields' => array_values((array) ($state['labels_fields'] ?? \App\Support\LabelsSettings::DEFAULT_FIELDS)),
             'barcode_type' => (string) ($state['labels_barcode_type'] ?? 'CODE128'),
@@ -549,8 +554,10 @@ class Settings extends Page implements HasForms
         $settings = $company->settings ?? [];
 
         // Mergeo en settings.pos.* sin perder otras keys.
-        $defaultInvoiceKind = in_array($state['pos_default_invoice_kind'] ?? 'pos', ['pos', 'electronic'], true)
-            ? $state['pos_default_invoice_kind']
+        // Mismo patron que arriba: resolver primero, validar despues.
+        $posInvoiceKind = $state['pos_default_invoice_kind'] ?? 'pos';
+        $defaultInvoiceKind = in_array($posInvoiceKind, ['pos', 'electronic'], true)
+            ? $posInvoiceKind
             : 'pos';
 
         $settings['pos'] = array_merge($settings['pos'] ?? [], [
