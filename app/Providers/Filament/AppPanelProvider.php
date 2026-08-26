@@ -93,6 +93,11 @@ class AppPanelProvider extends PanelProvider
                 PanelsRenderHook::BODY_END,
                 fn (): string => view('filament.kot-print-bridge')->render(),
             )
+            // Puente del recibo de venta por navegador (idem).
+            ->renderHook(
+                PanelsRenderHook::BODY_END,
+                fn (): string => view('filament.receipt-print-bridge')->render(),
+            )
             // Reemplaza el chevron del botón de colapso del sidebar por
             // un icono hamburguesa. El bundle de Filament no expone forma
             // declarativa de cambiar ese icono — usamos CSS con mask para

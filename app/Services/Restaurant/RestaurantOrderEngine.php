@@ -31,6 +31,14 @@ use RuntimeException;
  */
 class RestaurantOrderEngine
 {
+    /**
+     * Facturas del ultimo bill() que no se pudieron imprimir en impresora y
+     * deben abrirse en el navegador. La lee el POS despues de facturar.
+     *
+     * @var array<int, int>
+     */
+    public array $receiptsPendingBrowserPrint = [];
+
     public function __construct(
         protected RestaurantOrderNumberer $numberer,
         protected KitchenTicketPrinter $ticketPrinter,
@@ -1172,16 +1180,23 @@ class RestaurantOrderEngine
         }
 
         // Imprimir recibos POR ESC/POS tras el commit. Si falla (impresora
-        // apagada, sin impresora de caja), no aborta — la venta ya está hecha.
+        // apagada, sin impresora de caja), no aborta — la venta ya está hecha:
+        // esas facturas quedan anotadas para que el POS las abra en el
+        // navegador, igual que hace el terminal de retail.
+        $this->receiptsPendingBrowserPrint = [];
         $receiptPrinter = app(RestaurantReceiptPrinter::class);
         foreach ($receiptJobs as $job) {
-            $receiptPrinter->printReceipt(
+            $impreso = $receiptPrinter->printReceipt(
                 $job['invoice'],
                 $order,
                 (float) $job['tip'],
                 $job['payments'] ?? [],
                 $job['tab_label'] ?? null,
             );
+
+            if (! $impreso) {
+                $this->receiptsPendingBrowserPrint[] = $job['invoice']->id;
+            }
         }
 
         return $invoices;

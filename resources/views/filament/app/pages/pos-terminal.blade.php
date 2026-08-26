@@ -1245,18 +1245,10 @@
     @endif
 
     {{-- ================================================================ --}}
-    {{-- LISTENER de impresión: dispara una ventana nueva con el ticket    --}}
+    {{-- La impresión por navegador la maneja el puente global             --}}
+    {{-- (filament/receipt-print-bridge), compartido con el POS de          --}}
+    {{-- restaurante.                                                       --}}
     {{-- ================================================================ --}}
-    <script>
-        document.addEventListener('livewire:init', () => {
-            Livewire.on('pos-print-ticket', (event) => {
-                const id = Array.isArray(event) ? event[0]?.invoiceId : event?.invoiceId;
-                if (! id) return;
-                const url = '{{ url('/app/pos/print') }}/' + id;
-                window.open(url, 'pos-print-' + id, 'width=420,height=720');
-            });
-        });
-    </script>
 
     {{-- ================================================================ --}}
     {{-- MODAL — RETENCIONES                                               --}}

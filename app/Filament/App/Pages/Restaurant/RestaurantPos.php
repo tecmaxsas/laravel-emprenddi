@@ -1545,7 +1545,14 @@ class RestaurantPos extends Page
         }
 
         try {
-            $invoices = app(RestaurantOrderEngine::class)->bill($order, $payload, $thirdPartyId, $this->billingInvoiceKind);
+            $engine = app(RestaurantOrderEngine::class);
+            $invoices = $engine->bill($order, $payload, $thirdPartyId, $this->billingInvoiceKind);
+
+            // Sin impresora de caja (o si fallo), el recibo se abre en el
+            // navegador. Una ventana por factura si se dividio la cuenta.
+            if ($engine->receiptsPendingBrowserPrint !== []) {
+                $this->dispatch('pos-print-ticket', invoiceIds: $engine->receiptsPendingBrowserPrint);
+            }
 
             // 1. REDIMIR gift cards aplicadas — descuenta saldo y registra
             //    transaccion en el ledger. bill() ya creo el Payment con
