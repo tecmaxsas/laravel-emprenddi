@@ -1864,28 +1864,4 @@
         </div>
     @endif
 
-    {{-- ================================================================ --}}
-    {{-- LISTENER: comandas sin impresora -> ventana del navegador        --}}
-    {{-- ================================================================ --}}
-    <script>
-        document.addEventListener('livewire:init', () => {
-            Livewire.on('kot-print-browser', (event) => {
-                const payload = Array.isArray(event) ? event[0] : event;
-                const ids = payload?.ticketIds ?? [];
-
-                // Una ventana por comanda. Se abren escalonadas porque el
-                // navegador ignora ventanas abiertas de golpe en el mismo tick.
-                ids.forEach((id, i) => {
-                    setTimeout(() => {
-                        window.open(
-                            '{{ url('/app/restaurant/kot/print') }}/' + id,
-                            'kot-print-' + id,
-                            'width=420,height=720'
-                        );
-                    }, i * 400);
-                });
-            });
-        });
-    </script>
-
 </x-filament-panels::page>
