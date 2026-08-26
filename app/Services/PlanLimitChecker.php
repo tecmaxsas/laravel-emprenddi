@@ -46,8 +46,12 @@ class PlanLimitChecker
             'max_locations' => $company->locations()->count(),
             'max_users' => $company->users()->count(),
             'max_third_parties' => \App\Models\ThirdParty::withoutGlobalScopes()->where('company_id', $company->id)->count(),
-            // 'max_products' => ... cuando exista Product
-            // 'max_invoices_per_month' => ... cuando existan invoices
+            'max_products' => \App\Models\Product::withoutGlobalScopes()->where('company_id', $company->id)->count(),
+            // Se cuenta el mes en curso: el limite es por mes, no acumulado.
+            'max_invoices_per_month' => \App\Models\SaleInvoice::withoutGlobalScopes()
+                ->where('company_id', $company->id)
+                ->whereBetween('date', [now()->startOfMonth(), now()->endOfMonth()])
+                ->count(),
             default => 0,
         };
     }
