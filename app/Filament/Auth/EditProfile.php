@@ -27,6 +27,16 @@ class EditProfile extends BaseEditProfile
                 ->label('Apellidos')
                 ->maxLength(150),
             $this->getEmailFormComponent(),
+            TextInput::make('username')
+                ->label('Nombre de usuario')
+                ->maxLength(60)
+                ->unique('users', 'username', ignoreRecord: true)
+                ->requiredWithout('email')
+                ->rule('regex:/^[A-Za-z0-9._-]+$/')
+                ->validationMessages([
+                    'regex' => 'Solo letras, números, punto, guion y guion bajo — sin espacios ni arroba.',
+                ])
+                ->helperText('Puedes entrar con esto o con tu correo.'),
             $this->getPasswordFormComponent(),
             $this->getPasswordConfirmationFormComponent(),
             Toggle::make('marketing_opt_in')
@@ -50,9 +60,17 @@ class EditProfile extends BaseEditProfile
         return parent::getNameFormComponent()->label('Nombre');
     }
 
+    /**
+     * El correo dejo de ser obligatorio: hay usuarios que solo tienen nombre
+     * de usuario. Se exige tener al menos uno de los dos.
+     */
     protected function getEmailFormComponent(): Component
     {
-        return parent::getEmailFormComponent()->label('Correo electrónico');
+        return parent::getEmailFormComponent()
+            ->label('Correo electrónico')
+            ->required(false)
+            ->requiredWithout('username')
+            ->helperText('Sin correo no puedes recuperar tu contraseña por tu cuenta: tendría que restablecerla un administrador.');
     }
 
     protected function getPasswordFormComponent(): Component

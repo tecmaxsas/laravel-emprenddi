@@ -60,11 +60,29 @@ class UserResource extends Resource
                         ->maxLength(100),
 
                     Forms\Components\TextInput::make('email')
-                        ->label('Email')
+                        ->label('Correo')
                         ->email()
-                        ->required()
                         ->maxLength(255)
                         ->unique(ignoreRecord: true)
+                        ->helperText('Opcional. Sin correo, este usuario entra con su nombre de usuario y solo un administrador puede restablecerle la contraseña.')
+                        ->requiredWithout('username')
+                        ->columnSpan(2),
+
+                    Forms\Components\TextInput::make('username')
+                        ->label('Nombre de usuario')
+                        ->maxLength(60)
+                        ->unique(ignoreRecord: true)
+                        ->requiredWithout('email')
+                        // El sufijo con el id de la empresa mantiene los
+                        // nombres legibles y evita chocar con el "CAJERO" de
+                        // otro cliente: el indice es unico global porque el
+                        // login no sabe de que empresa viene quien entra.
+                        ->default(fn () => \App\Models\User::suggestUsername('CAJERO', auth()->user()?->company_id))
+                        ->rule('regex:/^[A-Za-z0-9._-]+$/')
+                        ->validationMessages([
+                            'regex' => 'Solo letras, números, punto, guion y guion bajo — sin espacios ni arroba.',
+                        ])
+                        ->helperText('Con esto entra al sistema. Se sugiere el sufijo de la empresa para que no choque con otros clientes.')
                         ->columnSpan(2),
                 ])->columnSpanFull(),
 
@@ -122,7 +140,15 @@ class UserResource extends Resource
                     ->weight('semibold'),
 
                 Tables\Columns\TextColumn::make('email')
-                    ->label('Email')
+                    ->label('Correo')
+                    ->placeholder('—')
+                    ->searchable()
+                    ->copyable(),
+
+                Tables\Columns\TextColumn::make('username')
+                    ->label('Usuario')
+                    ->placeholder('—')
+                    ->fontFamily('mono')
                     ->searchable()
                     ->copyable(),
 

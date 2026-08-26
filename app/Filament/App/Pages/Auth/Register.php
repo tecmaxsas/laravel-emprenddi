@@ -211,9 +211,22 @@ class Register extends BaseRegister
                         TextInput::make('admin_email')
                             ->label('Correo Electrónico')
                             ->email()
-                            ->required()
                             ->maxLength(255)
                             ->unique('users', 'email', ignoreRecord: true)
+                            ->requiredWithout('admin_username')
+                            ->helperText('Con correo puedes recuperar tu contraseña tú mismo y recibir los avisos de la suscripción.')
+                            ->columnSpan(2),
+
+                        TextInput::make('admin_username')
+                            ->label('Nombre de usuario')
+                            ->maxLength(60)
+                            ->unique('users', 'username', ignoreRecord: true)
+                            ->requiredWithout('admin_email')
+                            ->rule('regex:/^[A-Za-z0-9._-]+$/')
+                            ->validationMessages([
+                                'regex' => 'Solo letras, números, punto, guion y guion bajo — sin espacios ni arroba.',
+                            ])
+                            ->helperText('Puedes entrar con esto en vez del correo. Al menos uno de los dos es obligatorio.')
                             ->columnSpan(2),
 
                         TextInput::make('admin_password')
@@ -296,11 +309,14 @@ class Register extends BaseRegister
 
                         Placeholder::make('summary_admin')
                             ->label('Administrador')
-                            ->content(fn (Get $get) => trim(
-                                ($get('admin_first_name') ?: '').' '.
-                                ($get('admin_last_name') ?: '').
-                                ' <'.($get('admin_email') ?: '').'>'
-                            )),
+                            ->content(function (Get $get) {
+                                $nombre = trim(($get('admin_first_name') ?: '').' '.($get('admin_last_name') ?: ''));
+                                // Con correo opcional, el resumen muestra el
+                                // identificador que el usuario haya elegido.
+                                $identificador = $get('admin_email') ?: $get('admin_username');
+
+                                return $identificador ? "{$nombre} <{$identificador}>" : $nombre;
+                            }),
 
                         Placeholder::make('summary_config')
                             ->label('Configuración')
@@ -345,13 +361,14 @@ class Register extends BaseRegister
                 'company_id' => $company->id,
                 'name' => $data['admin_first_name'],
                 'last_name' => $data['admin_last_name'],
-                'email' => $data['admin_email'],
+                'email' => $data['admin_email'] ?: null,
+                'username' => $data['admin_username'] ?: null,
                 'password' => Hash::make($data['admin_password']),
                 'is_super_admin' => false,
                 'active' => true,
                 'accepted_terms_at' => now(),
                 'marketing_opt_in' => (bool) ($data['marketing_opt_in'] ?? false),
-                'email_verified_at' => now(),
+                'email_verified_at' => ($data['admin_email'] ?? null) ? now() : null,
             ]);
 
             $user->assignRole('admin');

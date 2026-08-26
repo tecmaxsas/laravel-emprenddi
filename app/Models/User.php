@@ -23,6 +23,7 @@ class User extends Authenticatable implements FilamentUser
         'name',
         'last_name',
         'email',
+        'username',
         'password',
         'is_super_admin',
         'is_accountant_portal',
@@ -106,5 +107,21 @@ class User extends Authenticatable implements FilamentUser
             'contador' => (bool) $this->is_accountant_portal,
             default => false,
         };
+    }
+
+    /**
+     * Nombre de usuario sugerido al crear un usuario desde la empresa.
+     *
+     * Se le pega el company_id como sufijo (CAJERO-153) por dos razones: los
+     * nombres quedan legibles dentro de cada empresa y, como el indice es
+     * unico global —el login no sabe de que empresa viene quien entra—, el
+     * sufijo evita chocar con el "CAJERO" de otro cliente.
+     */
+    public static function suggestUsername(string $base, ?int $companyId): string
+    {
+        $base = strtoupper(trim($base));
+        $base = preg_replace('/[^A-Z0-9._-]+/', '', $base) ?: 'USUARIO';
+
+        return $companyId ? $base.'-'.$companyId : $base;
     }
 }
