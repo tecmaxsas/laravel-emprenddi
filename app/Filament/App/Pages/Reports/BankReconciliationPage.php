@@ -36,11 +36,11 @@ class BankReconciliationPage extends Page implements HasForms, HasTable
 
     protected static ?string $navigationLabel = 'Conciliación bancaria';
 
-    protected static ?string $navigationGroup = 'Reportes';
+    protected static ?string $navigationGroup = 'Contabilidad';
 
     protected static ?string $title = 'Conciliación Bancaria';
 
-    protected static ?int $navigationSort = 65;
+    protected static ?int $navigationSort = 40;
 
     protected static string $view = 'filament.app.pages.reports.report-page';
 

@@ -29,7 +29,7 @@ class RestaurantReports extends Page
 
     protected static ?string $navigationGroup = 'Restaurante';
 
-    protected static ?int $navigationSort = 90;
+    protected static ?int $navigationSort = 110;
 
     protected static ?string $title = 'Reportes';
 

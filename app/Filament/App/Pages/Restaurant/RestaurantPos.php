@@ -40,7 +40,7 @@ class RestaurantPos extends Page
 
     protected static ?string $navigationGroup = 'Restaurante';
 
-    protected static ?int $navigationSort = 5;
+    protected static ?int $navigationSort = 10;
 
     protected static ?string $title = 'POS Restaurante';
 

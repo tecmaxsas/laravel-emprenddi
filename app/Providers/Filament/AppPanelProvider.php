@@ -45,6 +45,28 @@ class AppPanelProvider extends PanelProvider
             ->sidebarCollapsibleOnDesktop()
             ->discoverResources(in: app_path('Filament/App/Resources'), for: 'App\\Filament\\App\\Resources')
             ->discoverPages(in: app_path('Filament/App/Pages'), for: 'App\\Filament\\App\\Pages')
+            // Orden de los grupos del menu lateral. Sin esto Filament los
+            // ordena alfabeticamente, que no es el recorrido que sigue el
+            // usuario: primero lo que se opera a diario, luego reportes,
+            // contabilidad y por ultimo la configuracion.
+            ->navigationGroups([
+                'Gestión de usuarios',
+                'Contactos',
+                'Productos',
+                'Restaurante',
+                'Parqueadero',
+                'Ventas',
+                'Toma pedidos',
+                'Servicio',
+                'Compras',
+                'Inventario',
+                'Gastos',
+                'Reportes contables',
+                'Reportes operativos',
+                'Contabilidad',
+                'Nómina',
+                'Configuración',
+            ])
             ->pages([
                 Pages\Dashboard::class,
             ])

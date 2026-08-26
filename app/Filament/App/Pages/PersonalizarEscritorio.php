@@ -20,9 +20,11 @@ class PersonalizarEscritorio extends Page implements HasForms
     use InteractsWithForms;
 
     protected static ?string $navigationIcon = 'heroicon-o-squares-2x2';
+
+    protected static ?string $navigationGroup = 'Configuración';
     protected static ?string $navigationLabel = 'Personalizar Escritorio';
     protected static ?string $title = 'Personalizar Escritorio';
-    protected static ?int $navigationSort = 99;
+    protected static ?int $navigationSort = 120;
 
     protected static string $view = 'filament.app.pages.personalizar-escritorio';
 

@@ -28,9 +28,9 @@ class PromotionsReport extends Page implements HasForms, HasTable
 
     protected static ?string $navigationIcon = 'heroicon-o-tag';
     protected static ?string $navigationLabel = 'Uso de Promociones';
-    protected static ?string $navigationGroup = 'Reportes';
+    protected static ?string $navigationGroup = 'Reportes operativos';
     protected static ?string $title = 'Uso de Promociones';
-    protected static ?int $navigationSort = 80;
+    protected static ?int $navigationSort = 70;
 
     protected static string $view = 'filament.app.pages.reports.report-page';
 

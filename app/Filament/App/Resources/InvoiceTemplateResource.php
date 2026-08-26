@@ -30,9 +30,9 @@ class InvoiceTemplateResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Plantillas de impresión';
 
-    protected static ?string $navigationGroup = 'Operación';
+    protected static ?string $navigationGroup = 'Configuración';
 
-    protected static ?int $navigationSort = 10;
+    protected static ?int $navigationSort = 30;
 
     public static function form(Form $form): Form
     {

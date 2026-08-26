@@ -23,7 +23,7 @@ class TrialBalancePage extends Page implements HasForms, HasTable
 
     protected static ?string $navigationLabel = 'Balance de Comprobación';
 
-    protected static ?string $navigationGroup = 'Reportes';
+    protected static ?string $navigationGroup = 'Reportes contables';
 
     protected static ?string $title = 'Balance de Comprobación';
 

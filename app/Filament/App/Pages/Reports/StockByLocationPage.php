@@ -37,11 +37,11 @@ class StockByLocationPage extends Page implements HasForms, HasTable
 
     protected static ?string $navigationLabel = 'Stock por Sede';
 
-    protected static ?string $navigationGroup = 'Reportes';
+    protected static ?string $navigationGroup = 'Reportes operativos';
 
     protected static ?string $title = 'Stock por Sede';
 
-    protected static ?int $navigationSort = 45;
+    protected static ?int $navigationSort = 30;
 
     protected static string $view = 'filament.app.pages.reports.report-page';
 

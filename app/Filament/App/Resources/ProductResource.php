@@ -27,13 +27,13 @@ class ProductResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-cube';
 
-    protected static ?string $navigationLabel = 'Productos';
+    protected static ?string $navigationLabel = 'Lista de productos';
 
     protected static ?string $modelLabel = 'Producto';
 
     protected static ?string $pluralModelLabel = 'Productos';
 
-    protected static ?string $navigationGroup = 'Catálogo';
+    protected static ?string $navigationGroup = 'Productos';
 
     protected static ?int $navigationSort = 10;
 

@@ -37,7 +37,7 @@ class QuotationResource extends Resource
 
     protected static ?string $navigationGroup = 'Ventas';
 
-    protected static ?int $navigationSort = 5;
+    protected static ?int $navigationSort = 30;
 
     public static function form(Form $form): Form
     {

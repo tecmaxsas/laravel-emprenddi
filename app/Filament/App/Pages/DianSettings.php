@@ -29,11 +29,11 @@ class DianSettings extends Page implements HasForms
 
     protected static ?string $navigationLabel = 'Facturación Electrónica DIAN';
 
-    protected static ?string $navigationGroup = 'Administración';
+    protected static ?string $navigationGroup = 'Configuración';
 
     protected static ?string $title = 'Facturación Electrónica DIAN';
 
-    protected static ?int $navigationSort = 50;
+    protected static ?int $navigationSort = 80;
 
     protected static string $view = 'filament.app.pages.dian-settings';
 

@@ -30,9 +30,9 @@ class PaymentMethodResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Métodos de pago';
 
-    protected static ?string $navigationGroup = 'Contabilidad';
+    protected static ?string $navigationGroup = 'Configuración';
 
-    protected static ?int $navigationSort = 35;
+    protected static ?int $navigationSort = 60;
 
     public static function form(Form $form): Form
     {

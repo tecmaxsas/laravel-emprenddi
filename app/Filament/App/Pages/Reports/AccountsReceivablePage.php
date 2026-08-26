@@ -23,11 +23,11 @@ class AccountsReceivablePage extends Page implements HasForms, HasTable
 
     protected static ?string $navigationLabel = 'Cartera (CxC)';
 
-    protected static ?string $navigationGroup = 'Reportes';
+    protected static ?string $navigationGroup = 'Reportes operativos';
 
     protected static ?string $title = 'Cartera — Cuentas por Cobrar';
 
-    protected static ?int $navigationSort = 50;
+    protected static ?int $navigationSort = 40;
 
     protected static string $view = 'filament.app.pages.reports.report-page';
 

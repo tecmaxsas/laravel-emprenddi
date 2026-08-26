@@ -28,9 +28,9 @@ class CostCenterResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Centros de costo';
 
-    protected static ?string $navigationGroup = 'Configuración contable';
+    protected static ?string $navigationGroup = 'Configuración';
 
-    protected static ?int $navigationSort = 50;
+    protected static ?int $navigationSort = 90;
 
     public static function form(Form $form): Form
     {

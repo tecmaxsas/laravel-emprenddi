@@ -33,7 +33,7 @@ class AppointmentResource extends Resource
     protected static ?string $modelLabel = 'Cita';
     protected static ?string $pluralModelLabel = 'Citas';
     protected static ?string $navigationGroup = 'Ventas';
-    protected static ?int $navigationSort = 70;
+    protected static ?int $navigationSort = 80;
 
     public static function canAccess(): bool
     {

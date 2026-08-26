@@ -19,7 +19,7 @@ class InformacionExogenaPage extends Page implements HasForms
 
     protected static ?string $navigationLabel = 'Información Exógena';
 
-    protected static ?string $navigationGroup = 'Reportes';
+    protected static ?string $navigationGroup = 'Contabilidad';
 
     protected static ?string $title = 'Información Exógena (Medios Magnéticos)';
 

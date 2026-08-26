@@ -42,7 +42,7 @@ class SupportDocumentResource extends Resource
 
     protected static ?string $navigationGroup = 'Compras';
 
-    protected static ?int $navigationSort = 15;
+    protected static ?int $navigationSort = 20;
 
     /**
      * Este resource solo opera los documentos soporte; las facturas de

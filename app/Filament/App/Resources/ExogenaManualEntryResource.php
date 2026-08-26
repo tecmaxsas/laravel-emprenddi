@@ -35,7 +35,7 @@ class ExogenaManualEntryResource extends Resource
 
     protected static ?string $navigationGroup = 'Contabilidad';
 
-    protected static ?int $navigationSort = 76;
+    protected static ?int $navigationSort = 70;
 
     public static function form(Form $form): Form
     {

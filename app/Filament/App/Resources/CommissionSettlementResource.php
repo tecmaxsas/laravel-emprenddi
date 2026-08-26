@@ -28,7 +28,7 @@ class CommissionSettlementResource extends Resource
     protected static ?string $modelLabel = 'Liquidación de comisión';
     protected static ?string $pluralModelLabel = 'Liquidaciones de comisión';
     protected static ?string $navigationGroup = 'Ventas';
-    protected static ?int $navigationSort = 91;
+    protected static ?int $navigationSort = 120;
 
     public static function canAccess(): bool
     {

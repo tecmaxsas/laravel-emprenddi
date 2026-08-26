@@ -23,11 +23,11 @@ class AccountsPayablePage extends Page implements HasForms, HasTable
 
     protected static ?string $navigationLabel = 'Cuentas por Pagar';
 
-    protected static ?string $navigationGroup = 'Reportes';
+    protected static ?string $navigationGroup = 'Reportes operativos';
 
     protected static ?string $title = 'Cuentas por Pagar (CxP)';
 
-    protected static ?int $navigationSort = 55;
+    protected static ?int $navigationSort = 50;
 
     protected static string $view = 'filament.app.pages.reports.report-page';
 

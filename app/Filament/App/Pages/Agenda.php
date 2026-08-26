@@ -18,7 +18,7 @@ class Agenda extends Page
     protected static ?string $navigationIcon = 'heroicon-o-calendar';
     protected static ?string $navigationLabel = 'Agenda';
     protected static ?string $navigationGroup = 'Ventas';
-    protected static ?int $navigationSort = 69;
+    protected static ?int $navigationSort = 70;
     protected static ?string $title = 'Agenda';
 
     protected static string $view = 'filament.app.pages.agenda';

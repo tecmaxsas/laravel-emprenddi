@@ -36,7 +36,7 @@ class DeliveryNoteResource extends Resource
 
     protected static ?string $navigationGroup = 'Ventas';
 
-    protected static ?int $navigationSort = 7;
+    protected static ?int $navigationSort = 40;
 
     public static function form(Form $form): Form
     {

@@ -32,7 +32,7 @@ class CommissionRuleResource extends Resource
     protected static ?string $modelLabel = 'Regla de comisión';
     protected static ?string $pluralModelLabel = 'Reglas de comisión';
     protected static ?string $navigationGroup = 'Ventas';
-    protected static ?int $navigationSort = 90;
+    protected static ?int $navigationSort = 110;
 
     public static function canAccess(): bool
     {

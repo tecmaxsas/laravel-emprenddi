@@ -30,9 +30,9 @@ class CategoryResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Categorías';
 
-    protected static ?string $navigationGroup = 'Catálogo';
+    protected static ?string $navigationGroup = 'Productos';
 
-    protected static ?int $navigationSort = 5;
+    protected static ?int $navigationSort = 30;
 
     public static function form(Form $form): Form
     {

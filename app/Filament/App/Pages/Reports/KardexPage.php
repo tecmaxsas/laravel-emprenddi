@@ -24,11 +24,11 @@ class KardexPage extends Page implements HasForms, HasTable
 
     protected static ?string $navigationLabel = 'Kardex';
 
-    protected static ?string $navigationGroup = 'Reportes';
+    protected static ?string $navigationGroup = 'Reportes operativos';
 
     protected static ?string $title = 'Kardex de Inventario';
 
-    protected static ?int $navigationSort = 40;
+    protected static ?int $navigationSort = 20;
 
     protected static string $view = 'filament.app.pages.reports.report-page';
 

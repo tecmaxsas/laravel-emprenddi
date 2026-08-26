@@ -24,7 +24,7 @@ class PayrollAccountSetupPage extends Page implements HasForms
 
     protected static ?string $title = 'Cuentas contables de la nómina';
 
-    protected static ?int $navigationSort = 40;
+    protected static ?int $navigationSort = 50;
 
     protected static string $view = 'filament.app.pages.payroll-account-setup';
 

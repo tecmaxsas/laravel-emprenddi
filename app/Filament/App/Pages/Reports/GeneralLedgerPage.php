@@ -24,7 +24,7 @@ class GeneralLedgerPage extends Page implements HasForms, HasTable
 
     protected static ?string $navigationLabel = 'Libro Mayor y Auxiliar';
 
-    protected static ?string $navigationGroup = 'Reportes';
+    protected static ?string $navigationGroup = 'Reportes contables';
 
     protected static ?string $title = 'Libro Mayor y Auxiliar de Cuentas';
 

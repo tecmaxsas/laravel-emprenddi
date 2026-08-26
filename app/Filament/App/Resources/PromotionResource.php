@@ -32,7 +32,7 @@ class PromotionResource extends Resource
     protected static ?string $modelLabel = 'Promoción';
     protected static ?string $pluralModelLabel = 'Promociones';
     protected static ?string $navigationGroup = 'Ventas';
-    protected static ?int $navigationSort = 80;
+    protected static ?int $navigationSort = 90;
 
     /**
      * El resource solo aparece si el modulo esta activo en settings.

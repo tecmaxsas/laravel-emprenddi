@@ -26,9 +26,9 @@ class CommissionsReport extends Page implements HasForms, HasTable
 
     protected static ?string $navigationIcon = 'heroicon-o-currency-dollar';
     protected static ?string $navigationLabel = 'Comisiones por Vendedor';
-    protected static ?string $navigationGroup = 'Reportes';
+    protected static ?string $navigationGroup = 'Reportes operativos';
     protected static ?string $title = 'Comisiones por Vendedor';
-    protected static ?int $navigationSort = 82;
+    protected static ?int $navigationSort = 90;
 
     protected static string $view = 'filament.app.pages.reports.report-page';
 

@@ -30,7 +30,7 @@ class CashRegisterSessionResource extends Resource
 
     protected static ?string $navigationGroup = 'Ventas';
 
-    protected static ?int $navigationSort = 30;
+    protected static ?int $navigationSort = 60;
 
     public static function table(Table $table): Table
     {

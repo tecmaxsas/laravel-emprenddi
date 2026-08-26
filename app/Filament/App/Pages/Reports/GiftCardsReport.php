@@ -33,9 +33,9 @@ class GiftCardsReport extends Page implements HasForms, HasTable
 
     protected static ?string $navigationIcon = 'heroicon-o-gift';
     protected static ?string $navigationLabel = 'Estado Gift Cards';
-    protected static ?string $navigationGroup = 'Reportes';
+    protected static ?string $navigationGroup = 'Reportes operativos';
     protected static ?string $title = 'Estado Gift Cards';
-    protected static ?int $navigationSort = 81;
+    protected static ?int $navigationSort = 80;
 
     protected static string $view = 'filament.app.pages.reports.report-page';
 

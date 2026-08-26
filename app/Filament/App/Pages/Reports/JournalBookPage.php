@@ -22,7 +22,7 @@ class JournalBookPage extends Page implements HasForms, HasTable
 
     protected static ?string $navigationLabel = 'Libro Diario';
 
-    protected static ?string $navigationGroup = 'Reportes';
+    protected static ?string $navigationGroup = 'Reportes contables';
 
     protected static ?string $title = 'Libro Diario';
 

@@ -24,11 +24,11 @@ class SalesByPeriodPage extends Page implements HasForms, HasTable
 
     protected static ?string $navigationLabel = 'Ventas por Período';
 
-    protected static ?string $navigationGroup = 'Reportes';
+    protected static ?string $navigationGroup = 'Reportes operativos';
 
     protected static ?string $title = 'Ventas por Período';
 
-    protected static ?int $navigationSort = 40;
+    protected static ?int $navigationSort = 10;
 
     protected static string $view = 'filament.app.pages.reports.report-page';
 

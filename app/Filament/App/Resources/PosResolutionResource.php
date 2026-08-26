@@ -38,9 +38,9 @@ class PosResolutionResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Resoluciones POS';
 
-    protected static ?string $navigationGroup = 'Ventas';
+    protected static ?string $navigationGroup = 'Configuración';
 
-    protected static ?int $navigationSort = 35;
+    protected static ?int $navigationSort = 70;
 
     protected static ?string $slug = 'pos-resolutions';
 

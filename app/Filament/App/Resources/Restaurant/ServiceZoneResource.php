@@ -32,7 +32,7 @@ class ServiceZoneResource extends Resource
 
     protected static ?string $navigationGroup = 'Restaurante';
 
-    protected static ?int $navigationSort = 10;
+    protected static ?int $navigationSort = 40;
 
     public static function canAccess(): bool
     {

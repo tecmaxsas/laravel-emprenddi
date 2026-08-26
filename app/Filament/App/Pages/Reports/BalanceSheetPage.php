@@ -26,9 +26,9 @@ class BalanceSheetPage extends Page implements HasForms
 
     protected static ?string $navigationIcon = 'heroicon-o-building-library';
     protected static ?string $navigationLabel = 'Balance General';
-    protected static ?string $navigationGroup = 'Reportes';
+    protected static ?string $navigationGroup = 'Reportes contables';
     protected static ?string $title = 'Estado de Situación Financiera';
-    protected static ?int $navigationSort = 41;
+    protected static ?int $navigationSort = 50;
 
     protected static string $view = 'filament.app.pages.reports.balance-sheet';
 

@@ -25,8 +25,8 @@ class ProductImport extends Page implements HasForms
 
     protected static ?string $navigationIcon = 'heroicon-o-arrow-up-tray';
     protected static ?string $navigationLabel = 'Importar productos';
-    protected static ?string $navigationGroup = 'Catálogo';
-    protected static ?int $navigationSort = 15;
+    protected static ?string $navigationGroup = 'Productos';
+    protected static ?int $navigationSort = 20;
     protected static ?string $slug = 'products/import';
     protected static ?string $title = 'Importar productos desde Excel';
 

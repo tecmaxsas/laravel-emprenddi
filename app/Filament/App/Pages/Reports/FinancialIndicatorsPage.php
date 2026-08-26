@@ -19,9 +19,9 @@ class FinancialIndicatorsPage extends Page implements HasForms
 
     protected static ?string $navigationIcon = 'heroicon-o-presentation-chart-line';
     protected static ?string $navigationLabel = 'Indicadores Financieros';
-    protected static ?string $navigationGroup = 'Reportes';
+    protected static ?string $navigationGroup = 'Reportes contables';
     protected static ?string $title = 'Indicadores Financieros';
-    protected static ?int $navigationSort = 42;
+    protected static ?int $navigationSort = 60;
 
     protected static string $view = 'filament.app.pages.reports.financial-indicators';
 

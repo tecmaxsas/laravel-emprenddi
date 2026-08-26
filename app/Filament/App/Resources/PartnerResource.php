@@ -33,7 +33,7 @@ class PartnerResource extends Resource
 
     protected static ?string $navigationGroup = 'Contabilidad';
 
-    protected static ?int $navigationSort = 70;
+    protected static ?int $navigationSort = 50;
 
     public static function form(Form $form): Form
     {

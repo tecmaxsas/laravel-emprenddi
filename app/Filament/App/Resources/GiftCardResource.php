@@ -31,7 +31,7 @@ class GiftCardResource extends Resource
     protected static ?string $modelLabel = 'Tarjeta Regalo';
     protected static ?string $pluralModelLabel = 'Tarjetas Regalo';
     protected static ?string $navigationGroup = 'Ventas';
-    protected static ?int $navigationSort = 85;
+    protected static ?int $navigationSort = 100;
 
     public static function canAccess(): bool
     {

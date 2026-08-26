@@ -27,7 +27,7 @@ class DeliveryDispatch extends Page
 
     protected static ?string $navigationGroup = 'Restaurante';
 
-    protected static ?int $navigationSort = 8;
+    protected static ?int $navigationSort = 30;
 
     protected static ?string $title = 'Despacho de domicilios';
 

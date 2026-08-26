@@ -41,7 +41,7 @@ class PosTerminal extends Page
 
     protected static ?string $slug = 'pos';
 
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 10;
 
     protected static ?string $navigationGroup = 'Ventas';
 

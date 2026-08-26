@@ -24,7 +24,7 @@ class CashClosingsPage extends Page implements HasForms, HasTable
 
     protected static ?string $navigationLabel = 'Cierres de Caja';
 
-    protected static ?string $navigationGroup = 'Reportes';
+    protected static ?string $navigationGroup = 'Reportes operativos';
 
     protected static ?string $title = 'Cierres de Caja Históricos';
 

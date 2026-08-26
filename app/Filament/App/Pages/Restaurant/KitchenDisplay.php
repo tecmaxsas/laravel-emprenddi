@@ -31,7 +31,7 @@ class KitchenDisplay extends Page
 
     protected static ?string $navigationGroup = 'Restaurante';
 
-    protected static ?int $navigationSort = 7;
+    protected static ?int $navigationSort = 80;
 
     protected static ?string $title = 'Pantalla de cocina';
 

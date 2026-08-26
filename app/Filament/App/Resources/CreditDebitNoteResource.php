@@ -36,7 +36,7 @@ class CreditDebitNoteResource extends Resource
 
     protected static ?string $navigationGroup = 'Ventas';
 
-    protected static ?int $navigationSort = 20;
+    protected static ?int $navigationSort = 50;
 
     public static function form(Form $form): Form
     {

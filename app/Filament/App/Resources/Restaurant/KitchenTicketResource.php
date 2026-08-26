@@ -51,7 +51,7 @@ class KitchenTicketResource extends Resource
 
     protected static ?string $navigationGroup = 'Restaurante';
 
-    protected static ?int $navigationSort = 6;
+    protected static ?int $navigationSort = 20;
 
     public static function canAccess(): bool
     {

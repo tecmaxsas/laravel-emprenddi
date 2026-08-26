@@ -30,9 +30,9 @@ class PrinterResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Impresoras';
 
-    protected static ?string $navigationGroup = 'Operación';
+    protected static ?string $navigationGroup = 'Configuración';
 
-    protected static ?int $navigationSort = 20;
+    protected static ?int $navigationSort = 40;
 
     /**
      * La configuración de impresoras es transversal — sirve a restaurante,

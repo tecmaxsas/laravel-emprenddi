@@ -28,15 +28,15 @@ class ExpenseResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-banknotes';
 
-    protected static ?string $navigationLabel = 'Gastos';
+    protected static ?string $navigationLabel = 'Listado de gastos';
 
     protected static ?string $modelLabel = 'Gasto';
 
     protected static ?string $pluralModelLabel = 'Gastos';
 
-    protected static ?string $navigationGroup = 'Compras';
+    protected static ?string $navigationGroup = 'Gastos';
 
-    protected static ?int $navigationSort = 20;
+    protected static ?int $navigationSort = 10;
 
     public static function form(Form $form): Form
     {

@@ -31,9 +31,9 @@ class ThirdPartyResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Terceros';
 
-    protected static ?string $navigationGroup = 'Contabilidad';
+    protected static ?string $navigationGroup = 'Contactos';
 
-    protected static ?int $navigationSort = 20;
+    protected static ?int $navigationSort = 10;
 
     public static function form(Form $form): Form
     {

@@ -21,7 +21,7 @@ class IncomeStatementPage extends Page implements HasForms
 
     protected static ?string $navigationIcon = 'heroicon-o-chart-bar';
     protected static ?string $navigationLabel = 'Estado de Resultados';
-    protected static ?string $navigationGroup = 'Reportes';
+    protected static ?string $navigationGroup = 'Reportes contables';
     protected static ?string $title = 'Estado de Resultados Integral';
     protected static ?int $navigationSort = 40;
 

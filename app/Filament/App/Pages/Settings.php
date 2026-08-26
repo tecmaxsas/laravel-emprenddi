@@ -36,11 +36,11 @@ class Settings extends Page implements HasForms
 
     protected static ?string $navigationLabel = 'Configuraciones';
 
-    protected static ?string $navigationGroup = 'Administración';
+    protected static ?string $navigationGroup = 'Configuración';
 
     protected static ?string $title = 'Configuraciones';
 
-    protected static ?int $navigationSort = 60;
+    protected static ?int $navigationSort = 10;
 
     protected static ?string $slug = 'settings';
 

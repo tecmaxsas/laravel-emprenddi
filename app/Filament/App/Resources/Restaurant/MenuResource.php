@@ -34,7 +34,7 @@ class MenuResource extends Resource
 
     protected static ?string $navigationGroup = 'Restaurante';
 
-    protected static ?int $navigationSort = 12;
+    protected static ?int $navigationSort = 100;
 
     public static function canAccess(): bool
     {

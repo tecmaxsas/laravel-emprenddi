@@ -32,9 +32,9 @@ class FiscalPeriodResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Períodos fiscales';
 
-    protected static ?string $navigationGroup = 'Configuración contable';
+    protected static ?string $navigationGroup = 'Configuración';
 
-    protected static ?int $navigationSort = 60;
+    protected static ?int $navigationSort = 100;
 
     public static function form(Form $form): Form
     {

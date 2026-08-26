@@ -21,8 +21,8 @@ class ThirdPartyImport extends Page implements HasForms
 
     protected static ?string $navigationIcon = 'heroicon-o-arrow-up-tray';
     protected static ?string $navigationLabel = 'Importar terceros';
-    protected static ?string $navigationGroup = 'Contabilidad';
-    protected static ?int $navigationSort = 15;
+    protected static ?string $navigationGroup = 'Contactos';
+    protected static ?int $navigationSort = 20;
     protected static ?string $slug = 'third-parties/import';
     protected static ?string $title = 'Importar terceros desde Excel';
 

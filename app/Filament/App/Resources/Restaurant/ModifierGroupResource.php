@@ -32,7 +32,7 @@ class ModifierGroupResource extends Resource
 
     protected static ?string $navigationGroup = 'Restaurante';
 
-    protected static ?int $navigationSort = 25;
+    protected static ?int $navigationSort = 60;
 
     public static function canAccess(): bool
     {
