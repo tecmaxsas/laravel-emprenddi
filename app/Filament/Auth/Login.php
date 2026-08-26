@@ -50,12 +50,12 @@ class Login extends BaseLogin
     {
         $identificador = trim((string) ($data['email'] ?? ''));
 
-        $campo = filter_var($identificador, FILTER_VALIDATE_EMAIL) !== false
-            ? 'email'
-            : 'username';
+        $esCorreo = filter_var($identificador, FILTER_VALIDATE_EMAIL) !== false;
 
         return [
-            $campo => $identificador,
+            // El username se guarda en mayusculas, asi que se normaliza aqui
+            // tambien: quien se registro como "Juan" entra escribiendo "juan".
+            $esCorreo ? 'email' : 'username' => $esCorreo ? $identificador : strtoupper($identificador),
             'password' => $data['password'],
         ];
     }

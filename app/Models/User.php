@@ -110,18 +110,63 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
-     * Nombre de usuario sugerido al crear un usuario desde la empresa.
+     * El username se guarda siempre en mayusculas.
      *
-     * Se le pega el company_id como sufijo (CAJERO-153) por dos razones: los
-     * nombres quedan legibles dentro de cada empresa y, como el indice es
-     * unico global —el login no sabe de que empresa viene quien entra—, el
-     * sufijo evita chocar con el "CAJERO" de otro cliente.
+     * Postgres compara cadenas distinguiendo mayusculas, asi que sin
+     * normalizar "Juan" y "juan" serian dos usuarios distintos y quien se
+     * registro con uno no podria entrar escribiendo el otro. El login
+     * normaliza igual antes de autenticar.
      */
-    public static function suggestUsername(string $base, ?int $companyId): string
+    protected function username(): \Illuminate\Database\Eloquent\Casts\Attribute
     {
-        $base = strtoupper(trim($base));
-        $base = preg_replace('/[^A-Z0-9._-]+/', '', $base) ?: 'USUARIO';
+        return \Illuminate\Database\Eloquent\Casts\Attribute::make(
+            set: fn (?string $value) => filled($value) ? strtoupper(trim($value)) : null,
+        );
+    }
 
-        return $companyId ? $base.'-'.$companyId : $base;
+    /**
+     * Sufijo de empresa que se le pega al nombre de usuario.
+     *
+     * El indice de username es unico GLOBAL —el login no sabe de que empresa
+     * viene quien entra—, asi que sin el sufijo el "CAJERO" de un cliente
+     * chocaria con el de otro. Pegandolo, cada empresa puede usar los nombres
+     * que quiera sin pisarse con nadie.
+     */
+    public static function companySuffix(?int $companyId): string
+    {
+        return $companyId ? '-'.$companyId : '';
+    }
+
+    /**
+     * Compone el username final a partir de lo que escribio el usuario.
+     * Normaliza a mayusculas y descarta lo que no sea alfanumerico, punto o
+     * guion bajo — el guion queda reservado como separador del sufijo.
+     */
+    public static function withCompanySuffix(?string $base, ?int $companyId): ?string
+    {
+        $base = strtoupper(trim((string) $base));
+        $base = preg_replace('/[^A-Z0-9._]+/', '', $base);
+
+        if ($base === '') {
+            return null;
+        }
+
+        return $base.self::companySuffix($companyId);
+    }
+
+    /**
+     * Quita el sufijo para mostrar en el formulario solo la parte editable.
+     */
+    public static function stripCompanySuffix(?string $username, ?int $companyId): ?string
+    {
+        if (blank($username)) {
+            return null;
+        }
+
+        $suffix = self::companySuffix($companyId);
+
+        return ($suffix !== '' && str_ends_with($username, $suffix))
+            ? substr($username, 0, -strlen($suffix))
+            : $username;
     }
 }

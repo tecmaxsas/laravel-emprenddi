@@ -44,6 +44,15 @@ class UserResource extends Resource
             ->where('is_super_admin', false);
     }
 
+    /**
+     * Empresa a la que pertenece el usuario que se esta creando o editando.
+     * Al crear todavia no hay registro, asi que se toma la del administrador.
+     */
+    protected static function companyIdFor(?User $record): ?int
+    {
+        return $record?->company_id ?? auth()->user()?->company_id;
+    }
+
     public static function form(Form $form): Form
     {
         return $form->columns(2)->schema([
@@ -68,21 +77,42 @@ class UserResource extends Resource
                         ->requiredWithout('username')
                         ->columnSpan(2),
 
+                    // El sufijo de empresa va FIJO pegado al campo: el
+                    // administrador escribe solo la parte legible (CAJERO) y
+                    // se guarda CAJERO-153. El indice es unico global porque
+                    // el login no sabe de que empresa viene quien entra, asi
+                    // que el sufijo es lo que evita chocar con otro cliente.
                     Forms\Components\TextInput::make('username')
                         ->label('Nombre de usuario')
-                        ->maxLength(60)
-                        ->unique(ignoreRecord: true)
+                        ->placeholder('CAJERO')
+                        ->maxLength(40)
+                        ->suffix(fn (?User $record) => User::companySuffix(static::companyIdFor($record)))
                         ->requiredWithout('email')
-                        // El sufijo con el id de la empresa mantiene los
-                        // nombres legibles y evita chocar con el "CAJERO" de
-                        // otro cliente: el indice es unico global porque el
-                        // login no sabe de que empresa viene quien entra.
-                        ->default(fn () => \App\Models\User::suggestUsername('CAJERO', auth()->user()?->company_id))
-                        ->rule('regex:/^[A-Za-z0-9._-]+$/')
+                        ->rule('regex:/^[A-Za-z0-9._]+$/')
                         ->validationMessages([
-                            'regex' => 'Solo letras, números, punto, guion y guion bajo — sin espacios ni arroba.',
+                            'regex' => 'Solo letras, números, punto y guion bajo — sin espacios, guiones ni arroba.',
                         ])
-                        ->helperText('Con esto entra al sistema. Se sugiere el sufijo de la empresa para que no choque con otros clientes.')
+                        ->formatStateUsing(fn (?string $state, ?User $record) => User::stripCompanySuffix($state, static::companyIdFor($record)))
+                        ->dehydrateStateUsing(fn (?string $state, ?User $record) => User::withCompanySuffix($state, static::companyIdFor($record)))
+                        ->rule(fn (?User $record) => function (string $attribute, $value, \Closure $fail) use ($record) {
+                            if (blank($value)) {
+                                return;
+                            }
+
+                            // La unicidad se valida sobre el nombre COMPUESTO,
+                            // que es lo que termina en la base de datos.
+                            $completo = User::withCompanySuffix($value, static::companyIdFor($record));
+
+                            $enUso = User::withoutGlobalScopes()
+                                ->where('username', $completo)
+                                ->when($record, fn ($q) => $q->whereKeyNot($record->getKey()))
+                                ->exists();
+
+                            if ($enUso) {
+                                $fail("El nombre de usuario {$completo} ya está en uso.");
+                            }
+                        })
+                        ->helperText('Con esto entra al sistema. El sufijo de tu empresa se agrega solo.')
                         ->columnSpan(2),
                 ])->columnSpanFull(),
 
