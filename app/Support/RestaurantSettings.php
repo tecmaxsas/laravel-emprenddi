@@ -78,6 +78,13 @@ class RestaurantSettings
             'description' => 'Reportes de propinas por mesero, top items y tiempos de cocina.',
             'default' => true,
         ],
+        // Unica feature que arranca APAGADA: dejar el inventario en negativo
+        // es una decision del negocio, no algo que deba pasar por defecto.
+        'sell_without_stock' => [
+            'label' => 'Vender sin inventario',
+            'description' => 'Permite cobrar y facturar aunque el producto no tenga existencias, dejando el inventario en negativo. Útil en cocina, donde el plato se prepara al momento y el descargue de insumos no siempre está al día.',
+            'default' => false,
+        ],
     ];
 
     /**

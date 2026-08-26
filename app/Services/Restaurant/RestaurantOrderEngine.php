@@ -15,6 +15,7 @@ use App\Services\Dian\PosDianTransmitter;
 use App\Services\Sales\SaleInvoiceEngine;
 use App\Services\Sales\SaleInvoiceNumberer;
 use App\Support\CashSessionGate;
+use App\Support\RestaurantSettings;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -1017,7 +1018,10 @@ class RestaurantOrderEngine
                 }
 
                 // Postear (recalcula totales internamente)
-                $invoice = $invoiceEngine->post($invoice->fresh(['lines']));
+                $invoice = $invoiceEngine->post(
+                    $invoice->fresh(['lines']),
+                    allowNegativeStock: RestaurantSettings::isEnabled('sell_without_stock'),
+                );
 
                 // Aplicar pagos. Soporta multi-pago: $tab['payments'] es array
                 // de {payment_method, account_id, amount}. Compat con la API

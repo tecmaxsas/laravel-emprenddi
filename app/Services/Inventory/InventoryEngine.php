@@ -72,7 +72,11 @@ class InventoryEngine
             } else {
                 // Salida: el costo unitario depende del método
                 $newBalance = $prevBalance - $quantity;
-                if ($newBalance < 0) {
+                // allow_negative lo activa quien llama (hoy: el POS de
+                // restaurante con la feature "Vender sin inventario"). El
+                // saldo queda negativo a proposito, para que la venta no se
+                // trabe y el faltante quede visible en el kardex.
+                if ($newBalance < 0 && ! ($opts['allow_negative'] ?? false)) {
                     throw new \RuntimeException(sprintf(
                         'Stock insuficiente en %s para %s. Saldo actual: %s, intento de salida: %s.',
                         $location->fullName(),

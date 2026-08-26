@@ -36,7 +36,13 @@ class SaleInvoiceEngine
     /**
      * Contabiliza la factura de venta.
      */
-    public function post(SaleInvoice $invoice): SaleInvoice
+    /**
+     * @param  bool  $allowNegativeStock  Deja contabilizar aunque el inventario
+     *                                    quede negativo. Lo decide quien llama
+     *                                    segun la configuracion de su modulo;
+     *                                    por defecto se respeta el saldo.
+     */
+    public function post(SaleInvoice $invoice, bool $allowNegativeStock = false): SaleInvoice
     {
         if ($invoice->status !== SaleInvoice::STATUS_DRAFT) {
             throw new RuntimeException('Solo se puede contabilizar una factura en estado borrador.');
@@ -48,7 +54,7 @@ class SaleInvoiceEngine
             throw new RuntimeException('La factura no tiene líneas.');
         }
 
-        return DB::transaction(function () use ($invoice) {
+        return DB::transaction(function () use ($invoice, $allowNegativeStock) {
             $this->recalculateTotals($invoice);
 
             // 1. El consecutivo YA viene reservado por DocumentNumberer desde
@@ -86,6 +92,7 @@ class SaleInvoiceEngine
                         'reference_number' => $invoice->fullNumber(),
                         'third_party_id' => $invoice->third_party_id,
                         'description' => "Venta {$invoice->fullNumber()} — {$invoice->customer->name}",
+                        'allow_negative' => $allowNegativeStock,
                     ]
                 );
 
