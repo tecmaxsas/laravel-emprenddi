@@ -302,8 +302,12 @@ class RestaurantPos extends Page
             ->when($this->locationId, fn ($q) => $q->where('location_id', $this->locationId))
             ->when($this->activeZoneId, fn ($q) => $q->where('zone_id', $this->activeZoneId))
             ->with('zone')
-            ->orderBy('code')
-            ->get();
+            ->get()
+            // Mismo orden que el mapa del salon: por filas, de arriba abajo y
+            // de izquierda a derecha. Antes iba por 'code' como texto, asi que
+            // salia 1, 10, 11... 2, 20, 3 y no coincidia con el mapa.
+            ->sortBy(fn (Table $t) => $t->mapOrderKey())
+            ->values();
     }
 
     public function getActiveOrderProperty(): ?Order
@@ -746,8 +750,9 @@ class RestaurantPos extends Page
             ->where('id', '!=', $order->table_id)
             ->where('status', 'free')
             ->with('zone')
-            ->orderBy('code')
-            ->get();
+            ->get()
+            ->sortBy(fn (Table $t) => $t->mapOrderKey())
+            ->values();
     }
 
     public function confirmTransfer(): void

@@ -30,6 +30,12 @@ class Table extends Model
         'bar' => 'Barra',
     ];
 
+    /**
+     * Alto de la banda con la que se agrupan las filas del mapa, sobre el
+     * lienzo de 0..1000. 50 = 5% del alto, mas o menos una mesa.
+     */
+    public const MAP_ROW_BAND = 50;
+
     protected $fillable = [
         'company_id',
         'location_id',
@@ -90,5 +96,34 @@ class Table extends Model
     public function isOccupied(): bool
     {
         return in_array($this->status, ['occupied', 'billing'], true);
+    }
+
+    /**
+     * Clave de orden que reproduce como se ve el mapa del salon: se lee por
+     * filas, de arriba a abajo y de izquierda a derecha.
+     *
+     * pos_y se agrupa en bandas porque las mesas se ubican arrastrando y las
+     * de una misma fila casi nunca quedan a la misma altura exacta; sin las
+     * bandas, unos pocos pixeles de diferencia bastarian para desordenar la
+     * fila entera.
+     *
+     * El codigo desempata cuando las posiciones coinciden — el caso de una
+     * sede donde nadie ha tocado el mapa y todas siguen en el default (50,50).
+     * Va con los numeros rellenos para que ordene 1, 2, 10 y no 1, 10, 2.
+     */
+    public function mapOrderKey(): string
+    {
+        $banda = intdiv((int) $this->pos_y, self::MAP_ROW_BAND);
+
+        return sprintf(
+            '%04d|%04d|%s',
+            $banda,
+            (int) $this->pos_x,
+            preg_replace_callback(
+                '/\d+/',
+                fn (array $m) => str_pad($m[0], 10, '0', STR_PAD_LEFT),
+                (string) $this->code,
+            ),
+        );
     }
 }
