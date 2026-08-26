@@ -116,6 +116,33 @@ class RestaurantReceiptPrinter
         $b->line('Mesero: '.($order->server?->name ?? '—'));
         $b->line('Atendido: '.$order->fullNumber());
 
+        // Datos de entrega: sin esto el repartidor sale con el tiquete pero
+        // sin saber a donde va.
+        if ($order->is_delivery) {
+            $entrega = $order->delivery_metadata ?? [];
+
+            $b->separator('-')->bold(true)->line('DOMICILIO')->bold(false);
+
+            if (! empty($entrega['customer_name'])) {
+                $b->line($entrega['customer_name']);
+            }
+            if (! empty($entrega['address'])) {
+                $b->line($entrega['address']);
+            }
+            if (! empty($entrega['address_notes'])) {
+                $b->line('Ref: '.$entrega['address_notes']);
+            }
+            if (! empty($entrega['customer_phone'])) {
+                $b->line('Tel: '.$entrega['customer_phone']);
+            }
+            if (! empty($entrega['driver_name'])) {
+                $b->line('Repartidor: '.$entrega['driver_name']);
+            }
+            if ((float) $order->delivery_fee > 0) {
+                $b->line('Domicilio: $'.number_format((float) $order->delivery_fee, 0, ',', '.'));
+            }
+        }
+
         $b->separator('-');
 
         // ===== Items =====

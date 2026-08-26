@@ -15,6 +15,7 @@
     $l = $settings['lines'] ?? [];
     $t = $settings['totals'] ?? [];
     $f = $settings['footer'] ?? [];
+    $d = $settings['delivery'] ?? [];
     $get = static fn (array $arr, string $key, $default = true) => array_key_exists($key, $arr) ? (bool) $arr[$key] : $default;
 
     $company = $invoice->company;
@@ -119,6 +120,43 @@
                 @endif
                 @if ($get($c, 'show_email', false) && $customer?->email)
                     <div class="small">{{ $customer->email }}</div>
+                @endif
+            </div>
+        @endif
+
+        {{-- DOMICILIO — solo si la factura viene de un pedido a domicilio.
+             Los datos viven en la orden de restaurante, no en la factura. --}}
+        @php
+            $entrega = ($restaurantOrder ?? null)?->is_delivery
+                ? (($restaurantOrder->delivery_metadata ?? []) ?: [])
+                : [];
+        @endphp
+        @if ($get($d, 'show') && $entrega !== [])
+            <div class="sep"></div>
+            <div>
+                <div class="bold">DOMICILIO</div>
+
+                @if ($get($d, 'show_customer') && ! empty($entrega['customer_name']))
+                    <div>{{ $entrega['customer_name'] }}</div>
+                @endif
+
+                @if ($get($d, 'show_address') && ! empty($entrega['address']))
+                    <div>{{ $entrega['address'] }}</div>
+                    @if (! empty($entrega['address_notes']))
+                        <div class="small">Ref: {{ $entrega['address_notes'] }}</div>
+                    @endif
+                @endif
+
+                @if ($get($d, 'show_phone') && ! empty($entrega['customer_phone']))
+                    <div class="small">Tel: {{ $entrega['customer_phone'] }}</div>
+                @endif
+
+                @if ($get($d, 'show_driver') && ! empty($entrega['driver_name']))
+                    <div class="small">Repartidor: {{ $entrega['driver_name'] }}</div>
+                @endif
+
+                @if ((float) ($restaurantOrder->delivery_fee ?? 0) > 0)
+                    <div class="small">Domicilio: ${{ number_format((float) $restaurantOrder->delivery_fee, 0, ',', '.') }}</div>
                 @endif
             </div>
         @endif

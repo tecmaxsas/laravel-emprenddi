@@ -83,6 +83,14 @@ class InvoiceTemplate extends Model
                 'show_paid' => true,
                 'show_change' => true,
             ],
+            // Solo aplica a facturas que vienen de una orden de domicilio.
+            'delivery' => [
+                'show' => true,
+                'show_customer' => true,
+                'show_address' => true,
+                'show_phone' => true,
+                'show_driver' => true,
+            ],
             'footer' => [
                 'show_qr_dian' => true,
                 'show_cufe' => true,

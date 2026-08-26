@@ -220,6 +220,13 @@ class InvoiceTemplateResource extends Resource
             Forms\Components\Section::make('Información de pie de página')
                 ->columns(2)
                 ->schema([
+                    Forms\Components\Toggle::make('settings.delivery.show')->label('Datos del domicilio')->default(true)->live()
+                        ->helperText('Solo se imprime si la factura viene de un pedido a domicilio.'),
+                    Forms\Components\Toggle::make('settings.delivery.show_customer')->label('— Nombre del cliente')->default(true)->live(),
+                    Forms\Components\Toggle::make('settings.delivery.show_address')->label('— Dirección de entrega')->default(true)->live(),
+                    Forms\Components\Toggle::make('settings.delivery.show_phone')->label('— Teléfono')->default(true)->live(),
+                    Forms\Components\Toggle::make('settings.delivery.show_driver')->label('— Repartidor')->default(true)->live(),
+
                     Forms\Components\Toggle::make('settings.footer.show_qr_dian')->label('QR DIAN')->default(true)->live(),
                     Forms\Components\Toggle::make('settings.footer.show_cufe')->label('CUFE')->default(true)->live(),
                     Forms\Components\Toggle::make('settings.footer.show_resolution_info')->label('Datos de la resolución')->default(true)->live(),

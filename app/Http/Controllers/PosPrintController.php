@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\InvoiceTemplate;
+use App\Models\Restaurant\Order as RestaurantOrder;
 use App\Models\SaleInvoice;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Auth;
@@ -34,7 +35,15 @@ class PosPrintController extends Controller
                 ->orderByDesc('is_default')
                 ->first();
 
+        // Orden de restaurante que genero esta factura, si la hay: de ahi salen
+        // los datos del domicilio, que no viven en la factura.
+        $restaurantOrder = RestaurantOrder::query()
+            ->where('company_id', $invoice->company_id)
+            ->whereJsonContains('invoice_ids', $invoice->id)
+            ->first();
+
         return view('pos.print-ticket', [
+            'restaurantOrder' => $restaurantOrder,
             'invoice' => $invoice,
             'template' => $template,
             'paperSize' => $template?->paper_size ?? 'pos_80',
