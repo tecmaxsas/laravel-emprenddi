@@ -139,11 +139,12 @@ class CompanyResource extends Resource
                 ]),
 
             Forms\Components\Section::make('Módulos activos')
-                ->description('Habilita capacidades verticales de esta empresa. Las requeridas por el plan se activan solas.')
+                ->description('Habilita capacidades verticales de esta empresa. Las requeridas por el plan se activan solas. Apagar Contabilidad solo OCULTA lo contable: los asientos se siguen generando, así que al activarla la empresa ve sus libros completos desde el primer día.')
                 ->schema([
                     Forms\Components\CheckboxList::make('active_modules')
                         ->label('Módulos opcionales')
                         ->options([
+                            'accounting' => 'Contabilidad (plan de cuentas, asientos, libros y estados financieros)',
                             'restaurant' => 'Restaurante (mesas, comandas, cocina, delivery)',
                             'parking' => 'Parqueadero (tarifas, espacios, mensualidades, incidentes)',
                             'order_taking' => 'Toma pedidos B2B (listas de precios, pedidos, despachos, cartera)',

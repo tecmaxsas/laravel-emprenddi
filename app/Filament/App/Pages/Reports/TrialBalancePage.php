@@ -34,6 +34,8 @@ class TrialBalancePage extends Page implements HasForms, HasTable
     public static function canAccess(): bool
     {
         if (! \App\Support\AccountantContext::ready()) return false;
+        // Contable: se oculta si la empresa no tiene el modulo.
+        if (! \App\Support\ModuleGate::active(\App\Support\ModuleGate::ACCOUNTING)) return false;
         return (bool) auth()->user()?->can('reports.trial_balance');
     }
 

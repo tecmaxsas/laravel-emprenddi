@@ -96,6 +96,7 @@ class CategoryResource extends Resource
                 ]),
 
             Forms\Components\Section::make('Cuentas contables por defecto')
+                ->visible(fn () => \App\Support\ModuleGate::active(\App\Support\ModuleGate::ACCOUNTING))
                 ->description('Los productos de esta categoría heredarán estas cuentas automáticamente. Si un producto define la suya propia (override), gana esa. Los impuestos (IVA) se siguen configurando producto por producto porque dentro de una categoría pueden coexistir tasas distintas.')
                 ->collapsible()
                 ->collapsed(fn (?Category $record) => $record === null)

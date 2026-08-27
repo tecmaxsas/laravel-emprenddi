@@ -81,6 +81,11 @@ class FiscalPeriodResource extends Resource
         ]);
     }
 
+    protected static function requiredModule(): ?string
+    {
+        return \App\Support\ModuleGate::ACCOUNTING;
+    }
+
     public static function table(Table $table): Table
     {
         return $table

@@ -298,6 +298,7 @@ class ProductResource extends Resource
                     ]),
 
                 Forms\Components\Tabs\Tab::make('Cuentas contables')
+                    ->visible(fn () => \App\Support\ModuleGate::active(\App\Support\ModuleGate::ACCOUNTING))
                     ->icon('heroicon-o-banknotes')
                     ->badge('Opcional')
                     ->schema([

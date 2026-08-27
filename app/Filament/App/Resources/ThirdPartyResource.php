@@ -192,6 +192,7 @@ class ThirdPartyResource extends Resource
                     ]),
 
                 Forms\Components\Tabs\Tab::make('Cuentas y términos')
+                    ->visible(fn () => \App\Support\ModuleGate::active(\App\Support\ModuleGate::ACCOUNTING))
                     ->icon('heroicon-o-banknotes')
                     ->schema([
                         Forms\Components\Group::make()->columns(2)->schema([

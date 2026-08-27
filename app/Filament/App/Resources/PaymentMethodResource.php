@@ -73,6 +73,7 @@ class PaymentMethodResource extends Resource
                 ]),
 
             Forms\Components\Section::make('Cuenta contable')
+                ->visible(fn () => \App\Support\ModuleGate::active(\App\Support\ModuleGate::ACCOUNTING))
                 ->description('Cuenta de caja/banco donde entra el dinero al cobrar con este método. Se pre-selecciona en el comprobante de ingreso.')
                 ->schema([
                     Forms\Components\Select::make('account_id')

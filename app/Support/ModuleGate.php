@@ -2,8 +2,6 @@
 
 namespace App\Support;
 
-use Illuminate\Support\Facades\Auth;
-
 /**
  * Activación de módulos opcionales (restaurant, payroll, ecommerce,
  * etc.) por empresa. La empresa los lleva en companies.active_modules
@@ -15,6 +13,14 @@ use Illuminate\Support\Facades\Auth;
  */
 class ModuleGate
 {
+    /**
+     * Contabilidad. A diferencia de los demas modulos, este solo OCULTA:
+     * el motor contable sigue generando asientos por debajo aunque este
+     * apagado, para que al activarlo se vean los libros completos desde el
+     * primer dia en vez de arrancar vacios a mitad de vida.
+     */
+    public const ACCOUNTING = 'accounting';
+
     /**
      * ¿La empresa activa tiene este módulo encendido?
      * Para superadmin o si no hay empresa activa: false (no aplica).
