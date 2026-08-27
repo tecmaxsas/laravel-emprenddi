@@ -98,7 +98,7 @@ class InvoiceTemplateResource extends Resource
                         ->options(InvoiceTemplate::PAPER_SIZES)
                         ->required()
                         ->native(false)
-                        ->default('pos_80')
+                        ->default('pos_58')
                         ->live(),
 
                     Forms\Components\TextInput::make('description')

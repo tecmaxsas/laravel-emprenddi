@@ -46,7 +46,7 @@ class PosPrintController extends Controller
             'restaurantOrder' => $restaurantOrder,
             'invoice' => $invoice,
             'template' => $template,
-            'paperSize' => $template?->paper_size ?? 'pos_80',
+            'paperSize' => $template?->paper_size ?? 'pos_58',
             'settings' => $template?->settings ?? InvoiceTemplate::defaultSettings(),
             'footerText' => $template?->footer_text,
         ]);

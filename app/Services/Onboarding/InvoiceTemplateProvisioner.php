@@ -7,8 +7,9 @@ use App\Models\InvoiceTemplate;
 
 /**
  * Crea las plantillas de impresión de factura iniciales:
- *  - Ticket POS 80mm (default) — para impresora térmica del cajero.
- *  - Factura A4 — para impresión completa en oficina.
+ *  - Ticket POS 58mm (default) — el rollo más común en el comercio pequeño.
+ *  - Ticket POS 80mm — para las térmicas de rollo ancho.
+ *  - Factura Carta — para impresión completa en oficina.
  *
  * Idempotente: si la empresa ya tiene plantillas, no toca nada (no se
  * asume que la primera deba llamarse de una forma específica).
@@ -35,12 +36,24 @@ class InvoiceTemplateProvisioner
 
         InvoiceTemplate::withoutGlobalScopes()->create([
             'company_id' => $company->id,
-            'name' => 'Ticket POS 80mm',
+            'name' => 'Ticket POS 58mm',
             'description' => 'Plantilla térmica por defecto para el cajero POS.',
-            'paper_size' => 'pos_80',
+            'paper_size' => 'pos_58',
             'settings' => $base,
             'footer_text' => '¡Gracias por tu compra!',
             'is_default' => true,
+            'active' => true,
+        ]);
+        $created++;
+
+        InvoiceTemplate::withoutGlobalScopes()->create([
+            'company_id' => $company->id,
+            'name' => 'Ticket POS 80mm',
+            'description' => 'Plantilla térmica para impresoras de rollo ancho.',
+            'paper_size' => 'pos_80',
+            'settings' => $base,
+            'footer_text' => '¡Gracias por tu compra!',
+            'is_default' => false,
             'active' => true,
         ]);
         $created++;

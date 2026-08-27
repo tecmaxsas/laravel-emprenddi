@@ -1,5 +1,5 @@
 @php
-    $size = $paper_size ?? 'pos_80';
+    $size = $paper_size ?? 'pos_58';
     $isThermal = in_array($size, ['pos_58', 'pos_80'], true);
     $widthPx = match ($size) {
         'pos_58' => '210px',
