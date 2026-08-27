@@ -1,34 +1,16 @@
 @php
-    // Decide a qué POS apunta el botón segun los modulos activos de la
-    // empresa y los permisos del usuario. Orden de prioridad:
-    //  1. Restaurante (si esta activo + restaurant.use)
-    //  2. Parqueadero (si esta activo + parking.use) — gana sobre POS
-    //     regular porque el Terminal ES su POS. Si necesitan POS retail
-    //     tambien, lo acceden desde el sidebar.
-    //  3. POS regular (si tiene pos.use)
-    //  4. Si no puede usar ninguno, no rendereamos nada.
-    $user = auth()->user();
-    $canRestaurant = \App\Support\ModuleGate::active('restaurant')
-        && $user?->can('restaurant.use');
-    $canParking = \App\Support\ModuleGate::active('parking')
-        && $user?->can('parking.use');
-    $canRegular = $user?->can('pos.use');
+    // A que POS apunta el boton. La prioridad (restaurante > parqueadero >
+    // retail) vive en PosDestination, compartida con la apertura de caja para
+    // que ambos manden al mismo sitio.
+    $destino = \App\Support\PosDestination::resolve();
+    $href = \App\Support\PosDestination::url();
 
-    if ($canRestaurant) {
-        $href = route('filament.app.pages.restaurant-pos');
-        $title = 'Abrir POS Restaurante';
-        $label = 'POS';
-    } elseif ($canParking) {
-        $href = route('filament.app.pages.parking');
-        $title = 'Abrir Terminal de Parqueadero';
-        $label = 'Terminal';
-    } elseif ($canRegular) {
-        $href = route('filament.app.pages.pos');
-        $title = 'Abrir terminal POS';
-        $label = 'POS';
-    } else {
-        $href = null;
-    }
+    [$title, $label] = match ($destino) {
+        \App\Support\PosDestination::RESTAURANT => ['Abrir POS Restaurante', 'POS'],
+        \App\Support\PosDestination::PARKING => ['Abrir Terminal de Parqueadero', 'Terminal'],
+        \App\Support\PosDestination::RETAIL => ['Abrir terminal POS', 'POS'],
+        default => [null, null],
+    };
 @endphp
 
 @if ($href)

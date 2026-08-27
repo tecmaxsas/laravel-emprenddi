@@ -33,7 +33,7 @@
     @else
         <div style="border:1px solid #dc2626; background:#fee2e2; color:#991b1b; border-radius:8px; padding:10px 14px; font-size:13px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
             <div>🚨 <strong>Sin turno de caja abierto.</strong> Las salidas con cobro fallarán hasta que abras caja.</div>
-            <a href="{{ route('filament.app.pages.pos') }}"
+            <a href="{{ route('filament.app.pages.pos', ['volver' => 'parking']) }}"
                style="background:#991b1b; color:#fff; padding:6px 12px; border-radius:6px; text-decoration:none; font-weight:700; font-size:12px;">
                 🔓 Abrir caja
             </a>
