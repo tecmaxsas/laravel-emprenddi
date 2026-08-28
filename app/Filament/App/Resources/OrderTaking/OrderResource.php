@@ -94,6 +94,12 @@ class OrderResource extends Resource
                         'pagado' => 'success',
                         default => 'gray',
                     }),
+
+                Tables\Columns\TextColumn::make('saleInvoice.number')
+                    ->label('Factura')
+                    ->state(fn (Order $record) => $record->saleInvoice?->fullNumber())
+                    ->fontFamily('mono')->badge()->color('success')->placeholder('—')
+                    ->toggleable(),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')

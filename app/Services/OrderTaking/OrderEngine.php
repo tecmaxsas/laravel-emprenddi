@@ -8,8 +8,12 @@ use App\Models\OrderTaking\Order;
 use App\Models\OrderTaking\OrderItem;
 use App\Models\OrderTaking\OrderRetention;
 use App\Models\OrderTaking\Payment;
+use App\Models\SaleInvoice;
 use App\Models\Tax;
 use App\Models\ThirdParty;
+use App\Services\Sales\DocumentNumberer;
+use App\Services\Sales\SaleInvoiceEngine;
+use App\Support\PaymentAccountResolver;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -20,8 +24,11 @@ use RuntimeException;
  *   - recomputo de totales de la cabecera desde items
  *   - registro de despachos y actualizacion de delivery_status
  *   - registro de pagos y actualizacion de payment_status/balance
+ *   - conversion a factura de venta cuando ya se despacho todo
  *
- * No genera factura de venta — el pedido es documento operativo aparte.
+ * El pedido en si no mueve inventario ni contabilidad: es un documento
+ * operativo. Eso solo pasa al convertirlo en factura, y por eso la conversion
+ * exige que la mercancia ya haya salido completa.
  */
 class OrderEngine
 {
@@ -252,6 +259,155 @@ class OrderEngine
 
             return $payment;
         });
+    }
+
+    /**
+     * Convierte un pedido despachado por completo en factura de venta.
+     *
+     * El pedido es un documento operativo: no mueve inventario ni genera
+     * asientos. La factura es donde todo eso aterriza, asi que aqui se
+     * descarga el inventario y se contabiliza la venta — por eso solo se
+     * permite cuando ya salio TODO de la bodega. Facturar un pedido a medio
+     * despachar descargaria mercancia que todavia esta en el estante.
+     *
+     * Los abonos que se registraron contra los despachos se replican como
+     * pagos de la factura: es la primera vez que ese dinero toca la
+     * contabilidad, asi que no hay doble conteo.
+     *
+     * @param  string  $invoiceKind  pos | electronic
+     * @param  bool  $allowNegativeStock  facturar aunque no haya saldo en bodega
+     */
+    public function convertToInvoice(Order $order, string $invoiceKind = 'pos', bool $allowNegativeStock = false): SaleInvoice
+    {
+        if ($order->isInvoiced()) {
+            throw new RuntimeException(
+                'Este pedido ya se facturó con la '.$order->saleInvoice?->fullNumber().'.'
+            );
+        }
+
+        if ($order->status === Order::STATUS_CANCELLED) {
+            throw new RuntimeException('El pedido está anulado.');
+        }
+
+        $order->load('items', 'retentions');
+
+        if (! $order->isFullyDelivered()) {
+            throw new RuntimeException(
+                'Solo se factura lo que ya salió completo. Despacha lo que falta y vuelve a intentarlo.'
+            );
+        }
+
+        if ($order->items->isEmpty()) {
+            throw new RuntimeException('El pedido no tiene líneas.');
+        }
+
+        if (! $order->location_id) {
+            throw new RuntimeException(
+                'El pedido no tiene sede asignada y la numeración de la factura sale de la resolución de la sede.'
+            );
+        }
+
+        return DB::transaction(function () use ($order, $invoiceKind, $allowNegativeStock) {
+            $doc = app(DocumentNumberer::class)->reserveForLocation($order->location_id, $invoiceKind);
+
+            $invoice = SaleInvoice::create([
+                'company_id' => $order->company_id,
+                'location_id' => $order->location_id,
+                'third_party_id' => $order->third_party_id,
+                'prefix' => $doc['prefix'],
+                'number' => $doc['number'],
+                'invoice_kind' => $doc['kind'],
+                'dian_resolution_id' => $doc['resolution_id'],
+                'date' => now()->toDateString(),
+                'currency' => 'COP',
+                'status' => 'draft',
+                'payment_status' => 'pendiente',
+                'created_by_user_id' => Auth::id(),
+                'seller_user_id' => $order->seller_user_id ?? Auth::id(),
+                'description' => 'Pedido '.$order->fullNumber(),
+                'notes' => $order->notes,
+            ]);
+
+            $lineNumber = 1;
+            foreach ($order->items as $item) {
+                // Se factura lo entregado, no lo pedido. A 100% son el mismo
+                // numero, pero dejarlo explicito evita facturar de mas si
+                // manana se admite facturar despachos parciales.
+                $cantidad = (float) $item->quantity_delivered;
+
+                if ($cantidad <= 0) {
+                    continue;
+                }
+
+                $invoice->lines()->create([
+                    'line_number' => $lineNumber++,
+                    'product_id' => $item->product_id,
+                    'description' => $item->description,
+                    'quantity' => $cantidad,
+                    'unit_price' => (float) $item->unit_price_before_tax,
+                    'discount_percentage' => 0,
+                    'discount_amount' => 0,
+                    'tax_rate' => (float) $item->tax_rate,
+                    'tax_amount' => (float) $item->tax_amount,
+                    'subtotal' => (float) $item->subtotal,
+                    'total' => (float) $item->total,
+                ]);
+            }
+
+            // Antes de postear: recalculateTotals las necesita para el
+            // net_payable, que es contra lo que se mide el saldo.
+            foreach ($order->retentions as $ret) {
+                $invoice->retentions()->create([
+                    'tax_id' => $ret->tax_id,
+                    'tax_code' => $ret->tax_code,
+                    'tax_name' => $ret->tax_name,
+                    'tax_type' => $ret->tax_type,
+                    'base_amount' => $ret->base_amount,
+                    'rate' => $ret->rate,
+                    'amount' => $ret->amount,
+                ]);
+            }
+
+            $invoiceEngine = app(SaleInvoiceEngine::class);
+            $invoice = $invoiceEngine->post($invoice->fresh(['lines', 'retentions']), $allowNegativeStock);
+
+            $this->replayPayments($order, $invoice, $invoiceEngine);
+
+            $order->update(['sale_invoice_id' => $invoice->id]);
+
+            return $invoice->fresh(['lines', 'retentions', 'payments']);
+        });
+    }
+
+    /**
+     * Lleva los abonos del pedido a la factura recien creada.
+     *
+     * Si por redondeos el ultimo abono no cabe en el saldo, se recorta en vez
+     * de tumbar la conversion entera: la factura ya esta contabilizada y
+     * dejarla a medias seria peor que un centavo de diferencia.
+     */
+    protected function replayPayments(Order $order, SaleInvoice $invoice, SaleInvoiceEngine $invoiceEngine): void
+    {
+        foreach ($order->payments()->orderBy('payment_date')->orderBy('id')->get() as $abono) {
+            $saldo = (float) $invoice->fresh()->balance;
+
+            if ($saldo <= 0.01) {
+                break;
+            }
+
+            $monto = min((float) $abono->amount, $saldo);
+
+            $invoiceEngine->addPayment($invoice, [
+                'amount' => $monto,
+                'payment_method' => $abono->payment_method ?? 'cash',
+                'account_id' => $abono->account_id
+                    ?: PaymentAccountResolver::forMethod($abono->payment_method, $order->company_id),
+                'date' => $abono->payment_date?->toDateString() ?? now()->toDateString(),
+                'reference' => $abono->reference,
+                'description' => 'Abono del pedido '.$order->fullNumber()
+                    .($abono->delivery ? ' — '.$abono->delivery->label() : ''),
+            ]);
+        }
     }
 
     /**

@@ -9,7 +9,11 @@ use App\Filament\App\Resources\OrderTaking\OrderResource\Pages\ListOrders;
 use App\Filament\App\Resources\OrderTaking\OrderResource\Pages\ViewOrder;
 use App\Filament\App\Resources\OrderTaking\OrderResource\RelationManagers\DeliveriesRelationManager;
 use App\Filament\App\Resources\OrderTaking\OrderResource\RelationManagers\PaymentsRelationManager;
+use App\Models\Account;
 use App\Models\Company;
+use App\Models\Dian\LocationResolution;
+use App\Models\Dian\Resolution;
+use App\Models\Location;
 use App\Models\OrderTaking\Delivery;
 use App\Models\OrderTaking\DeliveryItem;
 use App\Models\OrderTaking\Order;
@@ -17,6 +21,7 @@ use App\Models\OrderTaking\OrderItem;
 use App\Models\OrderTaking\OrderRetention;
 use App\Models\OrderTaking\Payment;
 use App\Models\Product;
+use App\Models\SaleInvoice;
 use App\Models\Tax;
 use App\Models\ThirdParty;
 use App\Models\User;
@@ -24,6 +29,7 @@ use App\Services\OrderTaking\OrderEngine;
 use App\Support\CurrentCompany;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Filament\Facades\Filament;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -91,12 +97,30 @@ class OrderTakingFlowTest extends TestCase
                 'rate' => $rate,
                 'applies_to' => 'sale',
                 'is_active' => true,
+                // Sin cuenta de venta el motor de facturas rechaza la
+                // retencion: es donde se debita el anticipo de impuesto.
+                'sale_account_id' => Account::withoutGlobalScopes()
+                    ->where('company_id', $this->companyId)
+                    ->where('accepts_movements', true)
+                    ->where('code', 'like', '13%')
+                    ->value('id'),
             ]
         );
 
+        // firstOrCreate no actualiza lo que ya existe, y la cuenta es
+        // obligatoria para el motor de facturas.
+        $tax->update([
+            'rate' => $rate,
+            'sale_account_id' => Account::withoutGlobalScopes()
+                ->where('company_id', $this->companyId)
+                ->where('accepts_movements', true)
+                ->where('code', 'like', '13%')
+                ->value('id'),
+        ]);
+
         $this->limpiar[] = fn () => Tax::withoutGlobalScopes()->whereKey($tax->id)->forceDelete();
 
-        return $tax;
+        return $tax->refresh();
     }
 
     private function producto(): Product
@@ -106,8 +130,11 @@ class OrderTakingFlowTest extends TestCase
             ['name' => 'ZZ Producto']
         );
 
-        $this->limpiar[] = fn () => Product::withoutGlobalScopes()
-            ->whereKey($producto->id)->forceDelete();
+        $this->limpiar[] = function () use ($producto) {
+            // Facturar deja movimientos de inventario colgando del producto.
+            DB::table('inventory_movements')->where('product_id', $producto->id)->delete();
+            Product::withoutGlobalScopes()->whereKey($producto->id)->forceDelete();
+        };
 
         return $producto;
     }
@@ -124,8 +151,11 @@ class OrderTakingFlowTest extends TestCase
             ['name' => 'ZZ Producto']
         );
 
-        $this->limpiar[] = fn () => Product::withoutGlobalScopes()
-            ->whereKey($producto->id)->forceDelete();
+        $this->limpiar[] = function () use ($producto) {
+            // Facturar deja movimientos de inventario colgando del producto.
+            DB::table('inventory_movements')->where('product_id', $producto->id)->delete();
+            Product::withoutGlobalScopes()->whereKey($producto->id)->forceDelete();
+        };
 
         $order = Order::create([
             'company_id' => $this->companyId,
@@ -163,7 +193,8 @@ class OrderTakingFlowTest extends TestCase
             'quantity_delivered' => 0,
             'unit_price_before_tax' => 100000,
             'tax_rate' => 19,
-            'tax_amount' => 19000,
+            // IVA de la LINEA (10 × 19.000), igual que subtotal y total.
+            'tax_amount' => 190000,
             'unit_price_at_public' => 119000,
             'subtotal' => 1000000,
             'total' => 1190000,
@@ -198,6 +229,12 @@ class OrderTakingFlowTest extends TestCase
         $order = $engine->recomputeTotals($order->fresh(['items', 'retentions']));
 
         $this->assertSame('1190000.00', $order->total);
+        $this->assertSame('190000.00', $order->tax_total, 'El IVA de la linea, no el unitario.');
+        $this->assertSame(
+            round((float) $order->subtotal + (float) $order->tax_total, 2),
+            round((float) $order->total, 2),
+            'El total tiene que ser subtotal + IVA.'
+        );
         $this->assertSame('25000.00', $order->retention_total);
         $this->assertSame('1165000.00', $order->net_payable, 'Total menos la retención.');
         $this->assertSame('1165000.00', $order->balance, 'La retención no es saldo por cobrar.');
@@ -614,5 +651,137 @@ class OrderTakingFlowTest extends TestCase
         // Buscar por el numero como se ve en pantalla tiene que encontrarlo.
         $page->set('tableSearch', $order->fullNumber())
             ->assertCanSeeTableRecords([$order]);
+    }
+
+    /** Sede con resolucion POS: sin esto no hay numeracion para la factura. */
+    private function sedeConResolucion(): Location
+    {
+        $sede = Location::withoutGlobalScopes()
+            ->where('company_id', $this->companyId)
+            ->firstOrFail();
+
+        $res = Resolution::withoutGlobalScopes()->firstOrCreate(
+            ['company_id' => $this->companyId, 'prefix' => 'ZZF'],
+            [
+                'kind' => Resolution::KIND_POS,
+                'document_type_id' => 1,
+                'document_type_name' => 'Factura de Venta',
+                'resolution_number' => 'ZZ-TEST',
+                'range_from' => 1,
+                'range_to' => 999999,
+                'active' => true,
+            ]
+        );
+
+        $vinculo = LocationResolution::withoutGlobalScopes()->firstOrCreate(
+            ['location_id' => $sede->id, 'dian_resolution_id' => $res->id],
+            ['current_consecutive' => 0, 'active' => true]
+        );
+
+        $this->limpiar[] = fn () => LocationResolution::withoutGlobalScopes()
+            ->whereKey($vinculo->id)->forceDelete();
+        $this->limpiar[] = fn () => Resolution::withoutGlobalScopes()
+            ->whereKey($res->id)->forceDelete();
+
+        return $sede;
+    }
+
+    public function test_un_pedido_despachado_al_100_se_convierte_en_factura(): void
+    {
+        $cliente = $this->cliente();
+        $tax = $this->retencion(2.5);
+        $cliente->retentionTaxes()->sync([$tax->id]);
+        $sede = $this->sedeConResolucion();
+
+        $engine = app(OrderEngine::class);
+        $order = $this->pedidoDe($cliente);
+        $order->update(['location_id' => $sede->id]);
+        $engine->syncRetentions($order, $engine->suggestRetentionsFor($cliente, 1000000));
+        $order = $engine->recomputeTotals($order->fresh(['items', 'retentions']));
+
+        $delivery = $engine->registerDelivery(
+            $order,
+            [['order_item_id' => $order->items->first()->id, 'quantity' => 10]],
+            'ZZ-REM-F',
+        );
+        $engine->registerPayment($delivery, ['amount' => 400000, 'payment_method' => 'cash']);
+
+        $factura = $engine->convertToInvoice($order->fresh(), 'pos', allowNegativeStock: true);
+
+        $this->limpiar[] = fn () => SaleInvoice::withoutGlobalScopes()
+            ->whereKey($factura->id)->forceDelete();
+
+        // La factura recoge lo despachado, con su IVA y su retencion.
+        $this->assertSame('1000000.00', $factura->subtotal);
+        $this->assertSame('190000.00', $factura->tax_total);
+        $this->assertSame('1190000.00', $factura->total);
+        $this->assertSame('25000.00', $factura->retention_total, 'La retencion del pedido pasa a la factura.');
+        $this->assertSame('1165000.00', $factura->net_payable);
+
+        // El abono ya registrado no se pierde ni se cobra dos veces.
+        $this->assertSame('400000.00', $factura->fresh()->paid_amount,
+            'Los abonos del pedido pasan como pagos de la factura.');
+
+        // Y el pedido queda enlazado, que es lo que impide facturarlo de nuevo.
+        $order->refresh();
+        $this->assertSame($factura->id, $order->sale_invoice_id);
+        $this->assertTrue($order->isInvoiced());
+
+        // En pantalla: desaparece "Convertir en factura" y aparece el enlace.
+        $company = Company::find($this->companyId);
+        $modulos = $company->active_modules ?? [];
+        $company->update(['active_modules' => array_values(array_unique([...$modulos, 'order_taking']))]);
+        app(CurrentCompany::class)->set($company->refresh());
+
+        $html = $this->get(
+            OrderResource::getUrl('view', ['record' => $order])
+        )->assertSuccessful()->getContent();
+
+        $company->update(['active_modules' => $modulos]);
+
+        $this->assertStringContainsString('Facturado con', $html);
+        $this->assertStringContainsString($factura->fullNumber(), $html);
+        $this->assertStringNotContainsString('Convertir en factura', $html,
+            'Ya facturado: el boton no puede seguir ahi.');
+    }
+
+    public function test_no_se_factura_un_pedido_a_medio_despachar(): void
+    {
+        $cliente = $this->cliente();
+        $sede = $this->sedeConResolucion();
+
+        $engine = app(OrderEngine::class);
+        $order = $engine->recomputeTotals($this->pedidoDe($cliente));
+        $order->update(['location_id' => $sede->id]);
+
+        // Solo 4 de 10: queda mercancia en la bodega.
+        $engine->registerDelivery(
+            $order,
+            [['order_item_id' => $order->items->first()->id, 'quantity' => 4]],
+        );
+
+        $this->expectExceptionMessageMatches('/salió completo/i');
+        $engine->convertToInvoice($order->fresh(), 'pos', allowNegativeStock: true);
+    }
+
+    public function test_un_pedido_no_se_puede_facturar_dos_veces(): void
+    {
+        $cliente = $this->cliente();
+        $sede = $this->sedeConResolucion();
+
+        $engine = app(OrderEngine::class);
+        $order = $engine->recomputeTotals($this->pedidoDe($cliente));
+        $order->update(['location_id' => $sede->id]);
+        $engine->registerDelivery(
+            $order,
+            [['order_item_id' => $order->items->first()->id, 'quantity' => 10]],
+        );
+
+        $factura = $engine->convertToInvoice($order->fresh(), 'pos', allowNegativeStock: true);
+        $this->limpiar[] = fn () => SaleInvoice::withoutGlobalScopes()
+            ->whereKey($factura->id)->forceDelete();
+
+        $this->expectExceptionMessageMatches('/ya se facturó/i');
+        $engine->convertToInvoice($order->fresh(), 'pos', allowNegativeStock: true);
     }
 }

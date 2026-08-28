@@ -48,7 +48,7 @@ class Order extends Model
         'third_party_id', 'price_list_id', 'location_id',
         'seller_user_id', 'created_by_user_id',
         'order_date', 'delivery_date_expected',
-        'status', 'delivery_status', 'payment_status',
+        'status', 'delivery_status', 'payment_status', 'sale_invoice_id',
         'subtotal', 'tax_total', 'retention_total', 'total', 'net_payable',
         'paid_amount', 'balance', 'notes',
     ];
@@ -106,6 +106,23 @@ class Order extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class);
+    }
+
+    public function saleInvoice(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\SaleInvoice::class, 'sale_invoice_id');
+    }
+
+    /** Ya facturado: un pedido solo puede dar una factura. */
+    public function isInvoiced(): bool
+    {
+        return $this->sale_invoice_id !== null;
+    }
+
+    /** Todo lo pedido salio de la bodega. Es la condicion para facturar. */
+    public function isFullyDelivered(): bool
+    {
+        return $this->delivery_status === 'delivered';
     }
 
     public function retentions(): HasMany

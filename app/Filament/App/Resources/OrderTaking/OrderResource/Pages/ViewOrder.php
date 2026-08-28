@@ -3,10 +3,12 @@
 namespace App\Filament\App\Resources\OrderTaking\OrderResource\Pages;
 
 use App\Filament\App\Resources\OrderTaking\OrderResource;
+use App\Filament\App\Resources\SaleInvoiceResource;
 use App\Mail\OrderTaking\OrderPdfMail;
 use App\Models\OrderTaking\EmailLog;
 use App\Models\OrderTaking\Order;
 use App\Services\OrderTaking\OrderEngine;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Filament\Actions;
 use Filament\Forms;
 use Filament\Infolists;
@@ -60,15 +62,16 @@ class ViewOrder extends ViewRecord
                     $cc = array_filter(array_map('trim', $data['cc'] ?? []));
 
                     try {
-                        if (! class_exists(\Barryvdh\DomPDF\Facade\Pdf::class)) {
+                        if (! class_exists(Pdf::class)) {
                             Notification::make()
                                 ->danger()
                                 ->title('Falta instalar el paquete de PDF')
                                 ->body('Ejecuta en la VM: composer install en el container app.')
                                 ->persistent()->send();
+
                             return;
                         }
-                        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('order-taking.order-pdf', [
+                        $pdf = Pdf::loadView('order-taking.order-pdf', [
                             'order' => $r->load(['items.product', 'customer', 'priceList', 'seller', 'retentions']),
                             'company' => $company,
                         ]);
@@ -82,7 +85,9 @@ class ViewOrder extends ViewRecord
                         );
 
                         $mail = Mail::to($to);
-                        if (! empty($cc)) $mail->cc($cc);
+                        if (! empty($cc)) {
+                            $mail->cc($cc);
+                        }
                         $mail->send($mailable);
 
                         EmailLog::create([
@@ -137,6 +142,7 @@ class ViewOrder extends ViewRecord
                 ->visible(fn (Order $r) => in_array($r->status, [Order::STATUS_CONFIRMED, Order::STATUS_PARTIAL_DELIVERED], true))
                 ->form(function (Order $r) {
                     $r->loadMissing('items.product');
+
                     return [
                         Forms\Components\TextInput::make('delivery_number')
                             ->label('Número de remisión (opcional)')->maxLength(30),
@@ -182,6 +188,60 @@ class ViewOrder extends ViewRecord
             // panel "Despachos y abonos" de mas abajo. Primero se despacha,
             // despues se abona contra esa entrega.
 
+            Actions\Action::make('invoice')
+                ->label('Convertir en factura')
+                ->icon('heroicon-o-document-currency-dollar')
+                ->color('success')
+                ->visible(fn (Order $r) => $r->isFullyDelivered()
+                    && ! $r->isInvoiced()
+                    && $r->status !== Order::STATUS_CANCELLED)
+                ->modalHeading('Convertir el pedido en factura de venta')
+                ->modalDescription('Se emite la factura por lo despachado, se descarga el inventario y se contabiliza la venta. Los abonos que ya registraste pasan como pagos de la factura.')
+                ->modalSubmitActionLabel('Emitir factura')
+                ->form([
+                    Forms\Components\Select::make('invoice_kind')
+                        ->label('Tipo de factura')
+                        ->native(false)
+                        ->required()
+                        ->default('pos')
+                        ->options([
+                            'pos' => 'POS (no electrónica)',
+                            'electronic' => 'Electrónica DIAN',
+                        ])
+                        ->helperText('La numeración sale de la resolución configurada en la sede del pedido.'),
+
+                    Forms\Components\Toggle::make('allow_negative_stock')
+                        ->label('Facturar aunque no haya saldo en bodega')
+                        ->helperText('La factura descarga inventario. Actívalo solo si este negocio no lleva existencias; si las lleva, un saldo en cero suele significar que falta registrar la compra.'),
+                ])
+                ->action(function (Order $r, array $data) {
+                    try {
+                        $invoice = app(OrderEngine::class)->convertToInvoice(
+                            $r,
+                            $data['invoice_kind'] ?? 'pos',
+                            (bool) ($data['allow_negative_stock'] ?? false),
+                        );
+
+                        Notification::make()
+                            ->success()
+                            ->title('Factura '.$invoice->fullNumber().' emitida')
+                            ->body('El pedido queda enlazado a la factura.')
+                            ->send();
+
+                        $this->redirect(SaleInvoiceResource::getUrl('view', ['record' => $invoice]));
+                    } catch (\Throwable $e) {
+                        Notification::make()->danger()->title('No se pudo facturar')
+                            ->body($e->getMessage())->persistent()->send();
+                    }
+                }),
+
+            Actions\Action::make('openInvoice')
+                ->label(fn (Order $r) => 'Factura '.$r->saleInvoice?->fullNumber())
+                ->icon('heroicon-o-document-currency-dollar')
+                ->color('gray')
+                ->visible(fn (Order $r) => $r->isInvoiced())
+                ->url(fn (Order $r) => SaleInvoiceResource::getUrl('view', ['record' => $r->sale_invoice_id])),
+
             Actions\Action::make('cancel')
                 ->label('Anular')
                 ->icon('heroicon-o-x-circle')->color('danger')
@@ -226,6 +286,11 @@ class ViewOrder extends ViewRecord
                     Infolists\Components\TextEntry::make('customer.delivery_horario')->label('Horario recibo')->columnSpan(2)->placeholder('—'),
                     Infolists\Components\TextEntry::make('seller.name')->label('Vendedor')->placeholder('—'),
                     Infolists\Components\TextEntry::make('notes')->label('Notas')->columnSpanFull()->placeholder('—'),
+                    Infolists\Components\TextEntry::make('saleInvoice')
+                        ->label('Facturado con')
+                        ->state(fn (Order $record) => $record->saleInvoice?->fullNumber())
+                        ->badge()->color('success')
+                        ->visible(fn (Order $record) => $record->isInvoiced()),
                 ]),
 
             Infolists\Components\Section::make('Líneas')
