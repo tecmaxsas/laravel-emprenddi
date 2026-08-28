@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\App\Pages\OrderTaking\DeliveryReport;
 use App\Filament\App\Pages\OrderTaking\NewOrder;
 use App\Filament\App\Resources\OrderTaking\OrderResource;
 use App\Filament\App\Resources\OrderTaking\OrderResource\Pages\ViewOrder;
@@ -407,12 +408,12 @@ class OrderTakingFlowTest extends TestCase
             [['order_item_id' => $order->items->first()->id, 'quantity' => 4]],
         );
 
-        $company = \App\Models\Company::find($this->companyId);
+        $company = Company::find($this->companyId);
         $modulos = $company->active_modules ?? [];
         $company->update(['active_modules' => array_values(array_unique([...$modulos, 'order_taking']))]);
-        app(\App\Support\CurrentCompany::class)->set($company->refresh());
+        app(CurrentCompany::class)->set($company->refresh());
 
-        $page = Livewire::test(\App\Filament\App\Pages\OrderTaking\DeliveryReport::class);
+        $page = Livewire::test(DeliveryReport::class);
 
         $company->update(['active_modules' => $modulos]);
 
@@ -443,12 +444,12 @@ class OrderTakingFlowTest extends TestCase
         // El cliente se da de baja despues de tomarle el pedido.
         $cliente->delete();
 
-        $company = \App\Models\Company::find($this->companyId);
+        $company = Company::find($this->companyId);
         $modulos = $company->active_modules ?? [];
         $company->update(['active_modules' => array_values(array_unique([...$modulos, 'order_taking']))]);
-        app(\App\Support\CurrentCompany::class)->set($company->refresh());
+        app(CurrentCompany::class)->set($company->refresh());
 
-        $page = Livewire::test(\App\Filament\App\Pages\OrderTaking\DeliveryReport::class);
+        $page = Livewire::test(DeliveryReport::class);
 
         $company->update(['active_modules' => $modulos]);
 
