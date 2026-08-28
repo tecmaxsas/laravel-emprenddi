@@ -1,6 +1,9 @@
 <x-filament-panels::page>
     @php
         $fmt = fn ($n) => '$ '.number_format((float) $n, 0, ',', '.');
+        // Tarifa sin ceros de relleno: 0.414 -> "0.414", 2.5000 -> "2.5".
+        // Recortarla a 2 decimales dejaria "0.41%" y la cuenta no cuadraria.
+        $fmtRate = fn ($n) => rtrim(rtrim(number_format((float) $n, 4, '.', ''), '0'), '.');
         $customer = $this->selectedCustomer;
         $totals = $this->cartTotals;
     @endphp
@@ -8,7 +11,7 @@
     <div style="display:grid; grid-template-columns:1fr 380px; gap:14px;">
         {{-- Columna izquierda: cliente + productos --}}
         <div>
-            <div style="background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:14px 16px;">
+            <div style="background:#fff; color:#0f172a; border:1px solid #e2e8f0; border-radius:10px; padding:14px 16px;">
                 <div style="display:grid; grid-template-columns:2fr 1fr 1fr; gap:10px;">
                     <div>
                         <label style="font-size:11px; font-weight:700; color:#334155; text-transform:uppercase;">Cliente *</label>
@@ -63,7 +66,7 @@
                 </div>
             </div>
 
-            <div style="margin-top:14px; background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:14px 16px;">
+            <div style="margin-top:14px; background:#fff; color:#0f172a; border:1px solid #e2e8f0; border-radius:10px; padding:14px 16px;">
                 <label style="font-size:11px; font-weight:700; color:#334155; text-transform:uppercase;">Buscar producto</label>
                 <input type="text" wire:model.live.debounce.300ms="productSearch"
                        placeholder="Nombre, código, código de barras, marca, categoría..."
@@ -77,7 +80,7 @@
                     <div style="margin-top:10px; max-height:250px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:8px;">
                         @foreach ($this->foundProducts as $item)
                             <button type="button" wire:click="addProduct({{ $item->id }})"
-                                    style="width:100%; text-align:left; padding:9px 12px; border:0; border-bottom:1px solid #f1f5f9; background:#fff; cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
+                                    style="width:100%; text-align:left; padding:9px 12px; border:0; border-bottom:1px solid #f1f5f9; background:#fff; color:#0f172a; cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
                                 <div>
                                     <div style="font-family:ui-monospace,monospace; font-size:11px; color:#64748b;">
                                         {{ $item->product?->code }}
@@ -101,7 +104,7 @@
         </div>
 
         {{-- Columna derecha: carrito --}}
-        <div style="background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:14px 16px; height:fit-content; position:sticky; top:12px;">
+        <div style="background:#fff; color:#0f172a; border:1px solid #e2e8f0; border-radius:10px; padding:14px 16px; height:fit-content; position:sticky; top:12px;">
             <h3 style="margin:0 0 10px; font-size:15px; font-weight:800; color:#0f172a;">Líneas del pedido</h3>
 
             @if (empty($cart))
@@ -132,16 +135,13 @@
                 </div>
 
                 <div style="border-top:2px solid #e2e8f0; padding-top:8px; font-size:12.5px;">
-                    {{-- El color va explicito: el panel es blanco fijo, asi que
-                         sin el estos valores heredan el texto claro del modo
-                         oscuro y quedan invisibles. --}}
                     <div style="display:flex; justify-content:space-between; padding:2px 0;">
                         <span style="color:#64748b;">Subtotal</span>
-                        <span style="font-weight:600; color:#0f172a;">{{ $fmt($totals['subtotal']) }}</span>
+                        <span style="font-weight:600;">{{ $fmt($totals['subtotal']) }}</span>
                     </div>
                     <div style="display:flex; justify-content:space-between; padding:2px 0;">
                         <span style="color:#64748b;">IVA</span>
-                        <span style="font-weight:600; color:#0f172a;">{{ $fmt($totals['tax']) }}</span>
+                        <span style="font-weight:600;">{{ $fmt($totals['tax']) }}</span>
                     </div>
                     <div style="display:flex; justify-content:space-between; padding:6px 0 4px; border-top:1px solid #e2e8f0; margin-top:4px;">
                         <span style="font-weight:800; font-size:14px;">TOTAL</span>
@@ -169,7 +169,7 @@
                                 <div style="display:grid; grid-template-columns:1fr 96px 24px; gap:6px; align-items:center; padding:3px 0;">
                                     <div style="min-width:0;">
                                         <div style="font-size:11.5px; font-weight:700; color:#0f172a; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                                            {{ $ret['tax_code'] }} · {{ number_format((float) $ret['rate'], 2) }}%
+                                            {{ $ret['tax_code'] }} · {{ $fmtRate($ret['rate']) }}%
                                         </div>
                                         <div style="font-size:10.5px; color:#b45309; font-weight:700;">− {{ $fmt($ret['amount']) }}</div>
                                     </div>

@@ -253,7 +253,7 @@ class ViewOrder extends ViewRecord
                             Infolists\Components\TextEntry::make('tax_name')->label('Retención')->columnSpan(4),
                             Infolists\Components\TextEntry::make('base_amount')->label('Base')->money('COP')->columnSpan(2),
                             Infolists\Components\TextEntry::make('rate')->label('Tarifa')
-                                ->formatStateUsing(fn ($state) => number_format((float) $state, 2).' %')->columnSpan(1),
+                                ->state(fn ($record) => $record->rateLabel().' %')->columnSpan(1),
                             Infolists\Components\TextEntry::make('amount')->label('Retenido')->money('COP')
                                 ->weight('semibold')->color('warning')->columnSpan(3),
                         ])->columns(12),

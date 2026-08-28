@@ -34,6 +34,17 @@ class OrderRetention extends Model
         ];
     }
 
+    /**
+     * Tarifa sin ceros de relleno: 0.414 -> "0.414", 2.5000 -> "2.5".
+     *
+     * Recortarla a dos decimales dejaria "0.41 %" y la cuenta mostrada no
+     * daria, porque el monto se calcula con la tarifa completa.
+     */
+    public function rateLabel(): string
+    {
+        return rtrim(rtrim(number_format((float) $this->rate, 4, '.', ''), '0'), '.');
+    }
+
     public function order(): BelongsTo
     {
         return $this->belongsTo(Order::class);

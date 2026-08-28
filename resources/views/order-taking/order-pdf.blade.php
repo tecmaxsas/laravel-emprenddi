@@ -130,7 +130,7 @@
             @if ((float) $order->retention_total > 0)
                 @foreach ($order->retentions as $ret)
                     <tr>
-                        <td class="lbl">{{ $ret->tax_code }} ({{ number_format((float) $ret->rate, 2) }}%)</td>
+                        <td class="lbl">{{ $ret->tax_code }} ({{ $ret->rateLabel() }}%)</td>
                         <td class="val">− $ {{ number_format($ret->amount, 0, ',', '.') }}</td>
                     </tr>
                 @endforeach

@@ -326,6 +326,9 @@ class OrderTakingFlowTest extends TestCase
         ])->render();
 
         $this->assertStringContainsString('ZZRF', $html);
+        // La tarifa completa, no recortada a 2 decimales: si dijera "2.5" en un
+        // 2.514% la cuenta que ve el cliente no daria.
+        $this->assertStringContainsString('(2.5%)', $html);
         $this->assertStringContainsString('NETO A PAGAR', $html);
         $this->assertStringContainsString('1.165.000', $html);
     }
