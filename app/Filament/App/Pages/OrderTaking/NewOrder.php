@@ -364,7 +364,10 @@ class NewOrder extends Page
                         'quantity_delivered' => 0,
                         'unit_price_before_tax' => $priceBase,
                         'tax_rate' => $priceBase > 0 ? round(($taxAmt / $priceBase) * 100, 4) : 0,
-                        'tax_amount' => $taxAmt,
+                        // El IVA de la linea, no el unitario: va al lado de
+                        // subtotal y total, que tambien son de la linea, y es
+                        // lo que suma recomputeTotals para el IVA del pedido.
+                        'tax_amount' => $taxTotal,
                         'unit_price_at_public' => $pricePublic,
                         'subtotal' => $subtotal,
                         'total' => $total,

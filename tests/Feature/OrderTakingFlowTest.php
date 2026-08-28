@@ -21,6 +21,7 @@ use App\Models\ThirdParty;
 use App\Models\User;
 use App\Services\OrderTaking\OrderEngine;
 use App\Support\CurrentCompany;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -94,6 +95,19 @@ class OrderTakingFlowTest extends TestCase
         $this->limpiar[] = fn () => Tax::withoutGlobalScopes()->whereKey($tax->id)->forceDelete();
 
         return $tax;
+    }
+
+    private function producto(): Product
+    {
+        $producto = Product::withoutGlobalScopes()->firstOrCreate(
+            ['company_id' => $this->companyId, 'code' => 'ZZ-PROD-1'],
+            ['name' => 'ZZ Producto']
+        );
+
+        $this->limpiar[] = fn () => Product::withoutGlobalScopes()
+            ->whereKey($producto->id)->forceDelete();
+
+        return $producto;
     }
 
     /** Pedido de $1.000.000 + IVA 19% = $1.190.000. */
@@ -327,10 +341,15 @@ class OrderTakingFlowTest extends TestCase
         ])->render();
 
         $this->assertStringContainsString('ZZRF', $html);
+        // Columnas del formato calcado del reporte del cliente.
+        foreach (['Nombre vend.', 'Referencia', 'Desc. ítem', 'U.M.', 'Precio unit.',
+            'Valor subtotal', 'Vlr. imp. IVA', 'Valor neto'] as $columna) {
+            $this->assertStringContainsString($columna, $html, "Falta la columna {$columna}.");
+        }
         // La tarifa completa, no recortada a 2 decimales: si dijera "2.5" en un
         // 2.514% la cuenta que ve el cliente no daria.
         $this->assertStringContainsString('(2.5%)', $html);
-        $this->assertStringContainsString('NETO A PAGAR', $html);
+        $this->assertStringContainsString('Neto a pagar', $html);
         $this->assertStringContainsString('1.165.000', $html);
     }
 
@@ -494,5 +513,70 @@ class OrderTakingFlowTest extends TestCase
         $order->refresh();
         $this->assertSame('delivered', $order->delivery_status);
         $this->assertSame(Order::STATUS_FULLY_DELIVERED, $order->status);
+    }
+
+    /**
+     * El PDF de verdad, no solo el HTML: dompdf revienta con CSS que la vista
+     * acepta sin chistar.
+     */
+    public function test_el_pdf_del_pedido_se_genera_sin_reventar(): void
+    {
+        $cliente = $this->cliente();
+        $tax = $this->retencion(2.5);
+        $cliente->retentionTaxes()->sync([$tax->id]);
+
+        $engine = app(OrderEngine::class);
+        $order = $this->pedidoDe($cliente);
+        $engine->syncRetentions($order, $engine->suggestRetentionsFor($cliente, 1000000));
+        $order = $engine->recomputeTotals($order->fresh(['items', 'retentions']));
+
+        $pdf = Pdf::loadView('order-taking.order-pdf', [
+            'order' => $order->load(['items.product', 'customer', 'priceList', 'seller', 'retentions']),
+            'company' => Company::find($this->companyId),
+        ])->output();
+
+        $this->assertStringStartsWith('%PDF', $pdf);
+        $this->assertGreaterThan(2000, strlen($pdf), 'Un PDF de una pagina real pesa mas que esto.');
+    }
+
+    /**
+     * El IVA de la linea, no el unitario: si no, total != subtotal + IVA en
+     * cuanto la cantidad pase de 1.
+     */
+    public function test_el_iva_del_pedido_cuadra_con_el_total(): void
+    {
+        $cliente = $this->cliente();
+
+        $page = new NewOrder;
+        $page->customerId = $cliente->id;
+        $page->orderDate = now()->toDateString();
+        $page->cart = [[
+            'product_id' => $this->producto()->id,
+            'code' => 'ZZ-PROD-1',
+            'name' => 'ZZ Producto',
+            'quantity' => 4,
+            'price_before_tax' => 128160.0,
+            'tax_amount' => 24350.4,   // por unidad, como viene de la lista
+            'price_at_public' => 152510.4,
+        ]];
+        $page->saveOrder();
+
+        $order = Order::withoutGlobalScopes()
+            ->where('company_id', $this->companyId)
+            ->latest('id')->firstOrFail();
+
+        $this->limpiar[] = function () use ($order) {
+            OrderItem::withoutGlobalScopes()->where('order_id', $order->id)->forceDelete();
+            Order::withoutGlobalScopes()->whereKey($order->id)->forceDelete();
+        };
+
+        $this->assertSame('512640.00', $order->subtotal, '4 × 128.160');
+        $this->assertSame('97401.60', $order->tax_total, '4 × 24.350,40 — no el unitario');
+        $this->assertSame('610041.60', $order->total);
+        $this->assertSame(
+            round((float) $order->subtotal + (float) $order->tax_total, 2),
+            round((float) $order->total, 2),
+            'El total tiene que ser subtotal + IVA.'
+        );
     }
 }

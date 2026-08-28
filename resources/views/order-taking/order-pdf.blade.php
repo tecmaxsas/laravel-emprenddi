@@ -4,148 +4,157 @@
     <meta charset="UTF-8">
     <title>Pedido {{ $order->fullNumber() }}</title>
     <style>
-        @page { size: A4; margin: 15mm 12mm; }
+        {{-- Formato calcado del reporte diario del cliente: cabecera en tres
+             bloques, tabla densa con rejilla completa y franjas grises de
+             totales. Sin colores de marca ni cajas redondeadas: el documento
+             se imprime y se archiva. --}}
+        @page { size: A4 landscape; margin: 10mm 8mm; }
         * { box-sizing: border-box; }
-        body { font-family: DejaVu Sans, sans-serif; font-size: 10px; color: #0f172a; margin: 0; }
-        .head { display: table; width: 100%; margin-bottom: 12px; border-bottom: 2px solid #0f172a; padding-bottom: 8px; }
-        .head-left, .head-right { display: table-cell; vertical-align: top; }
-        .head-right { text-align: right; }
-        .co-name { font-size: 14px; font-weight: bold; color: #0f172a; }
-        .co-meta { font-size: 9px; color: #64748b; }
-        .doc-title { font-size: 20px; font-weight: bold; color: #0f172a; }
-        .doc-num { font-size: 12px; font-family: 'Courier New', monospace; color: #4f46e5; }
+        body { font-family: DejaVu Sans, sans-serif; font-size: 8.5px; color: #000; margin: 0; }
 
-        .customer-box { background: #f8fafc; padding: 8px 10px; margin-bottom: 12px; border-radius: 4px; }
-        .customer-box .row { display: table; width: 100%; }
-        .customer-box .cell { display: table-cell; padding: 2px 6px; font-size: 10px; }
-        .customer-box .lbl { color: #64748b; font-weight: bold; text-transform: uppercase; font-size: 8px; }
+        .head { display: table; width: 100%; margin-bottom: 6px; }
+        .head > div { display: table-cell; vertical-align: top; }
+        .head .left  { width: 33%; text-align: left; }
+        .head .mid   { width: 34%; text-align: center; }
+        .head .right { width: 33%; text-align: right; }
+        .co-name { font-size: 10px; font-weight: bold; }
+        .doc-title { font-size: 11px; font-weight: bold; letter-spacing: .5px; }
 
-        table.items { width: 100%; border-collapse: collapse; margin-top: 8px; }
-        table.items th { background: #0f172a; color: #fff; padding: 6px 5px; font-size: 9px; text-align: left; text-transform: uppercase; }
-        table.items td { padding: 5px; border-bottom: 1px solid #e2e8f0; font-size: 10px; vertical-align: top; }
-        table.items td.num { text-align: right; font-variant-numeric: tabular-nums; }
-        table.items tr:nth-child(even) td { background: #f8fafc; }
+        .meta { margin: 4px 0 6px; font-size: 8.5px; }
+        .meta span { margin-right: 10px; }
+        .meta b { font-weight: bold; }
 
-        .totals { margin-top: 10px; margin-left: 60%; }
-        .totals table { width: 100%; border-collapse: collapse; }
-        .totals td { padding: 3px 6px; font-size: 10px; }
-        .totals td.lbl { color: #64748b; font-weight: bold; }
-        .totals td.val { text-align: right; font-variant-numeric: tabular-nums; }
-        .totals .grand td { border-top: 2px solid #0f172a; font-size: 13px; font-weight: bold; padding-top: 5px; }
+        table.grid { width: 100%; border-collapse: collapse; }
+        table.grid th,
+        table.grid td { border: 1px solid #000; padding: 2.5px 4px; vertical-align: top; }
+        table.grid th { font-weight: bold; text-align: left; }
+        table.grid td.num,
+        table.grid th.num { text-align: right; white-space: nowrap; }
+        table.grid td.mid,
+        table.grid th.mid { text-align: center; white-space: nowrap; }
 
-        .foot { margin-top: 30px; font-size: 9px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 8px; }
-        .sig-box { margin-top: 40px; display: table; width: 100%; }
-        .sig-cell { display: table-cell; width: 50%; text-align: center; padding: 0 20px; }
-        .sig-line { border-top: 1px solid #0f172a; padding-top: 3px; font-size: 9px; color: #64748b; }
+        /* Franjas de totales, como los cortes por documento y cliente del
+           reporte de referencia. */
+        tr.band td { background: #d9d9d9; font-weight: bold; }
+        tr.band-strong td { background: #bfbfbf; font-weight: bold; }
+        tr.ret td { background: #f2f2f2; }
+
+        .notes { margin-top: 8px; padding: 4px 8px; border: 1px solid #000; font-size: 8.5px; }
+        .sig-box { margin-top: 26px; display: table; width: 100%; }
+        .sig-cell { display: table-cell; width: 50%; padding: 0 30px; }
+        .sig-line { border-top: 1px solid #000; padding-top: 2px; font-size: 8px; text-align: center; }
+        .foot { margin-top: 10px; font-size: 7.5px; color: #444; }
     </style>
 </head>
 <body>
+    @php
+        $money = fn ($n) => '$'.number_format((float) $n, 2, ',', '.');
+        $qty = fn ($n) => number_format((float) $n, 2, ',', '.');
+
+        // El vendedor se repite en cada fila igual que en el reporte de
+        // referencia, que trae una columna por linea y no un dato de cabecera.
+        $vendedor = $order->seller?->name ?? '—';
+        $fechaPedido = $order->order_date?->format('d/m/Y');
+
+        $totalCantidad = $order->items->sum('quantity_ordered');
+    @endphp
+
     <div class="head">
-        <div class="head-left">
+        <div class="left">
             <div class="co-name">{{ strtoupper($company->name ?? '') }}</div>
-            <div class="co-meta">
-                @if ($company?->nit) NIT {{ $company->nit }}{{ $company->dv ? '-'.$company->dv : '' }}<br>@endif
-                @if ($company?->address) {{ $company->address }}<br>@endif
-                @if ($company?->city) {{ $company->city }}@endif
+            <div>@if ($company?->nit){{ $company->nit }}{{ $company->dv ? '-'.$company->dv : '' }}@endif</div>
+            <div>
+                @if ($company?->address){{ $company->address }}@endif
+                @if ($company?->city) · {{ $company->city }}@endif
                 @if ($company?->phone) · Tel {{ $company->phone }}@endif
-                @if ($company?->email) · {{ $company->email }}@endif
             </div>
         </div>
-        <div class="head-right">
+        <div class="mid">
             <div class="doc-title">PEDIDO</div>
-            <div class="doc-num">{{ $order->fullNumber() }}</div>
-            <div style="font-size: 10px; color: #64748b; margin-top: 4px;">
-                Fecha: {{ $order->order_date?->format('d/m/Y') }}<br>
-                @if ($order->delivery_date_expected)
-                    Entrega esperada: {{ $order->delivery_date_expected->format('d/m/Y') }}
-                @endif
-            </div>
+            <div>{{ $order->fullNumber() }}</div>
+        </div>
+        <div class="right">
+            <div>{{ $fechaPedido }}</div>
+            <div>{{ now()->format('g:i A') }}</div>
         </div>
     </div>
 
-    <div class="customer-box">
-        <div class="row">
-            <div class="cell" style="width: 60%;">
-                <span class="lbl">Cliente</span><br>
-                <strong style="font-size: 12px;">{{ $order->customer?->name }}</strong><br>
-                <span style="color: #64748b;">NIT {{ $order->customer?->document_number }}</span>
-            </div>
-            <div class="cell" style="width: 40%;">
-                <span class="lbl">Contacto</span><br>
-                {{ $order->customer?->contact_person ?? '—' }}<br>
-                <span style="color: #64748b;">{{ $order->customer?->phone ?? $order->customer?->mobile ?? '' }}</span>
-            </div>
-        </div>
-        <div class="row" style="margin-top: 6px;">
-            <div class="cell" style="width: 60%;">
-                <span class="lbl">Dirección de entrega</span><br>
-                {{ $order->customer?->address ?? '—' }}
-                @if ($order->customer?->city), {{ $order->customer->city }}@endif
-            </div>
-            <div class="cell" style="width: 40%;">
-                <span class="lbl">Forma de pago</span> · {{ $order->customer?->payment_terms ?? '—' }}<br>
-                <span class="lbl">Horario recibo</span> · {{ $order->customer?->delivery_horario ?? '—' }}<br>
-                @if ($order->priceList)
-                    <span class="lbl">Lista</span> · {{ $order->priceList->name }}<br>
-                @endif
-                @if ($order->seller)
-                    <span class="lbl">Vendedor</span> · {{ $order->seller->name }}
-                @endif
-            </div>
-        </div>
+    <div class="meta">
+        <span><b>Cliente:</b> {{ $order->customer?->name ?? '—' }}
+            @if ($order->customer?->document_number) · NIT {{ $order->customer->document_number }}@endif</span>
+        <span><b>Dirección:</b> {{ $order->customer?->address ?? '—' }}@if ($order->customer?->city), {{ $order->customer->city }}@endif</span>
+        <br>
+        <span><b>Forma de pago:</b> {{ $order->customer?->payment_terms ?? '—' }}</span>
+        <span><b>Horario recibo:</b> {{ $order->customer?->delivery_horario ?? '—' }}</span>
+        @if ($order->priceList)<span><b>Lista:</b> {{ $order->priceList->name }}</span>@endif
+        @if ($order->delivery_date_expected)<span><b>Entrega esperada:</b> {{ $order->delivery_date_expected->format('d/m/Y') }}</span>@endif
     </div>
 
-    <table class="items">
+    <table class="grid">
         <thead>
             <tr>
-                <th style="width: 6%;">#</th>
-                <th style="width: 12%;">SKU</th>
-                <th>Descripción</th>
-                <th style="width: 8%; text-align: right;">Cant.</th>
-                <th style="width: 14%; text-align: right;">Valor unit.</th>
-                <th style="width: 14%; text-align: right;">Total</th>
+                <th style="width: 11%;">Nombre vend.</th>
+                <th style="width: 7%;">Referencia</th>
+                <th>Desc. ítem</th>
+                <th class="mid" style="width: 8%;">Fecha</th>
+                <th class="mid" style="width: 5%;">U.M.</th>
+                <th class="num" style="width: 5%;">Cant.</th>
+                <th class="num" style="width: 10%;">Precio unit.</th>
+                <th class="num" style="width: 12%;">Valor subtotal</th>
+                <th class="num" style="width: 10%;">Vlr. imp. IVA</th>
+                <th class="num" style="width: 12%;">Valor neto</th>
             </tr>
         </thead>
         <tbody>
             @foreach ($order->items as $item)
                 <tr>
-                    <td class="num">{{ $item->line_number }}</td>
-                    <td style="font-family: monospace;">{{ $item->product?->code }}</td>
+                    <td>{{ $vendedor }}</td>
+                    <td>{{ $item->product?->code }}</td>
                     <td>{{ $item->description }}</td>
-                    <td class="num">{{ (int) $item->quantity_ordered }}</td>
-                    <td class="num">$ {{ number_format($item->unit_price_at_public, 0, ',', '.') }}</td>
-                    <td class="num"><strong>$ {{ number_format($item->total, 0, ',', '.') }}</strong></td>
+                    <td class="mid">{{ $fechaPedido }}</td>
+                    <td class="mid">{{ $item->product?->unit_of_measure ?: '—' }}</td>
+                    <td class="num">{{ $qty($item->quantity_ordered) }}</td>
+                    <td class="num">{{ $money($item->unit_price_before_tax ?: $item->unit_price_at_public) }}</td>
+                    <td class="num">{{ $money($item->subtotal ?: $item->total) }}</td>
+                    <td class="num">{{ $money($item->tax_amount) }}</td>
+                    <td class="num">{{ $money($item->total) }}</td>
                 </tr>
             @endforeach
-        </tbody>
-    </table>
 
-    <div class="totals">
-        <table>
-            <tr><td class="lbl">Subtotal</td><td class="val">$ {{ number_format($order->subtotal, 0, ',', '.') }}</td></tr>
-            <tr><td class="lbl">IVA</td><td class="val">$ {{ number_format($order->tax_total, 0, ',', '.') }}</td></tr>
-            <tr class="grand"><td class="lbl">TOTAL</td><td class="val">$ {{ number_format($order->total, 0, ',', '.') }}</td></tr>
+            {{-- Corte por documento: el equivalente a la franja "FE-000xxxxx"
+                 del reporte de referencia. --}}
+            <tr class="band">
+                <td colspan="5">{{ $order->fullNumber() }} · {{ $order->customer?->name ?? '—' }}</td>
+                <td class="num">{{ $qty($totalCantidad) }}</td>
+                <td></td>
+                <td class="num">{{ $money($order->subtotal) }}</td>
+                <td class="num">{{ $money($order->tax_total) }}</td>
+                <td class="num">{{ $money($order->total) }}</td>
+            </tr>
 
             {{-- El cliente necesita ver que se le retuvo y con que tarifa. --}}
             @if ((float) $order->retention_total > 0)
                 @foreach ($order->retentions as $ret)
-                    <tr>
-                        <td class="lbl">{{ $ret->tax_code }} ({{ $ret->rateLabel() }}%)</td>
-                        <td class="val">− $ {{ number_format($ret->amount, 0, ',', '.') }}</td>
+                    <tr class="ret">
+                        <td colspan="9">{{ $ret->tax_name }} — {{ $ret->tax_code }} ({{ $ret->rateLabel() }}%) sobre base {{ $money($ret->base_amount) }}</td>
+                        <td class="num">− {{ $money($ret->amount) }}</td>
                     </tr>
                 @endforeach
-                <tr class="grand">
-                    <td class="lbl">NETO A PAGAR</td>
-                    <td class="val">$ {{ number_format($order->net_payable, 0, ',', '.') }}</td>
-                </tr>
             @endif
-        </table>
-    </div>
+
+            <tr class="band-strong">
+                <td colspan="5">{{ (float) $order->retention_total > 0 ? 'Neto a pagar' : 'Gran total' }}</td>
+                <td class="num">{{ $qty($totalCantidad) }}</td>
+                <td></td>
+                <td class="num">{{ $money($order->subtotal) }}</td>
+                <td class="num">{{ $money($order->tax_total) }}</td>
+                <td class="num">{{ $money($order->net_payable ?: $order->total) }}</td>
+            </tr>
+        </tbody>
+    </table>
 
     @if ($order->notes)
-        <div style="margin-top: 12px; padding: 6px 10px; background: #fef3c7; border-left: 3px solid #f59e0b; font-size: 10px;">
-            <strong>Notas:</strong> {{ $order->notes }}
-        </div>
+        <div class="notes"><b>Notas:</b> {{ $order->notes }}</div>
     @endif
 
     <div class="sig-box">
