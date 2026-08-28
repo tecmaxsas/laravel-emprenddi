@@ -17,6 +17,7 @@ use App\Services\Parking\ParkingBillingEngine;
 use App\Services\Parking\ParkingProductProvisioner;
 use App\Services\Parking\ParkingSessionEngine;
 use App\Support\ModuleGate;
+use App\Support\PaymentAccountResolver;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 
@@ -430,14 +431,9 @@ class ParkingTerminal extends Page
 
     protected function resetExitForm(): void
     {
-        $companyId = auth()->user()?->company_id;
-        $defaultAccount = Account::query()
-            ->where('company_id', $companyId)
-            ->where('accepts_movements', true)->where('active', true)
-            ->where(function ($q) {
-                $q->where('code', '110505')->orWhere('code', '1105');
-            })
-            ->orderBy('code')->value('id');
+        // El cajero no elige cuenta: la decide el metodo de pago. Solo se
+        // prellena por si el negocio lleva contabilidad y quiere cambiarla.
+        $defaultAccount = PaymentAccountResolver::forMethod('cash');
 
         $this->exitForm = [
             'payment_method' => 'cash',
@@ -709,14 +705,22 @@ class ParkingTerminal extends Page
             return null;
         }
 
-        $accountId = (int) ($this->exitForm['account_id'] ?? 0);
+        // Sin contabilidad el campo ni se muestra, asi que la cuenta se
+        // resuelve por el metodo de pago elegido.
+        $metodo = $this->exitForm['payment_method'] ?? 'cash';
+        $accountId = (int) ($this->exitForm['account_id'] ?? 0)
+            ?: (int) PaymentAccountResolver::forMethod($metodo);
+
         if ($accountId <= 0) {
-            throw new \RuntimeException('Selecciona la cuenta contable del cobro.');
+            throw new \RuntimeException(
+                'No se encontró la cuenta contable para registrar el cobro. '
+                .'Revisa el método de pago en Configuración → Métodos de pago.'
+            );
         }
 
         return app(ParkingBillingEngine::class)->issueForSession($closed, [
             'invoice_kind' => $this->exitForm['invoice_kind'] ?? 'pos',
-            'payment_method' => $this->exitForm['payment_method'] ?? 'cash',
+            'payment_method' => $metodo,
             'account_id' => $accountId,
             'paid_amount' => $grandTotal,
             'third_party_id' => $this->exitForm['third_party_id'] ?? null,

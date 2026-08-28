@@ -15,6 +15,7 @@ use App\Services\Dian\PosDianTransmitter;
 use App\Services\Sales\SaleInvoiceEngine;
 use App\Services\Sales\SaleInvoiceNumberer;
 use App\Support\CashSessionGate;
+use App\Support\PaymentAccountResolver;
 use App\Support\RestaurantSettings;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -1071,13 +1072,24 @@ class RestaurantOrderEngine
                 foreach ($payments as $idx => $p) {
                     $amount = round((float) $p['amount'], 2);
                     if ($amount <= 0) continue;
-                    if (empty($p['account_id'])) {
-                        throw new RuntimeException('Falta cuenta contable en uno de los pagos.');
+
+                    // La cuenta la decide el metodo de pago. El mesero solo la
+                    // ve si el negocio lleva contabilidad; si no, se resuelve.
+                    $metodoPago = $p['payment_method'] ?? 'cash';
+                    $cuenta = (int) ($p['account_id'] ?? 0)
+                        ?: (int) PaymentAccountResolver::forMethod($metodoPago, $order->company_id);
+
+                    if ($cuenta <= 0) {
+                        throw new RuntimeException(
+                            'No se encontró la cuenta contable para registrar el pago. '
+                            .'Revisa el método de pago en Configuración → Métodos de pago.'
+                        );
                     }
+
                     $invoiceEngine->addPayment($invoice, [
                         'amount' => $amount,
-                        'payment_method' => $p['payment_method'] ?? 'cash',
-                        'account_id' => (int) $p['account_id'],
+                        'payment_method' => $metodoPago,
+                        'account_id' => $cuenta,
                         'date' => now()->toDateString(),
                         'reference' => $tab['reference'] ?? ($p['reference'] ?? null),
                         'description' => 'Orden restaurante '.$order->fullNumber()

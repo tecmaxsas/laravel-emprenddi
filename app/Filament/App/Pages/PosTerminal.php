@@ -2,7 +2,6 @@
 
 namespace App\Filament\App\Pages;
 
-use App\Models\Account;
 use App\Models\CashRegisterSession;
 use App\Models\Category;
 use App\Models\Company;
@@ -17,6 +16,7 @@ use App\Models\Tax;
 use App\Models\ThirdParty;
 use App\Services\Sales\SaleInvoiceEngine;
 use App\Services\Sales\SaleInvoiceNumberer;
+use App\Support\PaymentAccountResolver;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\Auth;
@@ -988,29 +988,13 @@ class PosTerminal extends Page
         $this->recomputeLine($i);
     }
 
+    /**
+     * La resolucion vive en PaymentAccountResolver: los tres POS la hacian por
+     * su cuenta y con criterios distintos.
+     */
     protected function defaultAccountForMethod(string $method): ?int
     {
-        // 1. PaymentMethod configurado por la empresa (si existe)
-        $configured = PaymentMethod::query()
-            ->where('company_id', auth()->user()?->company_id)
-            ->where('code', $method)
-            ->where('active', true)
-            ->value('account_id');
-
-        if ($configured) {
-            return $configured;
-        }
-
-        // 2. Fallback heurístico: caja para efectivo, banco para todo lo demás
-        $code = $method === 'cash' ? '110505' : '1110';
-
-        return Account::query()
-            ->where('company_id', auth()->user()?->company_id)
-            ->where('accepts_movements', true)
-            ->where('active', true)
-            ->where('code', 'like', $code.'%')
-            ->orderBy('code')
-            ->value('id');
+        return PaymentAccountResolver::forMethod($method);
     }
 
     // ================================================================

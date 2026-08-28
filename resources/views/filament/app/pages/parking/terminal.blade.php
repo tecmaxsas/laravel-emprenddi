@@ -330,14 +330,19 @@
                                         @endforeach
                                     </select>
                                 </div>
-                                <div class="pt-field">
-                                    <label>Cuenta contable</label>
-                                    <select wire:model="exitForm.account_id">
-                                        @foreach ($this->accountOptions as $id => $name)
-                                            <option value="{{ $id }}">{{ $name }}</option>
-                                        @endforeach
-                                    </select>
-                                </div>
+                                {{-- La cuenta la decide el metodo de pago. Solo se
+                                     muestra si el negocio lleva contabilidad y
+                                     quiere sobreescribirla en el cobro. --}}
+                                @if (\App\Support\ModuleGate::active(\App\Support\ModuleGate::ACCOUNTING))
+                                    <div class="pt-field">
+                                        <label>Cuenta contable</label>
+                                        <select wire:model="exitForm.account_id">
+                                            @foreach ($this->accountOptions as $id => $name)
+                                                <option value="{{ $id }}">{{ $name }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                @endif
                                 <div class="pt-field">
                                     <label>Tipo de factura</label>
                                     <select wire:model="exitForm.invoice_kind">

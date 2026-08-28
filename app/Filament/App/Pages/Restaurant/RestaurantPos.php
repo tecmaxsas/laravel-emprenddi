@@ -5,7 +5,6 @@ namespace App\Filament\App\Pages\Restaurant;
 use App\Models\Account;
 use App\Models\Category;
 use App\Models\Location;
-use App\Models\PaymentMethod;
 use App\Models\Product;
 use App\Models\Restaurant\Modifier;
 use App\Models\Restaurant\Order;
@@ -17,6 +16,7 @@ use App\Models\ThirdParty;
 use App\Services\Restaurant\RestaurantOrderEngine;
 use App\Support\AccountantContext;
 use App\Support\ModuleGate;
+use App\Support\PaymentAccountResolver;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\Auth;
@@ -1333,32 +1333,13 @@ class RestaurantPos extends Page
             ->get(['id', 'code', 'name']);
     }
 
+    /**
+     * La resolucion vive en PaymentAccountResolver: los tres POS la hacian por
+     * su cuenta y con criterios distintos.
+     */
     protected function defaultCashAccountId(?string $method = null): ?int
     {
-        $companyId = auth()->user()?->company_id;
-
-        // 1. Si el metodo tiene PaymentMethod configurado, usar su account_id
-        if ($method) {
-            $configured = PaymentMethod::query()
-                ->where('company_id', $companyId)
-                ->where('code', $method)
-                ->where('active', true)
-                ->value('account_id');
-            if ($configured) return (int) $configured;
-        }
-
-        // 2. Fallback: caja general o primera cuenta disponible
-        return Account::query()
-            ->where('company_id', $companyId)
-            ->where('accepts_movements', true)
-            ->where('active', true)
-            ->where('code', 'like', '110505%')
-            ->value('id') ?? Account::query()
-                ->where('company_id', $companyId)
-                ->where('accepts_movements', true)
-                ->where('active', true)
-                ->where('code', 'like', '11%')
-                ->value('id');
+        return PaymentAccountResolver::forMethod($method);
     }
 
     public function openBillingModal(): void

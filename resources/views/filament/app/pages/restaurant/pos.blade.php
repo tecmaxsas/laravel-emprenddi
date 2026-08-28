@@ -1582,8 +1582,16 @@
                                 </div>
 
                                 <div style="display:flex; flex-direction:column; gap:6px;">
+                                    @php
+                                        // La cuenta contable solo se ofrece si el
+                                        // negocio lleva contabilidad; sin ella la
+                                        // resuelve el metodo de pago y la columna
+                                        // sobra.
+                                        $muestraCuenta = \App\Support\ModuleGate::active(\App\Support\ModuleGate::ACCOUNTING);
+                                        $columnas = $muestraCuenta ? '1fr 1.4fr 110px 32px' : '1fr 110px 32px';
+                                    @endphp
                                     @foreach ($tabPayments as $pIdx => $p)
-                                        <div style="display:grid; grid-template-columns: 1fr 1.4fr 110px 32px; gap:6px; align-items:center;">
+                                        <div style="display:grid; grid-template-columns: {{ $columnas }}; gap:6px; align-items:center;">
                                             <select wire:model.live="billingPayments.{{ $t['key'] }}.{{ $pIdx }}.method"
                                                     wire:change="onPaymentMethodChange('{{ $t['key'] }}', {{ $pIdx }}, $event.target.value)"
                                                     style="width:100%; padding:7px 8px; border-radius:6px; border:1px solid #d1d5db; font-size:12px; color:#111827; background:#ffffff;">
@@ -1592,13 +1600,15 @@
                                                 @endforeach
                                             </select>
 
-                                            <select wire:model.live="billingPayments.{{ $t['key'] }}.{{ $pIdx }}.account_id"
-                                                    style="width:100%; padding:7px 8px; border-radius:6px; border:1px solid #d1d5db; font-size:12px; color:#111827; background:#ffffff;">
-                                                <option value="">— Cuenta —</option>
-                                                @foreach ($accounts as $acc)
-                                                    <option value="{{ $acc->id }}">{{ $acc->code }} — {{ $acc->name }}</option>
-                                                @endforeach
-                                            </select>
+                                            @if ($muestraCuenta)
+                                                <select wire:model.live="billingPayments.{{ $t['key'] }}.{{ $pIdx }}.account_id"
+                                                        style="width:100%; padding:7px 8px; border-radius:6px; border:1px solid #d1d5db; font-size:12px; color:#111827; background:#ffffff;">
+                                                    <option value="">— Cuenta —</option>
+                                                    @foreach ($accounts as $acc)
+                                                        <option value="{{ $acc->id }}">{{ $acc->code }} — {{ $acc->name }}</option>
+                                                    @endforeach
+                                                </select>
+                                            @endif
 
                                             <div style="position:relative;">
                                                 <span style="position:absolute; left:8px; top:50%; transform:translateY(-50%); color:#6b7280; font-size:12px;">$</span>
