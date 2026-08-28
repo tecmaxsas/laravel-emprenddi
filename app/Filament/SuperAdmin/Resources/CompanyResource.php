@@ -136,10 +136,6 @@ class CompanyResource extends Resource
                 ->columns(2)
                 ->schema([
                     Forms\Components\Toggle::make('active')->label('Activa'),
-
-                    Forms\Components\Toggle::make('hidden_from_admin')
-                        ->label('Ocultar de los listados')
-                        ->helperText('La empresa opera con normalidad; solo deja de aparecer en las tablas del superadmin. Esta ficha sigue accesible por URL directa — guarda el enlace antes de ocultarla.'),
                 ]),
 
             Forms\Components\Section::make('Módulos activos')
