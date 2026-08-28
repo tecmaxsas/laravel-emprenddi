@@ -112,6 +112,30 @@ class NewOrder extends Page
     }
 
     /**
+     * Base gravable sobre la que se calculan las retenciones.
+     *
+     * No sirve usar el subtotal a secas: hay listas de precios que solo traen
+     * el precio publico, sin desglose de base e IVA (el importador toma esas
+     * columnas del Excel y a veces vienen vacias). En esas lineas el subtotal
+     * es 0 y la retencion saldria en cero.
+     *
+     * Por eso se resuelve linea por linea: si la linea trae base, esa manda;
+     * si no, el precio publico ES la base, porque no hay impuesto que separar.
+     */
+    public function getTaxableBaseProperty(): float
+    {
+        $base = 0.0;
+
+        foreach ($this->cart as $c) {
+            $qty = (float) $c['quantity'];
+            $unitario = (float) $c['price_before_tax'] ?: (float) $c['price_at_public'];
+            $base += $qty * $unitario;
+        }
+
+        return round($base, 2);
+    }
+
+    /**
      * Trae las retenciones configuradas para el cliente y las aplica.
      *
      * Reemplaza la lista completa: es la respuesta a "cambio de cliente", no un
@@ -122,7 +146,7 @@ class NewOrder extends Page
     {
         $this->retentions = app(OrderEngine::class)->suggestRetentionsFor(
             $this->selectedCustomer,
-            (float) $this->cartTotals['subtotal'],
+            $this->taxableBase,
         );
     }
 
@@ -133,7 +157,7 @@ class NewOrder extends Page
      */
     public function recomputeRetentionBases(): void
     {
-        $base = (float) $this->cartTotals['subtotal'];
+        $base = $this->taxableBase;
 
         foreach ($this->retentions as $i => $r) {
             if ((bool) ($r['base_edited'] ?? false)) {

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\App\Pages\OrderTaking\NewOrder;
 use App\Filament\App\Resources\OrderTaking\OrderResource;
 use App\Filament\App\Resources\OrderTaking\OrderResource\Pages\ViewOrder;
 use App\Filament\App\Resources\OrderTaking\OrderResource\RelationManagers\DeliveriesRelationManager;
@@ -327,5 +328,67 @@ class OrderTakingFlowTest extends TestCase
         $this->assertStringContainsString('ZZRF', $html);
         $this->assertStringContainsString('NETO A PAGAR', $html);
         $this->assertStringContainsString('1.165.000', $html);
+    }
+
+    /**
+     * Caso real: listas importadas que solo traen el precio publico, sin
+     * desglose de base e IVA. Antes la retencion salia en cero porque se
+     * calculaba sobre el subtotal, que en esas lineas vale 0.
+     */
+    public function test_la_retencion_usa_el_precio_publico_cuando_la_lista_no_desglosa_iva(): void
+    {
+        $cliente = $this->cliente();
+        $tax = $this->retencion(0.414);
+        $cliente->retentionTaxes()->sync([$tax->id]);
+
+        $page = new NewOrder;
+        $page->customerId = $cliente->id;
+
+        // Linea sin desglose: base 0, IVA 0, publico 148.800 — como la deja el
+        // importador cuando esas columnas vienen vacias en el Excel.
+        $page->cart = [[
+            'product_id' => 1,
+            'code' => 'MG-62',
+            'name' => 'BOL COSMIKA KILO',
+            'quantity' => 1,
+            'price_before_tax' => 0.0,
+            'tax_amount' => 0.0,
+            'price_at_public' => 148800.0,
+        ]];
+        $page->loadRetentionsForCustomer();
+
+        $this->assertSame(148800.0, $page->taxableBase,
+            'Sin desglose, el precio publico ES la base gravable.');
+
+        $retenciones = $page->retentions;
+        $this->assertCount(1, $retenciones);
+        $this->assertSame(148800.0, (float) $retenciones[0]['base_amount']);
+        $this->assertSame(616.03, (float) $retenciones[0]['amount'],
+            'El 0.414% de 148.800 son 616,03.');
+    }
+
+    /** Con desglose real manda la base, no el precio publico. */
+    public function test_la_retencion_usa_la_base_cuando_la_lista_si_desglosa_iva(): void
+    {
+        $cliente = $this->cliente();
+        $tax = $this->retencion(2.5);
+        $cliente->retentionTaxes()->sync([$tax->id]);
+
+        $page = new NewOrder;
+        $page->customerId = $cliente->id;
+        $page->cart = [[
+            'product_id' => 1,
+            'code' => 'ZZ',
+            'name' => 'ZZ Producto',
+            'quantity' => 10,
+            'price_before_tax' => 100000.0,
+            'tax_amount' => 19000.0,
+            'price_at_public' => 119000.0,
+        ]];
+        $page->loadRetentionsForCustomer();
+
+        $this->assertSame(1000000.0, $page->taxableBase,
+            'Con desglose, la base excluye el IVA.');
+        $this->assertSame(25000.0, (float) $page->retentions[0]['amount']);
     }
 }

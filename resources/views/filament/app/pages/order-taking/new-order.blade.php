@@ -132,13 +132,16 @@
                 </div>
 
                 <div style="border-top:2px solid #e2e8f0; padding-top:8px; font-size:12.5px;">
+                    {{-- El color va explicito: el panel es blanco fijo, asi que
+                         sin el estos valores heredan el texto claro del modo
+                         oscuro y quedan invisibles. --}}
                     <div style="display:flex; justify-content:space-between; padding:2px 0;">
                         <span style="color:#64748b;">Subtotal</span>
-                        <span style="font-weight:600;">{{ $fmt($totals['subtotal']) }}</span>
+                        <span style="font-weight:600; color:#0f172a;">{{ $fmt($totals['subtotal']) }}</span>
                     </div>
                     <div style="display:flex; justify-content:space-between; padding:2px 0;">
                         <span style="color:#64748b;">IVA</span>
-                        <span style="font-weight:600;">{{ $fmt($totals['tax']) }}</span>
+                        <span style="font-weight:600; color:#0f172a;">{{ $fmt($totals['tax']) }}</span>
                     </div>
                     <div style="display:flex; justify-content:space-between; padding:6px 0 4px; border-top:1px solid #e2e8f0; margin-top:4px;">
                         <span style="font-weight:800; font-size:14px;">TOTAL</span>
@@ -156,13 +159,19 @@
                                 <span style="font-weight:800; color:#b45309;">− {{ $fmt($this->retentionTotal) }}</span>
                             </div>
 
+                            <div style="display:grid; grid-template-columns:1fr 96px 24px; gap:6px; font-size:10px; font-weight:700; color:#94a3b8; text-transform:uppercase; padding-bottom:2px;">
+                                <span>Retención</span>
+                                <span style="text-align:right;">Base</span>
+                                <span></span>
+                            </div>
+
                             @foreach ($retentions as $i => $ret)
                                 <div style="display:grid; grid-template-columns:1fr 96px 24px; gap:6px; align-items:center; padding:3px 0;">
                                     <div style="min-width:0;">
                                         <div style="font-size:11.5px; font-weight:700; color:#0f172a; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
                                             {{ $ret['tax_code'] }} · {{ number_format((float) $ret['rate'], 2) }}%
                                         </div>
-                                        <div style="font-size:10.5px; color:#64748b;">− {{ $fmt($ret['amount']) }}</div>
+                                        <div style="font-size:10.5px; color:#b45309; font-weight:700;">− {{ $fmt($ret['amount']) }}</div>
                                     </div>
                                     <input type="number" min="0" step="0.01"
                                            value="{{ $ret['base_amount'] }}"
