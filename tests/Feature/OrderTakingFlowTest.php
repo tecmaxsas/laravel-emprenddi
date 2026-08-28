@@ -394,4 +394,64 @@ class OrderTakingFlowTest extends TestCase
             'Con desglose, la base excluye el IVA.');
         $this->assertSame(25000.0, (float) $page->retentions[0]['amount']);
     }
+
+    public function test_el_informe_muestra_cliente_cantidades_y_detalle(): void
+    {
+        $cliente = $this->cliente();
+        $engine = app(OrderEngine::class);
+        $order = $engine->recomputeTotals($this->pedidoDe($cliente));
+
+        // 4 de 10 despachadas: quedan 6 pendientes.
+        $engine->registerDelivery(
+            $order,
+            [['order_item_id' => $order->items->first()->id, 'quantity' => 4]],
+        );
+
+        $company = \App\Models\Company::find($this->companyId);
+        $modulos = $company->active_modules ?? [];
+        $company->update(['active_modules' => array_values(array_unique([...$modulos, 'order_taking']))]);
+        app(\App\Support\CurrentCompany::class)->set($company->refresh());
+
+        $page = Livewire::test(\App\Filament\App\Pages\OrderTaking\DeliveryReport::class);
+
+        $company->update(['active_modules' => $modulos]);
+
+        $page->assertCanSeeTableRecords([$order])
+            ->assertSee('ZZ Cliente Retenedor');
+
+        $fila = $page->instance()->getTableRecords()->firstWhere('id', $order->id);
+        $this->assertSame(10.0, (float) $fila->qty_ordered);
+        $this->assertSame(4.0, (float) $fila->qty_delivered);
+
+        $lineas = $page->instance()->lineasDe($order->id);
+        $this->assertSame(6.0, $lineas[0]['pendiente'], 'De 10 pedidas y 4 despachadas quedan 6.');
+
+        // El modal del detalle: que compile y traiga las cifras de la linea.
+        $modal = view('filament.app.pages.order-taking.delivery-report-detail', ['lineas' => $lineas])->render();
+        $this->assertStringContainsString('ZZ Producto', $modal);
+        $this->assertStringContainsString('6,00', $modal);
+        $this->assertStringNotContainsString('#f1f5f9', $modal,
+            'Nada de fondos claros fijos: el modal se pinta sobre el tema del usuario.');
+    }
+
+    public function test_el_informe_conserva_el_nombre_del_cliente_borrado(): void
+    {
+        $cliente = $this->cliente();
+        $engine = app(OrderEngine::class);
+        $order = $engine->recomputeTotals($this->pedidoDe($cliente));
+
+        // El cliente se da de baja despues de tomarle el pedido.
+        $cliente->delete();
+
+        $company = \App\Models\Company::find($this->companyId);
+        $modulos = $company->active_modules ?? [];
+        $company->update(['active_modules' => array_values(array_unique([...$modulos, 'order_taking']))]);
+        app(\App\Support\CurrentCompany::class)->set($company->refresh());
+
+        $page = Livewire::test(\App\Filament\App\Pages\OrderTaking\DeliveryReport::class);
+
+        $company->update(['active_modules' => $modulos]);
+
+        $page->assertSee('ZZ Cliente Retenedor');
+    }
 }

@@ -220,7 +220,9 @@ class DeliveryReport extends Page implements HasForms, HasTable
                 fn (Builder $q, $v) => $q->where('third_party_id', $v))
             ->when($this->filters['delivery_status'] ?? null,
                 fn (Builder $q, $v) => $q->where('delivery_status', $v))
-            ->with(['customer:id,name'])
+            // withTrashed: si el cliente se borro despues, el pedido historico
+            // no puede quedarse sin saber a nombre de quien fue.
+            ->with(['customer' => fn ($q) => $q->withTrashed()->select('id', 'name')])
             ->select('order_taking_orders.*')
             ->selectSub($sum('quantity_ordered'), 'qty_ordered')
             ->selectSub($sum('quantity_delivered'), 'qty_delivered');
