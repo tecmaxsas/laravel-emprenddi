@@ -136,6 +136,10 @@ class CompanyResource extends Resource
                 ->columns(2)
                 ->schema([
                     Forms\Components\Toggle::make('active')->label('Activa'),
+
+                    Forms\Components\Toggle::make('hidden_from_admin')
+                        ->label('Ocultar de los listados')
+                        ->helperText('La empresa opera con normalidad; solo deja de aparecer en las tablas del superadmin. Esta ficha sigue accesible por URL directa — guarda el enlace antes de ocultarla.'),
                 ]),
 
             Forms\Components\Section::make('Módulos activos')
@@ -165,6 +169,9 @@ class CompanyResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            // Las ocultas se caen de este listado pero NO de getEloquentQuery(),
+            // asi que su ficha sigue abriendose por URL directa.
+            ->modifyQueryUsing(fn (Builder $query) => $query->visibleInAdmin())
             ->defaultSort('created_at', 'desc')
             ->columns([
                 Tables\Columns\TextColumn::make('name')

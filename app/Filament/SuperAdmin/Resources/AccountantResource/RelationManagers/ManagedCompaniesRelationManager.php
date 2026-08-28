@@ -7,6 +7,7 @@ use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Facades\Auth;
 
@@ -29,6 +30,7 @@ class ManagedCompaniesRelationManager extends RelationManager
     public function table(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(fn (Builder $query) => $query->visibleInAdmin())
             ->recordTitleAttribute('legal_name')
             ->columns([
                 Tables\Columns\TextColumn::make('legal_name')
@@ -60,6 +62,7 @@ class ManagedCompaniesRelationManager extends RelationManager
             ->headerActions([
                 Tables\Actions\AttachAction::make()
                     ->label('Vincular empresa')
+                    ->recordSelectOptionsQuery(fn (Builder $query) => $query->visibleInAdmin())
                     ->recordSelectSearchColumns(['legal_name', 'nit'])
                     ->preloadRecordSelect()
                     ->form(fn (Tables\Actions\AttachAction $action) => [

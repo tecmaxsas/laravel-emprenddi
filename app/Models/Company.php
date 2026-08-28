@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -36,6 +37,7 @@ class Company extends Model
         'active_modules',
         'settings',
         'active',
+        'hidden_from_admin',
         'trial_ends_at',
         'subscription_ends_at',
     ];
@@ -46,9 +48,22 @@ class Company extends Model
             'active_modules' => 'array',
             'settings' => 'array',
             'active' => 'boolean',
+            'hidden_from_admin' => 'boolean',
             'trial_ends_at' => 'datetime',
             'subscription_ends_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Empresas que sí se listan en el superadmin.
+     *
+     * Ocultar no es desactivar: la empresa opera normal, sus usuarios entran
+     * como siempre y su ficha sigue abriéndose por URL directa. Solo se cae de
+     * los listados del panel de administración.
+     */
+    public function scopeVisibleInAdmin(Builder $query): Builder
+    {
+        return $query->where('hidden_from_admin', false);
     }
 
     public function users(): HasMany

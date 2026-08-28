@@ -102,7 +102,9 @@ class AccountantResource extends Resource
 
                 Tables\Columns\TextColumn::make('managed_companies_count')
                     ->label('Empresas')
-                    ->counts('managedCompanies')
+                    // Sin excluir las ocultas el numero no cuadraria con las
+                    // filas que se ven al abrir el contador.
+                    ->counts(['managedCompanies' => fn (Builder $query) => $query->visibleInAdmin()])
                     ->alignCenter()
                     ->badge()
                     ->color('info'),

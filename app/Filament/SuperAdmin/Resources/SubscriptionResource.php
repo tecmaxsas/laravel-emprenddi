@@ -33,7 +33,16 @@ class SubscriptionResource extends Resource
         return $form->columns(2)->schema([
             Forms\Components\Select::make('company_id')
                 ->label('Compañía')
-                ->relationship('company', 'name')
+                // Las ocultas no se ofrecen al buscar, pero si esta suscripcion
+                // ya es de una oculta hay que seguir mostrandola: si no, el
+                // select saldria vacio y no se podria guardar el formulario.
+                ->relationship(
+                    'company',
+                    'name',
+                    fn (Builder $query, ?Subscription $record) => $query
+                        ->visibleInAdmin()
+                        ->when($record, fn (Builder $q) => $q->orWhere('id', $record->company_id))
+                )
                 ->required()
                 ->searchable()
                 ->preload(),
@@ -96,6 +105,12 @@ class SubscriptionResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            // Ocultar la empresa implica ocultar sus suscripciones: si no, su
+            // nombre seguiria asomando en este listado.
+            ->modifyQueryUsing(fn (Builder $query) => $query->whereHas(
+                'company',
+                fn (Builder $company) => $company->withoutGlobalScopes()->visibleInAdmin()
+            ))
             ->defaultSort('ends_at', 'asc')
             ->columns([
                 Tables\Columns\TextColumn::make('company.name')
