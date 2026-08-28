@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Filament\App\Pages\OrderTaking\DeliveryReport;
 use App\Filament\App\Pages\OrderTaking\NewOrder;
 use App\Filament\App\Resources\OrderTaking\OrderResource;
+use App\Filament\App\Resources\OrderTaking\OrderResource\Pages\ListOrders;
 use App\Filament\App\Resources\OrderTaking\OrderResource\Pages\ViewOrder;
 use App\Filament\App\Resources\OrderTaking\OrderResource\RelationManagers\DeliveriesRelationManager;
 use App\Filament\App\Resources\OrderTaking\OrderResource\RelationManagers\PaymentsRelationManager;
@@ -22,6 +23,7 @@ use App\Models\User;
 use App\Services\OrderTaking\OrderEngine;
 use App\Support\CurrentCompany;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Filament\Facades\Filament;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -578,5 +580,39 @@ class OrderTakingFlowTest extends TestCase
             round((float) $order->total, 2),
             'El total tiene que ser subtotal + IVA.'
         );
+    }
+
+    public function test_el_listado_de_pedidos_traduce_estados_y_busca_por_numero(): void
+    {
+        $cliente = $this->cliente();
+        $engine = app(OrderEngine::class);
+        $order = $engine->recomputeTotals($this->pedidoDe($cliente));
+
+        // Despacho completo: el estado pasa a "Entregado".
+        $engine->registerDelivery(
+            $order,
+            [['order_item_id' => $order->items->first()->id, 'quantity' => 10]],
+        );
+
+        $company = Company::find($this->companyId);
+        $modulos = $company->active_modules ?? [];
+        $company->update(['active_modules' => array_values(array_unique([...$modulos, 'order_taking']))]);
+        app(CurrentCompany::class)->set($company->refresh());
+        Filament::setCurrentPanel(Filament::getPanel('app'));
+
+        $page = Livewire::test(ListOrders::class);
+
+        $company->update(['active_modules' => $modulos]);
+
+        $page->assertCanSeeTableRecords([$order])
+            // 'fully_delivered' sigue apareciendo en el HTML como value= de
+            // las opciones del filtro, que es correcto; lo que importa es que
+            // la celda muestre la etiqueta.
+            ->assertSee('Entregado')
+            ->assertSee($order->fullNumber());
+
+        // Buscar por el numero como se ve en pantalla tiene que encontrarlo.
+        $page->set('tableSearch', $order->fullNumber())
+            ->assertCanSeeTableRecords([$order]);
     }
 }
