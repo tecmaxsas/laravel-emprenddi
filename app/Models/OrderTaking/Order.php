@@ -49,7 +49,7 @@ class Order extends Model
         'seller_user_id', 'created_by_user_id',
         'order_date', 'delivery_date_expected',
         'status', 'delivery_status', 'payment_status',
-        'subtotal', 'tax_total', 'total',
+        'subtotal', 'tax_total', 'retention_total', 'total', 'net_payable',
         'paid_amount', 'balance', 'notes',
     ];
 
@@ -60,7 +60,9 @@ class Order extends Model
             'delivery_date_expected' => 'date',
             'subtotal' => 'decimal:2',
             'tax_total' => 'decimal:2',
+            'retention_total' => 'decimal:2',
             'total' => 'decimal:2',
+            'net_payable' => 'decimal:2',
             'paid_amount' => 'decimal:2',
             'balance' => 'decimal:2',
         ];
@@ -104,6 +106,21 @@ class Order extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class);
+    }
+
+    public function retentions(): HasMany
+    {
+        return $this->hasMany(OrderRetention::class);
+    }
+
+    /**
+     * Abonos que quedaron colgando del pedido antes de que los abonos pasaran
+     * a registrarse dentro del despacho. No se pueden repartir entre entregas
+     * sin inventar datos, asi que se muestran aparte.
+     */
+    public function legacyPayments(): HasMany
+    {
+        return $this->hasMany(Payment::class)->whereNull('delivery_id');
     }
 
     public function emailLogs(): HasMany

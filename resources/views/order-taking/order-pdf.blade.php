@@ -125,6 +125,20 @@
             <tr><td class="lbl">Subtotal</td><td class="val">$ {{ number_format($order->subtotal, 0, ',', '.') }}</td></tr>
             <tr><td class="lbl">IVA</td><td class="val">$ {{ number_format($order->tax_total, 0, ',', '.') }}</td></tr>
             <tr class="grand"><td class="lbl">TOTAL</td><td class="val">$ {{ number_format($order->total, 0, ',', '.') }}</td></tr>
+
+            {{-- El cliente necesita ver que se le retuvo y con que tarifa. --}}
+            @if ((float) $order->retention_total > 0)
+                @foreach ($order->retentions as $ret)
+                    <tr>
+                        <td class="lbl">{{ $ret->tax_code }} ({{ number_format((float) $ret->rate, 2) }}%)</td>
+                        <td class="val">− $ {{ number_format($ret->amount, 0, ',', '.') }}</td>
+                    </tr>
+                @endforeach
+                <tr class="grand">
+                    <td class="lbl">NETO A PAGAR</td>
+                    <td class="val">$ {{ number_format($order->net_payable, 0, ',', '.') }}</td>
+                </tr>
+            @endif
         </table>
     </div>
 

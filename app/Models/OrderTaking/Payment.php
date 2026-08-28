@@ -25,7 +25,7 @@ class Payment extends Model
     ];
 
     protected $fillable = [
-        'company_id', 'order_id',
+        'company_id', 'order_id', 'delivery_id',
         'payment_date', 'amount', 'payment_method', 'account_id',
         'reference', 'notes', 'created_by_user_id',
     ];
@@ -41,6 +41,15 @@ class Payment extends Model
     public function order(): BelongsTo
     {
         return $this->belongsTo(Order::class);
+    }
+
+    /**
+     * El despacho que este abono esta pagando. Null solo en los abonos
+     * historicos, anteriores a que el abono se ligara al despacho.
+     */
+    public function delivery(): BelongsTo
+    {
+        return $this->belongsTo(Delivery::class);
     }
 
     public function account(): BelongsTo

@@ -19,7 +19,7 @@ class OrderTakingPdfController extends Controller
         abort_unless(Auth::user()->can('order_taking.use'), 403);
 
         $record = Order::query()
-            ->with(['items.product', 'customer', 'priceList', 'seller'])
+            ->with(['items.product', 'customer', 'priceList', 'seller', 'retentions'])
             ->where('id', $order)
             ->where('company_id', Auth::user()->company_id)
             ->firstOrFail();

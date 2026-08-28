@@ -6,6 +6,7 @@ use App\Traits\BelongsToCompany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class ThirdParty extends Model
@@ -135,6 +136,19 @@ class ThirdParty extends Model
     public function defaultSeller(): BelongsTo
     {
         return $this->belongsTo(User::class, 'default_seller_user_id');
+    }
+
+    /**
+     * Retenciones que hay que aplicarle a este tercero.
+     *
+     * Los flags is_iva_withholder / is_ica_withholder dicen QUE clase de
+     * retenedor es; esto dice con que tarifa y contra que cuenta, porque
+     * apunta al catalogo de impuestos de la empresa.
+     */
+    public function retentionTaxes(): BelongsToMany
+    {
+        return $this->belongsToMany(Tax::class, 'third_party_retentions', 'third_party_id', 'tax_id')
+            ->withTimestamps();
     }
 
     public function fullDocument(): string

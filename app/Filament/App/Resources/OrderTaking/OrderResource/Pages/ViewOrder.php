@@ -4,10 +4,8 @@ namespace App\Filament\App\Resources\OrderTaking\OrderResource\Pages;
 
 use App\Filament\App\Resources\OrderTaking\OrderResource;
 use App\Mail\OrderTaking\OrderPdfMail;
-use App\Models\Account;
 use App\Models\OrderTaking\EmailLog;
 use App\Models\OrderTaking\Order;
-use App\Models\OrderTaking\Payment;
 use App\Services\OrderTaking\OrderEngine;
 use Filament\Actions;
 use Filament\Forms;
@@ -71,7 +69,7 @@ class ViewOrder extends ViewRecord
                             return;
                         }
                         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('order-taking.order-pdf', [
-                            'order' => $r->load(['items.product', 'customer', 'priceList', 'seller']),
+                            'order' => $r->load(['items.product', 'customer', 'priceList', 'seller', 'retentions']),
                             'company' => $company,
                         ]);
 
@@ -180,46 +178,9 @@ class ViewOrder extends ViewRecord
                     }
                 }),
 
-            Actions\Action::make('payment')
-                ->label('Registrar abono')
-                ->icon('heroicon-o-banknotes')->color('success')
-                ->visible(fn (Order $r) => $r->status !== Order::STATUS_CANCELLED
-                    && $r->status !== Order::STATUS_DRAFT
-                    && (float) $r->balance > 0)
-                ->form(fn (Order $r) => [
-                    Forms\Components\TextInput::make('amount')
-                        ->label('Monto')->numeric()->required()->prefix('$')
-                        ->minValue(0.01)->maxValue((float) $r->balance)
-                        ->default((float) $r->balance)
-                        ->helperText("Saldo pendiente: $".number_format((float) $r->balance, 2)),
-                    Forms\Components\Select::make('payment_method')
-                        ->label('Método')->native(false)->required()
-                        ->options(Payment::METHODS)->default('cash'),
-                    Forms\Components\Select::make('account_id')
-                        ->label('Cuenta contable (opcional)')->native(false)->searchable()
-                        ->options(fn () => Account::query()
-                            ->where('company_id', auth()->user()?->company_id)
-                            ->where('accepts_movements', true)
-                            ->where(fn ($q) => $q->where('code', 'like', '11%'))
-                            ->orderBy('code')
-                            ->get()
-                            ->mapWithKeys(fn ($a) => [$a->id => "{$a->code} — {$a->name}"])
-                            ->all()),
-                    Forms\Components\DatePicker::make('payment_date')
-                        ->label('Fecha')->native(false)->default(now())->required(),
-                    Forms\Components\TextInput::make('reference')->label('Referencia'),
-                    Forms\Components\Textarea::make('notes')->label('Notas')->rows(2),
-                ])
-                ->action(function (Order $r, array $data) {
-                    try {
-                        app(OrderEngine::class)->registerPayment($r, $data);
-                        Notification::make()->success()->title('Abono registrado')->send();
-                        $this->refreshFormData(['paid_amount', 'balance', 'payment_status']);
-                    } catch (\Throwable $e) {
-                        Notification::make()->danger()->title('Error')
-                            ->body($e->getMessage())->persistent()->send();
-                    }
-                }),
+            // El abono ya no se registra aqui: vive dentro de su despacho, en el
+            // panel "Despachos y abonos" de mas abajo. Primero se despacha,
+            // despues se abona contra esa entrega.
 
             Actions\Action::make('cancel')
                 ->label('Anular')
@@ -281,12 +242,34 @@ class ViewOrder extends ViewRecord
                         ])->columns(10),
                 ]),
 
+            Infolists\Components\Section::make('Retenciones')
+                ->description('Anticipo de impuesto que el cliente le consigna a la DIAN en nuestro nombre. No es saldo por cobrar: se descuenta del neto a pagar.')
+                ->visible(fn (Order $record) => $record->retentions()->exists())
+                ->schema([
+                    Infolists\Components\RepeatableEntry::make('retentions')
+                        ->hiddenLabel()
+                        ->schema([
+                            Infolists\Components\TextEntry::make('tax_code')->label('Código')->fontFamily('mono')->columnSpan(2),
+                            Infolists\Components\TextEntry::make('tax_name')->label('Retención')->columnSpan(4),
+                            Infolists\Components\TextEntry::make('base_amount')->label('Base')->money('COP')->columnSpan(2),
+                            Infolists\Components\TextEntry::make('rate')->label('Tarifa')
+                                ->formatStateUsing(fn ($state) => number_format((float) $state, 2).' %')->columnSpan(1),
+                            Infolists\Components\TextEntry::make('amount')->label('Retenido')->money('COP')
+                                ->weight('semibold')->color('warning')->columnSpan(3),
+                        ])->columns(12),
+                ]),
+
             Infolists\Components\Section::make('Totales')
                 ->columns(4)
                 ->schema([
                     Infolists\Components\TextEntry::make('subtotal')->label('Subtotal')->money('COP'),
                     Infolists\Components\TextEntry::make('tax_total')->label('IVA')->money('COP'),
                     Infolists\Components\TextEntry::make('total')->label('Total')->money('COP')->weight('bold'),
+                    Infolists\Components\TextEntry::make('retention_total')->label('Retenciones')->money('COP')
+                        ->color('warning')
+                        ->visible(fn (Order $record) => (float) $record->retention_total > 0),
+                    Infolists\Components\TextEntry::make('net_payable')->label('Neto a pagar')->money('COP')
+                        ->weight('bold')->color('success'),
                     Infolists\Components\TextEntry::make('paid_amount')->label('Pagado')->money('COP')->color('success'),
                     Infolists\Components\TextEntry::make('balance')->label('Saldo')->money('COP')->color('warning')->weight('bold'),
                     Infolists\Components\TextEntry::make('payment_status')->label('Pago')->badge()

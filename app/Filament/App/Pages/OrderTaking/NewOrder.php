@@ -43,6 +43,12 @@ class NewOrder extends Page
     /** cada item: ['product_id', 'code', 'name', 'quantity', 'price_before_tax', 'tax_amount', 'price_at_public'] */
     public array $cart = [];
 
+    /**
+     * Retenciones del cliente, ya calculadas sobre la base gravable.
+     * Cada fila: ['tax_id', 'tax_code', 'tax_name', 'tax_type', 'base_amount', 'rate', 'amount']
+     */
+    public array $retentions = [];
+
     public static function canAccess(): bool
     {
         if (! ModuleGate::active('order_taking')) return false;
@@ -101,6 +107,70 @@ class NewOrder extends Page
         if ($customer && $customer->default_price_list_id) {
             $this->priceListId = (int) $customer->default_price_list_id;
         }
+
+        $this->loadRetentionsForCustomer();
+    }
+
+    /**
+     * Trae las retenciones configuradas para el cliente y las aplica.
+     *
+     * Reemplaza la lista completa: es la respuesta a "cambio de cliente", no un
+     * recalculo. Se aplican solas para que nadie se olvide de ellas; el
+     * vendedor puede quitarlas o corregir la base antes de guardar.
+     */
+    public function loadRetentionsForCustomer(): void
+    {
+        $this->retentions = app(OrderEngine::class)->suggestRetentionsFor(
+            $this->selectedCustomer,
+            (float) $this->cartTotals['subtotal'],
+        );
+    }
+
+    /**
+     * Actualiza la base de las retenciones que estan en pantalla cuando cambia
+     * el carrito. No vuelve a agregar las que el vendedor quito, ni pisa las
+     * bases que corrigio a mano.
+     */
+    public function recomputeRetentionBases(): void
+    {
+        $base = (float) $this->cartTotals['subtotal'];
+
+        foreach ($this->retentions as $i => $r) {
+            if ((bool) ($r['base_edited'] ?? false)) {
+                continue;
+            }
+
+            $this->retentions[$i]['base_amount'] = $base;
+            $this->retentions[$i]['amount'] = round($base * ((float) $r['rate'] / 100), 2);
+        }
+    }
+
+    public function removeRetention(int $i): void
+    {
+        unset($this->retentions[$i]);
+        $this->retentions = array_values($this->retentions);
+    }
+
+    /** Vuelve a traer todas las retenciones del cliente, si el vendedor se arrepintió. */
+    public function restoreRetentions(): void
+    {
+        $this->loadRetentionsForCustomer();
+    }
+
+    public function updateRetentionBase(int $i, float $base): void
+    {
+        if (! isset($this->retentions[$i])) return;
+
+        $base = max(0, $base);
+        $this->retentions[$i]['base_amount'] = $base;
+        $this->retentions[$i]['amount'] = round($base * ((float) $this->retentions[$i]['rate'] / 100), 2);
+        // Marcada a mano: los recalculos por cambios del carrito ya no la pisan.
+        $this->retentions[$i]['base_edited'] = true;
+    }
+
+    public function getRetentionTotalProperty(): float
+    {
+        return round(collect($this->retentions)->sum(fn ($r) => (float) ($r['amount'] ?? 0)), 2);
     }
 
     public function getFoundProductsProperty()
@@ -160,6 +230,7 @@ class NewOrder extends Page
         foreach ($this->cart as $i => $c) {
             if ((int) $c['product_id'] === (int) $item->product_id) {
                 $this->cart[$i]['quantity']++;
+                $this->recomputeRetentionBases();
                 return;
             }
         }
@@ -174,18 +245,21 @@ class NewOrder extends Page
             'price_at_public' => (float) $item->price_at_public,
         ];
         $this->productSearch = '';
+        $this->recomputeRetentionBases();
     }
 
     public function removeLine(int $i): void
     {
         unset($this->cart[$i]);
         $this->cart = array_values($this->cart);
+        $this->recomputeRetentionBases();
     }
 
     public function updateQuantity(int $i, float $qty): void
     {
         if (isset($this->cart[$i])) {
             $this->cart[$i]['quantity'] = max(0, $qty);
+            $this->recomputeRetentionBases();
         }
     }
 
@@ -273,7 +347,9 @@ class NewOrder extends Page
                     ]);
                 }
 
-                return $engine->recomputeTotals($order->fresh(['items']));
+                $engine->syncRetentions($order, $this->retentions);
+
+                return $engine->recomputeTotals($order->fresh(['items', 'retentions']));
             });
 
             Notification::make()->success()->title('Pedido creado')

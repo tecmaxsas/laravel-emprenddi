@@ -3,6 +3,7 @@
 namespace App\Filament\App\Resources\OrderTaking;
 
 use App\Filament\App\Resources\OrderTaking\OrderResource\Pages;
+use App\Filament\App\Resources\OrderTaking\OrderResource\RelationManagers;
 use App\Filament\Concerns\ChecksPermission;
 use App\Models\OrderTaking\Order;
 use App\Support\ModuleGate;
@@ -47,6 +48,14 @@ class OrderResource extends Resource
         ])->actions([
             Tables\Actions\ViewAction::make(),
         ]);
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            RelationManagers\DeliveriesRelationManager::class,
+            RelationManagers\PaymentsRelationManager::class,
+        ];
     }
 
     public static function getPages(): array

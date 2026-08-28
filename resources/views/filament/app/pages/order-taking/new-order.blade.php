@@ -144,6 +144,54 @@
                         <span style="font-weight:800; font-size:14px;">TOTAL</span>
                         <span style="font-weight:900; font-size:18px; color:#0f172a;">{{ $fmt($totals['total']) }}</span>
                     </div>
+
+                    {{-- Retenciones del cliente. Se aplican solas al elegirlo;
+                         aqui el vendedor las revisa, corrige la base o las quita. --}}
+                    @if ($retentions)
+                        <div style="margin-top:8px; padding-top:8px; border-top:1px dashed #cbd5e1;">
+                            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+                                <span style="font-size:11px; font-weight:800; color:#b45309; text-transform:uppercase;">
+                                    Retenciones del cliente
+                                </span>
+                                <span style="font-weight:800; color:#b45309;">− {{ $fmt($this->retentionTotal) }}</span>
+                            </div>
+
+                            @foreach ($retentions as $i => $ret)
+                                <div style="display:grid; grid-template-columns:1fr 96px 24px; gap:6px; align-items:center; padding:3px 0;">
+                                    <div style="min-width:0;">
+                                        <div style="font-size:11.5px; font-weight:700; color:#0f172a; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                                            {{ $ret['tax_code'] }} · {{ number_format((float) $ret['rate'], 2) }}%
+                                        </div>
+                                        <div style="font-size:10.5px; color:#64748b;">− {{ $fmt($ret['amount']) }}</div>
+                                    </div>
+                                    <input type="number" min="0" step="0.01"
+                                           value="{{ $ret['base_amount'] }}"
+                                           wire:change="updateRetentionBase({{ $i }}, $event.target.value)"
+                                           title="Base gravable"
+                                           style="width:100%; padding:4px 6px; border:1px solid #cbd5e1; border-radius:6px; text-align:right; background:#fff; color:#0f172a; font-size:11.5px;">
+                                    <button type="button" wire:click="removeRetention({{ $i }})" title="Quitar retención"
+                                            style="background:none; border:0; color:#94a3b8; font-size:16px; cursor:pointer; line-height:1;">×</button>
+                                </div>
+                            @endforeach
+
+                            <div style="display:flex; justify-content:space-between; padding:6px 0 2px; border-top:1px solid #e2e8f0; margin-top:6px;">
+                                <span style="font-weight:800; font-size:13px;">NETO A PAGAR</span>
+                                <span style="font-weight:900; font-size:16px; color:#15803d;">
+                                    {{ $fmt(max(0, $totals['total'] - $this->retentionTotal)) }}
+                                </span>
+                            </div>
+                        </div>
+                    @elseif ($customer)
+                        @php $configuradas = $customer->retentionTaxes()->where('is_active', true)->count(); @endphp
+                        @if ($configuradas > 0)
+                            <div style="margin-top:8px; padding-top:8px; border-top:1px dashed #cbd5e1;">
+                                <button type="button" wire:click="restoreRetentions"
+                                        style="width:100%; padding:6px; background:#fef3c7; color:#92400e; border:1px solid #fcd34d; border-radius:6px; font-weight:700; font-size:11.5px; cursor:pointer;">
+                                    ↺ Volver a aplicar las retenciones del cliente ({{ $configuradas }})
+                                </button>
+                            </div>
+                        @endif
+                    @endif
                 </div>
             @endif
 

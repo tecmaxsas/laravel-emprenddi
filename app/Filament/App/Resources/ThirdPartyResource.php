@@ -6,6 +6,7 @@ use App\Filament\App\Resources\ThirdPartyResource\Pages;
 use App\Filament\Concerns\ChecksPermission;
 use App\Models\Account;
 use App\Models\ThirdParty;
+use App\Models\Tax;
 use App\Support\DianDvCalculator;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -188,6 +189,28 @@ class ThirdPartyResource extends Resource
                                 Forms\Components\Toggle::make('is_self_withholder')->label('Autorretenedor'),
                                 Forms\Components\Toggle::make('is_iva_withholder')->label('Retenedor IVA'),
                                 Forms\Components\Toggle::make('is_ica_withholder')->label('Retenedor ICA'),
+                            ]),
+
+                        Forms\Components\Section::make('Retenciones que se le aplican')
+                            ->description('Los interruptores de arriba dicen qué clase de retenedor es. Aquí se concreta con qué tarifa: al tomarle un pedido, estas retenciones se aplican solas sobre la base gravable y el vendedor puede ajustarlas antes de guardar.')
+                            ->schema([
+                                Forms\Components\CheckboxList::make('retentionTaxes')
+                                    ->hiddenLabel()
+                                    ->relationship(
+                                        'retentionTaxes',
+                                        'name',
+                                        fn (Builder $query) => $query
+                                            ->where('is_active', true)
+                                            ->whereIn('type', ['income_withholding', 'vat_withholding', 'ica_withholding'])
+                                            ->whereIn('applies_to', ['sale', 'both'])
+                                            ->orderBy('code')
+                                    )
+                                    ->getOptionLabelFromRecordUsing(
+                                        fn (Tax $record) => "{$record->code} — {$record->name} ({$record->rate}%)"
+                                    )
+                                    ->columns(2)
+                                    ->bulkToggleable()
+                                    ->noSearchResultsMessage('No hay retenciones de venta en el catálogo de impuestos.'),
                             ]),
                     ]),
 
