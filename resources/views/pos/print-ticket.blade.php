@@ -34,23 +34,48 @@
         @page { size: {{ $widthMm }} auto; margin: 0; }
         * { box-sizing: border-box; }
         html, body { margin: 0; padding: 0; background: #f1f1f1; font-family: {{ $isThermal ? "'Courier New', monospace" : 'system-ui, sans-serif' }}; color: #000; }
-        .ticket { width: {{ $widthMm }}; background: #fff; margin: 12px auto; padding: 6mm 4mm; {{ $isThermal ? 'font-size: 10px; line-height: 1.25;' : 'font-size: 12px; padding: 12mm;' }} }
+
+        /* Termica: TODO en negro puro. Cualquier gris se imprime como puntos
+           salteados y sale clarito — es la causa numero uno de tiquetes que no
+           se alcanzan a leer. Tamano un punto mas grande por lo mismo. */
+        .ticket { width: {{ $widthMm }}; background: #fff; margin: 12px auto; padding: 6mm 4mm; color: #000; {{ $isThermal ? 'font-size: 11px; line-height: 1.3;' : 'font-size: 12px; padding: 12mm;' }} }
         .center { text-align: center; }
         .right { text-align: right; }
         .bold { font-weight: bold; }
         .upper { text-transform: uppercase; }
         .row { display: flex; justify-content: space-between; gap: 4px; }
-        .sep { border-top: 1px dashed #888; margin: 4px 0; }
-        .small { font-size: {{ $isThermal ? '9px' : '10px' }}; color: #444; }
+        .sep { border-top: 1px dashed #000; margin: 4px 0; }
+        .small { font-size: {{ $isThermal ? '10px' : '10px' }}; color: #000; }
         table { width: 100%; border-collapse: collapse; }
         th, td { padding: 1px 2px; vertical-align: top; }
-        thead th { border-bottom: 1px dashed #888; text-align: left; font-size: {{ $isThermal ? '9px' : '10px' }}; }
+        thead th { border-bottom: 1px dashed #000; text-align: left; font-size: {{ $isThermal ? '10px' : '10px' }}; }
         thead th.right { text-align: right; }
-        .qr-placeholder { width: 60px; height: 60px; border: 1px solid #999; display: inline-flex; align-items: center; justify-content: center; font-size: 8px; color: #999; margin: 4px auto; }
+        .qr-placeholder { width: 60px; height: 60px; border: 1px solid #000; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; color: #000; margin: 4px auto; }
         @media print {
             body { background: #fff; }
             .ticket { margin: 0; box-shadow: none; }
             .no-print { display: none !important; }
+
+            /* Impresion en termica. El cabezal solo entiende "hay punto o no
+               hay punto": cualquier gris se convierte en puntos dispersos y
+               sale tenue. De ahi las tres reglas:
+                 1. negro puro en todo, sin herencias que se cuelen
+                 2. print-color-adjust para que el navegador no "optimice"
+                 3. trazo mas grueso — la fuente fina se imprime clarita
+               Mismo criterio que ya usaba el tiquete de entrada de parqueadero. */
+            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+            html, body, .ticket, .ticket * {
+                color: #000 !important;
+            }
+
+            .ticket { font-weight: 600; }
+            .ticket .bold, .ticket th { font-weight: 800 !important; }
+
+            /* Separadores solidos en vez de punteados: se leen mejor en papel
+               termico y no dependen de que el driver dibuje bien el dashed. */
+            .sep { border-top: 1px solid #000 !important; }
+            thead th { border-bottom: 1px solid #000 !important; }
         }
         .actions { max-width: 360px; margin: 8px auto; display: flex; gap: 8px; justify-content: center; }
         .actions button { padding: 8px 16px; border: 1px solid #ccc; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
