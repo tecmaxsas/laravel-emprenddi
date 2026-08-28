@@ -455,4 +455,44 @@ class OrderTakingFlowTest extends TestCase
 
         $page->assertSee('ZZ Cliente Retenedor');
     }
+
+    public function test_el_estado_de_despacho_queda_al_dia_tras_despachar_todo(): void
+    {
+        $cliente = $this->cliente();
+        $engine = app(OrderEngine::class);
+        $order = $engine->recomputeTotals($this->pedidoDe($cliente));
+
+        // Despacho completo: las 10 unidades de la unica linea.
+        $engine->registerDelivery(
+            $order,
+            [['order_item_id' => $order->items->first()->id, 'quantity' => 10]],
+        );
+
+        $order->refresh();
+
+        $this->assertSame('delivered', $order->delivery_status,
+            'Despachado todo, el estado no puede seguir en pendiente.');
+        $this->assertSame(Order::STATUS_FULLY_DELIVERED, $order->status);
+    }
+
+    /**
+     * Lo que arregla la migracion de correccion: pedidos que quedaron con el
+     * estado viejo aunque sus lineas si tienen la cantidad entregada.
+     */
+    public function test_recalcular_corrige_un_estado_de_despacho_que_quedo_mal(): void
+    {
+        $cliente = $this->cliente();
+        $engine = app(OrderEngine::class);
+        $order = $engine->recomputeTotals($this->pedidoDe($cliente));
+
+        // Se simula el dano: linea entregada por completo, cabecera en pendiente.
+        $order->items->first()->update(['quantity_delivered' => 10]);
+        $order->update(['delivery_status' => 'pending', 'status' => Order::STATUS_CONFIRMED]);
+
+        $engine->refreshDeliveryStatus($order->fresh());
+
+        $order->refresh();
+        $this->assertSame('delivered', $order->delivery_status);
+        $this->assertSame(Order::STATUS_FULLY_DELIVERED, $order->status);
+    }
 }

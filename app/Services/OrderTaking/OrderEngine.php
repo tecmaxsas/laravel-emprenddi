@@ -60,7 +60,10 @@ class OrderEngine
      */
     public function recomputeTotals(Order $order): Order
     {
-        $order->loadMissing('items', 'retentions');
+        // Igual que en refreshDeliveryStatus: recargar, no confiar en lo que ya
+        // estuviera cargado, porque las lineas o las retenciones pudieron
+        // cambiar en esta misma peticion.
+        $order->load('items', 'retentions');
         $subtotal = (float) $order->items->sum('subtotal');
         $taxTotal = (float) $order->items->sum('tax_amount');
         $total = (float) $order->items->sum('total');
@@ -259,7 +262,11 @@ class OrderEngine
      */
     public function refreshDeliveryStatus(Order $order): void
     {
-        $order->loadMissing('items');
+        // load() y no loadMissing(): se llama justo despues de mover las
+        // cantidades, y si las lineas ya venian cargadas loadMissing devuelve
+        // la coleccion vieja y el estado se calcula con datos de antes del
+        // despacho.
+        $order->load('items');
         $totalOrdered = (float) $order->items->sum('quantity_ordered');
         $totalDelivered = (float) $order->items->sum('quantity_delivered');
 
