@@ -1907,9 +1907,11 @@ class PosTerminal extends Page
         // abre puede ser de restaurante o parqueadero — llegan por el enlace
         // "Abrir caja" de su propia pantalla. Se les devuelve a SU punto de
         // venta en vez de dejarlos en el retail, que no es donde trabajan.
-        // El parametro ?volver= lo manda quien envio al usuario; si no viene,
-        // se resuelve por los modulos activos.
-        $destino = \App\Support\PosDestination::resolveFor(request()->query('volver'));
+        //
+        // Se resuelve por los modulos de la empresa y no por un parametro de
+        // la URL: esto corre en una request Livewire hacia /livewire/update,
+        // que no arrastra la query string de la pagina.
+        $destino = \App\Support\PosDestination::resolve();
 
         // Solo se redirige si su POS es OTRO. Si es el retail ya esta aqui, y
         // recargar la pagina le borraria el aviso de caja abierta.

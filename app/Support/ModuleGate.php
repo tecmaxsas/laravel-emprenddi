@@ -2,6 +2,9 @@
 
 namespace App\Support;
 
+use App\Models\Company;
+use Illuminate\Support\Facades\Auth;
+
 /**
  * Activación de módulos opcionales (restaurant, payroll, ecommerce,
  * etc.) por empresa. La empresa los lleva en companies.active_modules
@@ -23,17 +26,30 @@ class ModuleGate
 
     /**
      * ¿La empresa activa tiene este módulo encendido?
-     * Para superadmin o si no hay empresa activa: false (no aplica).
+     *
+     * Resuelve igual que CompanyScope y BelongsToCompany, con el fallback al
+     * usuario autenticado: el middleware de empresa NO corre en las requests
+     * de Livewire (/livewire/update), asi que ahi CurrentCompany viene vacia.
+     * Sin el fallback, cualquier ModuleGate::active() dentro de una accion de
+     * Livewire devolvia false y el sistema se comportaba como si la empresa no
+     * tuviera ningun modulo — por eso la apertura de caja de un parqueadero
+     * terminaba mandando al POS retail.
+     *
+     * En el portal contador la empresa activa vive en sesion: si no se pudo
+     * resolver, NO se cae a la empresa propia del contador.
      */
     public static function active(string $module): bool
     {
-        $current = app(CurrentCompany::class);
-        if (! $current->isSet()) {
-            // Para portal contador con empresa activa, currentCompany sí estará seteado.
-            // Si no hay empresa activa (contador sin seleccionar, superadmin), no aplica.
+        $companyId = app(CurrentCompany::class)->scopeId() ?: null;
+
+        if (! $companyId && ! Auth::user()?->isAccountantPortal()) {
+            $companyId = Auth::user()?->company_id;
+        }
+
+        if (! $companyId) {
             return false;
         }
 
-        return $current->get()?->hasModule($module) ?? false;
+        return Company::find($companyId)?->hasModule($module) ?? false;
     }
 }

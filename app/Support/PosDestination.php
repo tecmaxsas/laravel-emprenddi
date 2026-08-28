@@ -41,19 +41,10 @@ class PosDestination
         return $user?->can('pos.use') ? self::RETAIL : null;
     }
 
-    /**
-     * Destino, honrando la preferencia de quien envio al usuario a abrir caja
-     * siempre que tenga permiso para ella.
-     */
-    public static function resolveFor(?string $preferido): ?string
-    {
-        return self::allowed($preferido) ? $preferido : self::resolve();
-    }
-
     /** URL del POS que le corresponde. Null si no puede usar ninguno. */
-    public static function url(?string $preferido = null): ?string
+    public static function url(): ?string
     {
-        return self::urlFor(self::resolveFor($preferido));
+        return self::urlFor(self::resolve());
     }
 
     public static function urlFor(?string $destino): ?string
@@ -63,19 +54,6 @@ class PosDestination
             self::PARKING => route('filament.app.pages.parking'),
             self::RETAIL => route('filament.app.pages.pos'),
             default => null,
-        };
-    }
-
-    /** ¿El destino pedido existe y el usuario puede usarlo? */
-    protected static function allowed(?string $destino): bool
-    {
-        $user = Auth::user();
-
-        return match ($destino) {
-            self::RESTAURANT => ModuleGate::active('restaurant') && (bool) $user?->can('restaurant.use'),
-            self::PARKING => ModuleGate::active('parking') && (bool) $user?->can('parking.use'),
-            self::RETAIL => (bool) $user?->can('pos.use'),
-            default => false,
         };
     }
 }
