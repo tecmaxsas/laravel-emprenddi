@@ -2,11 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Models\Company;
 use App\Models\OrderTaking\PriceList;
 use App\Models\OrderTaking\PriceListItem;
 use App\Models\Product;
+use App\Models\ThirdParty;
 use App\Models\User;
 use App\Services\OrderTaking\MacDulcesImporter;
+use App\Support\CurrentCompany;
 use Illuminate\Support\Facades\DB;
 use OpenSpout\Common\Entity\Row;
 use OpenSpout\Writer\XLSX\Writer;
@@ -194,5 +197,94 @@ class PriceListReimportTest extends TestCase
 
         $this->assertSame(1, $resultado['price_items']);
         $this->assertSame('0.0000', $this->precioDe('ZZ-IMP-4', 1)->tax_amount);
+    }
+
+    /**
+     * Las plantillas tienen que servir para lo que existe: se descargan, se
+     * llenan y el importador las lee. Si el generador y el importador se
+     * separan, esto lo detecta antes que el cliente — ya paso una vez, con las
+     * instrucciones en la primera hoja tapando los datos.
+     */
+    public function test_la_plantilla_de_precios_la_puede_leer_el_importador(): void
+    {
+        $this->conModuloActivo();
+
+        $respuesta = $this->get(route('order-taking.import.template', 'precios'));
+
+        if ($respuesta->getStatusCode() === 403) {
+            $this->markTestSkipped('El usuario de dev no tiene el permiso order_taking.manage.');
+        }
+
+        $respuesta->assertSuccessful();
+        $this->assertSame(
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            $respuesta->headers->get('Content-Type'),
+        );
+
+        $archivo = $this->guardar($respuesta->streamedContent());
+
+        // Los ejemplos que trae la plantilla se importan tal cual.
+        $this->limpiarProducto('MG-67');
+        $this->limpiarProducto('EX-01');
+
+        $resultado = app(MacDulcesImporter::class)->import($this->companyId, $archivo);
+
+        $this->assertSame(3, $resultado['price_items'],
+            'Las 3 filas de ejemplo: MG-67 en dos listas y un exento.');
+        $this->assertTrue($resultado['customers_skipped']);
+
+        $precio = $this->precioDe('MG-67', 1);
+        $this->assertSame(
+            round((float) $precio->price_before_tax + (float) $precio->tax_amount, 2),
+            round((float) $precio->price_at_public, 2),
+            'Los ejemplos de la plantilla tienen que cuadrar.'
+        );
+    }
+
+    public function test_la_plantilla_de_clientes_la_puede_leer_el_importador(): void
+    {
+        $this->conModuloActivo();
+
+        $respuesta = $this->get(route('order-taking.import.template', 'clientes'));
+
+        if ($respuesta->getStatusCode() === 403) {
+            $this->markTestSkipped('El usuario de dev no tiene el permiso order_taking.manage.');
+        }
+
+        $respuesta->assertSuccessful();
+
+        $clientes = $this->guardar($respuesta->streamedContent());
+        // El de precios solo para poder llamar al importador: lo que se prueba
+        // es que la hoja de clientes se lea desde su propio archivo.
+        $precios = $this->archivoDePrecios([['ZZ-IMP-5', 'ZZ X', 1, 1000.0, 1000.0, 0.0]]);
+        $this->limpiarProducto('ZZ-IMP-5');
+
+        $this->limpiar[] = fn () => ThirdParty::withoutGlobalScopes()
+            ->where('company_id', $this->companyId)
+            ->where('document_number', '901234567')
+            ->forceDelete();
+
+        $resultado = app(MacDulcesImporter::class)->import($this->companyId, $precios, $clientes);
+
+        $this->assertSame(1, $resultado['customers_created'] + $resultado['customers_updated'],
+            'La fila de ejemplo de la plantilla de clientes se lee.');
+    }
+
+    private function conModuloActivo(): void
+    {
+        $company = Company::find($this->companyId);
+        $modulos = $company->active_modules ?? [];
+        $company->update(['active_modules' => array_values(array_unique([...$modulos, 'order_taking']))]);
+        app(CurrentCompany::class)->set($company->refresh());
+        $this->limpiar[] = fn () => $company->update(['active_modules' => $modulos]);
+    }
+
+    private function guardar(string $contenido): string
+    {
+        $ruta = sys_get_temp_dir().'/zz-plantilla-'.uniqid().'.xlsx';
+        file_put_contents($ruta, $contenido);
+        $this->archivos[] = $ruta;
+
+        return $ruta;
     }
 }

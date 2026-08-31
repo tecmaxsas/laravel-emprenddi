@@ -40,7 +40,9 @@ class OrderTakingImportController extends Controller
 
         $request->validate([
             'precios' => 'required|file|mimes:xlsx,xls|max:10240',
-            'clientes' => 'required|file|mimes:xlsx,xls|max:10240',
+            // Opcional: corregir precios de un catalogo ya cargado no
+            // necesita el archivo de clientes.
+            'clientes' => 'nullable|file|mimes:xlsx,xls|max:10240',
         ]);
 
         // Guardamos temporalmente en el disk 'local' (storage/app/) y
@@ -52,17 +54,19 @@ class OrderTakingImportController extends Controller
             'precios_'.time().'.xlsx',
             'local',
         );
-        $clientesRelative = $request->file('clientes')->storeAs(
-            'tmp/order-taking-imports',
-            'clientes_'.time().'.xlsx',
-            'local',
-        );
+        $clientesRelative = $request->hasFile('clientes')
+            ? $request->file('clientes')->storeAs(
+                'tmp/order-taking-imports',
+                'clientes_'.time().'.xlsx',
+                'local',
+            )
+            : null;
 
         try {
             $result = $importer->import(
                 (int) Auth::user()->company_id,
                 $disk->path($preciosRelative),
-                $disk->path($clientesRelative),
+                $clientesRelative ? $disk->path($clientesRelative) : null,
             );
         } catch (\Throwable $e) {
             return redirect()->route('order-taking.import.form')

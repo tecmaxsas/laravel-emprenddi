@@ -90,6 +90,13 @@ Route::middleware(['web', 'auth', \App\Http\Middleware\SetActiveCompany::class])
         [\App\Http\Controllers\App\ParkingTicketController::class, 'show'])
         ->name('parking.tickets.print');
 
+    // Plantillas XLSX del catalogo (modulo Toma pedidos). Dos archivos
+    // separados: el importador lee la primera hoja de cada uno.
+    Route::get('/app/order-taking/import/template/{tipo}',
+        [\App\Http\Controllers\App\OrderTakingCatalogTemplateController::class, 'template'])
+        ->whereIn('tipo', ['precios', 'clientes'])
+        ->name('order-taking.import.template');
+
     // PDF descargable del pedido (modulo Toma pedidos).
     Route::get('/app/order-taking/orders/{order}/pdf',
         [\App\Http\Controllers\App\OrderTakingPdfController::class, 'show'])

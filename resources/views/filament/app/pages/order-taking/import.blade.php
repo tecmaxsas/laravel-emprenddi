@@ -1,12 +1,38 @@
 <x-filament-panels::page>
-    <div style="background:#eef2ff; border:1px solid #6366f1; border-radius:10px; padding:14px 16px; margin-bottom:14px;">
-        <div style="font-weight:800; color:#3730a3; font-size:14px;">📋 Cómo importar</div>
-        <div style="font-size:12.5px; color:#4c1d95; margin-top:4px;">
-            Sube los 2 archivos Excel con la estructura MAC DULCES original. Al importar se crearán:<br>
-            · <strong>Productos</strong> de la lista (por código único)<br>
-            · <strong>4 listas de precios</strong> (Lista 1 al 4) con sus items<br>
-            · <strong>Clientes</strong> con la lista de precios asignada según la columna "COD LISTA NEW"<br>
-            El proceso es idempotente: si un producto/cliente ya existe se <strong>actualiza</strong>, no se duplica.
+    <div style="background:#eef2ff; color:#4c1d95; border:1px solid #6366f1; border-radius:10px; padding:14px 16px; margin-bottom:14px;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:280px;">
+                <div style="font-weight:800; color:#3730a3; font-size:14px;">📋 Cómo importar</div>
+                <div style="font-size:12.5px; margin-top:4px;">
+                    · <strong>Productos</strong> de la lista, por código único<br>
+                    · <strong>4 listas de precios</strong> (Lista 1 al 4) con sus ítems<br>
+                    · <strong>Clientes</strong> con su lista asignada — <em>solo si subes ese archivo</em><br>
+                    Si un producto o un cliente ya existe se <strong>actualiza</strong>: nunca se duplica.
+                </div>
+            </div>
+            <div style="flex-shrink:0; display:flex; flex-direction:column; gap:6px;">
+                <a href="{{ route('order-taking.import.template', 'precios') }}"
+                   style="display:inline-block; padding:10px 16px; background:#4338ca; color:#fff; border-radius:8px; font-weight:800; font-size:13px; text-decoration:none; text-align:center;">
+                    ⬇ Plantilla de precios
+                </a>
+                <a href="{{ route('order-taking.import.template', 'clientes') }}"
+                   style="display:inline-block; padding:8px 16px; background:#fff; color:#3730a3; border:1px solid #6366f1; border-radius:8px; font-weight:700; font-size:12.5px; text-decoration:none; text-align:center;">
+                    ⬇ Plantilla de clientes
+                </a>
+            </div>
+        </div>
+
+        <div style="margin-top:10px; padding:8px 10px; background:#fff; border-left:3px solid #f59e0b; border-radius:4px; font-size:12.5px; color:#78350f;">
+            <strong>Las tres columnas de precio son obligatorias.</strong>
+            La base más el IVA tiene que dar el precio total. Si no cuadra, no se
+            importa nada y se te dice qué productos están mal — dejarlas en cero
+            no significa exento, significa que el archivo está incompleto.
+        </div>
+
+        <div style="margin-top:8px; font-size:12.5px;">
+            ¿Solo vas a corregir precios de un catálogo ya cargado? Sube únicamente
+            el archivo de listas de precios y deja vacío el de clientes: subirlo
+            reescribiría los datos de tus clientes.
         </div>
     </div>
 
@@ -32,9 +58,14 @@
                 <tr><td style="padding:3px 0;">Productos creados</td><td style="text-align:right; font-weight:800;">{{ $result['products_created'] }}</td></tr>
                 <tr><td style="padding:3px 0;">Productos actualizados</td><td style="text-align:right; font-weight:800;">{{ $result['products_updated'] }}</td></tr>
                 <tr><td style="padding:3px 0;">Listas de precios</td><td style="text-align:right; font-weight:800;">{{ $result['price_lists'] }}</td></tr>
-                <tr><td style="padding:3px 0;">Items de precio</td><td style="text-align:right; font-weight:800;">{{ $result['price_items'] }}</td></tr>
-                <tr><td style="padding:3px 0;">Clientes creados</td><td style="text-align:right; font-weight:800;">{{ $result['customers_created'] }}</td></tr>
-                <tr><td style="padding:3px 0;">Clientes actualizados</td><td style="text-align:right; font-weight:800;">{{ $result['customers_updated'] }}</td></tr>
+                <tr><td style="padding:3px 0;">Ítems de precio procesados</td><td style="text-align:right; font-weight:800;">{{ $result['price_items'] }}</td></tr>
+                <tr><td style="padding:3px 0;">Ítems de precio <strong>con cambio</strong></td><td style="text-align:right; font-weight:800;">{{ $result['price_items_changed'] ?? '—' }}</td></tr>
+                @if ($result['customers_skipped'] ?? false)
+                    <tr><td style="padding:3px 0;" colspan="2">Clientes: sin tocar (no se subió el archivo)</td></tr>
+                @else
+                    <tr><td style="padding:3px 0;">Clientes creados</td><td style="text-align:right; font-weight:800;">{{ $result['customers_created'] }}</td></tr>
+                    <tr><td style="padding:3px 0;">Clientes actualizados</td><td style="text-align:right; font-weight:800;">{{ $result['customers_updated'] }}</td></tr>
+                @endif
             </table>
         </div>
     @endif
@@ -60,7 +91,8 @@
                 @php $r = session('import_result'); @endphp
                 <div style="margin-top:12px; padding:10px 12px; background:#dcfce7; border:1px solid #16a34a; border-radius:8px; font-size:12.5px; color:#166534;">
                     ✓ Importación completada · Productos: {{ $r['products_created'] }} nuevos + {{ $r['products_updated'] }} actualizados ·
-                    Precios: {{ $r['price_items'] }} · Clientes: {{ $r['customers_created'] }} nuevos + {{ $r['customers_updated'] }} actualizados
+                    Precios: {{ $r['price_items'] }} procesados, {{ $r['price_items_changed'] ?? '—' }} con cambio ·
+                    {{ ($r['customers_skipped'] ?? false) ? 'Clientes: sin tocar' : 'Clientes: '.$r['customers_created'].' nuevos + '.$r['customers_updated'].' actualizados' }}
                 </div>
             @endif
 
@@ -80,8 +112,8 @@
                            style="padding:6px; border:1px solid #eab308; border-radius:6px; background:#fff; width:100%; font-size:12.5px;">
                 </div>
                 <div>
-                    <label style="font-size:11px; font-weight:700; color:#713f12; text-transform:uppercase; display:block;">CATALOGO DE CLIENTES (.xlsx)</label>
-                    <input type="file" name="clientes" accept=".xlsx" required
+                    <label style="font-size:11px; font-weight:700; color:#713f12; text-transform:uppercase; display:block;">CATALOGO DE CLIENTES (.xlsx) — opcional</label>
+                    <input type="file" name="clientes" accept=".xlsx"
                            style="padding:6px; border:1px solid #eab308; border-radius:6px; background:#fff; width:100%; font-size:12.5px;">
                 </div>
                 <button type="submit"
