@@ -31,24 +31,36 @@ class MacDulcesImporter
      *     customers_updated: int,
      * }
      */
-    public function import(int $companyId, string $preciosPath, string $clientesPath): array
+    /**
+     * El archivo de clientes es opcional: para corregir precios de un catalogo
+     * ya cargado no hace falta, y reimportarlo pisaria datos que se hayan
+     * ajustado a mano despues (lista asignada, condiciones de pago, horarios).
+     */
+    public function import(int $companyId, string $preciosPath, ?string $clientesPath = null): array
     {
         if (! file_exists($preciosPath)) {
             throw new RuntimeException("No encontre el archivo de precios: {$preciosPath}");
         }
-        if (! file_exists($clientesPath)) {
+        if ($clientesPath !== null && ! file_exists($clientesPath)) {
             throw new RuntimeException("No encontre el archivo de clientes: {$clientesPath}");
         }
 
         $preciosRows = $this->readSheet($preciosPath);
-        $clientesRows = $this->readSheet($clientesPath);
-
         array_shift($preciosRows);
-        array_shift($clientesRows);
+
+        $clientesRows = null;
+        if ($clientesPath !== null) {
+            $clientesRows = $this->readSheet($clientesPath);
+            array_shift($clientesRows);
+        }
 
         return DB::transaction(function () use ($companyId, $preciosRows, $clientesRows) {
             $precios = $this->importProductosYPrecios($companyId, $preciosRows);
-            $clientes = $this->importClientes($companyId, $clientesRows);
+
+            $clientes = $clientesRows === null
+                ? ['customers_created' => 0, 'customers_updated' => 0, 'customers_skipped' => true]
+                : $this->importClientes($companyId, $clientesRows);
+
             return array_merge($precios, $clientes);
         });
     }
@@ -131,7 +143,49 @@ class MacDulcesImporter
             }
         }
 
+        // Primero se valida TODO el archivo y despues se escribe. Un archivo
+        // sin desglose de IVA ya se importo una vez en silencio y dejo las
+        // listas con base y IVA en cero: el pedido decia "IVA $0" con un total
+        // que si tenia IVA, y de ahi salieron cuentas mal en cascada.
+        $incoherentes = [];
+        foreach ($rows as $r) {
+            $code = trim((string) ($r[2] ?? ''));
+            $listNum = (int) ($r[3] ?? 0);
+
+            if ($code === '' || $listNum < 1 || $listNum > 4) {
+                continue;
+            }
+
+            $total = (float) ($r[4] ?? 0);
+            $base = (float) ($r[5] ?? 0);
+            $tax = (float) ($r[6] ?? 0);
+
+            // Tolerancia de un peso: los redondeos del Excel no son un error.
+            // Un producto exento cuadra igual, con base = total e IVA = 0.
+            if ($total > 0 && abs(($base + $tax) - $total) > 1.0) {
+                $incoherentes[] = sprintf(
+                    '%s (lista %d): base %s + IVA %s = %s, pero el total dice %s',
+                    $code,
+                    $listNum,
+                    number_format($base, 2, ',', '.'),
+                    number_format($tax, 2, ',', '.'),
+                    number_format($base + $tax, 2, ',', '.'),
+                    number_format($total, 2, ',', '.'),
+                );
+            }
+        }
+
+        if ($incoherentes !== []) {
+            throw new RuntimeException(sprintf(
+                "%d precios no cuadran: la base más el IVA no dan el total. No se importó nada.\n\n%s%s",
+                count($incoherentes),
+                implode("\n", array_slice($incoherentes, 0, 8)),
+                count($incoherentes) > 8 ? "\n… y ".(count($incoherentes) - 8).' más.' : '',
+            ));
+        }
+
         $priceItems = 0;
+        $priceItemsChanged = 0;
         foreach ($rows as $r) {
             $code = trim((string) ($r[2] ?? ''));
             $listNum = (int) ($r[3] ?? 0);
@@ -142,18 +196,35 @@ class MacDulcesImporter
             if ($code === '' || $listNum < 1 || $listNum > 4) continue;
             if (! isset($productMap[$code], $priceLists[$listNum])) continue;
 
+            $nuevos = [
+                'company_id' => $companyId,
+                'price_before_tax' => round($base, 4),
+                'tax_amount' => round($tax, 4),
+                'price_at_public' => round($total, 2),
+            ];
+
+            $anterior = PriceListItem::query()
+                ->where('price_list_id', $priceLists[$listNum]->id)
+                ->where('product_id', $productMap[$code])
+                ->first();
+
             PriceListItem::updateOrCreate(
                 [
                     'price_list_id' => $priceLists[$listNum]->id,
                     'product_id' => $productMap[$code],
                 ],
-                [
-                    'company_id' => $companyId,
-                    'price_before_tax' => round($base, 4),
-                    'tax_amount' => round($tax, 4),
-                    'price_at_public' => round($total, 2),
-                ],
+                $nuevos,
             );
+
+            // Cuantos precios cambiaron de verdad: es lo que dice si la
+            // correccion surtio efecto o si el archivo traia lo mismo.
+            if (! $anterior
+                || abs((float) $anterior->price_before_tax - $nuevos['price_before_tax']) > 0.0001
+                || abs((float) $anterior->tax_amount - $nuevos['tax_amount']) > 0.0001
+                || abs((float) $anterior->price_at_public - $nuevos['price_at_public']) > 0.0001) {
+                $priceItemsChanged++;
+            }
+
             $priceItems++;
         }
 
@@ -162,6 +233,7 @@ class MacDulcesImporter
             'products_updated' => $productsUpdated,
             'price_lists' => count($priceLists),
             'price_items' => $priceItems,
+            'price_items_changed' => $priceItemsChanged,
         ];
     }
 

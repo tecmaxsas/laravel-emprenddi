@@ -17,7 +17,8 @@ class OrderTakingImportMacDulces extends Command
         {--company= : ID de la empresa target}
         {--dir= : Directorio con los 2 XLSX (nombres estandar MAC DULCES)}
         {--precios= : Ruta absoluta al XLSX de listas de precios (alternativa a --dir)}
-        {--clientes= : Ruta absoluta al XLSX de clientes (alternativa a --dir)}';
+        {--clientes= : Ruta absoluta al XLSX de clientes (opcional: omitelo para corregir solo precios)}
+        {--solo-precios : No toca los clientes, aunque --dir tenga el archivo}';
 
     protected $description = 'Importa productos, listas de precios y clientes de MAC DULCES';
 
@@ -38,15 +39,23 @@ class OrderTakingImportMacDulces extends Command
         // sino se arma desde --dir con los nombres estandar MAC DULCES.
         $preciosPath = $this->option('precios');
         $clientesPath = $this->option('clientes');
-        if (! $preciosPath || ! $clientesPath) {
+        $soloPrecios = (bool) $this->option('solo-precios');
+
+        if (! $preciosPath || (! $clientesPath && ! $soloPrecios)) {
             $dir = $this->option('dir') ?: 'C:/Users/Usuario/Downloads';
             $preciosPath = $preciosPath ?: $dir.DIRECTORY_SEPARATOR.'3. LISTAS DE PRECIOS ENE 2026.xlsx';
             $clientesPath = $clientesPath ?: $dir.DIRECTORY_SEPARATOR.'2. CATALOGO DE CLIENTES MAC DULCES.xlsx';
         }
 
+        // Corregir precios de un catalogo ya cargado no necesita el archivo de
+        // clientes, y reimportarlo pisaria ajustes hechos a mano despues.
+        if ($soloPrecios) {
+            $clientesPath = null;
+        }
+
         $this->info("Empresa: {$company->name} (ID {$companyId})");
         $this->info("Precios: {$preciosPath}");
-        $this->info("Clientes: {$clientesPath}");
+        $this->info('Clientes: '.($clientesPath ?? 'sin tocar (--solo-precios)'));
         $this->newLine();
 
         try {
@@ -62,7 +71,8 @@ class OrderTakingImportMacDulces extends Command
                 ['Productos creados', $result['products_created']],
                 ['Productos actualizados', $result['products_updated']],
                 ['Listas de precios', $result['price_lists']],
-                ['Items de precio', $result['price_items']],
+                ['Items de precio procesados', $result['price_items']],
+                ['Items de precio con cambio', $result['price_items_changed']],
                 ['Clientes creados', $result['customers_created']],
                 ['Clientes actualizados', $result['customers_updated']],
             ],
