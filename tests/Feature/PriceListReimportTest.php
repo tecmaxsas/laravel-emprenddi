@@ -11,6 +11,8 @@ use App\Models\User;
 use App\Services\OrderTaking\MacDulcesImporter;
 use App\Support\CurrentCompany;
 use Illuminate\Support\Facades\DB;
+use OpenSpout\Common\Entity\Cell;
+use OpenSpout\Common\Entity\Cell\FormulaCell;
 use OpenSpout\Common\Entity\Row;
 use OpenSpout\Writer\XLSX\Writer;
 use Tests\TestCase;
@@ -268,6 +270,136 @@ class PriceListReimportTest extends TestCase
 
         $this->assertSame(1, $resultado['customers_created'] + $resultado['customers_updated'],
             'La fila de ejemplo de la plantilla de clientes se lee.');
+    }
+
+    /**
+     * El caso real que reventó: el cliente calculó la base y el IVA con
+     * fórmulas de Excel. getValue() de una celda con fórmula devuelve el TEXTO
+     * ("=E2-F2"), que al convertirlo a número da 0 — así que el archivo se leía
+     * como si esas columnas estuvieran vacías, aunque en pantalla se vieran
+     * los valores correctos.
+     *
+     * El XLSX se arma a mano porque el escritor de OpenSpout no guarda el
+     * resultado cacheado de una fórmula; Excel sí lo hace, y es justo ese
+     * valor el que hay que leer.
+     */
+    public function test_lee_la_base_y_el_iva_cuando_vienen_como_formulas(): void
+    {
+        $this->limpiarProducto('ZZ-FORM-1');
+
+        $archivo = $this->xlsxConFormulas();
+        $resultado = app(MacDulcesImporter::class)->import($this->companyId, $archivo);
+
+        $this->assertSame(1, $resultado['price_items'], 'La fila con fórmulas se importa.');
+
+        $precio = $this->precioDe('ZZ-FORM-1', 1);
+        $this->assertSame('125042.0000', $precio->price_before_tax);
+        $this->assertSame('23758.0000', $precio->tax_amount);
+        $this->assertSame('148800.00', $precio->price_at_public);
+    }
+
+    /**
+     * XLSX minimo con una fila de datos donde BASE e IVA son formulas con su
+     * resultado cacheado en <v>, exactamente como lo guarda Excel.
+     */
+    private function xlsxConFormulas(): string
+    {
+        $ruta = sys_get_temp_dir().'/zz-formulas-'.uniqid().'.xlsx';
+        $this->archivos[] = $ruta;
+
+        $fila = function (int $n, array $celdas): string {
+            $xml = '<row r="'.$n.'">';
+            foreach ($celdas as $col => $celda) {
+                $ref = $col.$n;
+                $xml .= is_array($celda)
+                    ? '<c r="'.$ref.'"><f>'.$celda['f'].'</f><v>'.$celda['v'].'</v></c>'
+                    : (is_numeric($celda)
+                        ? '<c r="'.$ref.'"><v>'.$celda.'</v></c>'
+                        : '<c r="'.$ref.'" t="inlineStr"><is><t>'.$celda.'</t></is></c>');
+            }
+
+            return $xml.'</row>';
+        };
+
+        $hoja = '<?xml version="1.0" encoding="UTF-8"?>'
+            .'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'
+            .$fila(1, ['A' => ' ', 'B' => 'DESCRIPCION', 'C' => 'REFERENCIA', 'D' => 'LISTA', 'E' => 'TOTAL', 'F' => 'BASE', 'G' => 'IVA'])
+            .$fila(2, [
+                'A' => ' ',
+                'B' => 'ZZ BOLA CON FORMULA',
+                'C' => 'ZZ-FORM-1',
+                'D' => '1',
+                'E' => '148800',
+                'F' => ['f' => 'ROUND(E2/1.19,0)', 'v' => '125042'],
+                'G' => ['f' => 'E2-F2', 'v' => '23758'],
+            ])
+            .'</sheetData></worksheet>';
+
+        $zip = new \ZipArchive;
+        $zip->open($ruta, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
+        $zip->addFromString('[Content_Types].xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            .'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            .'<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            .'<Default Extension="xml" ContentType="application/xml"/>'
+            .'<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+            .'<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+            .'</Types>');
+        $zip->addFromString('_rels/.rels',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            .'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            .'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+            .'</Relationships>');
+        $zip->addFromString('xl/workbook.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            .'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+            .'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            .'<sheets><sheet name="Listas de precios" sheetId="1" r:id="rId1"/></sheets></workbook>');
+        $zip->addFromString('xl/_rels/workbook.xml.rels',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            .'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            .'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+            .'</Relationships>');
+        $zip->addFromString('xl/worksheets/sheet1.xml', $hoja);
+        $zip->close();
+
+        return $ruta;
+    }
+
+    /**
+     * Si la formula viene sin resultado guardado no hay nada que leer, pero el
+     * mensaje tiene que decir que hacer en vez de solo "no cuadra".
+     */
+    public function test_una_formula_sin_resultado_guardado_se_explica(): void
+    {
+        $this->limpiarProducto('ZZ-FORM-2');
+
+        $ruta = sys_get_temp_dir().'/zz-sin-cache-'.uniqid().'.xlsx';
+        $this->archivos[] = $ruta;
+
+        // El escritor de OpenSpout escribe <f> sin <v>: justo el caso.
+        $writer = new Writer;
+        $writer->openToFile($ruta);
+        $writer->addRow(Row::fromValues(['', 'DESCRIPCION', 'REFERENCIA', 'LISTA', 'TOTAL', 'BASE', 'IVA']));
+        $writer->addRow(new Row([
+            Cell::fromValue(''),
+            Cell::fromValue('ZZ SIN CACHE'),
+            Cell::fromValue('ZZ-FORM-2'),
+            Cell::fromValue(1),
+            Cell::fromValue(148800),
+            new FormulaCell('=ROUND(E2/1.19,0)', null),
+            new FormulaCell('=E2-F2', null),
+        ]));
+        $writer->close();
+
+        try {
+            app(MacDulcesImporter::class)->import($this->companyId, $ruta);
+            $this->fail('Debía rechazarlo.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('no quedó guardado', $e->getMessage());
+            $this->assertStringContainsString('Solo valores', $e->getMessage(),
+                'El mensaje tiene que decir cómo arreglarlo.');
+        }
     }
 
     private function conModuloActivo(): void

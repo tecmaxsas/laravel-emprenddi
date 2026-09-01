@@ -8,6 +8,8 @@ use App\Models\OrderTaking\PriceListItem;
 use App\Models\Product;
 use App\Models\ThirdParty;
 use Illuminate\Support\Facades\DB;
+use OpenSpout\Common\Entity\Cell;
+use OpenSpout\Common\Entity\Cell\FormulaCell;
 use OpenSpout\Reader\XLSX\Reader;
 use RuntimeException;
 
@@ -27,11 +29,11 @@ class MacDulcesImporter
      *     products_updated: int,
      *     price_lists: int,
      *     price_items: int,
+     *     price_items_changed: int,
      *     customers_created: int,
      *     customers_updated: int,
      * }
-     */
-    /**
+     *
      * El archivo de clientes es opcional: para corregir precios de un catalogo
      * ya cargado no hace falta, y reimportarlo pisaria datos que se hayan
      * ajustado a mano despues (lista asignada, condiciones de pago, horarios).
@@ -65,6 +67,52 @@ class MacDulcesImporter
         });
     }
 
+    /**
+     * Valor util de una celda.
+     *
+     * En una celda con formula, getValue() devuelve el TEXTO de la formula
+     * ("=E2-G2"), no el resultado: al convertirlo a numero daba 0 y por eso un
+     * archivo con la base y el IVA calculados en Excel se leia como si esas
+     * columnas estuvieran vacias. El resultado que Excel dejo guardado esta en
+     * getComputedValue().
+     */
+    protected function valorDe(Cell $celda): mixed
+    {
+        if ($celda instanceof FormulaCell) {
+            // Si Excel no guardo el resultado, OpenSpout devuelve 0 — que es
+            // indistinguible del 0 legitimo de un exento calculado con
+            // formula. Por eso no se adivina aqui: se toma el valor y, si la
+            // fila no cuadra, la validacion lo explica al pie del mensaje.
+            return $celda->getComputedValue() ?? $celda->getValue();
+        }
+
+        return $celda->getValue();
+    }
+
+    /**
+     * Por que una celda de precio no se pudo leer como numero.
+     *
+     * Decir solo "no cuadra" deja al usuario adivinando; casi siempre es una
+     * de estas dos y las dos se arreglan en el Excel en un minuto.
+     */
+    protected function pistaDeCelda(mixed $valor): ?string
+    {
+        if (! is_string($valor) || trim($valor) === '') {
+            return null;
+        }
+
+        if (str_starts_with(trim($valor), '=')) {
+            return 'esa celda es una fórmula sin resultado guardado. Ábrelo en Excel y guárdalo, '
+                .'o copia esas columnas y pégalas como "solo valores"';
+        }
+
+        if (! is_numeric(trim($valor))) {
+            return 'esa celda tiene texto ("'.trim($valor).'") en lugar de un número';
+        }
+
+        return null;
+    }
+
     protected function readSheet(string $path, int $sheetIndex = 0): array
     {
         $reader = new Reader();
@@ -76,7 +124,7 @@ class MacDulcesImporter
             foreach ($sheet->getRowIterator() as $row) {
                 $cells = [];
                 foreach ($row->getCells() as $c) {
-                    $cells[] = $c->getValue();
+                    $cells[] = $this->valorDe($c);
                 }
                 $rows[] = $cells;
             }
@@ -148,6 +196,7 @@ class MacDulcesImporter
         // listas con base y IVA en cero: el pedido decia "IVA $0" con un total
         // que si tenia IVA, y de ahi salieron cuentas mal en cascada.
         $incoherentes = [];
+        $baseYIvaEnCero = false;
         foreach ($rows as $r) {
             $code = trim((string) ($r[2] ?? ''));
             $listNum = (int) ($r[3] ?? 0);
@@ -163,24 +212,40 @@ class MacDulcesImporter
             // Tolerancia de un peso: los redondeos del Excel no son un error.
             // Un producto exento cuadra igual, con base = total e IVA = 0.
             if ($total > 0 && abs(($base + $tax) - $total) > 1.0) {
+                $pista = $this->pistaDeCelda($r[5] ?? null)
+                    ?? $this->pistaDeCelda($r[6] ?? null);
+
+                // Base e IVA en cero con un total que si tiene valor es la
+                // firma de las formulas sin resultado guardado.
+                if ($base == 0.0 && $tax == 0.0) {
+                    $baseYIvaEnCero = true;
+                }
+
                 $incoherentes[] = sprintf(
-                    '%s (lista %d): base %s + IVA %s = %s, pero el total dice %s',
+                    '%s (lista %d): base %s + IVA %s = %s, pero el total dice %s%s',
                     $code,
                     $listNum,
                     number_format($base, 2, ',', '.'),
                     number_format($tax, 2, ',', '.'),
                     number_format($base + $tax, 2, ',', '.'),
                     number_format($total, 2, ',', '.'),
+                    $pista ? ' — '.$pista : '',
                 );
             }
         }
 
         if ($incoherentes !== []) {
             throw new RuntimeException(sprintf(
-                "%d precios no cuadran: la base más el IVA no dan el total. No se importó nada.\n\n%s%s",
+                "%d precios no cuadran: la base más el IVA no dan el total. No se importó nada.\n\n%s%s%s",
                 count($incoherentes),
                 implode("\n", array_slice($incoherentes, 0, 8)),
                 count($incoherentes) > 8 ? "\n… y ".(count($incoherentes) - 8).' más.' : '',
+                $baseYIvaEnCero
+                    ? "\n\nSi en el Excel esas celdas SÍ tienen valores pero aquí salen en 0, "
+                        .'son fórmulas cuyo resultado no quedó guardado en el archivo. '
+                        .'Selecciona las columnas de base e IVA, cópialas y pégalas sobre sí mismas '
+                        .'como «Pegado especial → Solo valores», guarda y vuelve a subirlo.'
+                    : '',
             ));
         }
 
