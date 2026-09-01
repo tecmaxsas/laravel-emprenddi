@@ -331,27 +331,63 @@ class ProductReimportTest extends TestCase
         $this->assertSame(1, $parsed['summary']['stock_cost_from_product']);
     }
 
-    /** Sin costo por ningún lado sí es un error, y se avisa antes de importar. */
-    public function test_sin_costo_ni_precio_de_compra_se_reporta_en_la_validacion(): void
+    /**
+     * Sin costo por ningun lado el inventario entra igual, sin valor.
+     *
+     * Es comun cargar un catalogo sin costo conocido: la cantidad es lo que
+     * se necesita para operar. Se avisa la consecuencia —esas ventas saldran
+     * con costo 0— pero no se bloquea.
+     */
+    public function test_el_stock_sin_costo_entra_sin_valor_y_se_avisa(): void
     {
         $this->limpiarProducto('ZZ-P-8');
         $engine = app(ProductImportEngine::class);
         $sede = $this->sede();
 
+        $cuenta = Account::withoutGlobalScopes()
+            ->where('company_id', $this->companyId)
+            ->where('accepts_movements', true)->where('active', true)
+            ->where('code', 'like', '3%')->value('id');
+
+        if (! $cuenta) {
+            $this->markTestSkipped('Sin cuenta de patrimonio en dev para la contrapartida.');
+        }
+
         $parsed = $engine->parseAndValidate(
             $this->archivo(
-                [['code' => 'ZZ-P-8', 'name' => 'ZZ Sin Costo', 'type' => 'good', 'sale_price' => 100]],
+                [['code' => 'ZZ-P-8', 'name' => 'ZZ Sin Costo', 'type' => 'good',
+                    'sale_price' => 100, 'track_inventory' => 'si']],
                 [['ZZ-P-8', $sede->code, 5, '']],
             ),
             $this->companyId,
         );
 
-        $this->assertSame(1, $parsed['summary']['stock_errors'],
-            'Se ve en el preview, no al postear con la importación ya hecha.');
-        $this->assertStringContainsString(
-            'precio de compra',
-            implode(' ', $parsed['stock_rows'][0]['errors']),
-        );
+        $this->assertSame(0, $parsed['summary']['stock_errors'], 'No bloquea.');
+        $this->assertSame(1, $parsed['summary']['stock_without_cost'], 'Pero sí lo cuenta para avisarlo.');
+        $this->assertTrue($parsed['valid']);
+
+        $resultado = $engine->import($parsed['rows'], $this->companyId, $parsed['stock_rows'], (int) $cuenta);
+
+        $this->limpiar[] = fn () => DB::table('inventory_openings')
+            ->where('company_id', $this->companyId)
+            ->where('notes', 'like', 'Apertura automática desde importación%')
+            ->delete();
+
+        $this->assertSame([], $resultado['errors'], 'La apertura se postea.');
+        $this->assertCount(1, $resultado['openings']);
+
+        $productoId = Product::withoutGlobalScopes()
+            ->where('company_id', $this->companyId)->where('code', 'ZZ-P-8')->value('id');
+
+        $this->assertSame(5.0, app(InventoryEngine::class)->currentStock((int) $productoId, $this->sede()->id),
+            'Las existencias entran aunque no tengan valor.');
+
+        // Todo a costo 0: no se crea un comprobante contable vacío.
+        $apertura = DB::table('inventory_openings')
+            ->where('company_id', $this->companyId)
+            ->orderByDesc('id')->first();
+        $this->assertNull($apertura->journal_entry_id,
+            'Un asiento que mueve 0 en ambos lados no aporta nada a los libros.');
     }
 
     /**

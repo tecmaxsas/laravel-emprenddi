@@ -63,6 +63,11 @@
                                 {{ $s['stock_cost_from_product'] }} con costo del precio de compra
                             </div>
                         @endif
+                        @if (($s['stock_without_cost'] ?? 0) > 0)
+                            <div style="font-size:11px; opacity:.85; margin-top:2px;">
+                                {{ $s['stock_without_cost'] }} entran sin valor (costo 0)
+                            </div>
+                        @endif
                         @if (($s['stock_skipped'] ?? 0) > 0)
                             {{-- Que no desaparezcan en silencio: son productos
                                  listados en la hoja pero sin cantidad. --}}
@@ -77,6 +82,15 @@
             @if (($s['stock_lines'] ?? 0) > 0)
                 <div style="margin-top:12px; background:#faf5ff; border:1px solid #7c3aed; border-radius:8px; padding:10px 14px; font-size:12.5px; color:#4c1d95;">
                     💡 <strong>Se crearán {{ $s['stock_locations'] }} apertura(s) de inventario</strong> (una por sede) para cargar las {{ $s['stock_lines'] }} líneas de stock inicial. Verifica la cuenta contrapartida en el formulario de arriba antes de confirmar.
+                </div>
+            @endif
+
+            @if (($s['stock_without_cost'] ?? 0) > 0)
+                <div style="margin-top:10px; background:#fffbeb; border:1px solid #f59e0b; border-radius:8px; padding:10px 14px; font-size:12.5px; color:#78350f;">
+                    ⚠ <strong>{{ $s['stock_without_cost'] }} líneas entran con costo 0</strong> — no traen costo en el archivo
+                    y su producto tampoco tiene precio de compra. Las existencias sí quedan cargadas, pero
+                    ese inventario entra sin valor: las ventas de esos productos mostrarán un costo de $0
+                    hasta que una compra les fije un costo real.
                 </div>
             @endif
 

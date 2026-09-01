@@ -63,6 +63,9 @@ class ProductImportEngine
     /** Filas cuyo costo se tomo del precio de compra del producto. */
     protected int $stockCostoDelProducto = 0;
 
+    /** Filas que entran sin valor: ni costo en el archivo ni precio de compra. */
+    protected int $stockSinCosto = 0;
+
     public function parseAndValidate(string $filePath, int $companyId): array
     {
         $this->resetCaches();
@@ -158,6 +161,7 @@ class ProductImportEngine
         $summary['stock_lines'] = count($stockRows);
         $summary['stock_skipped'] = $this->stockOmitidas;
         $summary['stock_cost_from_product'] = $this->stockCostoDelProducto;
+        $summary['stock_without_cost'] = $this->stockSinCosto;
         $summary['stock_locations'] = count($stockLocations);
         $summary['stock_errors'] = $stockErrors;
 
@@ -222,6 +226,7 @@ class ProductImportEngine
         $headers = null;
         $omitidas = 0;
         $desdeElProducto = 0;
+        $sinCosto = 0;
 
         foreach ($sheet->getRowIterator() as $row) {
             $rowNum++;
@@ -298,10 +303,14 @@ class ProductImportEngine
             if (! is_numeric($data['qty']) || (float) $data['qty'] <= 0) {
                 $errors[] = 'qty debe ser un número > 0';
             }
-            if (! is_numeric($data['unit_cost']) || (float) $data['unit_cost'] <= 0) {
-                $errors[] = 'unit_cost vacío y el producto tampoco tiene precio de compra. '
-                    .'El inventario tiene que entrar valorizado: si no, cada venta de este producto '
-                    .'calcularía un costo de $0.';
+            if (! is_numeric($data['unit_cost']) || (float) $data['unit_cost'] < 0) {
+                $errors[] = 'unit_cost debe ser un número >= 0';
+            } elseif ((float) $data['unit_cost'] == 0.0) {
+                // No es un error: entra sin valor y punto. Se cuenta para
+                // avisarlo en el preview, porque la consecuencia no es obvia —
+                // las ventas de ese producto saldran con costo 0 hasta que una
+                // compra le fije un costo real.
+                $sinCosto++;
             }
 
             // Validar referencia: primero en el archivo (code o name),
@@ -352,6 +361,7 @@ class ProductImportEngine
 
         $this->stockOmitidas = $omitidas;
         $this->stockCostoDelProducto = $desdeElProducto;
+        $this->stockSinCosto = $sinCosto;
 
         return $lines;
     }
@@ -851,6 +861,7 @@ class ProductImportEngine
     {
         $this->stockOmitidas = 0;
         $this->stockCostoDelProducto = 0;
+        $this->stockSinCosto = 0;
 
         $this->categoryCache = [];
         $this->taxCache = [];

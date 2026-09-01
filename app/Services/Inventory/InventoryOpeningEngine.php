@@ -58,8 +58,13 @@ class InventoryOpeningEngine
                 if ($qty <= 0) {
                     throw new RuntimeException("Línea {$line->line_number}: cantidad debe ser mayor a 0.");
                 }
-                if ($unitCost <= 0) {
-                    throw new RuntimeException("Línea {$line->line_number}: costo unitario debe ser mayor a 0.");
+                // Se admite costo 0: hay catalogos que se cargan sin costo
+                // conocido y la cantidad es lo que se necesita para operar. El
+                // efecto contable es que ese inventario entra sin valor, asi
+                // que sus ventas saldran con costo 0 hasta que una compra le
+                // fije un costo real. Es una decision del negocio.
+                if ($unitCost < 0) {
+                    throw new RuntimeException("Línea {$line->line_number}: el costo unitario no puede ser negativo.");
                 }
 
                 $movement = $this->inventory->addMovement(
@@ -92,11 +97,16 @@ class InventoryOpeningEngine
                 $byAccount[$invAccountId] = ($byAccount[$invAccountId] ?? 0) + $lineCost;
             }
 
-            $entry = $this->createJournalEntry($opening, $byAccount, $totalCost);
+            // Con todo el inventario a costo 0 el asiento moveria 0 en ambos
+            // lados: no se crea, para no dejar un comprobante vacio en los
+            // libros. Las existencias si entran.
+            $entry = $totalCost > 0
+                ? $this->createJournalEntry($opening, $byAccount, $totalCost)
+                : null;
 
             $opening->update([
                 'status' => InventoryOpening::STATUS_POSTED,
-                'journal_entry_id' => $entry->id,
+                'journal_entry_id' => $entry?->id,
                 'posted_at' => now(),
                 'posted_by_user_id' => Auth::id(),
             ]);
