@@ -355,6 +355,51 @@ class ProductReimportTest extends TestCase
     }
 
     /**
+     * Cargar existencias en una sede implica que el producto esta en esa
+     * sede. Antes la importacion cargaba el stock pero dejaba los productos
+     * con "Sedes 0", y de esa asignacion salen el stock minimo, el punto de
+     * reorden y el precio propio de la sede.
+     */
+    public function test_cargar_stock_asigna_el_producto_a_la_sede(): void
+    {
+        $this->limpiarProducto('ZZ-P-9');
+        $engine = app(ProductImportEngine::class);
+        $sede = $this->sede();
+
+        $cuenta = Account::withoutGlobalScopes()
+            ->where('company_id', $this->companyId)
+            ->where('accepts_movements', true)->where('active', true)
+            ->where('code', 'like', '3%')->value('id');
+
+        if (! $cuenta) {
+            $this->markTestSkipped('Sin cuenta de patrimonio en dev para la contrapartida.');
+        }
+
+        $archivo = $this->archivo(
+            [['code' => 'ZZ-P-9', 'name' => 'ZZ En Sede', 'type' => 'good',
+                'sale_price' => 900, 'purchase_price' => 400, 'track_inventory' => 'si']],
+            [['ZZ-P-9', $sede->code, 6, 400]],
+        );
+
+        $parsed = $engine->parseAndValidate($archivo, $this->companyId);
+        $resultado = $engine->import($parsed['rows'], $this->companyId, $parsed['stock_rows'], (int) $cuenta);
+
+        $this->assertCount(1, $resultado['openings']);
+
+        $this->limpiar[] = fn () => DB::table('inventory_openings')
+            ->where('company_id', $this->companyId)
+            ->where('notes', 'like', 'Apertura automática desde importación%')
+            ->delete();
+
+        $producto = Product::withoutGlobalScopes()
+            ->where('company_id', $this->companyId)->where('code', 'ZZ-P-9')->firstOrFail();
+
+        $this->assertSame(1, $producto->locations()->count(),
+            'El producto queda asignado a la sede donde tiene existencias.');
+        $this->assertSame($sede->id, $producto->locations()->first()->id);
+    }
+
+    /**
      * XLSX con sale_price como formula con su resultado cacheado, igual que lo
      * guarda Excel. El escritor de OpenSpout no guarda ese cache, asi que el
      * archivo se arma a mano.

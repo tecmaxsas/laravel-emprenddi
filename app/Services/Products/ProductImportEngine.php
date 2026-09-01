@@ -7,6 +7,7 @@ use App\Models\Category;
 use App\Models\InventoryOpening;
 use App\Models\Location;
 use App\Models\Product;
+use App\Models\ProductLocation;
 use App\Models\Tax;
 use App\Services\Inventory\InventoryOpeningEngine;
 use App\Services\Inventory\InventoryOpeningNumberer;
@@ -543,6 +544,16 @@ class ProductImportEngine
                         'quantity' => (float) $sl['data']['qty'],
                         'unit_cost' => (float) $sl['data']['unit_cost'],
                     ]);
+
+                    // Si tiene existencias en esta sede, el producto esta en
+                    // esta sede: se registra la asignacion, que es de donde
+                    // salen despues el stock minimo, el punto de reorden y el
+                    // precio propio de la sede. La importacion cargaba el
+                    // stock pero dejaba los productos con "Sedes 0".
+                    ProductLocation::firstOrCreate(
+                        ['product_id' => $product->id, 'location_id' => $locationId],
+                        ['active' => true],
+                    );
                 }
 
                 // Postear la apertura (contabiliza + crea movimientos)
