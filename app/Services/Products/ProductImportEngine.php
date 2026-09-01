@@ -56,6 +56,9 @@ class ProductImportEngine
      *
      * @return array{rows: array, summary: array, valid: bool}
      */
+    /** Filas de la hoja de stock que se omitieron por no traer cantidad. */
+    protected int $stockOmitidas = 0;
+
     public function parseAndValidate(string $filePath, int $companyId): array
     {
         $this->resetCaches();
@@ -149,6 +152,7 @@ class ProductImportEngine
             }
         }
         $summary['stock_lines'] = count($stockRows);
+        $summary['stock_skipped'] = $this->stockOmitidas;
         $summary['stock_locations'] = count($stockLocations);
         $summary['stock_errors'] = $stockErrors;
 
@@ -211,6 +215,7 @@ class ProductImportEngine
         $lines = [];
         $rowNum = 0;
         $headers = null;
+        $omitidas = 0;
 
         foreach ($sheet->getRowIterator() as $row) {
             $rowNum++;
@@ -239,6 +244,34 @@ class ProductImportEngine
             // lookup en createInitialStockOpenings acepta ambos).
             $data['product_code'] = trim((string) ($data['product_code'] ?? ''));
             $data['location_code'] = trim((string) ($data['location_code'] ?? ''));
+
+            $vacio = fn (mixed $v) => $v === null || trim((string) $v) === '';
+
+            // Fila que solo trae el codigo del producto: es un producto de la
+            // lista que NO tiene stock inicial. Se omite en silencio en vez de
+            // reportarlo como error — es la forma natural de llenar la hoja,
+            // pegando todos los codigos y poniendo cantidad solo a los que
+            // tienen existencias.
+            if ($data['product_code'] !== ''
+                && $data['location_code'] === ''
+                && $vacio($data['qty'])
+                && $vacio($data['unit_cost'])) {
+                $omitidas++;
+                continue;
+            }
+
+            // Sin cantidad tampoco hay nada que cargar. Vale 0 o vacio: las
+            // dos formas de decir "este no tiene".
+            if ($vacio($data['qty']) || (is_numeric($data['qty']) && (float) $data['qty'] == 0.0)) {
+                $omitidas++;
+                continue;
+            }
+
+            // El costo en blanco es 0, no un error: hay negocios que cargan
+            // las existencias sin valorizarlas.
+            if ($vacio($data['unit_cost'])) {
+                $data['unit_cost'] = 0;
+            }
 
             $errors = [];
             if (! $data['product_code']) $errors[] = 'product_code es obligatorio (puede ser el code o el name del producto)';
@@ -295,6 +328,9 @@ class ProductImportEngine
                 'already_has_stock' => $yaTieneExistencias,
             ];
         }
+
+        $this->stockOmitidas = $omitidas;
+
         return $lines;
     }
 
@@ -772,6 +808,8 @@ class ProductImportEngine
 
     protected function resetCaches(): void
     {
+        $this->stockOmitidas = 0;
+
         $this->categoryCache = [];
         $this->taxCache = [];
         $this->accountCache = [];

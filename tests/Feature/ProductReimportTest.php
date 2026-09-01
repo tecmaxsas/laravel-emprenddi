@@ -259,6 +259,59 @@ class ProductReimportTest extends TestCase
     }
 
     /**
+     * La hoja se llena pegando TODOS los codigos y poniendo cantidad solo a
+     * los que tienen existencias. Las filas sin cantidad no son un error: son
+     * productos sin stock inicial.
+     */
+    public function test_omite_las_filas_sin_cantidad_en_vez_de_marcarlas_mal(): void
+    {
+        $this->limpiarProducto('ZZ-P-5');
+        $this->limpiarProducto('ZZ-P-6');
+        $engine = app(ProductImportEngine::class);
+        $sede = $this->sede();
+
+        $archivo = $this->archivo(
+            [
+                ['code' => 'ZZ-P-5', 'name' => 'ZZ Con Stock', 'type' => 'good', 'sale_price' => 100],
+                ['code' => 'ZZ-P-6', 'name' => 'ZZ Sin Stock', 'type' => 'good', 'sale_price' => 200],
+            ],
+            [
+                ['ZZ-P-5', $sede->code, 8, 0],   // costo 0: valido
+                ['ZZ-P-6', '', '', ''],          // solo el codigo: sin stock
+            ],
+        );
+
+        $parsed = $engine->parseAndValidate($archivo, $this->companyId);
+
+        $this->assertSame(0, $parsed['summary']['stock_errors'],
+            'Ni la fila sin cantidad ni el costo 0 son errores.');
+        $this->assertSame(1, $parsed['summary']['stock_lines'], 'Solo queda la línea con cantidad.');
+        $this->assertSame(1, $parsed['summary']['stock_skipped'], 'Y se reporta la omitida.');
+        $this->assertTrue($parsed['valid'], 'El archivo se puede importar completo.');
+    }
+
+    /** Cargar existencias sin valorizarlas es legitimo. */
+    public function test_acepta_costo_cero_y_costo_en_blanco(): void
+    {
+        $this->limpiarProducto('ZZ-P-7');
+        $engine = app(ProductImportEngine::class);
+        $sede = $this->sede();
+
+        $parsed = $engine->parseAndValidate(
+            $this->archivo(
+                [['code' => 'ZZ-P-7', 'name' => 'ZZ Costo Cero', 'type' => 'good', 'sale_price' => 100]],
+                [['ZZ-P-7', $sede->code, 5, '']],
+            ),
+            $this->companyId,
+        );
+
+        $this->assertSame(0, $parsed['summary']['stock_errors']);
+        $this->assertSame(1, $parsed['summary']['stock_lines']);
+        $this->assertSame(0, (int) $parsed['stock_rows'][0]['data']['unit_cost'],
+            'El costo en blanco vale 0.');
+    }
+
+    /**
      * XLSX con sale_price como formula con su resultado cacheado, igual que lo
      * guarda Excel. El escritor de OpenSpout no guarda ese cache, asi que el
      * archivo se arma a mano.
