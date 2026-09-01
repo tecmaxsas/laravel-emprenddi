@@ -7,9 +7,8 @@ use App\Models\OrderTaking\PriceList;
 use App\Models\OrderTaking\PriceListItem;
 use App\Models\Product;
 use App\Models\ThirdParty;
+use App\Support\SpreadsheetCell;
 use Illuminate\Support\Facades\DB;
-use OpenSpout\Common\Entity\Cell;
-use OpenSpout\Common\Entity\Cell\FormulaCell;
 use OpenSpout\Reader\XLSX\Reader;
 use RuntimeException;
 
@@ -68,28 +67,6 @@ class MacDulcesImporter
     }
 
     /**
-     * Valor util de una celda.
-     *
-     * En una celda con formula, getValue() devuelve el TEXTO de la formula
-     * ("=E2-G2"), no el resultado: al convertirlo a numero daba 0 y por eso un
-     * archivo con la base y el IVA calculados en Excel se leia como si esas
-     * columnas estuvieran vacias. El resultado que Excel dejo guardado esta en
-     * getComputedValue().
-     */
-    protected function valorDe(Cell $celda): mixed
-    {
-        if ($celda instanceof FormulaCell) {
-            // Si Excel no guardo el resultado, OpenSpout devuelve 0 — que es
-            // indistinguible del 0 legitimo de un exento calculado con
-            // formula. Por eso no se adivina aqui: se toma el valor y, si la
-            // fila no cuadra, la validacion lo explica al pie del mensaje.
-            return $celda->getComputedValue() ?? $celda->getValue();
-        }
-
-        return $celda->getValue();
-    }
-
-    /**
      * Por que una celda de precio no se pudo leer como numero.
      *
      * Decir solo "no cuadra" deja al usuario adivinando; casi siempre es una
@@ -124,7 +101,7 @@ class MacDulcesImporter
             foreach ($sheet->getRowIterator() as $row) {
                 $cells = [];
                 foreach ($row->getCells() as $c) {
-                    $cells[] = $this->valorDe($c);
+                    $cells[] = SpreadsheetCell::value($c);
                 }
                 $rows[] = $cells;
             }

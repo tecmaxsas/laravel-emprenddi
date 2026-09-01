@@ -10,6 +10,8 @@ use App\Models\Product;
 use App\Models\Tax;
 use App\Services\Inventory\InventoryOpeningEngine;
 use App\Services\Inventory\InventoryOpeningNumberer;
+use App\Support\SpreadsheetCell;
+use App\Services\Inventory\InventoryEngine;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use OpenSpout\Reader\XLSX\Reader;
@@ -171,8 +173,11 @@ class ProductImportEngine
 
         foreach ($sheet->getRowIterator() as $row) {
             $rowNum++;
+            // SpreadsheetCell y no getValue(): en una celda con formula
+            // getValue() devuelve el texto de la formula, que como numero da
+            // 0 — de ahi salieron los precios de venta en cero.
             $cells = array_map(
-                fn ($c) => is_object($c) && method_exists($c, 'getValue') ? $c->getValue() : $c,
+                fn ($c) => SpreadsheetCell::value($c),
                 $row->getCells(),
             );
 
@@ -209,8 +214,11 @@ class ProductImportEngine
 
         foreach ($sheet->getRowIterator() as $row) {
             $rowNum++;
+            // SpreadsheetCell y no getValue(): en una celda con formula
+            // getValue() devuelve el texto de la formula, que como numero da
+            // 0 — de ahi salieron los precios de venta en cero.
             $cells = array_map(
-                fn ($c) => is_object($c) && method_exists($c, 'getValue') ? $c->getValue() : $c,
+                fn ($c) => SpreadsheetCell::value($c),
                 $row->getCells(),
             );
 
@@ -267,10 +275,24 @@ class ProductImportEngine
                 $errors[] = "location_code '{$data['location_code']}' no existe";
             }
 
+            // La apertura de inventario SUMA: no reemplaza. Si el producto ya
+            // tiene existencias en esa sede, volver a importarlas las duplica
+            // y ademas deja un asiento contable de mas. Se marca aqui para
+            // avisarlo antes de escribir nada.
+            $yaTieneExistencias = false;
+            if ($errors === []) {
+                $yaTieneExistencias = $this->stockActualDe(
+                    $data['product_code'],
+                    $data['location_code'],
+                    $companyId,
+                ) > 0;
+            }
+
             $lines[] = [
                 'row_number' => $rowNum,
                 'data' => $data,
                 'errors' => $errors,
+                'already_has_stock' => $yaTieneExistencias,
             ];
         }
         return $lines;
@@ -296,7 +318,35 @@ class ProductImportEngine
         int $companyId,
         array $stockRows = [],
         ?int $counterpartAccountId = null,
+        bool $allowStockOnTop = false,
     ): array {
+        // Importar el inventario inicial dos veces duplica las existencias y
+        // deja un asiento de mas. Es dificil de deshacer, asi que se para
+        // antes de escribir salvo que lo pidan a proposito.
+        if (! $allowStockOnTop) {
+            $conStock = array_values(array_filter(
+                $stockRows,
+                fn ($r) => empty($r['errors']) && ($r['already_has_stock'] ?? false),
+            ));
+
+            if ($conStock !== []) {
+                $ejemplos = array_map(
+                    fn ($r) => $r['data']['product_code'].' en '.$r['data']['location_code'],
+                    array_slice($conStock, 0, 5),
+                );
+
+                throw new \RuntimeException(sprintf(
+                    "%d productos de la hoja \"Inventario Inicial\" YA tienen existencias. "
+                    ."La apertura suma, no reemplaza: importarla otra vez duplicaría el inventario.\n\n%s%s\n\n"
+                    .'Quita esas filas del archivo, o marca "sumar sobre las existencias actuales" '
+                    .'si de verdad quieres agregarlas.',
+                    count($conStock),
+                    implode("\n", $ejemplos),
+                    count($conStock) > 5 ? "\n… y ".(count($conStock) - 5).' más.' : '',
+                ));
+            }
+        }
+
         $created = 0;
         $updated = 0;
         $errors = [];
@@ -455,6 +505,30 @@ class ProductImportEngine
             }
         }
         return $openings;
+    }
+
+    /**
+     * Existencias actuales del producto en esa sede. 0 si no se puede
+     * resolver: en ese caso ya hay un error de validacion que lo explica.
+     */
+    protected function stockActualDe(string $productRef, string $locationCode, int $companyId): float
+    {
+        $locationId = $this->resolveLocationId($locationCode, $companyId);
+
+        if (! $locationId) {
+            return 0.0;
+        }
+
+        $productId = Product::query()
+            ->where('company_id', $companyId)
+            ->where(fn ($q) => $q->where('code', $productRef)->orWhere('name', $productRef))
+            ->value('id');
+
+        if (! $productId) {
+            return 0.0;
+        }
+
+        return app(InventoryEngine::class)->currentStock((int) $productId, $locationId);
     }
 
     protected function resolveLocationId(?string $code, int $companyId): ?int

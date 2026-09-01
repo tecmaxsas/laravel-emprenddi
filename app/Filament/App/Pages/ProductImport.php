@@ -32,7 +32,7 @@ class ProductImport extends Page implements HasForms
 
     protected static string $view = 'filament.app.pages.product-import';
 
-    public ?array $data = ['file' => null, 'counterpart_account_id' => null];
+    public ?array $data = ['file' => null, 'counterpart_account_id' => null, 'allow_stock_on_top' => false];
     public ?array $preview = null;
     public ?array $result = null;
 
@@ -55,6 +55,7 @@ class ProductImport extends Page implements HasForms
         $this->form->fill([
             'file' => null,
             'counterpart_account_id' => $defaultCounterpart,
+            'allow_stock_on_top' => false,
         ]);
     }
 
@@ -99,6 +100,10 @@ class ProductImport extends Page implements HasForms
                                 ->find($value);
                             return $a ? "{$a->code} — {$a->name}" : null;
                         }),
+
+                    Forms\Components\Toggle::make('allow_stock_on_top')
+                        ->label('Sumar sobre las existencias actuales')
+                        ->helperText('Normalmente déjalo apagado. La apertura de inventario SUMA: si un producto ya tiene existencias, volver a importarlas las duplica y deja un asiento contable de más. Enciéndelo solo si de verdad quieres agregar cantidades a lo que ya hay.'),
                 ]),
         ])->statePath('data');
     }
@@ -157,6 +162,7 @@ class ProductImport extends Page implements HasForms
                 (int) auth()->user()->company_id,
                 $stockRows,
                 $counterpartId,
+                (bool) ($this->data['allow_stock_on_top'] ?? false),
             );
 
             $parts = ["Creados: {$this->result['created']}", "Actualizados: {$this->result['updated']}"];
