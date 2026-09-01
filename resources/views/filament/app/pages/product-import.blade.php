@@ -58,6 +58,11 @@
                         <div style="font-size:11px; opacity:.85; text-transform:uppercase; font-weight:700;">Stock inicial</div>
                         <div style="font-size:22px; font-weight:900;">{{ $s['stock_lines'] }} <span style="font-size:12px; font-weight:600; opacity:.85;">líneas</span></div>
                         <div style="font-size:11px; opacity:.85; margin-top:2px;">{{ $s['stock_locations'] }} sede(s){{ $s['stock_errors'] > 0 ? ' · '.$s['stock_errors'].' error(es)' : '' }}</div>
+                        @if (($s['stock_cost_from_product'] ?? 0) > 0)
+                            <div style="font-size:11px; opacity:.85; margin-top:2px;">
+                                {{ $s['stock_cost_from_product'] }} con costo del precio de compra
+                            </div>
+                        @endif
                         @if (($s['stock_skipped'] ?? 0) > 0)
                             {{-- Que no desaparezcan en silencio: son productos
                                  listados en la hoja pero sin cantidad. --}}

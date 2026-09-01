@@ -276,7 +276,7 @@ class ProductReimportTest extends TestCase
                 ['code' => 'ZZ-P-6', 'name' => 'ZZ Sin Stock', 'type' => 'good', 'sale_price' => 200],
             ],
             [
-                ['ZZ-P-5', $sede->code, 8, 0],   // costo 0: valido
+                ['ZZ-P-5', $sede->code, 8, 250], // con costo real
                 ['ZZ-P-6', '', '', ''],          // solo el codigo: sin stock
             ],
         );
@@ -290,25 +290,68 @@ class ProductReimportTest extends TestCase
         $this->assertTrue($parsed['valid'], 'El archivo se puede importar completo.');
     }
 
-    /** Cargar existencias sin valorizarlas es legitimo. */
-    public function test_acepta_costo_cero_y_costo_en_blanco(): void
+    /**
+     * El costo en blanco toma el precio de compra del producto.
+     *
+     * El motor contable exige costo > 0: una apertura a costo cero deja el
+     * inventario sin valor y hace que cada venta posterior calcule un costo
+     * de ventas de 0. Antes esto se colaba en la validacion y reventaba al
+     * postear, con la importacion ya "completada".
+     */
+    public function test_el_costo_en_blanco_toma_el_precio_de_compra(): void
     {
         $this->limpiarProducto('ZZ-P-7');
         $engine = app(ProductImportEngine::class);
         $sede = $this->sede();
 
+        // El producto se crea en la misma pasada, con su precio de compra.
+        $engine->import(
+            $engine->parseAndValidate(
+                $this->archivo([[
+                    'code' => 'ZZ-P-7', 'name' => 'ZZ Costo Del Producto', 'type' => 'good',
+                    'sale_price' => 1000, 'purchase_price' => 640,
+                ]]),
+                $this->companyId,
+            )['rows'],
+            $this->companyId,
+        );
+
         $parsed = $engine->parseAndValidate(
             $this->archivo(
-                [['code' => 'ZZ-P-7', 'name' => 'ZZ Costo Cero', 'type' => 'good', 'sale_price' => 100]],
+                [['code' => 'ZZ-P-7', 'name' => 'ZZ Costo Del Producto', 'type' => 'good',
+                    'sale_price' => 1000, 'purchase_price' => 640]],
                 [['ZZ-P-7', $sede->code, 5, '']],
             ),
             $this->companyId,
         );
 
         $this->assertSame(0, $parsed['summary']['stock_errors']);
-        $this->assertSame(1, $parsed['summary']['stock_lines']);
-        $this->assertSame(0, (int) $parsed['stock_rows'][0]['data']['unit_cost'],
-            'El costo en blanco vale 0.');
+        $this->assertSame(640.0, (float) $parsed['stock_rows'][0]['data']['unit_cost'],
+            'Toma el precio de compra en vez de quedarse en 0.');
+        $this->assertSame(1, $parsed['summary']['stock_cost_from_product']);
+    }
+
+    /** Sin costo por ningún lado sí es un error, y se avisa antes de importar. */
+    public function test_sin_costo_ni_precio_de_compra_se_reporta_en_la_validacion(): void
+    {
+        $this->limpiarProducto('ZZ-P-8');
+        $engine = app(ProductImportEngine::class);
+        $sede = $this->sede();
+
+        $parsed = $engine->parseAndValidate(
+            $this->archivo(
+                [['code' => 'ZZ-P-8', 'name' => 'ZZ Sin Costo', 'type' => 'good', 'sale_price' => 100]],
+                [['ZZ-P-8', $sede->code, 5, '']],
+            ),
+            $this->companyId,
+        );
+
+        $this->assertSame(1, $parsed['summary']['stock_errors'],
+            'Se ve en el preview, no al postear con la importación ya hecha.');
+        $this->assertStringContainsString(
+            'precio de compra',
+            implode(' ', $parsed['stock_rows'][0]['errors']),
+        );
     }
 
     /**

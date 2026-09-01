@@ -59,6 +59,9 @@ class ProductImportEngine
     /** Filas de la hoja de stock que se omitieron por no traer cantidad. */
     protected int $stockOmitidas = 0;
 
+    /** Filas cuyo costo se tomo del precio de compra del producto. */
+    protected int $stockCostoDelProducto = 0;
+
     public function parseAndValidate(string $filePath, int $companyId): array
     {
         $this->resetCaches();
@@ -153,6 +156,7 @@ class ProductImportEngine
         }
         $summary['stock_lines'] = count($stockRows);
         $summary['stock_skipped'] = $this->stockOmitidas;
+        $summary['stock_cost_from_product'] = $this->stockCostoDelProducto;
         $summary['stock_locations'] = count($stockLocations);
         $summary['stock_errors'] = $stockErrors;
 
@@ -216,6 +220,7 @@ class ProductImportEngine
         $rowNum = 0;
         $headers = null;
         $omitidas = 0;
+        $desdeElProducto = 0;
 
         foreach ($sheet->getRowIterator() as $row) {
             $rowNum++;
@@ -267,10 +272,23 @@ class ProductImportEngine
                 continue;
             }
 
-            // El costo en blanco es 0, no un error: hay negocios que cargan
-            // las existencias sin valorizarlas.
-            if ($vacio($data['unit_cost'])) {
-                $data['unit_cost'] = 0;
+            // El costo en blanco toma el precio de compra del producto.
+            //
+            // El motor contable exige costo > 0, y con razon: una apertura a
+            // costo cero deja el inventario sin valor y hace que cada venta
+            // posterior calcule un costo de ventas de 0, inflando la utilidad.
+            // Pero pedir otro archivo cuando el precio de compra ya esta
+            // cargado es hacerle dar vueltas al usuario.
+            if ($vacio($data['unit_cost']) || (float) $data['unit_cost'] == 0.0) {
+                $costoProducto = $this->precioDeCompraDe($data['product_code'], $companyId);
+
+                if ($costoProducto > 0) {
+                    $data['unit_cost'] = $costoProducto;
+                    $data['unit_cost_from_product'] = true;
+                    $desdeElProducto++;
+                } else {
+                    $data['unit_cost'] = 0;
+                }
             }
 
             $errors = [];
@@ -279,8 +297,10 @@ class ProductImportEngine
             if (! is_numeric($data['qty']) || (float) $data['qty'] <= 0) {
                 $errors[] = 'qty debe ser un número > 0';
             }
-            if (! is_numeric($data['unit_cost']) || (float) $data['unit_cost'] < 0) {
-                $errors[] = 'unit_cost debe ser un número >= 0';
+            if (! is_numeric($data['unit_cost']) || (float) $data['unit_cost'] <= 0) {
+                $errors[] = 'unit_cost vacío y el producto tampoco tiene precio de compra. '
+                    .'El inventario tiene que entrar valorizado: si no, cada venta de este producto '
+                    .'calcularía un costo de $0.';
             }
 
             // Validar referencia: primero en el archivo (code o name),
@@ -330,6 +350,7 @@ class ProductImportEngine
         }
 
         $this->stockOmitidas = $omitidas;
+        $this->stockCostoDelProducto = $desdeElProducto;
 
         return $lines;
     }
@@ -547,6 +568,15 @@ class ProductImportEngine
      * Existencias actuales del producto en esa sede. 0 si no se puede
      * resolver: en ese caso ya hay un error de validacion que lo explica.
      */
+    /** Precio de compra del producto, para valorizar la apertura. */
+    protected function precioDeCompraDe(string $productRef, int $companyId): float
+    {
+        return (float) Product::query()
+            ->where('company_id', $companyId)
+            ->where(fn ($q) => $q->where('code', $productRef)->orWhere('name', $productRef))
+            ->value('default_purchase_price');
+    }
+
     protected function stockActualDe(string $productRef, string $locationCode, int $companyId): float
     {
         $locationId = $this->resolveLocationId($locationCode, $companyId);
@@ -809,6 +839,7 @@ class ProductImportEngine
     protected function resetCaches(): void
     {
         $this->stockOmitidas = 0;
+        $this->stockCostoDelProducto = 0;
 
         $this->categoryCache = [];
         $this->taxCache = [];
