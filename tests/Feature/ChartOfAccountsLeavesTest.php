@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Account;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
@@ -59,22 +60,14 @@ class ChartOfAccountsLeavesTest extends TestCase
         );
     }
 
-    public function test_una_cuenta_con_hijos_nunca_recibe_movimientos_directos(): void
-    {
-        $abiertasPorError = $this->cuentas()
-            ->where('accepts_movements', true)
-            ->whereIn('id', $this->idsConHijos())
-            ->orderBy('code')
-            ->get(['code', 'name']);
-
-        $this->assertCount(
-            0,
-            $abiertasPorError,
-            'Se postea en el hijo, no en el padre: '
-            .$abiertasPorError->take(10)->map(fn ($a) => $a->code.' '.$a->name)->implode(', ')
-        );
-    }
-
+    /**
+     * NO se comprueba que una cuenta con hijos este cerrada.
+     *
+     * Esa era la regla que rompio empresas reales: hay quien habilita a mano
+     * una cuenta de 4 digitos —4135 como cuenta de venta— y la usa en sus
+     * productos aunque tenga subcuentas debajo. Es una decision contable
+     * legitima que el sistema no debe deshacer por su cuenta.
+     */
     /** La contrapartida que el sistema busca por codigo tiene que ser usable. */
     public function test_la_3705_sirve_como_contrapartida_del_inventario_inicial(): void
     {
@@ -87,5 +80,52 @@ class ChartOfAccountsLeavesTest extends TestCase
         $this->assertTrue((bool) $cuenta->accepts_movements,
             'InventoryEngine busca la 3705 para el asiento de apertura.');
         $this->assertTrue((bool) $cuenta->active);
+    }
+
+    /**
+     * Una cuenta que ya esta EN USO tiene que poder recibir movimientos,
+     * tenga hijos o no.
+     *
+     * Hay quien habilita a mano cuentas de 4 digitos —4135 como cuenta de
+     * venta, 1435 como inventario— y las asigna a sus productos. Cerrarlas
+     * "por coherencia" deja esos productos apuntando a una cuenta inservible
+     * y la importacion rechaza todas las filas. Ya paso una vez.
+     */
+    public function test_ninguna_cuenta_en_uso_queda_cerrada(): void
+    {
+        $referencias = [
+            ['products', 'sale_account_id'],
+            ['products', 'inventory_account_id'],
+            ['products', 'cost_account_id'],
+            ['taxes', 'sale_account_id'],
+            ['taxes', 'purchase_account_id'],
+            ['payment_methods', 'account_id'],
+            ['journal_entry_lines', 'account_id'],
+        ];
+
+        $enUso = [];
+        foreach ($referencias as [$tabla, $columna]) {
+            $enUso = array_merge($enUso, DB::table($tabla)
+                ->whereNotNull($columna)->distinct()->pluck($columna)->all());
+        }
+
+        $enUso = array_values(array_unique(array_map('intval', $enUso)));
+
+        if ($enUso === []) {
+            $this->markTestSkipped('La empresa de dev no tiene cuentas asignadas todavía.');
+        }
+
+        $cerradas = Account::withoutGlobalScopes()
+            ->whereIn('id', $enUso)
+            ->where('accepts_movements', false)
+            ->orderBy('code')
+            ->get(['code', 'name']);
+
+        $this->assertCount(
+            0,
+            $cerradas,
+            'Cuentas en uso que no reciben movimientos: '
+            .$cerradas->take(10)->map(fn ($a) => $a->code.' '.$a->name)->implode(', ')
+        );
     }
 }

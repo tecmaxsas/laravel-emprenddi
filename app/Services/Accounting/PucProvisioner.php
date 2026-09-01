@@ -59,7 +59,7 @@ class PucProvisioner
                 $created++;
             }
 
-            // Recomputa accepts_movements: una cuenta con hijos no puede recibir movimientos directos.
+            // Abre las hojas para movimientos. Solo abre: ver el metodo.
             $this->recomputeAcceptsMovements($company);
         });
 
@@ -67,17 +67,16 @@ class PucProvisioner
     }
 
     /**
-     * Recibe movimientos la cuenta que NO tiene hijos, de nivel cuenta (4
-     * digitos) hacia abajo.
+     * Abre para movimientos las cuentas hoja de nivel cuenta (4 digitos) o
+     * mas: se postea en la cuenta mas detallada que exista.
      *
-     * Antes la regla era "solo las de 6 digitos", pero el catalogo trae
-     * muchas cuentas de 4 sin subcuentas debajo: quedaban 126 ramas muertas
-     * —3705 Utilidades acumuladas entre ellas— que no se podian usar ni
-     * tenian hijo que si. El propio sistema las daba por utilizables: el
-     * asiento de apertura de inventario busca la 3705.
+     * SOLO abre, nunca cierra. Esta accion se puede volver a lanzar sobre una
+     * empresa que ya opera, y cerrar cuentas que alguien habilito a proposito
+     * —4135 como cuenta de venta, 1435 como inventario— deja sus productos y
+     * sus asientos apuntando a cuentas inservibles. Ya paso una vez.
      *
-     * Se postea en la cuenta mas detallada que exista. Si mañana alguien crea
-     * subcuentas bajo una de estas, esta misma regla la apaga sola.
+     * Si una cuenta con hijos queda abierta, es una decision contable que se
+     * corrige en el plan de cuentas, no algo que este proceso deba imponer.
      */
     private function recomputeAcceptsMovements(Company $company): void
     {
@@ -91,12 +90,8 @@ class PucProvisioner
 
         Account::withoutGlobalScopes()
             ->where('company_id', $company->id)
-            ->whereIn('id', $conHijos)
-            ->update(['accepts_movements' => false]);
-
-        Account::withoutGlobalScopes()
-            ->where('company_id', $company->id)
             ->where('level', '>=', 3)
+            ->where('accepts_movements', false)
             ->whereNotIn('id', $conHijos)
             ->update(['accepts_movements' => true]);
     }

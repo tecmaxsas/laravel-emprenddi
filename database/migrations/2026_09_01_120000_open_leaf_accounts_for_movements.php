@@ -32,13 +32,12 @@ return new class extends Migration
             })
             ->update(['accepts_movements' => true]);
 
-        // Coherencia: una cuenta con hijos nunca recibe movimientos directos.
-        DB::table('accounts')
-            ->whereExists(function ($q) {
-                $q->from('accounts as hijos')
-                    ->whereColumn('hijos.parent_id', 'accounts.id');
-            })
-            ->update(['accepts_movements' => false]);
+        // Aqui habia un segundo paso que cerraba TODAS las cuentas con hijos
+        // "por coherencia". Sobraba y rompio empresas reales: hay quien
+        // habilito a mano cuentas de 4 digitos —4135, 1435— para usarlas en
+        // sus productos, y al cerrarlas la importacion rechazo todas las
+        // filas. Abrir hojas muertas es aditivo; cerrar lo que alguien
+        // habilito a proposito no lo es. Se quito.
     }
 
     public function down(): void
