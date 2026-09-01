@@ -136,14 +136,42 @@ class ProductImport extends Page implements HasForms
         }
     }
 
+    /**
+     * Importa solo la hoja de Productos y deja el inventario para despues.
+     *
+     * Sirve cuando los productos estan bien pero la hoja de stock trae
+     * errores: bloquear la correccion de 1.800 precios por unas lineas de
+     * inventario mal referenciadas no le sirve a nadie.
+     */
+    public function confirmImportProductsOnly(): void
+    {
+        $this->ejecutarImport(soloProductos: true);
+    }
+
     public function confirmImport(): void
     {
-        if (! $this->preview || empty($this->preview['valid'])) {
+        $this->ejecutarImport(soloProductos: false);
+    }
+
+    protected function ejecutarImport(bool $soloProductos): void
+    {
+        if (! $this->preview) {
+            Notification::make()->title('Primero analiza un archivo')->warning()->send();
+            return;
+        }
+
+        // Con soloProductos basta con que las filas de productos esten bien;
+        // los errores de la hoja de stock no aplican porque no se va a tocar.
+        $bloqueado = $soloProductos
+            ? (($this->preview['summary']['errors'] ?? 0) > 0 || ($this->preview['summary']['total'] ?? 0) === 0)
+            : empty($this->preview['valid']);
+
+        if ($bloqueado) {
             Notification::make()->title('Hay errores en el preview — corrige antes de confirmar')->warning()->send();
             return;
         }
 
-        $stockRows = $this->preview['stock_rows'] ?? [];
+        $stockRows = $soloProductos ? [] : ($this->preview['stock_rows'] ?? []);
         $counterpartId = null;
         if (! empty($stockRows)) {
             $counterpartId = (int) ($this->data['counterpart_account_id'] ?? 0) ?: null;
@@ -166,6 +194,9 @@ class ProductImport extends Page implements HasForms
             );
 
             $parts = ["Creados: {$this->result['created']}", "Actualizados: {$this->result['updated']}"];
+            if ($soloProductos && ! empty($this->preview['stock_rows'])) {
+                $parts[] = 'Inventario: no se tocó';
+            }
             if (! empty($this->result['openings'])) {
                 $parts[] = 'Aperturas de inventario: '.count($this->result['openings']);
             }

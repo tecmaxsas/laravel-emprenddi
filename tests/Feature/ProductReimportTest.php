@@ -222,6 +222,43 @@ class ProductReimportTest extends TestCase
     }
 
     /**
+     * El caso que dejo al usuario sin boton: 1.878 productos correctos y 450
+     * lineas de inventario con problemas. Bloquear la correccion de todos los
+     * precios por eso no le sirve a nadie.
+     */
+    public function test_se_pueden_importar_los_productos_aunque_falle_el_stock(): void
+    {
+        $this->limpiarProducto('ZZ-P-4');
+        $engine = app(ProductImportEngine::class);
+
+        $archivo = $this->archivo(
+            [[
+                'code' => 'ZZ-P-4', 'name' => 'ZZ Producto Bueno', 'type' => 'good',
+                'sale_price' => 7700, 'purchase_price' => 5000,
+            ]],
+            // Sede inexistente: la linea de stock no se puede resolver.
+            [['ZZ-P-4', 'SEDE-QUE-NO-EXISTE', 5, 100]],
+        );
+
+        $parsed = $engine->parseAndValidate($archivo, $this->companyId);
+
+        $this->assertFalse($parsed['valid'], 'El archivo completo no es válido.');
+        $this->assertSame(0, $parsed['summary']['errors'], 'Pero los productos sí están bien.');
+        $this->assertSame(1, $parsed['summary']['stock_errors']);
+
+        // Importar solo los productos: se ignora la hoja de stock.
+        $resultado = $engine->import($parsed['rows'], $this->companyId, [], null);
+
+        $this->assertSame(1, $resultado['created']);
+        $this->assertSame([], $resultado['openings'], 'No se creó ninguna apertura.');
+
+        $producto = Product::withoutGlobalScopes()
+            ->where('company_id', $this->companyId)->where('code', 'ZZ-P-4')->firstOrFail();
+        $this->assertSame('7700.00', $producto->default_sale_price,
+            'El precio se corrigió aunque el inventario no entrara.');
+    }
+
+    /**
      * XLSX con sale_price como formula con su resultado cacheado, igual que lo
      * guarda Excel. El escritor de OpenSpout no guarda ese cache, asi que el
      * archivo se arma a mano.

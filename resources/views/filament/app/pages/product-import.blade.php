@@ -126,6 +126,18 @@
                 </table>
             </div>
 
+            @php
+                // Errores que vienen SOLO de la hoja de inventario: los
+                // productos estan bien y se pueden importar igual.
+                $soloFallaElStock = $s['errors'] === 0
+                    && ($s['stock_errors'] ?? 0) > 0
+                    && $s['total'] > 0;
+
+                $erroresDeStock = collect($preview['stock_rows'] ?? [])
+                    ->filter(fn ($r) => ! empty($r['errors']))
+                    ->take(15);
+            @endphp
+
             @if ($preview['valid'])
                 <div style="margin-top:14px; padding:14px; background:#dcfce7; border:1px solid #16a34a; border-radius:10px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
                     <div style="font-weight:600; color:#166534;">
@@ -136,6 +148,59 @@
                         style="padding:11px 22px; background:#16a34a; color:#fff; border:0; border-radius:8px; font-weight:800; font-size:14px; cursor:pointer;">
                         ✓ Confirmar importación
                     </button>
+                </div>
+            @elseif ($soloFallaElStock)
+                {{-- Antes el boton simplemente desaparecia y no se decia por
+                     que: el usuario quedaba adivinando. --}}
+                <div style="margin-top:14px; padding:14px; background:#fef3c7; color:#78350f; border:1px solid #f59e0b; border-radius:10px;">
+                    <div style="font-weight:800; font-size:14px;">
+                        Los {{ $s['total'] }} productos están bien. Lo que falla es la hoja "Inventario Inicial".
+                    </div>
+                    <div style="margin-top:6px; font-size:12.5px;">
+                        {{ $s['stock_errors'] }} de las {{ $s['stock_lines'] }} líneas de inventario tienen
+                        problemas, así que no se puede cargar el stock. Puedes importar los productos
+                        ahora —que es lo que corrige los precios— y cargar el inventario después con un
+                        archivo que traiga solo esa hoja.
+                    </div>
+
+                    <details style="margin-top:10px;">
+                        <summary style="cursor:pointer; font-weight:700; font-size:12.5px;">
+                            Ver qué está mal ({{ $erroresDeStock->count() }} de {{ $s['stock_errors'] }})
+                        </summary>
+                        <div style="margin-top:8px; background:#fff; border:1px solid #fcd34d; border-radius:8px; max-height:260px; overflow:auto;">
+                            <table style="width:100%; border-collapse:collapse; font-size:12px; color:#111827;">
+                                <thead style="background:#fffbeb; position:sticky; top:0;">
+                                    <tr>
+                                        <th style="text-align:left; padding:6px 10px;">Fila</th>
+                                        <th style="text-align:left; padding:6px 10px;">Producto</th>
+                                        <th style="text-align:left; padding:6px 10px;">Sede</th>
+                                        <th style="text-align:left; padding:6px 10px;">Problema</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach ($erroresDeStock as $sr)
+                                        <tr style="border-top:1px solid #fef3c7;">
+                                            <td style="padding:6px 10px;">{{ $sr['row_number'] }}</td>
+                                            <td style="padding:6px 10px;">{{ $sr['data']['product_code'] ?: '—' }}</td>
+                                            <td style="padding:6px 10px;">{{ $sr['data']['location_code'] ?: '—' }}</td>
+                                            <td style="padding:6px 10px;">{{ implode(' · ', $sr['errors']) }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    </details>
+
+                    <button type="button" wire:click="confirmImportProductsOnly"
+                        onclick="return confirm('Se importarán {{ $s['total'] }} productos. El inventario NO se tocará. ¿Continuar?')"
+                        style="margin-top:12px; padding:11px 22px; background:#16a34a; color:#fff; border:0; border-radius:8px; font-weight:800; font-size:14px; cursor:pointer;">
+                        ✓ Importar solo los productos (sin inventario)
+                    </button>
+                </div>
+            @elseif (($s['stock_errors'] ?? 0) > 0)
+                <div style="margin-top:14px; padding:14px; background:#fee2e2; color:#991b1b; border:1px solid #dc2626; border-radius:10px; font-size:13px;">
+                    Hay errores en las dos hojas: {{ $s['errors'] }} en Productos y
+                    {{ $s['stock_errors'] }} en Inventario Inicial. Corrige el archivo y vuelve a subirlo.
                 </div>
             @endif
         @endif
