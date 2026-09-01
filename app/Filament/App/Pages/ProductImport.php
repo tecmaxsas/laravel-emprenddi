@@ -79,8 +79,21 @@ class ProductImport extends Page implements HasForms
 
                     Forms\Components\Select::make('counterpart_account_id')
                         ->label('Cuenta contrapartida (CR) — para el asiento del inventario inicial')
-                        ->helperText('Solo se usa si la hoja "Inventario Inicial" tiene filas. Sugerido: 3705 Resultados de ejercicios anteriores o 3115 Capital social.')
+                        ->helperText('Solo se usa si la hoja "Inventario Inicial" tiene filas. Lo habitual es una cuenta de patrimonio: 3705 Utilidades acumuladas.')
                         ->searchable()
+                        // Sin opciones precargadas el campo salia vacio hasta
+                        // escribir, y si lo escrito no existia no habia forma
+                        // de saber que SI se podia elegir.
+                        ->options(fn () => \App\Models\Account::query()
+                            ->where('company_id', auth()->user()?->company_id)
+                            ->where('accepts_movements', true)
+                            ->where('active', true)
+                            ->where('code', 'like', '3%')
+                            ->orderBy('code')
+                            ->limit(50)
+                            ->get(['id', 'code', 'name'])
+                            ->mapWithKeys(fn ($a) => [$a->id => "{$a->code} — {$a->name}"])
+                            ->all())
                         ->getSearchResultsUsing(fn (string $search) => \App\Models\Account::query()
                             ->where('company_id', auth()->user()?->company_id)
                             ->where('accepts_movements', true)

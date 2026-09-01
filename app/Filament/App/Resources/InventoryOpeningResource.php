@@ -79,7 +79,7 @@ class InventoryOpeningResource extends Resource
                         ->label('Cuenta contraparte (CR)')
                         ->required()
                         ->searchable()
-                        ->helperText('Sugerido: 3705 Resultados de ejercicios anteriores, 3115 Capital social, o 1305 Cuentas por cobrar si se compensa con otra entidad.')
+                        ->helperText('Lo habitual es una cuenta de patrimonio: 3705 Utilidades acumuladas. También se usa 1305 Cuentas por cobrar si se compensa con otra entidad.')
                         ->getSearchResultsUsing(fn (string $search) => Account::query()
                             ->where('company_id', auth()->user()?->company_id)
                             ->where('accepts_movements', true)
