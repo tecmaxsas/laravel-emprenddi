@@ -72,11 +72,17 @@ class Employee extends Model
         'hire_date',
         'status',
         'notes',
-    ];
+    
+        'dian_municipality_id',
+        'payroll_type_worker_id',
+        'payroll_sub_type_worker_id',
+        'high_risk_pension',
+];
 
     protected function casts(): array
     {
         return [
+            'high_risk_pension' => 'boolean',
             'birth_date' => 'date',
             'hire_date' => 'date',
             'housing_interest_deduction' => 'decimal:2',

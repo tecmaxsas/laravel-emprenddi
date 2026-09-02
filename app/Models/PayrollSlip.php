@@ -15,6 +15,21 @@ class PayrollSlip extends Model
 {
     use HasFactory, BelongsToCompany;
 
+    public const DIAN_PENDING = 'pending';
+
+    public const DIAN_SENT = 'sent';
+
+    public const DIAN_ACCEPTED = 'accepted';
+
+    public const DIAN_REJECTED = 'rejected';
+
+    public const DIAN_STATUSES = [
+        self::DIAN_PENDING => 'Pendiente DIAN',
+        self::DIAN_SENT => 'Enviado',
+        self::DIAN_ACCEPTED => 'Aceptado DIAN',
+        self::DIAN_REJECTED => 'Rechazado DIAN',
+    ];
+
     protected $fillable = [
         'company_id',
         'payroll_period_id',
@@ -40,11 +55,23 @@ class PayrollSlip extends Model
         'prov_interest',
         'prov_prima',
         'prov_vacaciones',
-    ];
+    
+        'prefix',
+        'consecutive',
+        'dian_status',
+        'dian_status_code',
+        'cune',
+        'qr_url',
+        'dian_response',
+        'dian_error_message',
+        'dian_sent_at',
+];
 
     protected function casts(): array
     {
         return [
+            'dian_response' => 'array',
+            'dian_sent_at' => 'datetime',
             'worked_days' => 'integer',
             'base_salary' => 'decimal:2',
             'salary_earned' => 'decimal:2',
@@ -66,6 +93,18 @@ class PayrollSlip extends Model
             'prov_prima' => 'decimal:2',
             'prov_vacaciones' => 'decimal:2',
         ];
+    }
+
+    public function company(): BelongsTo
+    {
+        return $this->belongsTo(Company::class);
+    }
+
+    public function fullNumber(): string
+    {
+        return $this->prefix && $this->consecutive
+            ? $this->prefix.'-'.$this->consecutive
+            : '—';
     }
 
     public function period(): BelongsTo

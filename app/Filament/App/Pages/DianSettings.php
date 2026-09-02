@@ -89,6 +89,11 @@ class DianSettings extends Page implements HasForms
             'res_date_from' => null,
             'res_date_to' => null,
 
+            // Tab 4 — numeración de nómina electrónica (vive en la empresa,
+            // no en dian_resolutions: la nómina no lleva resolución DIAN).
+            'payroll_prefix' => auth()->user()->company?->payroll_prefix,
+            'payroll_next_consecutive' => auth()->user()->company?->payroll_next_consecutive ?: 1,
+
             // Tab 4 — asignación a sede
             'assign_resolution_id' => null,
             'assign_location_id' => null,
@@ -373,6 +378,49 @@ class DianSettings extends Page implements HasForms
         ];
     }
 
+    /**
+     * Guarda el prefijo y el consecutivo de nomina electronica.
+     *
+     * Van en la empresa y no en dian_resolutions porque la nomina no lleva
+     * resolucion de la DIAN: el rango lo define el empleador.
+     */
+    public function savePayrollNumbering(): void
+    {
+        $empresa = auth()->user()->company;
+
+        if (! $empresa) {
+            $this->errorNotif('No hay empresa asociada al usuario');
+
+            return;
+        }
+
+        $prefijo = trim((string) ($this->data['payroll_prefix'] ?? ''));
+        $consecutivo = (int) ($this->data['payroll_next_consecutive'] ?? 1);
+
+        if ($prefijo === '') {
+            $this->errorNotif('El prefijo de nómina es obligatorio', 'Sin él no se puede numerar el documento.');
+
+            return;
+        }
+
+        if ($consecutivo < 1) {
+            $this->errorNotif('El consecutivo debe ser mayor a 0');
+
+            return;
+        }
+
+        $empresa->update([
+            'payroll_prefix' => strtoupper($prefijo),
+            'payroll_next_consecutive' => $consecutivo,
+        ]);
+
+        Notification::make()
+            ->success()
+            ->title('Numeración de nómina guardada')
+            ->body("Las nóminas se numerarán {$empresa->payroll_prefix}-{$consecutivo} en adelante.")
+            ->send();
+    }
+
     public function saveTab2(): void
     {
         // Leer raw data sin disparar validacion de TODO el formulario:
@@ -557,6 +605,31 @@ class DianSettings extends Page implements HasForms
                     Forms\Components\Placeholder::make('existing_resolutions')
                         ->label('')
                         ->content(fn () => $this->renderResolutionsList()),
+                ]),
+
+            Forms\Components\Section::make('Numeración de nómina electrónica')
+                ->description('La nómina electrónica NO lleva resolución de la DIAN: el prefijo y el consecutivo los define la empresa. Se usan al reportar cada desprendible.')
+                ->columns(2)
+                ->schema([
+                    Forms\Components\TextInput::make('payroll_prefix')
+                        ->label('Prefijo')
+                        ->maxLength(10)
+                        ->placeholder('NI')
+                        ->helperText('Ej: NI. Se combina con el consecutivo para numerar cada nómina.'),
+
+                    Forms\Components\TextInput::make('payroll_next_consecutive')
+                        ->label('Próximo consecutivo')
+                        ->numeric()
+                        ->minValue(1)
+                        ->default(1)
+                        ->helperText('Avanza solo con cada envío. Solo cámbialo si estás migrando de otro sistema y traes una numeración en curso.'),
+
+                    Forms\Components\Actions::make([
+                        Forms\Components\Actions\Action::make('savePayrollNumbering')
+                            ->label('Guardar numeración de nómina')
+                            ->icon('heroicon-o-check')
+                            ->action('savePayrollNumbering'),
+                    ])->columnSpanFull(),
                 ]),
 
             Forms\Components\Section::make('Nueva resolución')

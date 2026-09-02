@@ -39,6 +39,8 @@ class Company extends Model
         'settings',
         'active',
         'hidden_from_admin',
+        'payroll_prefix',
+        'payroll_next_consecutive',
         'trial_ends_at',
         'subscription_ends_at',
     ];

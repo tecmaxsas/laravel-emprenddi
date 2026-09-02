@@ -108,6 +108,42 @@ class DianApiClient
     }
 
     /**
+     * Envia una nomina electronica individual.
+     *
+     * En habilitacion el endpoint lleva el testSetId al final, igual que las
+     * facturas: /api/ubl2.1/payroll/{testSetId}. En produccion va sin el.
+     */
+    public function sendPayroll(array $payload, ?string $testSetId = null): array
+    {
+        $ruta = '/api/ubl2.1/payroll'.($testSetId ? '/'.$testSetId : '');
+
+        return $this->request('post', $ruta, $payload);
+    }
+
+    /**
+     * Nota de ajuste de nomina: reemplaza un documento ya enviado.
+     *
+     * El payload es el mismo de la nomina pero con novelty.novelty = true y el
+     * CUNE del documento que se corrige en novelty.uuidnov.
+     */
+    public function sendPayrollReplacementNote(array $payload, ?string $testSetId = null): array
+    {
+        $ruta = '/api/ubl2.1/payroll-adjust-note'.($testSetId ? '/'.$testSetId : '');
+
+        return $this->request('post', $ruta, $payload);
+    }
+
+    /**
+     * Nota de ajuste de nomina: elimina un documento ya enviado.
+     */
+    public function sendPayrollDeletionNote(array $payload, ?string $testSetId = null): array
+    {
+        $ruta = '/api/ubl2.1/payroll-delete-note'.($testSetId ? '/'.$testSetId : '');
+
+        return $this->request('post', $ruta, $payload);
+    }
+
+    /**
      * Consulta el estado de un documento ya emitido, por CUFE/UUID.
      *
      * OJO: la respuesta trae GetStatusZipResponse (no SendBillSyncResponse) y

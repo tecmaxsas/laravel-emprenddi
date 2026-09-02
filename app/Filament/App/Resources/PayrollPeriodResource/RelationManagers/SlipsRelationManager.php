@@ -3,6 +3,9 @@
 namespace App\Filament\App\Resources\PayrollPeriodResource\RelationManagers;
 
 use App\Models\PayrollSlip;
+use App\Services\Dian\PayrollDianSender;
+use App\Support\ModuleGate;
+use Filament\Notifications\Notification;
 use Filament\Infolists;
 use Filament\Infolists\Infolist;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -56,8 +59,55 @@ class SlipsRelationManager extends RelationManager
                     ->money('COP')
                     ->alignEnd()
                     ->toggleable(),
+                Tables\Columns\TextColumn::make('dian_status')
+                    ->label('DIAN')
+                    ->badge()
+                    ->placeholder('—')
+                    ->formatStateUsing(fn (?string $state) => PayrollSlip::DIAN_STATUSES[$state] ?? '—')
+                    ->color(fn (?string $state) => match ($state) {
+                        PayrollSlip::DIAN_ACCEPTED => 'success',
+                        PayrollSlip::DIAN_REJECTED => 'danger',
+                        PayrollSlip::DIAN_SENT => 'warning',
+                        default => 'gray',
+                    })
+                    ->description(fn (PayrollSlip $record) => $record->cune
+                        ? 'CUNE '.substr($record->cune, 0, 12).'…'
+                        : $record->dian_error_message),
             ])
             ->actions([
+                Tables\Actions\Action::make('sendDian')
+                    ->label('Enviar a DIAN')
+                    ->icon('heroicon-o-paper-airplane')
+                    ->color('info')
+                    ->visible(fn (PayrollSlip $record) => ModuleGate::active('payroll')
+                        && $record->dian_status !== PayrollSlip::DIAN_ACCEPTED)
+                    ->requiresConfirmation()
+                    ->modalHeading('Enviar la nómina a la DIAN')
+                    ->modalDescription(fn (PayrollSlip $record) => 'Se reportará el desprendible de '
+                        .$record->employee?->fullName().'. Si la DIAN lo acepta ya no se puede volver a enviar: '
+                        .'para corregirlo hay que emitir una nota de ajuste.')
+                    ->modalSubmitActionLabel('Enviar')
+                    ->action(function (PayrollSlip $record) {
+                        try {
+                            $resultado = app(PayrollDianSender::class)->send($record);
+
+                            $resultado['ok']
+                                ? Notification::make()->success()
+                                    ->title('Nómina aceptada por la DIAN')
+                                    ->body('CUNE '.$resultado['cune'])
+                                    ->send()
+                                : Notification::make()->danger()
+                                    ->title('La DIAN no aceptó el documento')
+                                    ->body($resultado['message'])
+                                    ->persistent()->send();
+                        } catch (\Throwable $e) {
+                            Notification::make()->danger()
+                                ->title('No se pudo enviar')
+                                ->body($e->getMessage())
+                                ->persistent()->send();
+                        }
+                    }),
+
                 Tables\Actions\ViewAction::make()
                     ->label('Desprendible')
                     ->modalHeading(fn (PayrollSlip $record) => 'Desprendible — '.$record->employee?->fullName())
