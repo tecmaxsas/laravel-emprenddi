@@ -7,6 +7,7 @@ use App\Models\Dian\Resolution;
 use App\Models\SaleInvoice;
 use App\Models\Tax;
 use App\Models\ThirdParty;
+use App\Support\DianDvCalculator;
 
 /**
  * Construye el payload UBL 2.1 para apidian.emprenddi.com a partir de un
@@ -201,7 +202,7 @@ class SaleInvoiceUblBuilder
             'municipality_id' => $customer->dian_municipality_id ?? self::DEFAULT_MUNICIPALITY_ID,
         ];
 
-        if (! empty($customer->dv) && $customer->dv !== 'NULL') {
+        if (DianDvCalculator::hasValue($customer->dv)) {
             $payload['dv'] = (int) $customer->dv;
         }
         if (! empty($customer->phone)) {

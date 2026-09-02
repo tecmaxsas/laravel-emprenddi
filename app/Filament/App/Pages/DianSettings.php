@@ -20,6 +20,7 @@ use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\HtmlString;
+use App\Support\DianDvCalculator;
 
 class DianSettings extends Page implements HasForms
 {
@@ -255,7 +256,7 @@ class DianSettings extends Page implements HasForms
             $this->errorNotif('No hay empresa asociada al usuario');
             return;
         }
-        if (! $company->nit || ! $company->dv) {
+        if (! $company->nit || ! DianDvCalculator::hasValue($company->dv)) {
             $this->errorNotif('La empresa debe tener NIT y dígito de verificación', 'Configura primero los datos básicos de la empresa.');
             return;
         }

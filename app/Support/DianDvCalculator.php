@@ -25,4 +25,26 @@ class DianDvCalculator
 
         return $remainder < 2 ? $remainder : 11 - $remainder;
     }
+
+    /**
+     * ¿El digito de verificacion tiene valor?
+     *
+     * No se puede preguntar con `! $dv`: el DV "0" es perfectamente valido y
+     * en PHP el string "0" es falsy, asi que una empresa con DV 0 quedaba
+     * marcada como "sin DV". Eso bloqueaba el registro ante la DIAN, borraba
+     * el guion del NIT en los documentos y omitia el dv del payload que se le
+     * envia a la DIAN.
+     *
+     * 'NULL' como texto aparece en datos importados de otros sistemas.
+     */
+    public static function hasValue(mixed $dv): bool
+    {
+        if ($dv === null) {
+            return false;
+        }
+
+        $dv = trim((string) $dv);
+
+        return $dv !== '' && strtoupper($dv) !== 'NULL';
+    }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\DianDvCalculator;
 use App\Traits\BelongsToCompany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -153,7 +154,9 @@ class ThirdParty extends Model
 
     public function fullDocument(): string
     {
-        return $this->dv ? "{$this->document_number}-{$this->dv}" : $this->document_number;
+        return DianDvCalculator::hasValue($this->dv)
+            ? "{$this->document_number}-{$this->dv}"
+            : $this->document_number;
     }
 
     public function rolesLabel(): string

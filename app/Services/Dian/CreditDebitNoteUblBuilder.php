@@ -5,6 +5,7 @@ namespace App\Services\Dian;
 use App\Models\CreditDebitNote;
 use App\Models\Tax;
 use App\Models\ThirdParty;
+use App\Support\DianDvCalculator;
 
 /**
  * Construye el payload UBL 2.1 para NC (credit-note) y ND (debit-note) hacia
@@ -94,7 +95,7 @@ class CreditDebitNoteUblBuilder
             'municipality_id' => $customer->dian_municipality_id ?? SaleInvoiceUblBuilder::DEFAULT_MUNICIPALITY_ID,
         ];
 
-        if (! empty($customer->dv) && $customer->dv !== 'NULL') {
+        if (DianDvCalculator::hasValue($customer->dv)) {
             $payload['dv'] = (int) $customer->dv;
         }
         if (! empty($customer->phone)) $payload['phone'] = $customer->phone;

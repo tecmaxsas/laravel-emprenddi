@@ -299,7 +299,7 @@ class ThirdPartyResource extends Resource
                     ->sortable()
                     ->fontFamily('mono')
                     ->description(fn (ThirdParty $record) => strtoupper($record->document_type)
-                        .($record->dv ? "-{$record->dv}" : '')),
+                        .(DianDvCalculator::hasValue($record->dv) ? "-{$record->dv}" : '')),
 
                 Tables\Columns\TextColumn::make('name')
                     ->label('Nombre')

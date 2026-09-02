@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\DianDvCalculator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -149,6 +150,8 @@ class Company extends Model
 
     public function fullNit(): string
     {
-        return $this->dv ? "{$this->nit}-{$this->dv}" : $this->nit;
+        return DianDvCalculator::hasValue($this->dv)
+            ? "{$this->nit}-{$this->dv}"
+            : $this->nit;
     }
 }
