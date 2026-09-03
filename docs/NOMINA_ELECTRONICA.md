@@ -93,8 +93,15 @@ Que estén al día:
 
 - **Parámetros de nómina** — salario mínimo, auxilio de transporte, porcentajes
   de seguridad social y parafiscales del año en curso.
-- **Empleados** con su contrato vigente: tipo de contrato, salario, frecuencia
-  de pago y método de pago.
+- **Empleados** con su contrato vigente. Al crear un empleado, el contrato se
+  captura en el mismo formulario (cargo, tipo de contrato, salario, frecuencia
+  de pago). Los contratos posteriores se administran en la pestaña *Contratos*
+  del empleado, que conserva el historial.
+  **La liquidación sólo toma empleados con contrato vigente.**
+- Si el empleado no es un caso ordinario, la sección **Nómina electrónica
+  (DIAN)** del formulario permite fijar su municipio de trabajo, el tipo y
+  subtipo de trabajador y la pensión de alto riesgo. Por defecto se reporta como
+  dependiente, sin subtipo, en el municipio de la empresa.
 - **Cuentas de nómina**, si se va a contabilizar.
 
 ### 3.2 Liquidar el período
@@ -119,7 +126,11 @@ revés.
 
 ### 3.4 Enviar a la DIAN
 
-En la tabla de desprendibles del período, cada fila tiene **Enviar a DIAN**.
+En la tabla de desprendibles del período: cada fila tiene **Enviar a DIAN**, y
+seleccionando varios aparece el envío **en lote** con la misma acción.
+
+En el lote se envía uno por uno. Los que ya estén aceptados se omiten, y si
+alguno falla los demás siguen: al final se dice cuáles fallaron y por qué.
 
 Qué pasa al darle:
 
@@ -163,13 +174,24 @@ El sistema no manda un documento que sabe que va a ser rechazado. Estos casos
 salen con un mensaje en pantalla y **no gastan consecutivo**:
 
 - **El período todavía no ha cerrado.** Dice qué día cierra.
-- **Deducciones que no se pueden desglosar.** La DIAN valida que el total de
-  deducciones sea igual a la suma de los conceptos detallados. Hoy el documento
-  sabe desglosar **salud y pensión**. Si el desprendible trae fondo de
-  solidaridad, retención en la fuente, libranzas u otros descuentos, el envío se
-  frena y el mensaje nombra los conceptos que sobran.
+- **Las deducciones no cuadran con el total.** La DIAN exige que
+  `deductions_total` sea exactamente la suma de los conceptos detallados. Si la
+  colilla no cuadra consigo misma, el mensaje dice de cuánto es la diferencia.
 - **Falta el prefijo de nómina** o el registro DIAN de la empresa está
   incompleto.
+
+### Cómo se reportan las deducciones
+
+| Concepto en la colilla | Campo del documento DIAN |
+|---|---|
+| `salud` | `eps_deduction` (concepto 1) |
+| `pension` | `pension_deduction` (concepto 5, o **7** si es alto riesgo) |
+| `fsp` | `fondosp_deduction_SP` (concepto 9) |
+| `retencion_fuente` | `withholding_at_source` |
+| Cualquier otro descuento | `other_deductions` |
+
+Los campos opcionales solo viajan si tienen valor. Mandarlos en cero hace que
+la DIAN los lea como un concepto declarado en cero, no como ausente.
 
 ---
 
@@ -177,38 +199,7 @@ salen con un mensaje en pantalla y **no gastan consecutivo**:
 
 Lo que **no** está implementado, para que no sorprenda:
 
-### 6.1 El envío es uno por uno
-
-No hay envío masivo ni selección múltiple. Una empresa de 50 empleados son 50
-clics cada mes.
-
-### 6.2 Deducciones extendidas
-
-Solo se desglosan salud y pensión (incluida la de alto riesgo, que usa su propio
-concepto). Un desprendible con FSP o retefuente **no se puede enviar** hasta que
-se implemente el payload extendido.
-
-Esto afecta directamente a salarios altos, donde el fondo de solidaridad es
-obligatorio.
-
-### 6.3 El formulario de empleado no tiene los campos DIAN
-
-Las columnas existen en la base de datos, pero **no hay dónde editarlas** desde
-la interfaz:
-
-| Campo | Valor que se usa hoy |
-|---|---|
-| Municipio del trabajador | El de la empresa |
-| Tipo de trabajador | Dependiente |
-| Subtipo de trabajador | No aplica |
-| Pensión de alto riesgo | No |
-
-Para la mayoría de empleados los valores por defecto son correctos. Pero un
-trabajador de **alto riesgo**, un **aprendiz del SENA** o alguien que vive en
-otro municipio se reportarían mal y no hay forma de corregirlo desde la
-aplicación.
-
-### 6.4 Notas de ajuste solo en la habilitación
+### 6.1 Notas de ajuste solo en la habilitación
 
 Las notas de ajuste están implementadas **únicamente para pasar el set de
 pruebas**. No existe el flujo para corregir una nómina real ya aceptada: ni la
@@ -216,7 +207,26 @@ pantalla, ni la numeración en producción, ni la nota de eliminación.
 
 Hoy, si una nómina aceptada quedó mal, no hay cómo corregirla desde el sistema.
 
----
+### 6.2 Deducciones que el motor no calcula
+
+El documento sabe reportar salud, pensión, fondo de solidaridad, retención en
+la fuente y una bolsa de "otras deducciones" para libranzas, préstamos y
+embargos.
+
+Lo que la liquidación no calcula tampoco se reporta: **fondo de subsistencia**
+(el que aplica desde 16 SMLMV), aportes voluntarios a pensión, AFC y sanciones
+disciplinarias. Si el cliente los necesita, hay que agregarlos primero al motor
+de liquidación.
+
+### 6.3 Devengados de un solo tipo
+
+Se reportan salario y auxilio de transporte. El estándar de la DIAN admite
+horas extra, recargos, vacaciones, primas, cesantías, incapacidades y
+comisiones como conceptos con su propio detalle; hoy todo eso, si existe en la
+colilla, entra sumado en el total devengado.
+
+Basta para una nómina ordinaria. No basta para reportar con detalle una
+liquidación con horas extra o prestaciones.
 
 ## 7. Dónde mirar cuando algo falla
 

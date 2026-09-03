@@ -5,8 +5,13 @@ namespace App\Filament\App\Resources;
 use App\Filament\App\Resources\EmployeeResource\Pages;
 use App\Filament\App\Resources\EmployeeResource\RelationManagers\ContractsRelationManager;
 use App\Filament\Concerns\ChecksPermission;
+use App\Models\Dian\Municipality;
+use App\Models\Dian\SubTypeWorker;
+use App\Models\Dian\TypeWorker;
 use App\Models\Employee;
+use App\Models\EmploymentContract;
 use App\Models\ThirdParty;
+use App\Services\Dian\PayrollCatalog;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -173,6 +178,110 @@ class EmployeeResource extends Resource
                         ->label('Tiene dependientes a cargo')
                         ->inline(false)
                         ->helperText('Aplica la deducción del 10% del ingreso, con tope de 32 UVT.'),
+                ]),
+
+            // Solo al crear. Despues el contrato se administra en su propia
+            // pestaña, porque un empleado acumula varios a lo largo del tiempo
+            // y hay que conservar el historial.
+            Forms\Components\Section::make('Contrato')
+                ->description('El contrato inicial. La liquidación sólo toma empleados con contrato vigente, '
+                    .'y de aquí salen el salario y el tipo de contrato que se reportan a la DIAN.')
+                ->columns(3)
+                ->visibleOn('create')
+                ->schema([
+                    Forms\Components\TextInput::make('contrato.position')
+                        ->label('Cargo')
+                        ->required()
+                        ->maxLength(80),
+
+                    Forms\Components\Select::make('contrato.contract_type')
+                        ->label('Tipo de contrato')
+                        ->options(EmploymentContract::CONTRACT_TYPES)
+                        ->default('indefinido')
+                        ->native(false)
+                        ->required(),
+
+                    Forms\Components\Select::make('contrato.salary_type')
+                        ->label('Tipo de salario')
+                        ->options(EmploymentContract::SALARY_TYPES)
+                        ->default('ordinario')
+                        ->native(false)
+                        ->required(),
+
+                    Forms\Components\TextInput::make('contrato.salary')
+                        ->label('Salario')
+                        ->numeric()
+                        ->minValue(0)
+                        ->prefix('$')
+                        ->required(),
+
+                    Forms\Components\Select::make('contrato.payment_frequency')
+                        ->label('Frecuencia de pago')
+                        ->options(EmploymentContract::PAYMENT_FREQUENCIES)
+                        ->default('mensual')
+                        ->native(false)
+                        ->required(),
+
+                    Forms\Components\Select::make('contrato.risk_class')
+                        ->label('Clase de riesgo (ARL)')
+                        ->options(EmploymentContract::RISK_CLASSES)
+                        ->default('1')
+                        ->native(false),
+
+                    Forms\Components\DatePicker::make('contrato.start_date')
+                        ->label('Inicio del contrato')
+                        ->default(now())
+                        ->required(),
+
+                    Forms\Components\DatePicker::make('contrato.end_date')
+                        ->label('Fin del contrato')
+                        ->helperText('Sólo para término fijo o por obra.'),
+
+                    Forms\Components\Toggle::make('contrato.transport_allowance_applies')
+                        ->label('Aplica auxilio de transporte')
+                        ->default(true),
+                ]),
+
+            Forms\Components\Section::make('Nómina electrónica (DIAN)')
+                ->description('Sólo hace falta para reportar la nómina a la DIAN. Los valores por defecto '
+                    .'sirven para un empleado normal; cámbialos si este no lo es.')
+                ->columns(2)
+                ->collapsed()
+                ->schema([
+                    Forms\Components\Select::make('dian_municipality_id')
+                        ->label('Municipio de trabajo')
+                        ->placeholder('El mismo de la empresa')
+                        ->searchable()
+                        ->getSearchResultsUsing(fn (string $search) => Municipality::query()
+                            ->where('name', 'ilike', "%{$search}%")
+                            ->orderBy('name')
+                            ->limit(40)
+                            ->pluck('name', 'id')
+                            ->all())
+                        ->getOptionLabelUsing(fn ($value) => Municipality::find($value)?->name)
+                        ->helperText('Déjalo vacío si trabaja donde está registrada la empresa.'),
+
+                    Forms\Components\Select::make('payroll_type_worker_id')
+                        ->label('Tipo de trabajador')
+                        ->options(fn () => TypeWorker::query()->orderBy('id')->pluck('name', 'id')->all())
+                        ->default(PayrollCatalog::TYPE_WORKER_DEPENDIENTE)
+                        ->searchable()
+                        ->native(false)
+                        ->helperText('Dependiente es el caso normal. Cámbialo para aprendices del SENA, '
+                            .'servicio doméstico o trabajadores de tiempo parcial.'),
+
+                    Forms\Components\Select::make('payroll_sub_type_worker_id')
+                        ->label('Subtipo de trabajador')
+                        ->options(fn () => SubTypeWorker::query()->orderBy('id')->pluck('name', 'id')->all())
+                        ->default(PayrollCatalog::SUB_TYPE_WORKER_NO_APLICA)
+                        ->searchable()
+                        ->native(false)
+                        ->helperText('"No aplica" salvo que sea pensionado activo o esté exceptuado de pensión.'),
+
+                    Forms\Components\Toggle::make('high_risk_pension')
+                        ->label('Pensión de alto riesgo')
+                        ->helperText('La DIAN usa un concepto de deducción distinto. Marcarlo mal reporta '
+                            .'mal el aporte a pensión.'),
                 ]),
 
             Forms\Components\Section::make('Vinculación')

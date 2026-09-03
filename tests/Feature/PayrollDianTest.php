@@ -356,38 +356,115 @@ class PayrollDianTest extends TestCase
     }
 
     /**
-     * La DIAN exige que el total de deducciones sea la suma de lo desglosado.
-     * Este payload solo desglosa salud y pensión, así que una colilla con
-     * fondo de solidaridad o retefuente se rechazaría con un mensaje inútil.
+     * El fondo de solidaridad es obligatorio por ley desde 4 SMLMV, así que no
+     * es un caso raro: si no se puede reportar, los salarios altos no se
+     * pueden transmitir.
      */
-    public function test_no_se_envia_una_colilla_con_deducciones_que_no_se_pueden_desglosar(): void
+    public function test_el_fondo_de_solidaridad_se_reporta_con_su_concepto(): void
     {
         $colilla = $this->colilla();
         $colilla->update([
             'prefix' => 'NI',
             'consecutive' => 1,
-            // 60.000 + 60.000 + 15.000 de fondo de solidaridad.
+            'solidarity_fund' => 15000,
+            // 60.000 salud + 60.000 pensión + 15.000 fondo.
             'total_deductions' => 135000,
         ]);
 
-        DB::table('payroll_slip_lines')->insert([
-            'payroll_slip_id' => $colilla->id,
-            'type' => 'deduction',
-            'concept_code' => 'fsp',
-            'concept_name' => 'Fondo de solidaridad pensional (1%)',
-            'amount' => 15000,
-            'created_at' => now(),
-            'updated_at' => now(),
+        $this->lineaDeDeduccion($colilla, 'fsp', 'Fondo de solidaridad pensional (1%)', 15000);
+
+        $payload = app(PayrollDocumentBuilder::class)->build($colilla->fresh());
+
+        $this->assertSame(9, $payload['deductions']['fondossp_type_law_deductions_id']);
+        $this->assertSame('15000.00', $payload['deductions']['fondosp_deduction_SP']);
+        $this->assertSame('135000.00', $payload['deductions']['deductions_total']);
+    }
+
+    public function test_la_retencion_en_la_fuente_va_en_su_propio_campo(): void
+    {
+        $colilla = $this->colilla();
+        $colilla->update([
+            'prefix' => 'NI',
+            'consecutive' => 1,
+            'total_deductions' => 200000,
+        ]);
+
+        $this->lineaDeDeduccion($colilla, 'retencion_fuente', 'Retención en la fuente', 80000);
+
+        $payload = app(PayrollDocumentBuilder::class)->build($colilla->fresh());
+
+        $this->assertSame('80000.00', $payload['deductions']['withholding_at_source']);
+        $this->assertArrayNotHasKey('other_deductions', $payload['deductions']);
+    }
+
+    /** Libranzas, préstamos y embargos van a la bolsa de "otras deducciones". */
+    public function test_los_descuentos_sin_concepto_propio_van_a_otras_deducciones(): void
+    {
+        $colilla = $this->colilla();
+        $colilla->update([
+            'prefix' => 'NI',
+            'consecutive' => 1,
+            'total_deductions' => 170000,
+        ]);
+
+        $this->lineaDeDeduccion($colilla, 'libranza', 'Libranza banco', 30000);
+        $this->lineaDeDeduccion($colilla, 'prestamo', 'Préstamo empresa', 20000);
+
+        $payload = app(PayrollDocumentBuilder::class)->build($colilla->fresh());
+
+        $this->assertSame('50000.00', $payload['deductions']['other_deductions'][0]['other_deduction']);
+        $this->assertSame('170000.00', $payload['deductions']['deductions_total']);
+    }
+
+    /** Sin deducciones extra, los campos opcionales no viajan. */
+    public function test_los_conceptos_en_cero_no_se_mandan(): void
+    {
+        $colilla = $this->colilla();
+        $colilla->update(['prefix' => 'NI', 'consecutive' => 1]);
+
+        $deducciones = app(PayrollDocumentBuilder::class)->build($colilla->fresh())['deductions'];
+
+        $this->assertArrayNotHasKey('fondossp_type_law_deductions_id', $deducciones);
+        $this->assertArrayNotHasKey('withholding_at_source', $deducciones);
+        $this->assertArrayNotHasKey('other_deductions', $deducciones);
+    }
+
+    /**
+     * La DIAN exige que el total sea la suma de lo detallado. Si la colilla no
+     * cuadra consigo misma, el envío se para: llegar a la DIAN con el total
+     * mal da un rechazo días después, con el consecutivo ya gastado.
+     */
+    public function test_no_se_envia_una_colilla_cuyas_deducciones_no_cuadran(): void
+    {
+        $colilla = $this->colilla();
+        $colilla->update([
+            'prefix' => 'NI',
+            'consecutive' => 1,
+            // 60.000 + 60.000 de las líneas, pero el total dice 200.000.
+            'total_deductions' => 200000,
         ]);
 
         try {
             app(PayrollDocumentBuilder::class)->build($colilla->fresh());
-            $this->fail('Debía frenar: los totales no cuadrarían.');
+            $this->fail('Debía frenar: los totales no cuadran.');
         } catch (\RuntimeException $e) {
-            $this->assertStringContainsString('15.000', $e->getMessage());
-            $this->assertStringContainsString('Fondo de solidaridad', $e->getMessage(),
-                'El mensaje tiene que decir qué deducción sobra.');
+            $this->assertStringContainsString('200.000', $e->getMessage());
+            $this->assertStringContainsString('80.000', $e->getMessage(),
+                'El mensaje tiene que decir de cuánto es la diferencia.');
         }
+    }
+
+    private function lineaDeDeduccion(PayrollSlip $colilla, string $codigo, string $nombre, float $monto): void
+    {
+        DB::table('payroll_slip_lines')->insert([
+            'payroll_slip_id' => $colilla->id,
+            'type' => 'deduction',
+            'concept_code' => $codigo,
+            'concept_name' => $nombre,
+            'amount' => $monto,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
     /** Los catálogos sembrados son los de apidian, no los de facturación. */

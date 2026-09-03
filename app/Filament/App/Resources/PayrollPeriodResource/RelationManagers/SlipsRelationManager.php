@@ -12,6 +12,7 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 
 class SlipsRelationManager extends RelationManager
 {
@@ -162,6 +163,57 @@ class SlipsRelationManager extends RelationManager
                                 Infolists\Components\TextEntry::make('prov_vacaciones')->label('Vacaciones')->money('COP'),
                             ]),
                     ])),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkAction::make('sendDianBulk')
+                    ->label('Enviar a DIAN')
+                    ->icon('heroicon-o-paper-airplane')
+                    ->color('info')
+                    ->visible(fn () => ModuleGate::active('payroll'))
+                    ->requiresConfirmation()
+                    ->modalHeading('Enviar varias nóminas a la DIAN')
+                    ->modalDescription('Se envía una por una. Las que ya estén aceptadas se omiten. '
+                        .'Si alguna falla, las demás siguen: al final se dice cuáles y por qué.')
+                    ->modalSubmitActionLabel('Enviar')
+                    ->deselectRecordsAfterCompletion()
+                    ->action(function (Collection $records) {
+                        $enviadas = 0;
+                        $fallos = [];
+
+                        foreach ($records as $colilla) {
+                            // Una colilla que falla no puede frenar a las demas:
+                            // en una nomina de 50 empleados eso obligaria a
+                            // relanzar todo por un solo caso.
+                            if ($colilla->dian_status === PayrollSlip::DIAN_ACCEPTED) {
+                                continue;
+                            }
+
+                            try {
+                                $resultado = app(PayrollDianSender::class)->send($colilla);
+
+                                $resultado['ok']
+                                    ? $enviadas++
+                                    : $fallos[] = $colilla->employee?->fullName().': '.$resultado['message'];
+                            } catch (\Throwable $e) {
+                                $fallos[] = $colilla->employee?->fullName().': '.$e->getMessage();
+                            }
+                        }
+
+                        if ($fallos === []) {
+                            Notification::make()->success()
+                                ->title($enviadas.' nómina(s) aceptadas por la DIAN')
+                                ->send();
+
+                            return;
+                        }
+
+                        Notification::make()->warning()
+                            ->title($enviadas.' aceptadas · '.count($fallos).' con problema')
+                            ->body(implode(' — ', array_slice($fallos, 0, 4))
+                                .(count($fallos) > 4 ? ' …y '.(count($fallos) - 4).' más.' : ''))
+                            ->persistent()
+                            ->send();
+                    }),
             ]);
     }
 }
