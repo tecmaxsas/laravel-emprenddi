@@ -47,6 +47,8 @@ class PayrollTestSetRunner
         $cliente = new DianApiClient($config);
         $this->asegurarAmbiente($config, $cliente);
 
+        $this->sanearRegistrosMalLeidos($empresa);
+
         $enviados = 0;
         $errores = 0;
         $detalle = [];
@@ -130,6 +132,46 @@ class PayrollTestSetRunner
                 ->where('status', PayrollTestDocument::ENVIADO)->count(),
             'errores' => $documentos->where('status', PayrollTestDocument::ERROR)->count(),
         ];
+    }
+
+    /**
+     * Corrige los documentos que quedaron marcados con error por culpa de una
+     * lectura equivocada de la respuesta, no de un rechazo de la DIAN.
+     *
+     * Vuelve a mirar la respuesta que ya quedo guardada: si no traia ninguna
+     * regla incumplida y si trae CUNE, el documento habia llegado bien. Sin
+     * esto habria que reenviar a la DIAN documentos que ya acepto, y ademas
+     * sus notas de ajuste nunca saldrian, porque una nota necesita que su
+     * nomina figure recibida.
+     */
+    protected function sanearRegistrosMalLeidos(Company $empresa): void
+    {
+        $sospechosos = PayrollTestDocument::query()
+            ->where('company_id', $empresa->id)
+            ->where('status', PayrollTestDocument::ERROR)
+            ->whereNotNull('response')
+            ->whereNotNull('cune')
+            ->get();
+
+        foreach ($sospechosos as $documento) {
+            $cuerpo = $documento->response['ResponseDian']['Envelope']['Body'] ?? [];
+
+            $async = $cuerpo['SendTestSetAsyncResponse']['SendTestSetAsyncResult'] ?? null;
+            $sync = $this->bloqueSincrono($cuerpo);
+
+            if ($async === null && $sync === null) {
+                continue;
+            }
+
+            if ($this->erroresDe($async) !== [] || $this->erroresDe($sync) !== []) {
+                continue; // Rechazo de verdad: se queda como esta.
+            }
+
+            $documento->update([
+                'status' => PayrollTestDocument::ENVIADO,
+                'error_message' => null,
+            ]);
+        }
     }
 
     /** @return array{ok:bool, mensaje:string} */
@@ -348,28 +390,7 @@ class PayrollTestSetRunner
      */
     protected function erroresDe(?array $bloque): array
     {
-        if (! $bloque) {
-            return [];
-        }
-
-        $reglas = [];
-
-        foreach (['ErrorMessageList', 'ErrorMessage'] as $clave) {
-            $contenido = $bloque[$clave] ?? null;
-
-            if ($contenido === null || $contenido === '' || $contenido === []) {
-                continue;
-            }
-
-            $lista = is_array($contenido) ? $contenido : [$contenido];
-            array_walk_recursive($lista, function ($v) use (&$reglas) {
-                if (is_string($v) && trim($v) !== '') {
-                    $reglas[] = trim($v);
-                }
-            });
-        }
-
-        return array_values(array_unique($reglas));
+        return DianErrorReader::reglas($bloque);
     }
 
     /** @param  array<string, mixed>  $respuesta */

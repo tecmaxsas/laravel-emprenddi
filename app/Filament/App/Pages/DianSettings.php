@@ -12,6 +12,7 @@ use App\Models\Dian\Resolution;
 use App\Models\Dian\TaxLiability;
 use App\Models\Location;
 use App\Services\Dian\DianApiClient;
+use App\Services\Dian\DianErrorReader;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
@@ -977,29 +978,7 @@ class DianSettings extends Page implements HasForms
      */
     protected function reglasDeLaDian(?array $respuestaDian): array
     {
-        if (! $respuestaDian) {
-            return [];
-        }
-
-        $reglas = [];
-
-        foreach (['ErrorMessage', 'ErrorMessageList'] as $clave) {
-            $bloque = $respuestaDian[$clave] ?? null;
-
-            if ($bloque === null || $bloque === '' || $bloque === []) {
-                continue;
-            }
-
-            // array_walk_recursive recibe por referencia: necesita variable.
-            $lista = is_array($bloque) ? $bloque : [$bloque];
-            array_walk_recursive($lista, function ($v) use (&$reglas) {
-                if (is_string($v) && trim($v) !== '') {
-                    $reglas[] = trim($v);
-                }
-            });
-        }
-
-        return array_values(array_unique($reglas));
+        return DianErrorReader::reglas($respuestaDian);
     }
 
     /**

@@ -188,20 +188,7 @@ class PayrollDianSender
     protected function procesarAsincrona(PayrollSlip $slip, array $asincrona, array $data, ?string $cune): array
     {
         // Si el archivo viene mal armado la DIAN lo dice en el mismo acuse.
-        $errores = [];
-        foreach (['ErrorMessageList', 'ErrorMessage'] as $clave) {
-            $bloque = $asincrona[$clave] ?? null;
-            if ($bloque === null || $bloque === '' || $bloque === []) {
-                continue;
-            }
-            // array_walk_recursive recibe por referencia: necesita variable.
-            $lista = is_array($bloque) ? $bloque : [$bloque];
-            array_walk_recursive($lista, function ($v) use (&$errores) {
-                if (is_string($v) && trim($v) !== '') {
-                    $errores[] = trim($v);
-                }
-            });
-        }
+        $errores = DianErrorReader::reglas($asincrona);
 
         if ($errores !== []) {
             return $this->rechazar(
@@ -279,21 +266,7 @@ class PayrollDianSender
         $mensaje = (string) ($respuestaDian['StatusMessage'] ?? '');
 
         // Las reglas concretas que fallaron van aqui, no en la descripcion.
-        // Segun el caso apidian lo entrega como string, como lista bajo
-        // `string`, o como lista directa.
-        $detalle = $respuestaDian['ErrorMessage']['string'] ?? $respuestaDian['ErrorMessage'] ?? null;
-        if (is_string($detalle)) {
-            $detalle = [$detalle];
-        }
-
-        $reglas = [];
-        if (is_array($detalle)) {
-            array_walk_recursive($detalle, function ($v) use (&$reglas) {
-                if (is_string($v) && trim($v) !== '') {
-                    $reglas[] = trim($v);
-                }
-            });
-        }
+        $reglas = DianErrorReader::reglas($respuestaDian);
 
         $partes = array_filter([
             $statusCode !== '' ? "[{$statusCode}]" : null,

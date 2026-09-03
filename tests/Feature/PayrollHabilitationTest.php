@@ -146,6 +146,99 @@ class PayrollHabilitationTest extends TestCase
         $this->assertSame(7, $payload['consecutive']);
     }
 
+    /**
+     * La DIAN responde SOAP y apidian lo pasa a JSON, así que un elemento
+     * vacío no llega como null sino como su representación XML:
+     * ErrorMessageList: {_attributes: {nil: "true"}}.
+     *
+     * Leer eso buscando textos devuelve "true", que no es ningún error. Con
+     * eso marcábamos como fallidos documentos que la DIAN había aceptado y el
+     * usuario veía "Nómina 1 → true" sin nada que corregir.
+     */
+    public function test_un_acuse_sin_errores_no_se_lee_como_fallo(): void
+    {
+        Http::fake([
+            '*' => Http::response([
+                'message' => 'Nomina Individual #NI40 generada con éxito',
+                'cune' => 'cune-real',
+                'ResponseDian' => ['Envelope' => ['Body' => ['SendTestSetAsyncResponse' => [
+                    'SendTestSetAsyncResult' => [
+                        'ErrorMessageList' => ['_attributes' => ['nil' => 'true']],
+                        'ZipKey' => 'zip-real',
+                    ],
+                ]]]],
+            ], 200),
+        ]);
+
+        $resultado = $this->runner()->run($this->company, $this->config());
+
+        $this->assertSame(PayrollTestSetRunner::DOCUMENTOS_POR_TANDA, $resultado['enviados']);
+        $this->assertSame(0, $resultado['errores'], 'El "nil: true" del XML se leyó como motivo de rechazo.');
+
+        $documento = PayrollTestDocument::query()
+            ->where('company_id', $this->companyId)->where('slot', 1)->first();
+
+        $this->assertSame(PayrollTestDocument::ENVIADO, $documento->status);
+        $this->assertNull($documento->error_message);
+        $this->assertSame('cune-real', $documento->cune);
+        $this->assertTrue($documento->puedeSerReemplazada(), 'Sin esto su nota de ajuste nunca sale.');
+    }
+
+    /**
+     * Los documentos que quedaron marcados con error por la mala lectura no se
+     * reenvían: se relee la respuesta guardada. Reenviarlos sería mandar a la
+     * DIAN documentos que ya aceptó.
+     */
+    public function test_recupera_los_documentos_marcados_con_error_por_mala_lectura(): void
+    {
+        PayrollTestDocument::query()->create([
+            'company_id' => $this->companyId,
+            'kind' => PayrollTestDocument::KIND_NOMINA,
+            'slot' => 1,
+            'prefix' => 'NI',
+            'consecutive' => 11,
+            'cune' => 'cune-que-si-llego',
+            'status' => PayrollTestDocument::ERROR,
+            'error_message' => 'true',
+            'response' => ['ResponseDian' => ['Envelope' => ['Body' => ['SendTestSetAsyncResponse' => [
+                'SendTestSetAsyncResult' => [
+                    'ErrorMessageList' => ['_attributes' => ['nil' => 'true']],
+                    'ZipKey' => 'zip',
+                ],
+            ]]]]],
+        ]);
+
+        // Un rechazo de verdad no se toca.
+        PayrollTestDocument::query()->create([
+            'company_id' => $this->companyId,
+            'kind' => PayrollTestDocument::KIND_NOMINA,
+            'slot' => 2,
+            'cune' => 'cune-rechazado',
+            'status' => PayrollTestDocument::ERROR,
+            'error_message' => 'NIE023',
+            'response' => ['ResponseDian' => ['Envelope' => ['Body' => ['SendTestSetAsyncResponse' => [
+                'SendTestSetAsyncResult' => ['ErrorMessageList' => ['string' => ['Regla: NIE023, Rechazo: ...']]],
+            ]]]]],
+        ]);
+
+        Http::fake(['*' => $this->respuestaRecibida()]);
+
+        $this->runner()->run($this->company, $this->config());
+
+        $uno = PayrollTestDocument::query()
+            ->where('company_id', $this->companyId)
+            ->where('kind', PayrollTestDocument::KIND_NOMINA)->where('slot', 1)->first();
+
+        $this->assertSame(PayrollTestDocument::ENVIADO, $uno->status);
+        $this->assertSame(11, $uno->consecutive, 'Se reenvió un documento que la DIAN ya había aceptado.');
+
+        $dos = PayrollTestDocument::query()
+            ->where('company_id', $this->companyId)
+            ->where('kind', PayrollTestDocument::KIND_NOMINA)->where('slot', 2)->first();
+
+        $this->assertNotSame('cune-rechazado', $dos->cune, 'Un rechazo real sí se reintenta.');
+    }
+
     /** Un error queda anotado con su motivo y se reintenta en la próxima pasada. */
     public function test_un_error_queda_registrado_y_se_reintenta(): void
     {
