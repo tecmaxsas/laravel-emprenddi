@@ -98,6 +98,7 @@ class DianSettings extends Page implements HasForms
             'software_payroll_pin' => $config->software_payroll_pin,
             'payroll_test_set_id' => $config->payroll_test_set_id,
             'payroll_test_consecutive' => $config->payroll_test_consecutive ?: 1,
+            'payroll_environment' => $config->payroll_environment ?: CompanyConfig::ENV_TEST,
             'payroll_test_prefix' => auth()->user()->company?->payroll_prefix ?: 'NI',
             'payroll_res_prefix' => auth()->user()->company?->payroll_prefix ?: 'NI',
             'payroll_res_from' => 1,
@@ -541,7 +542,69 @@ class DianSettings extends Page implements HasForms
                             .'</pre></details>'
                         )),
                 ]),
+
+            Forms\Components\Section::make('Paso 4 — Ambiente de nómina')
+                ->description('Va aparte del de facturación: son dos habilitaciones distintas y la empresa puede estar en producción para facturar y todavía en pruebas para nómina.')
+                ->schema([
+                    Forms\Components\Select::make('payroll_environment')
+                        ->label('Ambiente de nómina')
+                        ->options(CompanyConfig::ENVIRONMENTS)
+                        ->default(CompanyConfig::ENV_TEST)
+                        ->helperText('La DIAN valida este dato en cada documento (regla NIE023). Pásalo a Producción sólo cuando ella apruebe el set de pruebas.'),
+
+                    Forms\Components\Actions::make([
+                        Forms\Components\Actions\Action::make('savePayrollEnvironment')
+                            ->label('Aplicar ambiente de nómina')
+                            ->icon('heroicon-o-check')
+                            ->action('savePayrollEnvironment'),
+                    ]),
+
+                    Forms\Components\Placeholder::make('payroll_env_response')
+                        ->label('')
+                        ->content(fn () => $this->apiResponseBlock('payroll_env')),
+                ]),
         ];
+    }
+
+    public function savePayrollEnvironment(): void
+    {
+        $config = $this->config()->refresh();
+
+        if (! $config->api_token) {
+            $this->errorNotif('No hay token DIAN');
+
+            return;
+        }
+
+        $env = (int) ($this->data['payroll_environment'] ?? CompanyConfig::ENV_TEST);
+
+        if (! in_array($env, [CompanyConfig::ENV_PRODUCTION, CompanyConfig::ENV_TEST], true)) {
+            $this->errorNotif('Selecciona el ambiente de nómina');
+
+            return;
+        }
+
+        // El endpoint pide los tres ambientes juntos, asi que hay que mandar
+        // el de facturacion tal como esta o se lo lleva por delante.
+        $result = (new DianApiClient($config))->changeEnvironment(
+            (int) ($config->environment ?: CompanyConfig::ENV_TEST),
+            $env,
+        );
+
+        $this->recordApiResponse('payroll_env', $result);
+
+        if (! $result['ok']) {
+            $this->errorNotif('No fue posible cambiar el ambiente de nómina', $this->detalleDelFallo($result));
+
+            return;
+        }
+
+        $config->update(['payroll_environment' => $env]);
+
+        $this->successNotif(
+            'Ambiente de nómina actualizado',
+            'La nómina opera en '.(CompanyConfig::ENVIRONMENTS[$env] ?? '?').'. El de facturación no se tocó.',
+        );
     }
 
     /**
@@ -618,9 +681,20 @@ class DianSettings extends Page implements HasForms
             return;
         }
 
+        $cliente = new DianApiClient($config);
+
+        // La DIAN valida el atributo Ambiente del documento (regla NIE023) y
+        // el set de pruebas exige 2 = habilitacion. apidian lo toma de la
+        // configuracion de la empresa, no del payload, asi que hay que
+        // asegurarlo antes de enviar. Se conserva el de facturacion: puede
+        // estar ya en produccion y son tramites independientes.
+        if (! $this->asegurarAmbienteDeNominaEnHabilitacion($config, $cliente)) {
+            return;
+        }
+
         $payload = $this->buildTestPayrollPayload($consecutivo, $prefijo);
 
-        $result = (new DianApiClient($config))->sendPayroll($payload, $testSetId);
+        $result = $cliente->sendPayroll($payload, $testSetId);
 
         $this->recordApiResponse('payroll_test', $result);
         // Se guarda lo enviado: apidian oculta el detalle de sus 500, asi que
@@ -693,6 +767,44 @@ class DianSettings extends Page implements HasForms
             'La DIAN rechazó la nómina de prueba '.$prefijo.$consecutivo,
             $this->motivoDelRechazo($respuestaDian)
         );
+    }
+
+    /**
+     * Deja el ambiente de nomina en habilitacion (2) antes de enviar el set.
+     *
+     * El documento de nomina lleva un atributo Ambiente y la DIAN lo valida
+     * con la regla NIE023: en el set de pruebas tiene que ser 2. Como apidian
+     * lo saca de la configuracion de la empresa y no del payload, una empresa
+     * que quedo con la nomina en produccion ve rechazado todo el set sin que
+     * nada en el JSON lo explique.
+     *
+     * @return bool false si no se pudo dejar en habilitacion (ya se notifico).
+     */
+    protected function asegurarAmbienteDeNominaEnHabilitacion(CompanyConfig $config, DianApiClient $cliente): bool
+    {
+        if ((int) $config->payroll_environment === CompanyConfig::ENV_TEST) {
+            return true;
+        }
+
+        $result = $cliente->changeEnvironment(
+            (int) ($config->environment ?: CompanyConfig::ENV_TEST),
+            CompanyConfig::ENV_TEST,
+        );
+
+        $this->recordApiResponse('payroll_env', $result);
+
+        if (! $result['ok']) {
+            $this->errorNotif(
+                'No se pudo poner la nómina en ambiente de habilitación',
+                $this->detalleDelFallo($result).' — Sin esto la DIAN rechaza todo el set (regla NIE023).'
+            );
+
+            return false;
+        }
+
+        $config->update(['payroll_environment' => CompanyConfig::ENV_TEST]);
+
+        return true;
     }
 
     /**
@@ -1857,7 +1969,12 @@ class DianSettings extends Page implements HasForms
 
         $env = (int) $state['environment'];
 
-        $result = (new DianApiClient($config))->changeEnvironment($env);
+        // El de nomina se conserva: cambiar facturacion a produccion no puede
+        // sacar la nomina de su habilitacion, que es un tramite aparte.
+        $result = (new DianApiClient($config))->changeEnvironment(
+            $env,
+            (int) ($config->payroll_environment ?: 2),
+        );
         $this->recordApiResponse('tab5', $result);
 
         if ($result['ok']) {

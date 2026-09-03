@@ -744,6 +744,92 @@ class PayrollDianTest extends TestCase
         $this->assertLessThanOrEqual($emision, $payload['payment_dates'][0]['payment_date']);
     }
 
+    /**
+     * Regla NIE023: la DIAN valida el atributo Ambiente del documento y en el
+     * set de pruebas exige habilitación. apidian lo saca de la configuración
+     * de la empresa, no del payload, así que hay que asegurarlo antes.
+     */
+    public function test_el_set_de_pruebas_pone_la_nomina_en_habilitacion(): void
+    {
+        $this->configDian();
+        CompanyConfig::query()->where('company_id', $this->companyId)->update([
+            'payroll_test_set_id' => 'zz-set',
+            'payroll_software_configured' => true,
+            'environment' => CompanyConfig::ENV_PRODUCTION,
+            'payroll_environment' => CompanyConfig::ENV_PRODUCTION,
+        ]);
+
+        Http::fake(['*' => Http::response(['message' => 'ok'], 200)]);
+
+        Filament::setCurrentPanel(Filament::getPanel('app'));
+        app(CurrentCompany::class)->set($this->company->refresh());
+
+        Livewire::test(DianSettings::class)->call('sendTestPayroll');
+
+        Http::assertSent(function ($request) {
+            if (! str_contains($request->url(), '/config/environment')) {
+                return false;
+            }
+
+            // El de facturación se conserva: puede estar ya en producción y
+            // son dos habilitaciones independientes.
+            return $request['payroll_type_environment_id'] === CompanyConfig::ENV_TEST
+                && $request['type_environment_id'] === CompanyConfig::ENV_PRODUCTION;
+        });
+
+        $this->assertSame(CompanyConfig::ENV_TEST, (int) CompanyConfig::query()
+            ->where('company_id', $this->companyId)->value('payroll_environment'));
+    }
+
+    /** Si ya está en habilitación no se vuelve a pedir el cambio. */
+    public function test_no_se_repite_el_cambio_de_ambiente_si_ya_esta_en_habilitacion(): void
+    {
+        $this->configDian();
+        CompanyConfig::query()->where('company_id', $this->companyId)->update([
+            'payroll_test_set_id' => 'zz-set',
+            'payroll_software_configured' => true,
+            'payroll_environment' => CompanyConfig::ENV_TEST,
+        ]);
+
+        Http::fake(['*' => Http::response(['message' => 'ok'], 200)]);
+
+        Filament::setCurrentPanel(Filament::getPanel('app'));
+        app(CurrentCompany::class)->set($this->company->refresh());
+
+        Livewire::test(DianSettings::class)->call('sendTestPayroll');
+
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), '/config/environment'));
+    }
+
+    /**
+     * Pasar la nómina a producción no puede devolver la facturación a pruebas:
+     * el endpoint pide los tres ambientes juntos y es fácil pisarlos.
+     */
+    public function test_el_ambiente_de_nomina_no_pisa_el_de_facturacion(): void
+    {
+        $this->configDian();
+        CompanyConfig::query()->where('company_id', $this->companyId)->update([
+            'environment' => CompanyConfig::ENV_PRODUCTION,
+            'payroll_environment' => CompanyConfig::ENV_TEST,
+        ]);
+
+        Http::fake(['*' => Http::response(['message' => 'ok'], 200)]);
+
+        Filament::setCurrentPanel(Filament::getPanel('app'));
+        app(CurrentCompany::class)->set($this->company->refresh());
+
+        Livewire::test(DianSettings::class)
+            ->set('data.payroll_environment', CompanyConfig::ENV_PRODUCTION)
+            ->call('savePayrollEnvironment');
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/config/environment')
+            && $request['type_environment_id'] === CompanyConfig::ENV_PRODUCTION
+            && $request['payroll_type_environment_id'] === CompanyConfig::ENV_PRODUCTION);
+
+        $this->assertSame(CompanyConfig::ENV_PRODUCTION, (int) CompanyConfig::query()
+            ->where('company_id', $this->companyId)->value('payroll_environment'));
+    }
+
     /** Sin TestSetId no se envía nada: no tiene a dónde ir. */
     public function test_no_se_envia_el_set_de_pruebas_sin_testsetid(): void
     {
@@ -857,7 +943,9 @@ class PayrollDianTest extends TestCase
 
         Livewire::test(DianSettings::class)->call('sendTestPayroll');
 
-        Http::assertSent(fn ($request) => $request->data()['prefix'] === 'NI');
+        // El flujo puede mandar más de una petición (p. ej. el ambiente), así
+        // que se busca la de la nómina en vez de asumir que sólo hay una.
+        Http::assertSent(fn ($request) => ($request->data()['prefix'] ?? null) === 'NI');
     }
 
     /** El payload enviado queda a la vista: apidian oculta el detalle de sus 500. */
@@ -928,12 +1016,22 @@ class PayrollDianTest extends TestCase
             'payroll_test_set_id' => null,
         ])->save();
 
-        $this->limpiar[] = function () use ($config, $original) {
-            if ($original) {
-                $config->fill($original->getAttributes())->save();
-            } else {
-                $config->delete();
+        // Se restaura por query y no con fill()->save() sobre $config: ese
+        // objeto se quedó con los valores del fill de arriba, así que las
+        // columnas que la prueba cambió después no salían dirty y no se
+        // escribían. La fila quedaba modificada para la prueba siguiente.
+        $this->limpiar[] = function () use ($original) {
+            if (! $original) {
+                CompanyConfig::query()->where('company_id', $this->companyId)->delete();
+
+                return;
             }
+
+            CompanyConfig::query()
+                ->where('company_id', $this->companyId)
+                ->update(collect($original->getAttributes())
+                    ->except(['id', 'created_at', 'updated_at'])
+                    ->all());
         };
     }
 }

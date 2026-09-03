@@ -199,12 +199,21 @@ class DianApiClient
     /**
      * Tab 5 — Cambiar entre Pruebas (2) y Producción (1).
      * El API requiere los 3 IDs de ambiente (factura, nómina, equivalentes).
+     *
+     * El de nomina va aparte porque su habilitacion es un tramite propio: una
+     * empresa que ya factura en produccion puede estar todavia enviando su set
+     * de pruebas de nomina. Igualar los tres dejaba la nomina en produccion y
+     * la DIAN rechazaba el set entero con la regla NIE023, que valida
+     * justamente ese atributo.
+     *
+     * @param  int|null  $payrollEnvironment  Ambiente de nomina. Si va null se
+     *                                        usa el mismo de facturacion.
      */
-    public function changeEnvironment(int $environment): array
+    public function changeEnvironment(int $environment, ?int $payrollEnvironment = null): array
     {
         return $this->request('put', '/api/ubl2.1/config/environment', [
             'type_environment_id' => $environment,
-            'payroll_type_environment_id' => $environment,
+            'payroll_type_environment_id' => $payrollEnvironment ?? $environment,
             'eqdocs_type_environment_id' => $environment,
         ]);
     }

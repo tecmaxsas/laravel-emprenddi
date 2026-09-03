@@ -46,12 +46,14 @@ class CompanyConfig extends Model
         'payroll_software_configured',
         'payroll_test_set_id',
         'payroll_test_consecutive',
+        'payroll_environment',
 ];
 
     protected function casts(): array
     {
         return [
             'payroll_software_configured' => 'boolean',
+            'payroll_environment' => 'integer',
             'environment' => 'integer',
             'company_registered' => 'boolean',
             'software_configured' => 'boolean',
