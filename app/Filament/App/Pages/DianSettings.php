@@ -22,6 +22,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\HtmlString;
 use App\Support\DianDvCalculator;
 use App\Services\Dian\PayrollCatalog;
+use App\Services\Dian\PayrollTestSetBuilder;
+use App\Services\Dian\PayrollTestSetRunner;
 
 class DianSettings extends Page implements HasForms
 {
@@ -52,6 +54,9 @@ class DianSettings extends Page implements HasForms
 
     /** Ultimo payload de prueba de nomina, para poder reproducirlo. */
     public ?array $lastPayrollTestPayload = null;
+
+    /** @var list<string> Lo que paso en la ultima tanda del set de pruebas. */
+    public array $lastHabilitationLog = [];
 
     public static function canAccess(): bool
     {
@@ -502,15 +507,28 @@ class DianSettings extends Page implements HasForms
                         ->helperText('Avanza con cada envío, aceptado o no: la DIAN no admite dos documentos con el mismo número.'),
 
                     Forms\Components\Placeholder::make('payroll_test_progress')
-                        ->label('Lo que pide la DIAN')
-                        ->content(fn () => new HtmlString(
-                            '<div style="font-size:12.5px; line-height:1.7;">'
-                            .'<strong>10 nóminas</strong> y <strong>10 notas de ajuste</strong>, '
-                            .'de las que deben aceptarse <strong>4 y 4</strong>.<br>'
-                            .'Envía una por una y revisa el avance en el portal de la DIAN: '
-                            .'el estado real lo manda ella, no nosotros.'
-                            .'</div>'
-                        )),
+                        ->label('Avance del set')
+                        ->content(fn () => new HtmlString($this->avanceDelSet())),
+
+                    Forms\Components\Actions::make([
+                        Forms\Components\Actions\Action::make('runPayrollHabilitation')
+                            ->label('Iniciar habilitación')
+                            ->icon('heroicon-o-play')
+                            ->color('success')
+                            ->requiresConfirmation()
+                            ->modalHeading('Enviar el set de pruebas de nómina')
+                            ->modalDescription(
+                                'Envía las nóminas y las notas de ajuste que falten, de a '
+                                .PayrollTestSetRunner::DOCUMENTOS_POR_TANDA.' por vez. '
+                                .'Puedes volver a darle las veces que haga falta: no reenvía lo que ya pasó.'
+                            )
+                            ->action('runPayrollHabilitation'),
+                    ]),
+
+                    Forms\Components\Placeholder::make('payroll_runner_response')
+                        ->label('')
+                        ->visible(fn () => $this->lastHabilitationLog !== [])
+                        ->content(fn () => new HtmlString($this->bitacoraDelUltimoIntento())),
 
                     Forms\Components\Actions::make([
                         Forms\Components\Actions\Action::make('sendTestPayroll')
@@ -605,6 +623,107 @@ class DianSettings extends Page implements HasForms
             'Ambiente de nómina actualizado',
             'La nómina opera en '.(CompanyConfig::ENVIRONMENTS[$env] ?? '?').'. El de facturación no se tocó.',
         );
+    }
+
+    /**
+     * Manda la siguiente tanda del set de pruebas.
+     *
+     * Se puede volver a lanzar tantas veces como haga falta: cada pasada envía
+     * solo lo que falta. Eso no es comodidad, es necesario — la DIAN valida de
+     * forma asíncrona y una nota de ajuste no se puede mandar hasta que su
+     * nómina le conste recibida.
+     */
+    public function runPayrollHabilitation(): void
+    {
+        $empresa = auth()->user()->company;
+
+        if (! $empresa) {
+            $this->errorNotif('No hay empresa activa');
+
+            return;
+        }
+
+        $runner = app(PayrollTestSetRunner::class);
+
+        try {
+            $resultado = $runner->run($empresa, $this->config()->refresh());
+        } catch (\RuntimeException $e) {
+            $this->errorNotif('No se puede iniciar la habilitación', $e->getMessage());
+
+            return;
+        }
+
+        $this->lastHabilitationLog = $resultado['detalle'];
+        $this->data['payroll_test_consecutive'] = $this->config()->refresh()->payroll_test_consecutive;
+
+        if ($resultado['completo']) {
+            $this->successNotif(
+                'Set de pruebas completo',
+                'Se enviaron las '.PayrollTestSetRunner::NOMINAS_REQUERIDAS.' nóminas y las '
+                .PayrollTestSetRunner::NOTAS_REQUERIDAS.' notas. El veredicto lo da la DIAN en su portal: '
+                .'necesitas 4 aceptadas de cada tipo.'
+            );
+
+            return;
+        }
+
+        // Ni un solo envío en toda la pasada: las notas están esperando a que
+        // la DIAN registre sus nóminas. Decirlo, en vez de dejar el botón
+        // pareciendo que no hace nada.
+        if ($resultado['enviados'] === 0 && $resultado['errores'] === 0) {
+            $this->errorNotif(
+                'Todavía no hay nada que enviar',
+                'Faltan '.$resultado['pendientes'].' documentos, pero son notas de ajuste cuyas nóminas '
+                .'la DIAN aún no ha registrado. Espera unos minutos y vuelve a darle.'
+            );
+
+            return;
+        }
+
+        $this->successNotif(
+            'Enviados '.$resultado['enviados'].' documentos'
+            .($resultado['errores'] ? ' · '.$resultado['errores'].' con error' : ''),
+            'Faltan '.$resultado['pendientes'].'. Vuelve a darle a Iniciar habilitación.'
+        );
+    }
+
+    /** Resumen de lo que lleva enviado el set, para la pantalla. */
+    protected function avanceDelSet(): string
+    {
+        $empresa = auth()->user()->company;
+
+        if (! $empresa) {
+            return '';
+        }
+
+        $resumen = app(PayrollTestSetRunner::class)->resumen($empresa);
+
+        $barra = function (string $etiqueta, int $hechos, int $total): string {
+            $color = $hechos >= $total ? '#16a34a' : '#f59e0b';
+
+            return '<div style="margin:4px 0;"><strong>'.$etiqueta.':</strong> '
+                .'<span style="color:'.$color.'; font-weight:700;">'.$hechos.' de '.$total.'</span> enviadas</div>';
+        };
+
+        return '<div style="font-size:12.5px; line-height:1.7;">'
+            .$barra('Nóminas', $resumen['nominas'], PayrollTestSetRunner::NOMINAS_REQUERIDAS)
+            .$barra('Notas de ajuste', $resumen['notas'], PayrollTestSetRunner::NOTAS_REQUERIDAS)
+            .($resumen['errores'] ? '<div style="color:#dc2626;">'.$resumen['errores'].' con error: se reintentan al volver a darle.</div>' : '')
+            .'<div style="margin-top:6px; opacity:.75;">De cada tipo la DIAN tiene que <strong>aceptar 4</strong>. '
+            .'Enviado no es aceptado: el veredicto lo da ella en su portal, de forma asíncrona.</div>'
+            .'</div>';
+    }
+
+    protected function bitacoraDelUltimoIntento(): string
+    {
+        $lineas = array_map(
+            fn (string $l) => '<li style="margin:2px 0;">'.e($l).'</li>',
+            $this->lastHabilitationLog,
+        );
+
+        return '<div style="font-size:12px; padding:10px; background:#0f172a; color:#e2e8f0; border-radius:8px;">'
+            .'<strong>Última tanda</strong><ul style="margin:6px 0 0 16px; list-style:disc;">'
+            .implode('', $lineas).'</ul></div>';
     }
 
     /**
@@ -926,112 +1045,20 @@ class DianSettings extends Page implements HasForms
      */
     protected function buildTestPayrollPayload(int $consecutivo, string $prefijo): array
     {
-        $config = $this->config();
-        $empresa = auth()->user()->company;
-
-        // Cada documento del set tiene que ser DISTINTO. La DIAN no admite dos
-        // nominas del mismo trabajador para el mismo periodo, y los envios
-        // salian identicos salvo el consecutivo: por eso el primero se acepto
-        // y los siguientes se rechazaron.
+        // Mismo constructor que usa la habilitacion automatica: tener dos
+        // copias del payload garantiza que una se quede atras cuando la DIAN
+        // cambie una regla.
         //
-        // Se mueve el mes liquidado y tambien la cedula del trabajador, para
-        // que la combinacion siga siendo unica aunque los meses se repitan
-        // pasado el primer año de envios.
-        $mes = now()->subMonthsNoOverflow(1 + (max(1, $consecutivo) - 1) % 11);
-        $documentoTrabajador = 1234567890 + max(1, $consecutivo);
-
-        return [
-            'type_document_id' => PayrollCatalog::TYPE_DOCUMENT_NOMINA,
-
-            // Sin `date` ni `time` al nivel superior: el payload que apidian
-            // procesa sin reventar no los trae, y el que si los llevaba
-            // devolvia HTTP 500 sin detalle.
-
-            // Ninguno puede ir en null: apidian los usa para armar el
-            // documento y con un null lanza excepcion, que sale como
-            // "Server Error" y no dice donde.
-            'establishment_name' => $empresa?->name ?: 'EMPRESA',
-            'establishment_address' => $empresa?->address ?: 'SIN DIRECCION',
-            'establishment_phone' => $empresa?->phone ?: '0000000',
-            'establishment_municipality' => $config->dian_municipality_id,
-            'establishment_email' => $empresa?->email ?: 'sin@correo.com',
-
-            'head_note' => 'DOCUMENTO DE PRUEBA - SET DE HABILITACION DIAN NOMINA ELECTRONICA',
-            'foot_note' => 'DOCUMENTO DE PRUEBA - SET DE HABILITACION DIAN NOMINA ELECTRONICA',
-
-            'novelty' => [
-                'novelty' => false,
-                'uuidnov' => '',
-            ],
-
-            'period' => [
-                'admision_date' => '2024-01-01',
-                // Un mes ya cerrado. Liquidar el mes en curso daba un
-                // documento emitido antes de que terminara el periodo que
-                // liquida, y la DIAN lo rechaza.
-                'settlement_start_date' => $mes->copy()->startOfMonth()->toDateString(),
-                'settlement_end_date' => $mes->copy()->endOfMonth()->toDateString(),
-                'worked_time' => '30.00',
-                'issue_date' => now()->toDateString(),
-            ],
-
-            'sendmail' => false,
-            'sendmailtome' => false,
-
-            'worker_code' => (string) $documentoTrabajador,
-
-            // El prefijo TIENE que estar registrado en apidian: si manda uno
-            // desconocido no encuentra la resolucion de nomina y revienta.
-            'prefix' => $prefijo,
-            'consecutive' => $consecutivo,
-
-            'payroll_period_id' => PayrollCatalog::PAYROLL_PERIODS['mensual'],
-            'notes' => 'DOCUMENTO DE PRUEBA - SET DE HABILITACION DIAN NOMINA ELECTRONICA',
-
-            'worker' => [
-                'type_worker_id' => PayrollCatalog::TYPE_WORKER_DEPENDIENTE,
-                'sub_type_worker_id' => PayrollCatalog::SUB_TYPE_WORKER_NO_APLICA,
-                'payroll_type_document_identification_id' => PayrollCatalog::DOCUMENT_TYPES['cc'],
-                'municipality_id' => $config->dian_municipality_id,
-                'type_contract_id' => PayrollCatalog::CONTRACT_TYPES['indefinido'],
-                'high_risk_pension' => false,
-                'identification_number' => $documentoTrabajador,
-                'surname' => 'PEREZ',
-                'second_surname' => 'GARCIA',
-                'first_name' => 'JUAN',
-                'middle_name' => 'CARLOS',
-                'address' => 'CALLE 123 NRO 45-67',
-                'integral_salarary' => false,
-                'salary' => '1500000.00',
-                'email' => $empresa?->email ?: 'sin@correo.com',
-            ],
-
-            'payment' => [
-                'payment_method_id' => PayrollCatalog::PAYMENT_METHODS['deposito'],
-                'bank_name' => 'BANCO DE BOGOTA',
-                'account_type' => 'AHORROS',
-                'account_number' => '1234567890',
-            ],
-
-            'payment_dates' => [
-                ['payment_date' => $mes->copy()->endOfMonth()->toDateString()],
-            ],
-
-            'accrued' => [
-                'worked_days' => 30,
-                'salary' => '1500000.00',
-                'transportation_allowance' => '162000.00',
-                'accrued_total' => '1662000.00',
-            ],
-
-            'deductions' => [
-                'eps_type_law_deductions_id' => PayrollCatalog::DEDUCTION_SALUD,
-                'eps_deduction' => '60000.00',
-                'pension_type_law_deductions_id' => PayrollCatalog::DEDUCTION_PENSION,
-                'pension_deduction' => '60000.00',
-                'deductions_total' => '120000.00',
-            ],
-        ];
+        // El consecutivo hace de slot: es lo que decide el mes liquidado y la
+        // cedula del trabajador, y con eso cada envio manual sigue siendo un
+        // documento distinto.
+        return app(PayrollTestSetBuilder::class)->nomina(
+            auth()->user()->company,
+            $this->config(),
+            $prefijo,
+            $consecutivo,
+            $consecutivo,
+        );
     }
 
     /** Registra en apidian el software de nomina que entrega la DIAN. */
@@ -1116,10 +1143,12 @@ class DianSettings extends Page implements HasForms
             $hechos[] = $rango['etiqueta'].' '.$prefijo;
         }
 
-        // El prefijo de nomina tambien se guarda en la empresa: es el que usa
-        // el envio para numerar cada desprendible.
+        // Los dos prefijos se guardan en la empresa: son los que usa el envio
+        // para numerar. El de la nota se perdia al salir del formulario, y sin
+        // el no habia forma de mandar una nota de ajuste.
         auth()->user()->company?->update([
             'payroll_prefix' => strtoupper(trim((string) $this->data['payroll_res_prefix'])),
+            'payroll_note_prefix' => strtoupper(trim((string) $this->data['payroll_note_res_prefix'])),
         ]);
 
         Notification::make()->success()

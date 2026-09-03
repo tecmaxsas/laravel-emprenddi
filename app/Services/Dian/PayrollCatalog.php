@@ -22,6 +22,17 @@ class PayrollCatalog
     /** Nomina individual. El de las notas de ajuste es otro. */
     public const TYPE_DOCUMENT_NOMINA = 9;
 
+    /** Nomina individual de ajuste. */
+    public const TYPE_DOCUMENT_NOTA_AJUSTE = 10;
+
+    /**
+     * Tipo de nota: 1 reemplaza el documento anterior, 2 lo elimina.
+     * El set de habilitacion se pasa con notas de reemplazo.
+     */
+    public const TYPE_NOTE_REEMPLAZAR = 1;
+
+    public const TYPE_NOTE_ELIMINAR = 2;
+
     /** Trabajador dependiente: el caso normal de una relacion laboral. */
     public const TYPE_WORKER_DEPENDIENTE = 1;
 
