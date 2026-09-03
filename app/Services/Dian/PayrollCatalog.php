@@ -13,14 +13,9 @@ namespace App\Services\Dian;
  * `php artisan dian:payroll-catalogs`, que los trae de la instancia de la
  * empresa — no adivinando aqui.
  *
- * Anclas confirmadas en el ejemplo de apidian:
- *   type_worker_id: 1                        (dependiente)
- *   sub_type_worker_id: 1                    (no aplica)
- *   payroll_type_document_identification_id: 3  (cedula de ciudadania)
- *   type_contract_id: 1
- *   payment_method_id: 10
- *   eps_type_law_deductions_id: 1            (salud)
- *   pension_type_law_deductions_id: 5        (pension)
+ * OJO con el ejemplo de Postman: manda payroll_period_id 4 para un periodo
+ * del 1 al 31 de julio. El 4 es Quincenal, no Mensual — el ejemplo esta mal
+ * etiquetado y copiarlo habria reportado mal la periodicidad.
  */
 class PayrollCatalog
 {
@@ -38,6 +33,15 @@ class PayrollCatalog
     public const DEDUCTION_PENSION = 5;
 
     /**
+     * El trabajador de alto riesgo aporta a pension por un concepto distinto,
+     * no por el 5 con una bandera aparte.
+     */
+    public const DEDUCTION_PENSION_ALTO_RIESGO = 7;
+
+    /** Fondo de solidaridad pensional, a cargo del empleado. */
+    public const DEDUCTION_FONDO_SOLIDARIDAD = 9;
+
+    /**
      * Tipo de documento del trabajador.
      *
      * Nuestra tabla employees usa los mismos codigos que third_parties.
@@ -53,6 +57,10 @@ class PayrollCatalog
         'die' => 8,  // Documento de identificacion extranjero
         'pep' => 9,  // Permiso especial de permanencia
         'nuip' => 11,
+        'ppt' => 12, // Permiso de proteccion temporal
+        // El RUT no existe en el catalogo de nomina: quien se identifica con
+        // RUT lo hace con su NIT.
+        'rut' => 6,
     ];
 
     /**
@@ -111,6 +119,12 @@ class PayrollCatalog
     public static function paymentMethod(?string $medio): int
     {
         return self::PAYMENT_METHODS[strtolower((string) $medio)] ?? self::PAYMENT_METHODS['deposito'];
+    }
+
+    /** Concepto de pension que le corresponde al trabajador. */
+    public static function pensionDeduction(bool $altoRiesgo): int
+    {
+        return $altoRiesgo ? self::DEDUCTION_PENSION_ALTO_RIESGO : self::DEDUCTION_PENSION;
     }
 
     /** Nuestro employment_contracts.salary_type dice si es salario integral. */

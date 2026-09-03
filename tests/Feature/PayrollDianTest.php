@@ -324,6 +324,82 @@ class PayrollDianTest extends TestCase
             ->assertFailed();
     }
 
+    /** El trabajador de alto riesgo aporta por otro concepto de pensión. */
+    public function test_la_pension_de_alto_riesgo_usa_su_propio_concepto(): void
+    {
+        $colilla = $this->colilla();
+        $colilla->update(['prefix' => 'NI', 'consecutive' => 1]);
+        $colilla->employee->update(['high_risk_pension' => true]);
+
+        $payload = app(PayrollDocumentBuilder::class)->build($colilla->fresh());
+
+        $this->assertSame(7, $payload['deductions']['pension_type_law_deductions_id'],
+            'Pensión Alto Riesgo Trabajador = 7, no la pensión normal = 5.');
+    }
+
+    public function test_la_pension_normal_usa_el_concepto_5(): void
+    {
+        $colilla = $this->colilla();
+        $colilla->update(['prefix' => 'NI', 'consecutive' => 1]);
+
+        $payload = app(PayrollDocumentBuilder::class)->build($colilla->fresh());
+
+        $this->assertSame(5, $payload['deductions']['pension_type_law_deductions_id']);
+    }
+
+    /**
+     * La DIAN exige que el total de deducciones sea la suma de lo desglosado.
+     * Este payload solo desglosa salud y pensión, así que una colilla con
+     * fondo de solidaridad o retefuente se rechazaría con un mensaje inútil.
+     */
+    public function test_no_se_envia_una_colilla_con_deducciones_que_no_se_pueden_desglosar(): void
+    {
+        $colilla = $this->colilla();
+        $colilla->update([
+            'prefix' => 'NI',
+            'consecutive' => 1,
+            // 60.000 + 60.000 + 15.000 de fondo de solidaridad.
+            'total_deductions' => 135000,
+        ]);
+
+        DB::table('payroll_slip_lines')->insert([
+            'payroll_slip_id' => $colilla->id,
+            'type' => 'deduction',
+            'concept_code' => 'fsp',
+            'concept_name' => 'Fondo de solidaridad pensional (1%)',
+            'amount' => 15000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        try {
+            app(PayrollDocumentBuilder::class)->build($colilla->fresh());
+            $this->fail('Debía frenar: los totales no cuadrarían.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('15.000', $e->getMessage());
+            $this->assertStringContainsString('Fondo de solidaridad', $e->getMessage(),
+                'El mensaje tiene que decir qué deducción sobra.');
+        }
+    }
+
+    /** Los catálogos sembrados son los de apidian, no los de facturación. */
+    public function test_los_catalogos_de_nomina_estan_sembrados_con_los_ids_de_apidian(): void
+    {
+        $this->assertSame('Quincenal', DB::table('dian_payroll_periods')->find(4)?->name,
+            'El ejemplo de Postman manda 4 para un periodo mensual: está mal etiquetado.');
+        $this->assertSame('Cédula de ciudadanía', DB::table('dian_payroll_document_types')->find(3)?->name);
+        $this->assertSame('Término Fijo', DB::table('dian_type_contracts')->find(1)?->name);
+        $this->assertSame('Dependiente', DB::table('dian_type_workers')->find(1)?->name);
+        $this->assertSame('No aplica', DB::table('dian_sub_type_workers')->find(1)?->name);
+
+        // El de nómina y el de facturación NO comparten ids.
+        $this->assertNotSame(
+            DB::table('dian_document_types')->find(11)?->name,
+            DB::table('dian_payroll_document_types')->find(11)?->name,
+            'Son catálogos distintos: mezclarlos reporta mal el tipo de documento.'
+        );
+    }
+
     private function configDian(): void
     {
         $config = CompanyConfig::query()->firstOrNew(['company_id' => $this->companyId]);

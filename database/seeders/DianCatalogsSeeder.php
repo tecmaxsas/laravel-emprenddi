@@ -8,6 +8,7 @@ use Database\Seeders\Dian\MunicipalitiesSeeder;
 use Database\Seeders\Dian\OrganizationTypesSeeder;
 use Database\Seeders\Dian\PaymentFormsSeeder;
 use Database\Seeders\Dian\PaymentMethodsSeeder;
+use Database\Seeders\Dian\PayrollCatalogsSeeder;
 use Database\Seeders\Dian\RegimeTypesSeeder;
 use Database\Seeders\Dian\TaxLiabilitiesSeeder;
 use Illuminate\Database\Seeder;
@@ -33,6 +34,7 @@ class DianCatalogsSeeder extends Seeder
             TaxLiabilitiesSeeder::class,
             PaymentFormsSeeder::class,
             PaymentMethodsSeeder::class,
+            PayrollCatalogsSeeder::class,
         ]);
     }
 }

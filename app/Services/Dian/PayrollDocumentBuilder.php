@@ -147,15 +147,54 @@ class PayrollDocumentBuilder
         return $devengados;
     }
 
+    /**
+     * Deducciones de ley.
+     *
+     * La DIAN valida que deductions_total sea la suma de lo desglosado. Este
+     * payload solo desglosa salud y pension, asi que si la colilla trae otras
+     * deducciones —fondo de solidaridad, retencion en la fuente, embargos— el
+     * total no cuadraria y la DIAN rechaza con un mensaje que no dice cual
+     * sobra. Mejor pararlo aqui y decirlo con nombre propio.
+     */
     protected function deducciones(PayrollSlip $slip): array
     {
+        $salud = round((float) $slip->employee_health, 2);
+        $pension = round((float) $slip->employee_pension, 2);
+        $total = round((float) $slip->total_deductions, 2);
+        $sinDesglosar = round($total - $salud - $pension, 2);
+
+        if (abs($sinDesglosar) > 0.01) {
+            throw new RuntimeException(sprintf(
+                'La colilla tiene $%s en deducciones que este documento no sabe desglosar (%s). '
+                .'La DIAN exige que el total sea la suma de lo detallado, así que el envío se '
+                .'rechazaría. Hace falta el payload extendido de apidian para reportarlas.',
+                number_format($sinDesglosar, 2, ',', '.'),
+                $this->conceptosNoDesglosados($slip) ?: 'concepto no identificado',
+            ));
+        }
+
         return [
             'eps_type_law_deductions_id' => PayrollCatalog::DEDUCTION_SALUD,
-            'eps_deduction' => $this->monto($slip->employee_health),
-            'pension_type_law_deductions_id' => PayrollCatalog::DEDUCTION_PENSION,
-            'pension_deduction' => $this->monto($slip->employee_pension),
-            'deductions_total' => $this->monto($slip->total_deductions),
+            'eps_deduction' => $this->monto($salud),
+            'pension_type_law_deductions_id' => PayrollCatalog::pensionDeduction(
+                (bool) $slip->employee?->high_risk_pension
+            ),
+            'pension_deduction' => $this->monto($pension),
+            'deductions_total' => $this->monto($total),
         ];
+    }
+
+    /** Nombres de las deducciones que no son salud ni pension. */
+    protected function conceptosNoDesglosados(PayrollSlip $slip): string
+    {
+        $slip->loadMissing('lines');
+
+        return $slip->lines
+            ->where('type', 'deduction')
+            ->whereNotIn('concept_code', ['salud', 'pension'])
+            ->pluck('concept_name')
+            ->filter()
+            ->implode(', ');
     }
 
     /** La API pide los importes como cadena con dos decimales. */
