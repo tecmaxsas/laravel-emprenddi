@@ -45,6 +45,7 @@ class CompanyConfig extends Model
         'software_payroll_pin',
         'payroll_software_configured',
         'payroll_test_set_id',
+        'payroll_test_consecutive',
 ];
 
     protected function casts(): array

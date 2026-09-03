@@ -21,6 +21,7 @@ use Filament\Pages\Page;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\HtmlString;
 use App\Support\DianDvCalculator;
+use App\Services\Dian\PayrollCatalog;
 
 class DianSettings extends Page implements HasForms
 {
@@ -93,6 +94,7 @@ class DianSettings extends Page implements HasForms
             'software_payroll_id' => $config->software_payroll_id,
             'software_payroll_pin' => $config->software_payroll_pin,
             'payroll_test_set_id' => $config->payroll_test_set_id,
+            'payroll_test_consecutive' => $config->payroll_test_consecutive ?: 1,
             'payroll_res_prefix' => auth()->user()->company?->payroll_prefix ?: 'NI',
             'payroll_res_from' => 1,
             'payroll_res_to' => 99999999,
@@ -470,10 +472,205 @@ class DianSettings extends Page implements HasForms
                     Forms\Components\Actions::make([
                         Forms\Components\Actions\Action::make('savePayrollTestSet')
                             ->label('Guardar TestSetId')
-                            ->icon('heroicon-o-beaker')
+                            ->icon('heroicon-o-check')
                             ->action('savePayrollTestSet'),
                     ]),
+
+                    Forms\Components\TextInput::make('payroll_test_consecutive')
+                        ->label('Próximo consecutivo de prueba')
+                        ->numeric()
+                        ->minValue(1)
+                        ->helperText('Avanza solo con cada envío aceptado. Usa el prefijo SETP, así que no gasta numeración de producción.'),
+
+                    Forms\Components\Placeholder::make('payroll_test_progress')
+                        ->label('Lo que pide la DIAN')
+                        ->content(fn () => new HtmlString(
+                            '<div style="font-size:12.5px; line-height:1.7;">'
+                            .'<strong>10 nóminas</strong> y <strong>10 notas de ajuste</strong>, '
+                            .'de las que deben aceptarse <strong>4 y 4</strong>.<br>'
+                            .'Envía una por una y revisa el avance en el portal de la DIAN: '
+                            .'el estado real lo manda ella, no nosotros.'
+                            .'</div>'
+                        )),
+
+                    Forms\Components\Actions::make([
+                        Forms\Components\Actions\Action::make('sendTestPayroll')
+                            ->label('Enviar nómina de prueba')
+                            ->icon('heroicon-o-paper-airplane')
+                            ->color('warning')
+                            ->requiresConfirmation()
+                            ->modalHeading('Enviar una nómina al set de pruebas')
+                            ->modalDescription('Se envía un documento de muestra con prefijo SETP al TestSetId configurado. No afecta la nómina real de la empresa.')
+                            ->action('sendTestPayroll'),
+                    ]),
                 ]),
+        ];
+    }
+
+    /**
+     * Envia una nomina de muestra al set de pruebas de la habilitacion.
+     *
+     * Mismo patron que sendTestInvoice: payload fijo de prueba, prefijo SETP y
+     * consecutivo propio, para no gastar numeracion de produccion ni tocar la
+     * nomina real de la empresa.
+     */
+    public function sendTestPayroll(): void
+    {
+        $config = $this->config()->refresh();
+
+        if (! $config->api_token) {
+            $this->errorNotif('No hay token DIAN');
+
+            return;
+        }
+
+        $testSetId = trim((string) ($this->data['payroll_test_set_id'] ?? ''));
+
+        if ($testSetId === '') {
+            $this->errorNotif(
+                'Falta el TestSetId de nómina',
+                'Lo entrega el portal de la DIAN en la habilitación de nómina electrónica. Guárdalo antes de enviar.'
+            );
+
+            return;
+        }
+
+        if (! $config->payroll_software_configured) {
+            $this->errorNotif(
+                'Falta registrar el software de nómina',
+                'Completa el paso 1 de esta pestaña: la DIAN rechaza los documentos si el software no está registrado.'
+            );
+
+            return;
+        }
+
+        $consecutivo = (int) ($this->data['payroll_test_consecutive'] ?? 1) ?: 1;
+
+        $result = (new DianApiClient($config))->sendPayroll(
+            $this->buildTestPayrollPayload($consecutivo),
+            $testSetId,
+        );
+
+        $this->recordApiResponse('payroll_test', $result);
+
+        // La DIAN puede responder rechazando aunque el HTTP salga bien: el
+        // veredicto esta dentro de ResponseDian.
+        $respuestaDian = $result['data']['ResponseDian']['Envelope']['Body']['SendNominaSyncResponse']['SendNominaSyncResult'] ?? null;
+        $esValido = filter_var($respuestaDian['IsValid'] ?? false, FILTER_VALIDATE_BOOLEAN);
+
+        if (! $result['ok']) {
+            $this->errorNotif('Falló el envío de la nómina de prueba', $result['error'] ?? 'Error desconocido');
+
+            return;
+        }
+
+        // El consecutivo avanza pase lo que pase: la DIAN no acepta dos
+        // documentos con el mismo numero, ni siquiera si el primero fue
+        // rechazado.
+        $config->update(['payroll_test_consecutive' => $consecutivo + 1]);
+        $this->data['payroll_test_consecutive'] = $consecutivo + 1;
+
+        if ($esValido) {
+            $this->successNotif(
+                'Nómina de prueba aceptada (SETP-'.$consecutivo.')',
+                'Revisa el avance del set en el portal de la DIAN.'
+            );
+
+            return;
+        }
+
+        $this->errorNotif(
+            'La DIAN rechazó la nómina de prueba SETP-'.$consecutivo,
+            (string) ($respuestaDian['StatusDescription'] ?? 'Sin detalle. Revisa la respuesta cruda más abajo.')
+        );
+    }
+
+    /**
+     * Nomina de muestra para el set de habilitacion.
+     *
+     * Los valores salen del ejemplo del set de pruebas de la DIAN. El
+     * municipio se toma del configurado por la empresa: mandar uno fijo hace
+     * que la DIAN rechace si no coincide con el domicilio registrado.
+     */
+    protected function buildTestPayrollPayload(int $consecutivo): array
+    {
+        $config = $this->config();
+        $empresa = auth()->user()->company;
+
+        return [
+            'type_document_id' => PayrollCatalog::TYPE_DOCUMENT_NOMINA,
+            'date' => now()->toDateString(),
+            'time' => now()->format('H:i:s'),
+            'prefix' => 'SETP',
+            'consecutive' => $consecutivo,
+
+            'novelty' => [
+                'novelty' => false,
+                'uuidnov' => '',
+            ],
+
+            'period' => [
+                'admision_date' => '2024-01-01',
+                'settlement_start_date' => now()->startOfMonth()->toDateString(),
+                'settlement_end_date' => now()->endOfMonth()->toDateString(),
+                'worked_time' => 30,
+                'issue_date' => now()->toDateString(),
+            ],
+
+            'establishment_name' => $empresa?->name,
+            'establishment_address' => $empresa?->address,
+            'establishment_phone' => $empresa?->phone,
+            'establishment_municipality' => $config->dian_municipality_id,
+            'establishment_email' => $empresa?->email,
+
+            'worker_code' => 'EMP001',
+            'payroll_period_id' => PayrollCatalog::PAYROLL_PERIODS['mensual'],
+            'notes' => 'DOCUMENTO DE PRUEBA — SET DE HABILITACIÓN DIAN NÓMINA ELECTRÓNICA',
+
+            'worker' => [
+                'type_worker_id' => PayrollCatalog::TYPE_WORKER_DEPENDIENTE,
+                'sub_type_worker_id' => PayrollCatalog::SUB_TYPE_WORKER_NO_APLICA,
+                'payroll_type_document_identification_id' => PayrollCatalog::DOCUMENT_TYPES['cc'],
+                'municipality_id' => $config->dian_municipality_id,
+                'type_contract_id' => PayrollCatalog::CONTRACT_TYPES['indefinido'],
+                'high_risk_pension' => false,
+                'identification_number' => '1234567890',
+                'surname' => 'PÉREZ',
+                'second_surname' => 'GARCÍA',
+                'first_name' => 'JUAN',
+                'middle_name' => 'CARLOS',
+                'address' => 'Calle 123 # 45-67',
+                'email' => $empresa?->email,
+                'integral_salarary' => false,
+                'salary' => '1500000.00',
+                'worker_code' => 'EMP001',
+            ],
+
+            'payment' => [
+                'payment_method_id' => PayrollCatalog::PAYMENT_METHODS['deposito'],
+                'bank_name' => 'Banco de Bogotá',
+                'account_type' => 'AHORROS',
+                'account_number' => '1234567890',
+            ],
+
+            'payment_dates' => [
+                ['payment_date' => now()->endOfMonth()->toDateString()],
+            ],
+
+            'accrued' => [
+                'worked_days' => 30,
+                'salary' => '1500000.00',
+                'transportation_allowance' => '140606.00',
+                'accrued_total' => '1640606.00',
+            ],
+
+            'deductions' => [
+                'eps_type_law_deductions_id' => PayrollCatalog::DEDUCTION_SALUD,
+                'eps_deduction' => '60000.00',
+                'pension_type_law_deductions_id' => PayrollCatalog::DEDUCTION_PENSION,
+                'pension_deduction' => '60000.00',
+                'deductions_total' => '120000.00',
+            ],
         ];
     }
 

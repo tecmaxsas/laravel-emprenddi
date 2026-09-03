@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\App\Pages\DianSettings;
 use App\Models\Company;
 use App\Models\Dian\CompanyConfig;
 use App\Models\Dian\Municipality;
@@ -12,8 +13,11 @@ use App\Models\PayrollSlip;
 use App\Models\User;
 use App\Services\Dian\PayrollDianSender;
 use App\Services\Dian\PayrollDocumentBuilder;
+use App\Support\CurrentCompany;
+use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 /**
@@ -505,6 +509,114 @@ class PayrollDianTest extends TestCase
         app(PayrollDianSender::class)->send($colilla);
 
         Http::assertSent(fn ($request) => str_ends_with($request->url(), '/api/ubl2.1/payroll'));
+    }
+
+    /**
+     * El set de pruebas de la habilitacion, igual que en facturacion: payload
+     * de muestra con prefijo SETP y su propio consecutivo, para no gastar
+     * numeracion de produccion ni tocar la nomina real.
+     */
+    public function test_el_set_de_pruebas_se_envia_con_el_testsetid(): void
+    {
+        $this->configDian();
+        CompanyConfig::query()->where('company_id', $this->companyId)->update([
+            'payroll_test_set_id' => '4177964d-de81-4178-9d66-bb2fc05d9d92',
+            'payroll_software_configured' => true,
+            'payroll_test_consecutive' => 1,
+        ]);
+
+        Http::fake([
+            '*' => Http::response([
+                'cune' => 'cune-set-pruebas',
+                'ResponseDian' => ['Envelope' => ['Body' => ['SendNominaSyncResponse' => [
+                    'SendNominaSyncResult' => ['IsValid' => 'true', 'StatusCode' => '00'],
+                ]]]],
+            ], 200),
+        ]);
+
+        Filament::setCurrentPanel(Filament::getPanel('app'));
+        app(CurrentCompany::class)->set($this->company->refresh());
+
+        Livewire::test(DianSettings::class)->call('sendTestPayroll');
+
+        Http::assertSent(function ($request) {
+            $cuerpo = $request->data();
+
+            return str_contains($request->url(), '/api/ubl2.1/payroll/4177964d-de81-4178-9d66-bb2fc05d9d92')
+                && $cuerpo['prefix'] === 'SETP'
+                && $cuerpo['consecutive'] === 1
+                && $cuerpo['type_document_id'] === 9;
+        });
+
+        // El consecutivo avanza: la DIAN no acepta dos con el mismo número.
+        $this->assertSame(2, (int) CompanyConfig::query()
+            ->where('company_id', $this->companyId)->value('payroll_test_consecutive'));
+    }
+
+    /** El consecutivo avanza incluso si la DIAN rechaza: el número se quema. */
+    public function test_el_consecutivo_de_prueba_avanza_aunque_la_dian_rechace(): void
+    {
+        $this->configDian();
+        CompanyConfig::query()->where('company_id', $this->companyId)->update([
+            'payroll_test_set_id' => 'zz-set',
+            'payroll_software_configured' => true,
+            'payroll_test_consecutive' => 7,
+        ]);
+
+        Http::fake([
+            '*' => Http::response([
+                'ResponseDian' => ['Envelope' => ['Body' => ['SendNominaSyncResponse' => [
+                    'SendNominaSyncResult' => ['IsValid' => 'false', 'StatusCode' => '99',
+                        'StatusDescription' => 'Validación contiene errores'],
+                ]]]],
+            ], 200),
+        ]);
+
+        Filament::setCurrentPanel(Filament::getPanel('app'));
+        app(CurrentCompany::class)->set($this->company->refresh());
+
+        Livewire::test(DianSettings::class)->call('sendTestPayroll');
+
+        $this->assertSame(8, (int) CompanyConfig::query()
+            ->where('company_id', $this->companyId)->value('payroll_test_consecutive'));
+    }
+
+    /** Sin TestSetId no se envía nada: no tiene a dónde ir. */
+    public function test_no_se_envia_el_set_de_pruebas_sin_testsetid(): void
+    {
+        $this->configDian();
+        CompanyConfig::query()->where('company_id', $this->companyId)->update([
+            'payroll_test_set_id' => null,
+            'payroll_software_configured' => true,
+        ]);
+
+        Http::fake();
+
+        Filament::setCurrentPanel(Filament::getPanel('app'));
+        app(CurrentCompany::class)->set($this->company->refresh());
+
+        Livewire::test(DianSettings::class)->call('sendTestPayroll');
+
+        Http::assertNothingSent();
+    }
+
+    /** Sin el software de nómina registrado, la DIAN rechazaría todo. */
+    public function test_no_se_envia_el_set_sin_registrar_el_software_de_nomina(): void
+    {
+        $this->configDian();
+        CompanyConfig::query()->where('company_id', $this->companyId)->update([
+            'payroll_test_set_id' => 'zz-set',
+            'payroll_software_configured' => false,
+        ]);
+
+        Http::fake();
+
+        Filament::setCurrentPanel(Filament::getPanel('app'));
+        app(CurrentCompany::class)->set($this->company->refresh());
+
+        Livewire::test(DianSettings::class)->call('sendTestPayroll');
+
+        Http::assertNothingSent();
     }
 
     private function configDian(): void
