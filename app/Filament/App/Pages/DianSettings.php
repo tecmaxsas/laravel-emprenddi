@@ -89,6 +89,17 @@ class DianSettings extends Page implements HasForms
             'res_date_from' => null,
             'res_date_to' => null,
 
+            // Nómina electrónica — habilitación (software y resoluciones)
+            'software_payroll_id' => $config->software_payroll_id,
+            'software_payroll_pin' => $config->software_payroll_pin,
+            'payroll_test_set_id' => $config->payroll_test_set_id,
+            'payroll_res_prefix' => auth()->user()->company?->payroll_prefix ?: 'NI',
+            'payroll_res_from' => 1,
+            'payroll_res_to' => 99999999,
+            'payroll_note_res_prefix' => 'NA',
+            'payroll_note_res_from' => 1,
+            'payroll_note_res_to' => 99999999,
+
             // Tab 4 — numeración de nómina electrónica (vive en la empresa,
             // no en dian_resolutions: la nómina no lleva resolución DIAN).
             'payroll_prefix' => auth()->user()->company?->payroll_prefix,
@@ -128,6 +139,10 @@ class DianSettings extends Page implements HasForms
                         Forms\Components\Tabs\Tab::make('Resoluciones')
                             ->icon('heroicon-o-document-text')
                             ->schema($this->resolutionsTabSchema()),
+
+                        Forms\Components\Tabs\Tab::make('Nómina electrónica')
+                            ->icon('heroicon-o-users')
+                            ->schema($this->payrollTabSchema()),
 
                         Forms\Components\Tabs\Tab::make('Pruebas y ambiente')
                             ->icon('heroicon-o-beaker')
@@ -376,6 +391,195 @@ class DianSettings extends Page implements HasForms
                 ->label('')
                 ->content(fn () => $this->apiResponseBlock('tab2')),
         ];
+    }
+
+    /**
+     * Habilitacion de nomina electronica.
+     *
+     * Es un tramite APARTE del de facturacion: software propio, resoluciones
+     * propias (tipo 9 nomina y tipo 10 nota de ajuste) y su propio set de
+     * pruebas, aunque la empresa ya facture electronicamente.
+     */
+    protected function payrollTabSchema(): array
+    {
+        $config = $this->config();
+
+        return [
+            Forms\Components\Section::make('Paso 1 — Software de nómina')
+                ->description('La DIAN entrega un identificador y un PIN distintos a los de facturación. Salen del portal, en la habilitación de nómina electrónica.')
+                ->columns(2)
+                ->schema([
+                    Forms\Components\TextInput::make('software_payroll_id')
+                        ->label('ID del software de nómina')
+                        ->placeholder('0162cc7e-68f9-4145-a227-0957b4f75e19')
+                        ->helperText('El "Identificación" que muestra el portal de la DIAN.'),
+
+                    Forms\Components\TextInput::make('software_payroll_pin')
+                        ->label('PIN')
+                        ->placeholder('12345'),
+
+                    Forms\Components\Placeholder::make('payroll_software_state')
+                        ->label('Estado')
+                        ->content(fn () => $config->payroll_software_configured
+                            ? '✓ Software de nómina registrado en apidian'
+                            : 'Todavía no se ha registrado')
+                        ->columnSpanFull(),
+
+                    Forms\Components\Actions::make([
+                        Forms\Components\Actions\Action::make('savePayrollSoftware')
+                            ->label('Registrar software de nómina')
+                            ->icon('heroicon-o-cpu-chip')
+                            ->action('savePayrollSoftware'),
+                    ])->columnSpanFull(),
+                ]),
+
+            Forms\Components\Section::make('Paso 2 — Rangos de numeración')
+                ->description('La nómina electrónica no lleva resolución autorizada como la facturación: el rango lo define la empresa y se registra en apidian. Son dos: la nómina y la nota de ajuste.')
+                ->columns(3)
+                ->schema([
+                    Forms\Components\TextInput::make('payroll_res_prefix')
+                        ->label('Prefijo nómina')->placeholder('NI'),
+                    Forms\Components\TextInput::make('payroll_res_from')
+                        ->label('Desde')->numeric()->default(1),
+                    Forms\Components\TextInput::make('payroll_res_to')
+                        ->label('Hasta')->numeric()->default(99999999),
+
+                    Forms\Components\TextInput::make('payroll_note_res_prefix')
+                        ->label('Prefijo nota de ajuste')->placeholder('NA'),
+                    Forms\Components\TextInput::make('payroll_note_res_from')
+                        ->label('Desde')->numeric()->default(1),
+                    Forms\Components\TextInput::make('payroll_note_res_to')
+                        ->label('Hasta')->numeric()->default(99999999),
+
+                    Forms\Components\Actions::make([
+                        Forms\Components\Actions\Action::make('savePayrollResolutions')
+                            ->label('Registrar los dos rangos')
+                            ->icon('heroicon-o-hashtag')
+                            ->action('savePayrollResolutions'),
+                    ])->columnSpanFull(),
+                ]),
+
+            Forms\Components\Section::make('Paso 3 — Set de pruebas')
+                ->description('La DIAN pide 10 nóminas y 10 notas de ajuste, de las que deben aceptarse 4 y 4. El TestSetId lo entrega el portal.')
+                ->schema([
+                    Forms\Components\TextInput::make('payroll_test_set_id')
+                        ->label('TestSetId de nómina')
+                        ->placeholder('4177964d-de81-4178-9d66-bb2fc05d9d92')
+                        ->helperText('Mientras esté puesto, los envíos van al set de pruebas. Déjalo vacío para enviar en producción.'),
+
+                    Forms\Components\Actions::make([
+                        Forms\Components\Actions\Action::make('savePayrollTestSet')
+                            ->label('Guardar TestSetId')
+                            ->icon('heroicon-o-beaker')
+                            ->action('savePayrollTestSet'),
+                    ]),
+                ]),
+        ];
+    }
+
+    /** Registra en apidian el software de nomina que entrega la DIAN. */
+    public function savePayrollSoftware(): void
+    {
+        $config = $this->config();
+
+        $id = trim((string) ($this->data['software_payroll_id'] ?? ''));
+        $pin = trim((string) ($this->data['software_payroll_pin'] ?? ''));
+
+        if ($id === '' || $pin === '') {
+            $this->errorNotif('Faltan el ID y el PIN del software de nómina');
+
+            return;
+        }
+
+        $resultado = (new DianApiClient($config))->saveSoftwarePayroll($id, $pin);
+
+        if (! $resultado['ok']) {
+            $this->errorNotif('apidian rechazó el registro', $resultado['error'] ?? 'Sin detalle');
+
+            return;
+        }
+
+        $config->update([
+            'software_payroll_id' => $id,
+            'software_payroll_pin' => $pin,
+            'payroll_software_configured' => true,
+        ]);
+
+        Notification::make()->success()
+            ->title('Software de nómina registrado')
+            ->send();
+    }
+
+    /**
+     * Registra los dos rangos: nomina (tipo 9) y nota de ajuste (tipo 10).
+     *
+     * Van juntos porque el set de pruebas de la DIAN exige documentos de los
+     * dos tipos: registrar solo uno deja la habilitacion a medias.
+     */
+    public function savePayrollResolutions(): void
+    {
+        $config = $this->config();
+        $client = new DianApiClient($config);
+
+        $rangos = [
+            ['tipo' => 9, 'etiqueta' => 'nómina', 'prefijo' => 'payroll_res_prefix', 'desde' => 'payroll_res_from', 'hasta' => 'payroll_res_to'],
+            ['tipo' => 10, 'etiqueta' => 'nota de ajuste', 'prefijo' => 'payroll_note_res_prefix', 'desde' => 'payroll_note_res_from', 'hasta' => 'payroll_note_res_to'],
+        ];
+
+        $hechos = [];
+
+        foreach ($rangos as $rango) {
+            $prefijo = strtoupper(trim((string) ($this->data[$rango['prefijo']] ?? '')));
+
+            if ($prefijo === '') {
+                $this->errorNotif('Falta el prefijo de '.$rango['etiqueta']);
+
+                return;
+            }
+
+            $resultado = $client->saveResolution([
+                'type_document_id' => $rango['tipo'],
+                'from' => (int) ($this->data[$rango['desde']] ?? 1),
+                'to' => (int) ($this->data[$rango['hasta']] ?? 99999999),
+                'prefix' => $prefijo,
+            ]);
+
+            if (! $resultado['ok']) {
+                $this->errorNotif(
+                    'apidian rechazó el rango de '.$rango['etiqueta'],
+                    $resultado['error'] ?? 'Sin detalle'
+                );
+
+                return;
+            }
+
+            $hechos[] = $rango['etiqueta'].' '.$prefijo;
+        }
+
+        // El prefijo de nomina tambien se guarda en la empresa: es el que usa
+        // el envio para numerar cada desprendible.
+        auth()->user()->company?->update([
+            'payroll_prefix' => strtoupper(trim((string) $this->data['payroll_res_prefix'])),
+        ]);
+
+        Notification::make()->success()
+            ->title('Rangos registrados')
+            ->body(implode(' · ', $hechos))
+            ->send();
+    }
+
+    public function savePayrollTestSet(): void
+    {
+        $this->config()->update([
+            'payroll_test_set_id' => trim((string) ($this->data['payroll_test_set_id'] ?? '')) ?: null,
+        ]);
+
+        Notification::make()->success()
+            ->title('TestSetId guardado')
+            ->body($this->data['payroll_test_set_id']
+                ? 'Los envíos de nómina irán al set de pruebas.'
+                : 'Los envíos de nómina irán a producción.')
+            ->send();
     }
 
     /**

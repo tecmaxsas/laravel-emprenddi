@@ -88,17 +88,16 @@ class PayrollCatalog
 
     /**
      * Medio de pago. Nuestro employees.payment_method: deposito, efectivo o
-     * cheque.
+     * cheque. Ids verificados en la tabla payment_methods de apidian.
      *
-     * El 10 del ejemplo de apidian corresponde a consignacion, que es como se
-     * paga la nomina casi siempre. Efectivo y cheque tienen su propio id en el
-     * catalogo de medios de pago y hay que confirmarlos con
-     * `php artisan dian:payroll-catalogs` antes de usarlos en produccion.
+     * El ejemplo de Postman manda 10 para un pago a cuenta de ahorros, pero el
+     * 10 es EFECTIVO: reportaria una consignacion como pago en efectivo. La
+     * consignacion bancaria es el 42.
      */
     public const PAYMENT_METHODS = [
-        'deposito' => 10,
-        'efectivo' => 10,
-        'cheque' => 10,
+        'deposito' => 42,  // Consignacion bancaria
+        'efectivo' => 10,  // Efectivo
+        'cheque' => 20,    // Cheque
     ];
 
     public static function documentType(?string $codigo): int

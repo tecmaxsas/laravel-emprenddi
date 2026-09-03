@@ -26,6 +26,8 @@ class PayrollDianSender
     ) {}
 
     /**
+     * @param  string|null  $testSetId  Fuerza el set de pruebas. Si va null se
+     *                                  usa el configurado en la empresa.
      * @return array{ok:bool, message:string, cune:?string, status_code:?string, reached_dian:bool}
      */
     public function send(PayrollSlip $slip, ?string $testSetId = null): array
@@ -55,7 +57,13 @@ class PayrollDianSender
             'dian_sent_at' => now(),
         ]);
 
-        $result = (new DianApiClient($config))->sendPayroll($payload, $testSetId);
+        // Con TestSetId configurado el envio va al set de pruebas de la
+        // habilitacion; sin el, a produccion. Se puede forzar por parametro
+        // para reenviar una prueba puntual.
+        $result = (new DianApiClient($config))->sendPayroll(
+            $payload,
+            $testSetId ?? $config->payroll_test_set_id,
+        );
 
         return $this->procesarRespuesta($slip, $result);
     }

@@ -56,6 +56,19 @@ class DianApiClient
     }
 
     /**
+     * Software de nomina electronica. Es OTRO software ante la DIAN, con su
+     * propio id y pin, aunque la empresa ya tenga configurado el de
+     * facturacion.
+     */
+    public function saveSoftwarePayroll(string $idPayroll, string|int $pinPayroll): array
+    {
+        return $this->request('put', '/api/ubl2.1/config/softwarepayroll', [
+            'idpayroll' => $idPayroll,
+            'pinpayroll' => (int) $pinPayroll,
+        ]);
+    }
+
+    /**
      * Tab 3 — Certificado .p12 (base64-encoded).
      */
     public function uploadCertificate(array $payload): array

@@ -153,14 +153,18 @@ class PayrollDianTest extends TestCase
         $this->assertSame(1, $payload['worker']['type_worker_id']);
         $this->assertSame(3, $payload['worker']['payroll_type_document_identification_id'], 'Cédula = 3.');
         $this->assertSame(1, $payload['worker']['type_contract_id'], 'Término fijo = 1.');
-        $this->assertSame(41946692, $payload['worker']['identification_number']);
+        // Cadena, no entero: es lo que manda el set de pruebas de la DIAN y
+        // evita problemas con documentos largos.
+        $this->assertSame('41946692', $payload['worker']['identification_number']);
         $this->assertSame('CARDONA', $payload['worker']['surname']);
         $this->assertSame('ELIZABETH', $payload['worker']['first_name']);
         $this->assertFalse($payload['worker']['integral_salarary']);
         $this->assertSame('1500000.00', $payload['worker']['salary']);
 
         // Pago
-        $this->assertSame(10, $payload['payment']['payment_method_id']);
+        // Consignación bancaria: el empleado cobra en cuenta de ahorros. El
+        // ejemplo de Postman manda 10, que es efectivo.
+        $this->assertSame(42, $payload['payment']['payment_method_id']);
         $this->assertSame('AHORROS', $payload['payment']['account_type'], 'La API lo espera en mayúsculas.');
         $this->assertSame('2021-03-10', $payload['payment_dates'][0]['payment_date']);
 
@@ -400,6 +404,109 @@ class PayrollDianTest extends TestCase
         );
     }
 
+    /**
+     * Correcciones que salieron del set de pruebas de la DIAN.
+     *
+     * worked_time son los dias del PERIODO, no la antiguedad: el ejemplo de
+     * la DIAN manda 30 para enero. El primer ejemplo de Postman traia 785 con
+     * un periodo de un mes, que no cuadra con ninguna lectura.
+     */
+    public function test_el_tiempo_laborado_son_los_dias_del_periodo(): void
+    {
+        $colilla = $this->colilla();
+        $colilla->update(['prefix' => 'NI', 'consecutive' => 1]);
+
+        $payload = app(PayrollDocumentBuilder::class)->build($colilla->fresh());
+
+        $this->assertSame(30, $payload['period']['worked_time'],
+            'Los días trabajados del periodo, no los de antigüedad en la empresa.');
+        $this->assertSame(30, $payload['accrued']['worked_days']);
+    }
+
+    public function test_el_payload_lleva_fecha_hora_y_codigo_del_trabajador(): void
+    {
+        $colilla = $this->colilla();
+        $colilla->update(['prefix' => 'NI', 'consecutive' => 1]);
+
+        $payload = app(PayrollDocumentBuilder::class)->build($colilla->fresh());
+
+        $this->assertSame(now()->toDateString(), $payload['date']);
+        $this->assertMatchesRegularExpression('/^\d{2}:\d{2}:\d{2}$/', $payload['time']);
+        // El set de pruebas lo trae en los dos sitios.
+        $this->assertSame('41946692', $payload['worker_code']);
+        $this->assertSame('41946692', $payload['worker']['worker_code']);
+        $this->assertSame('41946692', $payload['worker']['identification_number']);
+    }
+
+    /**
+     * El ejemplo manda 10 para un pago a cuenta de ahorros, pero el 10 es
+     * EFECTIVO: reportaria una consignacion como pago en efectivo.
+     */
+    public function test_el_deposito_en_cuenta_no_se_reporta_como_efectivo(): void
+    {
+        $colilla = $this->colilla();
+        $colilla->update(['prefix' => 'NI', 'consecutive' => 1]);
+
+        $payload = app(PayrollDocumentBuilder::class)->build($colilla->fresh());
+
+        $this->assertSame(42, $payload['payment']['payment_method_id'],
+            'Consignación bancaria = 42. El 10 es efectivo.');
+
+        $colilla->employee->update(['payment_method' => 'efectivo']);
+        $this->assertSame(10, app(PayrollDocumentBuilder::class)
+            ->build($colilla->fresh())['payment']['payment_method_id']);
+
+        $colilla->employee->update(['payment_method' => 'cheque']);
+        $this->assertSame(20, app(PayrollDocumentBuilder::class)
+            ->build($colilla->fresh())['payment']['payment_method_id']);
+    }
+
+    /** Con TestSetId configurado, el envio va al set de pruebas. */
+    public function test_el_envio_usa_el_set_de_pruebas_cuando_esta_configurado(): void
+    {
+        $colilla = $this->colilla();
+        $this->configDian();
+
+        CompanyConfig::query()->where('company_id', $this->companyId)
+            ->update(['payroll_test_set_id' => '4177964d-de81-4178-9d66-bb2fc05d9d92']);
+
+        Http::fake([
+            '*' => Http::response([
+                'cune' => 'cune-prueba',
+                'ResponseDian' => ['Envelope' => ['Body' => ['SendNominaSyncResponse' => [
+                    'SendNominaSyncResult' => ['IsValid' => 'true', 'StatusCode' => '00'],
+                ]]]],
+            ], 200),
+        ]);
+
+        app(PayrollDianSender::class)->send($colilla);
+
+        Http::assertSent(fn ($request) => str_contains(
+            $request->url(),
+            '/api/ubl2.1/payroll/4177964d-de81-4178-9d66-bb2fc05d9d92'
+        ));
+    }
+
+    /** Sin TestSetId el envio va a produccion, sin sufijo en la ruta. */
+    public function test_sin_set_de_pruebas_el_envio_va_a_produccion(): void
+    {
+        $colilla = $this->colilla();
+        $this->configDian();
+
+        Http::fake([
+            '*' => Http::response([
+                'cune' => 'cune-produccion',
+                'ResponseDian' => ['Envelope' => ['Body' => ['SendNominaSyncResponse' => [
+                    'SendNominaSyncResult' => ['IsValid' => 'true', 'StatusCode' => '00'],
+                ]]]],
+            ], 200),
+        ]);
+
+        app(PayrollDianSender::class)->send($colilla);
+
+        Http::assertSent(fn ($request) => str_ends_with($request->url(), '/api/ubl2.1/payroll'));
+    }
+
     private function configDian(): void
     {
         $config = CompanyConfig::query()->firstOrNew(['company_id' => $this->companyId]);
@@ -413,6 +520,8 @@ class PayrollDianTest extends TestCase
             // viene vacío y el payload lo lleva en null, que es justo lo que
             // la DIAN rechazaría en producción.
             'dian_municipality_id' => Municipality::query()->value('id'),
+            // Explícito: si lo dejara como está, heredaría el de otra prueba.
+            'payroll_test_set_id' => null,
         ])->save();
 
         $this->limpiar[] = function () use ($config, $original) {

@@ -47,6 +47,8 @@ class PayrollDocumentBuilder
 
         return [
             'type_document_id' => PayrollCatalog::TYPE_DOCUMENT_NOMINA,
+            'date' => now()->toDateString(),
+            'time' => now()->format('H:i:s'),
 
             'establishment_name' => $empresa?->name,
             'establishment_address' => $empresa?->address,
@@ -88,7 +90,7 @@ class PayrollDocumentBuilder
                 'municipality_id' => $empleado->dian_municipality_id ?? $config?->dian_municipality_id,
                 'type_contract_id' => PayrollCatalog::contractType($contrato?->contract_type),
                 'high_risk_pension' => (bool) $empleado->high_risk_pension,
-                'identification_number' => (int) $empleado->document_number,
+                'identification_number' => (string) $empleado->document_number,
                 'surname' => $empleado->last_name,
                 'second_surname' => $empleado->second_last_name,
                 'first_name' => $empleado->first_name,
@@ -97,6 +99,9 @@ class PayrollDocumentBuilder
                 'integral_salarary' => PayrollCatalog::isIntegralSalary($contrato?->salary_type),
                 'salary' => $this->monto($contrato?->salary ?? $slip->base_salary),
                 'email' => $empleado->email,
+                // Repetido a proposito: el set de pruebas de la DIAN lo trae
+                // en los dos sitios.
+                'worker_code' => (string) $empleado->document_number,
             ],
 
             'payment' => [
@@ -116,18 +121,16 @@ class PayrollDocumentBuilder
     }
 
     /**
-     * Dias laborados en la empresa, desde el ingreso hasta el fin del periodo.
+     * Dias laborados EN EL PERIODO, no la antiguedad en la empresa.
+     *
+     * El primer ejemplo de Postman traia 785 con un periodo de un mes, que no
+     * cuadra con ninguna de las dos lecturas; el del set de pruebas de la DIAN
+     * manda 30 para enero, o sea los dias del periodo. Es tambien lo que dice
+     * el estandar: TiempoLaborado es la cantidad de dias laborados.
      */
-    protected function tiempoLaborado(PayrollSlip $slip): string
+    protected function tiempoLaborado(PayrollSlip $slip): int
     {
-        $ingreso = $slip->employee?->hire_date;
-        $fin = $slip->period?->end_date;
-
-        if (! $ingreso || ! $fin) {
-            return '0.00';
-        }
-
-        return number_format(max(0, $ingreso->diffInDays($fin)), 2, '.', '');
+        return (int) $slip->worked_days;
     }
 
     protected function devengados(PayrollSlip $slip): array
