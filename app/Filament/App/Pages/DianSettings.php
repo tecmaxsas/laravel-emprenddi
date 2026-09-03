@@ -649,7 +649,7 @@ class DianSettings extends Page implements HasForms
 
         if ($esValido) {
             $this->successNotif(
-                'Nómina de prueba aceptada (SETP-'.$consecutivo.')',
+                'Nómina de prueba aceptada ('.$prefijo.$consecutivo.')',
                 'Revisa el avance del set en el portal de la DIAN.'
             );
 
@@ -657,9 +657,61 @@ class DianSettings extends Page implements HasForms
         }
 
         $this->errorNotif(
-            'La DIAN rechazó la nómina de prueba SETP-'.$consecutivo,
-            (string) ($respuestaDian['StatusDescription'] ?? 'Sin detalle. Revisa la respuesta cruda más abajo.')
+            'La DIAN rechazó la nómina de prueba '.$prefijo.$consecutivo,
+            $this->motivoDelRechazo($respuestaDian)
         );
+    }
+
+    /**
+     * Por que rechazo la DIAN el documento.
+     *
+     * StatusDescription suele traer solo "Documento con errores en campos
+     * mandatorios" o venir vacio; las reglas concretas que se violaron van en
+     * ErrorMessage.string, que es donde hay que mirar. Leer solo la
+     * descripcion deja al usuario con un rechazo sin motivo.
+     *
+     * @param  array<string, mixed>|null  $respuestaDian
+     */
+    protected function motivoDelRechazo(?array $respuestaDian): string
+    {
+        if (! $respuestaDian) {
+            return 'apidian respondió sin el bloque de la DIAN. Revisa la respuesta cruda más abajo.';
+        }
+
+        $reglas = $respuestaDian['ErrorMessage']['string'] ?? $respuestaDian['ErrorMessage'] ?? null;
+
+        if (is_string($reglas)) {
+            $reglas = [$reglas];
+        }
+
+        $mensajes = [];
+
+        if (is_array($reglas)) {
+            array_walk_recursive($reglas, function ($v) use (&$mensajes) {
+                if (is_string($v) && trim($v) !== '') {
+                    $mensajes[] = trim($v);
+                }
+            });
+        }
+
+        $encabezado = array_filter([
+            ($codigo = (string) ($respuestaDian['StatusCode'] ?? '')) !== '' ? "[{$codigo}]" : null,
+            (string) ($respuestaDian['StatusDescription'] ?? '') ?: (string) ($respuestaDian['StatusMessage'] ?? ''),
+        ]);
+
+        $partes = array_filter([
+            implode(' ', $encabezado),
+            // Se muestran varias: la DIAN devuelve todas las reglas que fallan
+            // de una vez y arreglar una sola no desbloquea el envio.
+            $mensajes !== [] ? implode(' · ', array_slice($mensajes, 0, 6)) : null,
+        ]);
+
+        if ($partes === []) {
+            return 'La DIAN rechazó sin decir el motivo. La respuesta completa quedó más abajo; '
+                .'el detalle también aparece en apidian → Nóminas emitidas → columna Estado.';
+        }
+
+        return implode(' — ', $partes);
     }
 
     /**
@@ -710,12 +762,22 @@ class DianSettings extends Page implements HasForms
 
         return [
             'type_document_id' => PayrollCatalog::TYPE_DOCUMENT_NOMINA,
-            'date' => now()->toDateString(),
-            'time' => now()->format('H:i:s'),
-            // El prefijo TIENE que estar registrado en apidian: si manda uno
-            // desconocido no encuentra la resolucion de nomina y revienta.
-            'prefix' => $prefijo,
-            'consecutive' => $consecutivo,
+
+            // Sin `date` ni `time` al nivel superior: el payload que apidian
+            // procesa sin reventar no los trae, y el que si los llevaba
+            // devolvia HTTP 500 sin detalle.
+
+            // Ninguno puede ir en null: apidian los usa para armar el
+            // documento y con un null lanza excepcion, que sale como
+            // "Server Error" y no dice donde.
+            'establishment_name' => $empresa?->name ?: 'EMPRESA',
+            'establishment_address' => $empresa?->address ?: 'SIN DIRECCION',
+            'establishment_phone' => $empresa?->phone ?: '0000000',
+            'establishment_municipality' => $config->dian_municipality_id,
+            'establishment_email' => $empresa?->email ?: 'sin@correo.com',
+
+            'head_note' => 'DOCUMENTO DE PRUEBA - SET DE HABILITACION DIAN NOMINA ELECTRONICA',
+            'foot_note' => 'DOCUMENTO DE PRUEBA - SET DE HABILITACION DIAN NOMINA ELECTRONICA',
 
             'novelty' => [
                 'novelty' => false,
@@ -726,17 +788,20 @@ class DianSettings extends Page implements HasForms
                 'admision_date' => '2024-01-01',
                 'settlement_start_date' => now()->startOfMonth()->toDateString(),
                 'settlement_end_date' => now()->endOfMonth()->toDateString(),
-                'worked_time' => 30,
+                'worked_time' => '30.00',
                 'issue_date' => now()->toDateString(),
             ],
 
-            'establishment_name' => $empresa?->name,
-            'establishment_address' => $empresa?->address,
-            'establishment_phone' => $empresa?->phone,
-            'establishment_municipality' => $config->dian_municipality_id,
-            'establishment_email' => $empresa?->email,
+            'sendmail' => false,
+            'sendmailtome' => false,
 
             'worker_code' => 'EMP001',
+
+            // El prefijo TIENE que estar registrado en apidian: si manda uno
+            // desconocido no encuentra la resolucion de nomina y revienta.
+            'prefix' => $prefijo,
+            'consecutive' => $consecutivo,
+
             'payroll_period_id' => PayrollCatalog::PAYROLL_PERIODS['mensual'],
             'notes' => 'DOCUMENTO DE PRUEBA - SET DE HABILITACION DIAN NOMINA ELECTRONICA',
 
@@ -747,21 +812,20 @@ class DianSettings extends Page implements HasForms
                 'municipality_id' => $config->dian_municipality_id,
                 'type_contract_id' => PayrollCatalog::CONTRACT_TYPES['indefinido'],
                 'high_risk_pension' => false,
-                'identification_number' => '1234567890',
-                'surname' => 'PÉREZ',
-                'second_surname' => 'GARCÍA',
+                'identification_number' => 1234567890,
+                'surname' => 'PEREZ',
+                'second_surname' => 'GARCIA',
                 'first_name' => 'JUAN',
                 'middle_name' => 'CARLOS',
-                'address' => 'Calle 123 # 45-67',
-                'email' => $empresa?->email,
+                'address' => 'CALLE 123 NRO 45-67',
                 'integral_salarary' => false,
                 'salary' => '1500000.00',
-                'worker_code' => 'EMP001',
+                'email' => $empresa?->email ?: 'sin@correo.com',
             ],
 
             'payment' => [
                 'payment_method_id' => PayrollCatalog::PAYMENT_METHODS['deposito'],
-                'bank_name' => 'Banco de Bogotá',
+                'bank_name' => 'BANCO DE BOGOTA',
                 'account_type' => 'AHORROS',
                 'account_number' => '1234567890',
             ],
@@ -773,8 +837,8 @@ class DianSettings extends Page implements HasForms
             'accrued' => [
                 'worked_days' => 30,
                 'salary' => '1500000.00',
-                'transportation_allowance' => '140606.00',
-                'accrued_total' => '1640606.00',
+                'transportation_allowance' => '162000.00',
+                'accrued_total' => '1662000.00',
             ],
 
             'deductions' => [

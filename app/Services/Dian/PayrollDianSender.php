@@ -206,15 +206,27 @@ class PayrollDianSender
         $descripcion = (string) ($respuestaDian['StatusDescription'] ?? '');
         $mensaje = (string) ($respuestaDian['StatusMessage'] ?? '');
 
-        $detalle = $respuestaDian['ErrorMessage']['string'] ?? null;
+        // Las reglas concretas que fallaron van aqui, no en la descripcion.
+        // Segun el caso apidian lo entrega como string, como lista bajo
+        // `string`, o como lista directa.
+        $detalle = $respuestaDian['ErrorMessage']['string'] ?? $respuestaDian['ErrorMessage'] ?? null;
         if (is_string($detalle)) {
             $detalle = [$detalle];
+        }
+
+        $reglas = [];
+        if (is_array($detalle)) {
+            array_walk_recursive($detalle, function ($v) use (&$reglas) {
+                if (is_string($v) && trim($v) !== '') {
+                    $reglas[] = trim($v);
+                }
+            });
         }
 
         $partes = array_filter([
             $statusCode !== '' ? "[{$statusCode}]" : null,
             $descripcion ?: $mensaje,
-            is_array($detalle) ? implode(' · ', array_slice($detalle, 0, 4)) : null,
+            $reglas !== [] ? implode(' · ', array_slice($reglas, 0, 4)) : null,
         ]);
 
         return implode(' ', $partes) ?: 'La DIAN rechazó el documento sin detalle.';

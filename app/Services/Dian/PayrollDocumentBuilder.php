@@ -47,14 +47,19 @@ class PayrollDocumentBuilder
 
         return [
             'type_document_id' => PayrollCatalog::TYPE_DOCUMENT_NOMINA,
-            'date' => now()->toDateString(),
-            'time' => now()->format('H:i:s'),
 
-            'establishment_name' => $empresa?->name,
-            'establishment_address' => $empresa?->address,
-            'establishment_phone' => $empresa?->phone,
+            // Sin `date` ni `time` al nivel superior. La fecha del documento
+            // es period.issue_date; mandarlos aparte hacia que apidian
+            // respondiera HTTP 500 sin detalle.
+
+            // Ninguno puede ir en null: apidian los usa para armar el
+            // documento y con un null lanza excepcion, que llega como
+            // "Server Error" y no dice donde esta el problema.
+            'establishment_name' => $empresa?->name ?: 'EMPRESA',
+            'establishment_address' => $empresa?->address ?: 'SIN DIRECCION',
+            'establishment_phone' => $empresa?->phone ?: '0000000',
             'establishment_municipality' => $config?->dian_municipality_id,
-            'establishment_email' => $empresa?->email,
+            'establishment_email' => $empresa?->email ?: 'sin@correo.com',
 
             // Sin novedad: es un documento nuevo, no un ajuste de otro.
             'novelty' => [

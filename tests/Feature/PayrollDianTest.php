@@ -427,19 +427,52 @@ class PayrollDianTest extends TestCase
         $this->assertSame(30, $payload['accrued']['worked_days']);
     }
 
-    public function test_el_payload_lleva_fecha_hora_y_codigo_del_trabajador(): void
+    public function test_el_payload_lleva_fecha_de_emision_y_codigo_del_trabajador(): void
     {
         $colilla = $this->colilla();
         $colilla->update(['prefix' => 'NI', 'consecutive' => 1]);
 
         $payload = app(PayrollDocumentBuilder::class)->build($colilla->fresh());
 
-        $this->assertSame(now()->toDateString(), $payload['date']);
-        $this->assertMatchesRegularExpression('/^\d{2}:\d{2}:\d{2}$/', $payload['time']);
+        // La fecha del documento va SOLO en period.issue_date. Mandar `date` y
+        // `time` al nivel superior hacia que apidian devolviera HTTP 500 sin
+        // detalle; el payload que si procesa no los trae.
+        $this->assertArrayNotHasKey('date', $payload);
+        $this->assertArrayNotHasKey('time', $payload);
+        $this->assertSame(now()->toDateString(), $payload['period']['issue_date']);
+
         // El set de pruebas lo trae en los dos sitios.
         $this->assertSame('41946692', $payload['worker_code']);
         $this->assertSame('41946692', $payload['worker']['worker_code']);
         $this->assertSame('41946692', $payload['worker']['identification_number']);
+    }
+
+    /**
+     * apidian revienta con un null en cualquiera de estos campos y el 500 que
+     * devuelve no dice cual es. Una empresa a la que le falte el telefono o la
+     * direccion tiene que poder enviar nomina igual.
+     */
+    public function test_los_datos_del_establecimiento_nunca_van_en_null(): void
+    {
+        $colilla = $this->colilla();
+        $colilla->update(['prefix' => 'NI', 'consecutive' => 1]);
+
+        // Corre contra la base de desarrollo: se deja la empresa como estaba.
+        $original = $this->company->only(['address', 'phone', 'email']);
+        $this->limpiar[] = fn () => $this->company->forceFill($original)->saveQuietly();
+
+        $this->company->forceFill([
+            'address' => null,
+            'phone' => null,
+            'email' => null,
+        ])->saveQuietly();
+
+        $payload = app(PayrollDocumentBuilder::class)->build($colilla->fresh());
+
+        foreach (['establishment_name', 'establishment_address', 'establishment_phone', 'establishment_email'] as $campo) {
+            $this->assertNotNull($payload[$campo], "{$campo} llegó en null: apidian responde Server Error.");
+            $this->assertNotSame('', $payload[$campo], "{$campo} llegó vacío.");
+        }
     }
 
     /**
@@ -579,6 +612,42 @@ class PayrollDianTest extends TestCase
 
         $this->assertSame(8, (int) CompanyConfig::query()
             ->where('company_id', $this->companyId)->value('payroll_test_consecutive'));
+    }
+
+    /**
+     * La DIAN pone el motivo real en ErrorMessage, no en StatusDescription:
+     * ésta última suele ser un genérico "Documento con errores en campos
+     * mandatorios". Mostrar sólo la descripción deja un rechazo sin motivo, y
+     * sin motivo no hay nada que corregir.
+     */
+    public function test_el_rechazo_muestra_las_reglas_que_fallaron(): void
+    {
+        $colilla = $this->colilla();
+        $this->configDian();
+
+        Http::fake([
+            '*' => Http::response([
+                'ResponseDian' => ['Envelope' => ['Body' => ['SendNominaSyncResponse' => [
+                    'SendNominaSyncResult' => [
+                        'IsValid' => 'false',
+                        'StatusCode' => '99',
+                        'StatusDescription' => 'Validación contiene errores en campos mandatorios',
+                        'ErrorMessage' => ['string' => [
+                            'Regla: DIAN72 Rechazo: El campo NumeroSecuenciaXML no cumple',
+                            'Regla: FAJ42 Rechazo: Fecha de emisión fuera de rango',
+                        ]],
+                    ],
+                ]]]],
+            ], 200),
+        ]);
+
+        $resultado = app(PayrollDianSender::class)->send($colilla);
+
+        $this->assertFalse($resultado['ok']);
+        $this->assertStringContainsString('DIAN72', $resultado['message']);
+        $this->assertStringContainsString('FAJ42', $resultado['message']);
+        $this->assertStringContainsString('DIAN72', (string) $colilla->fresh()->dian_error_message,
+            'El motivo tiene que quedar guardado en la colilla, no sólo en la notificación.');
     }
 
     /** Sin TestSetId no se envía nada: no tiene a dónde ir. */
