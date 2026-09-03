@@ -619,6 +619,78 @@ class PayrollDianTest extends TestCase
         Http::assertNothingSent();
     }
 
+    /**
+     * El portal de la DIAN muestra el ID del software y el TestSetId juntos y
+     * se confunden. El del software no sirve y apidian responde 500.
+     */
+    public function test_avisa_si_el_testsetid_es_en_realidad_el_id_del_software(): void
+    {
+        $this->configDian();
+        CompanyConfig::query()->where('company_id', $this->companyId)->update([
+            'software_payroll_id' => 'f8a07a65-c7d1-4a58-bf18-be19aecba181',
+            'payroll_test_set_id' => 'f8a07a65-c7d1-4a58-bf18-be19aecba181',
+            'payroll_software_configured' => true,
+        ]);
+
+        Http::fake();
+        Filament::setCurrentPanel(Filament::getPanel('app'));
+        app(CurrentCompany::class)->set($this->company->refresh());
+
+        Livewire::test(DianSettings::class)->call('sendTestPayroll');
+
+        Http::assertNothingSent();
+    }
+
+    /** Sin municipio apidian revienta con un 500 que no dice nada. */
+    public function test_no_se_envia_el_set_sin_municipio_configurado(): void
+    {
+        $this->configDian();
+        CompanyConfig::query()->where('company_id', $this->companyId)->update([
+            'payroll_test_set_id' => '4177964d-de81-4178-9d66-bb2fc05d9d92',
+            'payroll_software_configured' => true,
+            'dian_municipality_id' => null,
+        ]);
+
+        Http::fake();
+        Filament::setCurrentPanel(Filament::getPanel('app'));
+        app(CurrentCompany::class)->set($this->company->refresh());
+
+        Livewire::test(DianSettings::class)->call('sendTestPayroll');
+
+        Http::assertNothingSent();
+    }
+
+    /**
+     * Un municipio DIAN real. El catálogo puede no estar sembrado en dev, y la
+     * empresa lo necesita: sin él apidian responde 500.
+     */
+    private function municipio(): int
+    {
+        $id = Municipality::query()->value('id');
+
+        if ($id) {
+            return (int) $id;
+        }
+
+        $departamento = DB::table('dian_departments')->value('id')
+            ?? DB::table('dian_departments')->insertGetId([
+                'code' => '05', 'name' => 'ZZ Departamento',
+                'created_at' => now(), 'updated_at' => now(),
+            ]);
+
+        $municipioId = DB::table('dian_municipalities')->insertGetId([
+            'dian_department_id' => $departamento,
+            'code' => '05001',
+            'name' => 'ZZ Municipio',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->limpiar[] = fn () => DB::table('dian_municipalities')->where('id', $municipioId)->delete();
+
+        return $municipioId;
+    }
+
     private function configDian(): void
     {
         $config = CompanyConfig::query()->firstOrNew(['company_id' => $this->companyId]);
@@ -631,7 +703,7 @@ class PayrollDianTest extends TestCase
             // Se usa un municipio real si el catálogo está sembrado; en dev
             // viene vacío y el payload lo lleva en null, que es justo lo que
             // la DIAN rechazaría en producción.
-            'dian_municipality_id' => Municipality::query()->value('id'),
+            'dian_municipality_id' => $this->municipio(),
             // Explícito: si lo dejara como está, heredaría el de otra prueba.
             'payroll_test_set_id' => null,
         ])->save();

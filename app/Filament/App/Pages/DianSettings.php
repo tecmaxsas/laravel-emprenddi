@@ -433,6 +433,11 @@ class DianSettings extends Page implements HasForms
                             ->icon('heroicon-o-cpu-chip')
                             ->action('savePayrollSoftware'),
                     ])->columnSpanFull(),
+
+                    Forms\Components\Placeholder::make('payroll_software_api_response')
+                        ->label('')
+                        ->columnSpanFull()
+                        ->content(fn () => $this->apiResponseBlock('payroll_software')),
                 ]),
 
             Forms\Components\Section::make('Paso 2 — Rangos de numeración')
@@ -459,6 +464,11 @@ class DianSettings extends Page implements HasForms
                             ->icon('heroicon-o-hashtag')
                             ->action('savePayrollResolutions'),
                     ])->columnSpanFull(),
+
+                    Forms\Components\Placeholder::make('payroll_res_api_response')
+                        ->label('')
+                        ->columnSpanFull()
+                        ->content(fn () => $this->apiResponseBlock('payroll_resolutions')),
                 ]),
 
             Forms\Components\Section::make('Paso 3 — Set de pruebas')
@@ -503,6 +513,12 @@ class DianSettings extends Page implements HasForms
                             ->modalDescription('Se envía un documento de muestra con prefijo SETP al TestSetId configurado. No afecta la nómina real de la empresa.')
                             ->action('sendTestPayroll'),
                     ]),
+
+                    // Sin esto un 500 de apidian llega como "Server Error" y no
+                    // hay por donde empezar a mirar.
+                    Forms\Components\Placeholder::make('payroll_api_response')
+                        ->label('')
+                        ->content(fn () => $this->apiResponseBlock('payroll_test')),
                 ]),
         ];
     }
@@ -544,6 +560,29 @@ class DianSettings extends Page implements HasForms
             return;
         }
 
+        // El portal muestra los dos UUID juntos y se confunden facilmente. El
+        // del software no sirve como TestSetId y apidian responde 500.
+        if ($config->software_payroll_id && $testSetId === $config->software_payroll_id) {
+            $this->errorNotif(
+                'Ese es el ID del software, no el TestSetId',
+                'En el portal de la DIAN son dos valores distintos: el TestSetId aparece en el aviso '
+                .'"Usted debe proporcionar el identificador del set de pruebas (TestSetId)".'
+            );
+
+            return;
+        }
+
+        // Sin municipio apidian no puede resolver el domicilio y revienta con
+        // un 500 que no dice nada.
+        if (! $config->dian_municipality_id) {
+            $this->errorNotif(
+                'Falta el municipio de la empresa',
+                'Configúralo en la pestaña "Datos de la empresa". Sin él, apidian responde Server Error.'
+            );
+
+            return;
+        }
+
         $consecutivo = (int) ($this->data['payroll_test_consecutive'] ?? 1) ?: 1;
 
         $result = (new DianApiClient($config))->sendPayroll(
@@ -559,7 +598,10 @@ class DianSettings extends Page implements HasForms
         $esValido = filter_var($respuestaDian['IsValid'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
         if (! $result['ok']) {
-            $this->errorNotif('Falló el envío de la nómina de prueba', $result['error'] ?? 'Error desconocido');
+            $this->errorNotif(
+                'Falló el envío de la nómina de prueba',
+                $this->detalleDelFallo($result).' — La respuesta completa quedó más abajo.'
+            );
 
             return;
         }
@@ -583,6 +625,40 @@ class DianSettings extends Page implements HasForms
             'La DIAN rechazó la nómina de prueba SETP-'.$consecutivo,
             (string) ($respuestaDian['StatusDescription'] ?? 'Sin detalle. Revisa la respuesta cruda más abajo.')
         );
+    }
+
+    /**
+     * Lo mas util que se pueda sacar de una respuesta fallida.
+     *
+     * apidian devuelve "Server Error" a secas en los 500, que no dice nada.
+     * Cuando trae message, errors o exception, eso sirve mucho mas.
+     */
+    protected function detalleDelFallo(array $result): string
+    {
+        $data = $result['data'] ?? [];
+
+        if (! empty($data['errors'])) {
+            $mensajes = [];
+            array_walk_recursive($data['errors'], function ($v) use (&$mensajes) {
+                if (is_string($v)) {
+                    $mensajes[] = $v;
+                }
+            });
+
+            if ($mensajes !== []) {
+                return implode(' · ', array_slice($mensajes, 0, 4));
+            }
+        }
+
+        foreach (['exception', 'message'] as $clave) {
+            if (! empty($data[$clave]) && is_string($data[$clave])) {
+                return $data[$clave];
+            }
+        }
+
+        $status = $result['status'] ?? null;
+
+        return trim(($status ? "HTTP {$status}: " : '').($result['error'] ?? 'Error desconocido'));
     }
 
     /**
@@ -689,6 +765,7 @@ class DianSettings extends Page implements HasForms
         }
 
         $resultado = (new DianApiClient($config))->saveSoftwarePayroll($id, $pin);
+        $this->recordApiResponse('payroll_software', $resultado);
 
         if (! $resultado['ok']) {
             $this->errorNotif('apidian rechazó el registro', $resultado['error'] ?? 'Sin detalle');
@@ -740,6 +817,8 @@ class DianSettings extends Page implements HasForms
                 'to' => (int) ($this->data[$rango['hasta']] ?? 99999999),
                 'prefix' => $prefijo,
             ]);
+
+            $this->recordApiResponse('payroll_resolutions', $resultado);
 
             if (! $resultado['ok']) {
                 $this->errorNotif(
