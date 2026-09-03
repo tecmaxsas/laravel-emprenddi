@@ -830,6 +830,52 @@ class PayrollDianTest extends TestCase
             ->where('company_id', $this->companyId)->value('payroll_environment'));
     }
 
+    /**
+     * La DIAN no admite dos nóminas del mismo trabajador para el mismo
+     * periodo. Los envíos de prueba salían idénticos salvo el consecutivo, así
+     * que el primero se aceptaba y los siguientes se rechazaban.
+     */
+    public function test_cada_nomina_de_prueba_es_un_documento_distinto(): void
+    {
+        $this->configDian();
+
+        Filament::setCurrentPanel(Filament::getPanel('app'));
+        app(CurrentCompany::class)->set($this->company->refresh());
+
+        $pagina = new DianSettings;
+        $metodo = new \ReflectionMethod($pagina, 'buildTestPayrollPayload');
+        $metodo->setAccessible(true);
+
+        $huellas = [];
+        $trabajadores = [];
+
+        foreach (range(1, 10) as $consecutivo) {
+            $payload = $metodo->invoke($pagina, $consecutivo, 'NI');
+
+            $huellas[] = $payload['worker']['identification_number']
+                .'|'.$payload['period']['settlement_start_date']
+                .'|'.$payload['period']['settlement_end_date'];
+
+            $trabajadores[] = $payload['worker']['identification_number'];
+
+            // Cada periodo tiene que seguir cerrado y el pago dentro de él.
+            $this->assertLessThanOrEqual(
+                $payload['period']['issue_date'],
+                $payload['period']['settlement_end_date'],
+                "El documento {$consecutivo} liquida un periodo que aún no cierra.",
+            );
+            $this->assertSame(
+                $payload['period']['settlement_end_date'],
+                $payload['payment_dates'][0]['payment_date'],
+            );
+            $this->assertSame((string) $payload['worker']['identification_number'], $payload['worker_code']);
+        }
+
+        $this->assertCount(10, array_unique($huellas),
+            'Dos documentos del set repiten trabajador y periodo: la DIAN rechaza el segundo.');
+        $this->assertCount(10, array_unique($trabajadores));
+    }
+
     /** Sin TestSetId no se envía nada: no tiene a dónde ir. */
     public function test_no_se_envia_el_set_de_pruebas_sin_testsetid(): void
     {

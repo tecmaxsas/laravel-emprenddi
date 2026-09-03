@@ -929,6 +929,17 @@ class DianSettings extends Page implements HasForms
         $config = $this->config();
         $empresa = auth()->user()->company;
 
+        // Cada documento del set tiene que ser DISTINTO. La DIAN no admite dos
+        // nominas del mismo trabajador para el mismo periodo, y los envios
+        // salian identicos salvo el consecutivo: por eso el primero se acepto
+        // y los siguientes se rechazaron.
+        //
+        // Se mueve el mes liquidado y tambien la cedula del trabajador, para
+        // que la combinacion siga siendo unica aunque los meses se repitan
+        // pasado el primer año de envios.
+        $mes = now()->subMonthsNoOverflow(1 + (max(1, $consecutivo) - 1) % 11);
+        $documentoTrabajador = 1234567890 + max(1, $consecutivo);
+
         return [
             'type_document_id' => PayrollCatalog::TYPE_DOCUMENT_NOMINA,
 
@@ -955,11 +966,11 @@ class DianSettings extends Page implements HasForms
 
             'period' => [
                 'admision_date' => '2024-01-01',
-                // El MES PASADO, ya cerrado. Liquidar el mes en curso daba un
+                // Un mes ya cerrado. Liquidar el mes en curso daba un
                 // documento emitido antes de que terminara el periodo que
                 // liquida, y la DIAN lo rechaza.
-                'settlement_start_date' => now()->subMonthNoOverflow()->startOfMonth()->toDateString(),
-                'settlement_end_date' => now()->subMonthNoOverflow()->endOfMonth()->toDateString(),
+                'settlement_start_date' => $mes->copy()->startOfMonth()->toDateString(),
+                'settlement_end_date' => $mes->copy()->endOfMonth()->toDateString(),
                 'worked_time' => '30.00',
                 'issue_date' => now()->toDateString(),
             ],
@@ -967,7 +978,7 @@ class DianSettings extends Page implements HasForms
             'sendmail' => false,
             'sendmailtome' => false,
 
-            'worker_code' => 'EMP001',
+            'worker_code' => (string) $documentoTrabajador,
 
             // El prefijo TIENE que estar registrado en apidian: si manda uno
             // desconocido no encuentra la resolucion de nomina y revienta.
@@ -984,7 +995,7 @@ class DianSettings extends Page implements HasForms
                 'municipality_id' => $config->dian_municipality_id,
                 'type_contract_id' => PayrollCatalog::CONTRACT_TYPES['indefinido'],
                 'high_risk_pension' => false,
-                'identification_number' => 1234567890,
+                'identification_number' => $documentoTrabajador,
                 'surname' => 'PEREZ',
                 'second_surname' => 'GARCIA',
                 'first_name' => 'JUAN',
@@ -1003,7 +1014,7 @@ class DianSettings extends Page implements HasForms
             ],
 
             'payment_dates' => [
-                ['payment_date' => now()->subMonthNoOverflow()->endOfMonth()->toDateString()],
+                ['payment_date' => $mes->copy()->endOfMonth()->toDateString()],
             ],
 
             'accrued' => [
