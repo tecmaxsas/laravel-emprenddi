@@ -9,8 +9,9 @@ namespace App\Services\Dian;
  * Todo el mapeo vive aqui a proposito. Los ids no son inventados: salen del
  * ejemplo oficial de apidian y de las tablas de la DIAN. Aun asi, apidian
  * numera sus catalogos internamente y no tiene por que coincidir con los
- * codigos de la DIAN, asi que CUALQUIER duda se resuelve consultando
- * POST /reports/master/database contra la API — no adivinando aqui.
+ * codigos de la DIAN, asi que CUALQUIER duda se resuelve con
+ * `php artisan dian:payroll-catalogs`, que los trae de la instancia de la
+ * empresa — no adivinando aqui.
  *
  * Anclas confirmadas en el ejemplo de apidian:
  *   type_worker_id: 1                        (dependiente)
@@ -83,8 +84,8 @@ class PayrollCatalog
      *
      * El 10 del ejemplo de apidian corresponde a consignacion, que es como se
      * paga la nomina casi siempre. Efectivo y cheque tienen su propio id en el
-     * catalogo de medios de pago de la DIAN y hay que confirmarlos contra
-     * /reports/master/database antes de usarlos en produccion.
+     * catalogo de medios de pago y hay que confirmarlos con
+     * `php artisan dian:payroll-catalogs` antes de usarlos en produccion.
      */
     public const PAYMENT_METHODS = [
         'deposito' => 10,

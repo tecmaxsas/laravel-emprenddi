@@ -289,6 +289,41 @@ class PayrollDianTest extends TestCase
             'El segundo intento no puede quemar otro consecutivo.');
     }
 
+    /**
+     * El comando que trae los catalogos de apidian. Existe para no adivinar
+     * los ids del payload, que es como se coleccionan rechazos.
+     */
+    public function test_el_comando_lista_los_catalogos_de_nomina(): void
+    {
+        $this->configDian();
+
+        Http::fake([
+            '*/reports/master/database' => Http::response([
+                'type_contracts' => [
+                    ['id' => 1, 'name' => 'Termino fijo'],
+                    ['id' => 2, 'name' => 'Termino indefinido'],
+                ],
+                'type_workers' => [['id' => 1, 'name' => 'Dependiente']],
+            ], 200),
+        ]);
+
+        $this->artisan('dian:payroll-catalogs', ['--company' => $this->companyId])
+            ->expectsOutputToContain('type_contracts')
+            ->assertSuccessful();
+    }
+
+    /** Si la ruta no es esa, el comando lo dice en vez de fallar en seco. */
+    public function test_el_comando_avisa_cuando_la_ruta_no_existe(): void
+    {
+        $this->configDian();
+
+        Http::fake(['*/reports/master/database' => Http::response(['message' => 'Not Found'], 404)]);
+
+        $this->artisan('dian:payroll-catalogs', ['--company' => $this->companyId])
+            ->expectsOutputToContain('--endpoint')
+            ->assertFailed();
+    }
+
     private function configDian(): void
     {
         $config = CompanyConfig::query()->firstOrNew(['company_id' => $this->companyId]);

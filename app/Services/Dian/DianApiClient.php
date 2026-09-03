@@ -108,6 +108,19 @@ class DianApiClient
     }
 
     /**
+     * Trae el catalogo maestro de apidian: municipios, tipos de contrato,
+     * tipos de trabajador, deducciones de ley y demas.
+     *
+     * Es lectura: sirve para confirmar los ids que van en los payloads en vez
+     * de adivinarlos. La ruta se puede cambiar porque no todas las
+     * instalaciones la exponen en el mismo sitio.
+     */
+    public function masterDatabase(string $endpoint = '/reports/master/database'): array
+    {
+        return $this->request('post', $endpoint, []);
+    }
+
+    /**
      * Envia una nomina electronica individual.
      *
      * En habilitacion el endpoint lleva el testSetId al final, igual que las
