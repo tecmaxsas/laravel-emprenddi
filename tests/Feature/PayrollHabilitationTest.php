@@ -139,7 +139,9 @@ class PayrollHabilitationTest extends TestCase
 
         $this->assertSame(10, $payload['type_document_id']);
         $this->assertSame(1, $payload['type_note'], 'Tipo 1 = reemplazar.');
-        $this->assertSame('NI40', $payload['predecessor']['predecessor_number']);
+        // Entero y sin prefijo: apidian valida el tipo y con "NI40" responde
+        // "predecessor.predecessor number debe ser un número entero".
+        $this->assertSame(40, $payload['predecessor']['predecessor_number']);
         $this->assertSame('cune-de-la-nomina', $payload['predecessor']['predecessor_cune']);
         $this->assertSame('2026-08-31', $payload['predecessor']['predecessor_issue_date']);
         $this->assertSame('NA', $payload['prefix']);

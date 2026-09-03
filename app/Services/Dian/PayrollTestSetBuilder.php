@@ -98,7 +98,9 @@ class PayrollTestSetBuilder
             'type_note' => PayrollCatalog::TYPE_NOTE_REEMPLAZAR,
 
             'predecessor' => [
-                'predecessor_number' => $nomina->prefix.$nomina->consecutive,
+                // Solo el consecutivo y como entero, sin el prefijo: apidian
+                // valida el tipo y responde "debe ser un número entero".
+                'predecessor_number' => (int) $nomina->consecutive,
                 'predecessor_cune' => $nomina->cune,
                 'predecessor_issue_date' => $nomina->issue_date?->toDateString() ?? now()->toDateString(),
             ],
