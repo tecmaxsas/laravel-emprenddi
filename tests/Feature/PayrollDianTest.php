@@ -543,7 +543,7 @@ class PayrollDianTest extends TestCase
             $cuerpo = $request->data();
 
             return str_contains($request->url(), '/api/ubl2.1/payroll/4177964d-de81-4178-9d66-bb2fc05d9d92')
-                && $cuerpo['prefix'] === 'SETP'
+                && $cuerpo['prefix'] === 'NI'
                 && $cuerpo['consecutive'] === 1
                 && $cuerpo['type_document_id'] === 9;
         });
@@ -664,6 +664,63 @@ class PayrollDianTest extends TestCase
      * Un municipio DIAN real. El catálogo puede no estar sembrado en dev, y la
      * empresa lo necesita: sin él apidian responde 500.
      */
+    /**
+     * El prefijo de las pruebas tiene que ser uno registrado en apidian.
+     *
+     * Mandar SETP cuando el rango registrado es NI hace que apidian no
+     * encuentre la resolucion de nomina y responda un 500 sin detalle, que es
+     * imposible de diagnosticar desde afuera.
+     */
+    public function test_el_set_de_pruebas_usa_el_prefijo_registrado(): void
+    {
+        $this->configDian();
+        CompanyConfig::query()->where('company_id', $this->companyId)->update([
+            'payroll_test_set_id' => 'zz-set',
+            'payroll_software_configured' => true,
+        ]);
+        $this->company->update(['payroll_prefix' => 'NI']);
+
+        Http::fake([
+            '*' => Http::response([
+                'cune' => 'zz',
+                'ResponseDian' => ['Envelope' => ['Body' => ['SendNominaSyncResponse' => [
+                    'SendNominaSyncResult' => ['IsValid' => 'true', 'StatusCode' => '00'],
+                ]]]],
+            ], 200),
+        ]);
+
+        Filament::setCurrentPanel(Filament::getPanel('app'));
+        app(CurrentCompany::class)->set($this->company->refresh());
+
+        Livewire::test(DianSettings::class)->call('sendTestPayroll');
+
+        Http::assertSent(fn ($request) => $request->data()['prefix'] === 'NI');
+    }
+
+    /** El payload enviado queda a la vista: apidian oculta el detalle de sus 500. */
+    public function test_el_payload_enviado_queda_disponible_para_reproducirlo(): void
+    {
+        $this->configDian();
+        CompanyConfig::query()->where('company_id', $this->companyId)->update([
+            'payroll_test_set_id' => 'zz-set',
+            'payroll_software_configured' => true,
+        ]);
+        $this->company->update(['payroll_prefix' => 'NI']);
+
+        Http::fake(['*' => Http::response(['message' => 'Server Error'], 500)]);
+
+        Filament::setCurrentPanel(Filament::getPanel('app'));
+        app(CurrentCompany::class)->set($this->company->refresh());
+
+        $pagina = Livewire::test(DianSettings::class)->call('sendTestPayroll');
+
+        $payload = $pagina->get('lastPayrollTestPayload');
+
+        $this->assertIsArray($payload, 'Sin el payload no hay forma de reproducir el fallo.');
+        $this->assertSame(9, $payload['type_document_id']);
+        $this->assertSame('NI', $payload['prefix']);
+    }
+
     private function municipio(): int
     {
         $id = Municipality::query()->value('id');

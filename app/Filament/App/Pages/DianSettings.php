@@ -50,6 +50,9 @@ class DianSettings extends Page implements HasForms
      */
     public array $apiResponses = [];
 
+    /** Ultimo payload de prueba de nomina, para poder reproducirlo. */
+    public ?array $lastPayrollTestPayload = null;
+
     public static function canAccess(): bool
     {
         return (bool) auth()->user()?->can('dian.manage');
@@ -95,6 +98,7 @@ class DianSettings extends Page implements HasForms
             'software_payroll_pin' => $config->software_payroll_pin,
             'payroll_test_set_id' => $config->payroll_test_set_id,
             'payroll_test_consecutive' => $config->payroll_test_consecutive ?: 1,
+            'payroll_test_prefix' => auth()->user()->company?->payroll_prefix ?: 'NI',
             'payroll_res_prefix' => auth()->user()->company?->payroll_prefix ?: 'NI',
             'payroll_res_from' => 1,
             'payroll_res_to' => 99999999,
@@ -486,11 +490,15 @@ class DianSettings extends Page implements HasForms
                             ->action('savePayrollTestSet'),
                     ]),
 
+                    Forms\Components\TextInput::make('payroll_test_prefix')
+                        ->label('Prefijo de las pruebas')
+                        ->helperText('Tiene que ser un prefijo que ya hayas registrado en el paso 2. Si mandas uno que apidian no conoce, no encuentra la resolución y responde Server Error.'),
+
                     Forms\Components\TextInput::make('payroll_test_consecutive')
                         ->label('Próximo consecutivo de prueba')
                         ->numeric()
                         ->minValue(1)
-                        ->helperText('Avanza solo con cada envío aceptado. Usa el prefijo SETP, así que no gasta numeración de producción.'),
+                        ->helperText('Avanza con cada envío, aceptado o no: la DIAN no admite dos documentos con el mismo número.'),
 
                     Forms\Components\Placeholder::make('payroll_test_progress')
                         ->label('Lo que pide la DIAN')
@@ -519,6 +527,19 @@ class DianSettings extends Page implements HasForms
                     Forms\Components\Placeholder::make('payroll_api_response')
                         ->label('')
                         ->content(fn () => $this->apiResponseBlock('payroll_test')),
+
+                    Forms\Components\Placeholder::make('payroll_sent_payload')
+                        ->label('')
+                        ->visible(fn () => $this->lastPayrollTestPayload !== null)
+                        ->content(fn () => new HtmlString(
+                            '<details style="margin-top:8px;">'
+                            .'<summary style="cursor:pointer; font-weight:700; font-size:12.5px;">'
+                            .'Ver el JSON que se envió (para reproducirlo en Postman)</summary>'
+                            .'<pre style="margin-top:8px; padding:10px; background:#0f172a; color:#e2e8f0; '
+                            .'border-radius:8px; font-size:11px; max-height:320px; overflow:auto;">'
+                            .e(json_encode($this->lastPayrollTestPayload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES))
+                            .'</pre></details>'
+                        )),
                 ]),
         ];
     }
@@ -585,12 +606,26 @@ class DianSettings extends Page implements HasForms
 
         $consecutivo = (int) ($this->data['payroll_test_consecutive'] ?? 1) ?: 1;
 
-        $result = (new DianApiClient($config))->sendPayroll(
-            $this->buildTestPayrollPayload($consecutivo),
-            $testSetId,
-        );
+        $prefijo = strtoupper(trim((string) ($this->data['payroll_test_prefix'] ?? '')))
+            ?: (string) auth()->user()->company?->payroll_prefix;
+
+        if ($prefijo === '') {
+            $this->errorNotif(
+                'Falta el prefijo de las pruebas',
+                'Registra primero un rango en el paso 2 y usa ese mismo prefijo.'
+            );
+
+            return;
+        }
+
+        $payload = $this->buildTestPayrollPayload($consecutivo, $prefijo);
+
+        $result = (new DianApiClient($config))->sendPayroll($payload, $testSetId);
 
         $this->recordApiResponse('payroll_test', $result);
+        // Se guarda lo enviado: apidian oculta el detalle de sus 500, asi que
+        // la unica forma de avanzar es poder reproducir la peticion.
+        $this->lastPayrollTestPayload = $payload;
 
         // La DIAN puede responder rechazando aunque el HTTP salga bien: el
         // veredicto esta dentro de ResponseDian.
@@ -668,7 +703,7 @@ class DianSettings extends Page implements HasForms
      * municipio se toma del configurado por la empresa: mandar uno fijo hace
      * que la DIAN rechace si no coincide con el domicilio registrado.
      */
-    protected function buildTestPayrollPayload(int $consecutivo): array
+    protected function buildTestPayrollPayload(int $consecutivo, string $prefijo): array
     {
         $config = $this->config();
         $empresa = auth()->user()->company;
@@ -677,7 +712,9 @@ class DianSettings extends Page implements HasForms
             'type_document_id' => PayrollCatalog::TYPE_DOCUMENT_NOMINA,
             'date' => now()->toDateString(),
             'time' => now()->format('H:i:s'),
-            'prefix' => 'SETP',
+            // El prefijo TIENE que estar registrado en apidian: si manda uno
+            // desconocido no encuentra la resolucion de nomina y revienta.
+            'prefix' => $prefijo,
             'consecutive' => $consecutivo,
 
             'novelty' => [
@@ -701,7 +738,7 @@ class DianSettings extends Page implements HasForms
 
             'worker_code' => 'EMP001',
             'payroll_period_id' => PayrollCatalog::PAYROLL_PERIODS['mensual'],
-            'notes' => 'DOCUMENTO DE PRUEBA — SET DE HABILITACIÓN DIAN NÓMINA ELECTRÓNICA',
+            'notes' => 'DOCUMENTO DE PRUEBA - SET DE HABILITACION DIAN NOMINA ELECTRONICA',
 
             'worker' => [
                 'type_worker_id' => PayrollCatalog::TYPE_WORKER_DEPENDIENTE,
