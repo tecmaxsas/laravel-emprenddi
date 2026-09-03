@@ -41,6 +41,7 @@ class Company extends Model
         'hidden_from_admin',
         'payroll_prefix',
         'payroll_note_prefix',
+        'payroll_note_next_consecutive',
         'payroll_next_consecutive',
         'trial_ends_at',
         'subscription_ends_at',

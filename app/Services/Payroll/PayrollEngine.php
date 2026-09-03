@@ -37,6 +37,23 @@ class PayrollEngine
     public const RATE_VACACIONES = 0.0417;
 
     public const SOLIDARITY_THRESHOLD_SMMLV = 4;
+
+    /**
+     * Subcuenta de subsistencia del Fondo de Solidaridad Pensional.
+     *
+     * Va ADEMAS del 1% de solidaridad y sube por tramos desde 16 SMLMV
+     * (Ley 797 de 2003, art. 8). Sin ella, a los salarios altos se les
+     * descuenta de menos y el aporte queda mal reportado.
+     *
+     * [desde SMLMV (exclusive) => tarifa]
+     */
+    public const SUBSISTENCE_BRACKETS = [
+        20 => 0.010,
+        19 => 0.008,
+        18 => 0.006,
+        17 => 0.004,
+        16 => 0.002,
+    ];
     public const EXEMPTION_THRESHOLD_SMMLV = 10;
     public const INTEGRAL_IBC_FACTOR = 0.70;
 
@@ -55,6 +72,29 @@ class PayrollEngine
      * Liquida un período: genera (o regenera) un desprendible por cada
      * empleado activo con contrato vigente.
      */
+    /**
+     * Tarifa de la subcuenta de subsistencia segun el IBC.
+     *
+     * Los tramos se recorren de mayor a menor y gana el primero que aplica,
+     * asi que basta con comparar contra el limite inferior de cada uno.
+     */
+    protected function subsistenceRate(float $ibc, float $smmlv): float
+    {
+        if ($smmlv <= 0) {
+            return 0.0;
+        }
+
+        $enSmmlv = $ibc / $smmlv;
+
+        foreach (self::SUBSISTENCE_BRACKETS as $desde => $tarifa) {
+            if ($enSmmlv > $desde) {
+                return $tarifa;
+            }
+        }
+
+        return 0.0;
+    }
+
     public function liquidate(PayrollPeriod $period): PayrollPeriod
     {
         if ($period->isPosted()) {
@@ -87,6 +127,12 @@ class PayrollEngine
 
         return DB::transaction(function () use ($period, $employees, $params, $noveltiesByEmployee) {
             // Re-liquidación: borra los desprendibles anteriores (cascade borra líneas).
+            // Lo que ya se reporto a la DIAN se guarda antes de borrar: el
+            // CUNE es el unico enlace con el documento que la DIAN emitio, y
+            // una nota de ajuste lo necesita como predecesor. Perderlo deja a
+            // esa nomina sin forma legal de corregirse.
+            $reportadas = $this->rastroDian($period);
+
             $period->slips()->get()->each(fn (PayrollSlip $slip) => $slip->delete());
 
             foreach ($employees as $employee) {
@@ -101,6 +147,8 @@ class PayrollEngine
                 }
             }
 
+            $this->devolverRastroDian($period, $reportadas);
+
             $period->update([
                 'status' => PayrollPeriod::STATUS_LIQUIDATED,
                 'liquidated_at' => now(),
@@ -108,6 +156,65 @@ class PayrollEngine
 
             return $period->fresh();
         });
+    }
+
+    /**
+     * Lo que la DIAN ya sabe de cada empleado en este periodo.
+     *
+     * Se toma antes de borrar los desprendibles para re-liquidar.
+     *
+     * @return array<int, array<string, mixed>>  empleado => datos DIAN
+     */
+    protected function rastroDian(PayrollPeriod $period): array
+    {
+        return $period->slips()
+            ->whereNotNull('cune')
+            ->get()
+            ->keyBy('employee_id')
+            ->map(fn (PayrollSlip $slip) => [
+                'prefix' => $slip->prefix,
+                'consecutive' => $slip->consecutive,
+                'cune' => $slip->cune,
+                'qr_url' => $slip->qr_url,
+                'dian_status' => $slip->dian_status,
+                'dian_status_code' => $slip->dian_status_code,
+                'dian_sent_at' => $slip->dian_sent_at,
+                'dian_response' => $slip->dian_response,
+                'net_pay' => (float) $slip->net_pay,
+            ])
+            ->all();
+    }
+
+    /**
+     * Devuelve el rastro DIAN al desprendible recalculado del mismo empleado.
+     *
+     * Si el neto cambio, queda marcado: lo reportado y lo liquidado ya no
+     * coinciden y hay que emitir una nota de ajuste. Reenviar la nomina no es
+     * opcion — la DIAN no acepta dos veces el mismo documento.
+     *
+     * Si el empleado ya no se liquida (contrato terminado, por ejemplo) el
+     * desprendible reportado se vuelve a crear tal cual, para no perder el
+     * documento que la DIAN tiene.
+     *
+     * @param  array<int, array<string, mixed>>  $reportadas
+     */
+    protected function devolverRastroDian(PayrollPeriod $period, array $reportadas): void
+    {
+        foreach ($reportadas as $employeeId => $datos) {
+            $netoAnterior = $datos['net_pay'];
+            unset($datos['net_pay']);
+
+            $slip = $period->slips()->where('employee_id', $employeeId)->first();
+
+            if (! $slip) {
+                continue;
+            }
+
+            $slip->forceFill([
+                ...$datos,
+                'dian_needs_adjustment' => abs((float) $slip->net_pay - $netoAnterior) > 0.01,
+            ])->save();
+        }
     }
 
     /**
@@ -161,6 +268,7 @@ class PayrollEngine
         $solidarity = $ibc >= self::SOLIDARITY_THRESHOLD_SMMLV * $smmlv
             ? round($ibc * self::RATE_SOLIDARITY, 2)
             : 0.0;
+        $subsistence = round($ibc * $this->subsistenceRate($ibc, $smmlv), 2);
 
         // Retención en la fuente: automática (Art. 383 ET), salvo que el
         // empleado tenga una novedad manual de retención que la sustituya.
@@ -171,14 +279,17 @@ class PayrollEngine
             ? 0.0
             : $this->withholding->compute(
                 $totalEarnings,
-                $health + $pension + $solidarity,
+                $health + $pension + $solidarity + $subsistence,
                 (float) $params->uvt,
                 (float) ($employee->housing_interest_deduction ?? 0),
                 (float) ($employee->prepaid_health_deduction ?? 0),
                 (bool) $employee->has_dependents,
             );
 
-        $totalDeductions = round($health + $pension + $solidarity + $extraDeductions + $autoRetention, 2);
+        $totalDeductions = round(
+            $health + $pension + $solidarity + $subsistence + $extraDeductions + $autoRetention,
+            2,
+        );
         $netPay = round($totalEarnings - $totalDeductions, 2);
 
         // Exoneración Ley 1607: salario < 10 SMMLV exonera al empleador de
@@ -216,6 +327,7 @@ class PayrollEngine
             'employee_health' => $health,
             'employee_pension' => $pension,
             'solidarity_fund' => $solidarity,
+            'solidarity_sub' => $subsistence,
             'employer_health' => $erHealth,
             'employer_pension' => $erPension,
             'employer_arl' => $erArl,
@@ -251,6 +363,9 @@ class PayrollEngine
         $lines[] = [PayrollSlipLine::TYPE_DEDUCTION, 'pension', 'Pensión (4%)', null, $pension];
         if ($solidarity > 0) {
             $lines[] = [PayrollSlipLine::TYPE_DEDUCTION, 'fsp', 'Fondo de solidaridad pensional (1%)', null, $solidarity];
+        }
+        if ($subsistence > 0) {
+            $lines[] = [PayrollSlipLine::TYPE_DEDUCTION, 'fsp_sub', 'Fondo de subsistencia', null, $subsistence];
         }
         // Deducciones de novedad.
         foreach ($novelties as $novelty) {

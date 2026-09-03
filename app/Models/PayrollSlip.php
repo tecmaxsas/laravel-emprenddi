@@ -45,6 +45,7 @@ class PayrollSlip extends Model
         'employee_health',
         'employee_pension',
         'solidarity_fund',
+        'solidarity_sub',
         'employer_health',
         'employer_pension',
         'employer_arl',
@@ -64,12 +65,14 @@ class PayrollSlip extends Model
         'qr_url',
         'dian_response',
         'dian_error_message',
+        'dian_needs_adjustment',
         'dian_sent_at',
 ];
 
     protected function casts(): array
     {
         return [
+            'dian_needs_adjustment' => 'boolean',
             'dian_response' => 'array',
             'dian_sent_at' => 'datetime',
             'worked_days' => 'integer',
@@ -82,6 +85,7 @@ class PayrollSlip extends Model
             'employee_health' => 'decimal:2',
             'employee_pension' => 'decimal:2',
             'solidarity_fund' => 'decimal:2',
+            'solidarity_sub' => 'decimal:2',
             'employer_health' => 'decimal:2',
             'employer_pension' => 'decimal:2',
             'employer_arl' => 'decimal:2',

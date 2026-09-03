@@ -38,6 +38,48 @@ class PayrollCatalog
 
     public const SUB_TYPE_WORKER_NO_APLICA = 1;
 
+    /**
+     * De nuestro concepto de novedad al bloque del documento DIAN.
+     *
+     * Los devengados que la DIAN pide como listas con detalle (horas extra y
+     * recargos) llevan hora de inicio y fin. Cuando la novedad no las trae
+     * —que es lo normal, nadie captura la hora exacta de cada extra— el
+     * concepto se reporta en "otros conceptos" con su nombre: es un bloque
+     * valido del estandar y no obliga a inventarse datos.
+     */
+    public const EARNING_BLOCKS = [
+        'he_diurna' => 'HEDs',
+        'he_nocturna' => 'HENs',
+        'he_festiva_diurna' => 'HEDDFs',
+        'he_festiva_nocturna' => 'HENDFs',
+        'recargo_nocturno' => 'HRNs',
+        'recargo_festivo' => 'HRDDFs',
+        'comision' => 'commissions',
+        'incapacidad' => 'work_disabilities',
+        'vacaciones' => 'common_vacation',
+        'bonificacion' => 'bonuses',
+        'auxilio_extralegal' => 'aid',
+        'otro_devengado' => 'other_concepts',
+    ];
+
+    /** Porcentaje de recargo que la DIAN espera para cada tipo de hora. */
+    public const OVERTIME_PERCENTAGES = [
+        'HEDs' => 25,
+        'HENs' => 75,
+        'HRNs' => 35,
+        'HEDDFs' => 100,
+        'HRDDFs' => 75,
+        'HENDFs' => 150,
+    ];
+
+    /** De nuestro concepto de descuento al campo del documento DIAN. */
+    public const DEDUCTION_BLOCKS = [
+        'prestamo' => 'orders',
+        'embargo' => 'tax_liens',
+        'aporte_voluntario' => 'voluntary_pension',
+        'cooperativa' => 'cooperative',
+    ];
+
     /** Deducciones de ley que van con id fijo en el payload. */
     public const DEDUCTION_SALUD = 1;
 

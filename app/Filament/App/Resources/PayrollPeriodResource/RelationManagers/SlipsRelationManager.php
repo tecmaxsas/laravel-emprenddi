@@ -3,8 +3,11 @@
 namespace App\Filament\App\Resources\PayrollPeriodResource\RelationManagers;
 
 use App\Models\PayrollSlip;
+use App\Services\Dian\PayrollAdjustmentNoteSender;
+use App\Services\Dian\PayrollCatalog;
 use App\Services\Dian\PayrollDianSender;
 use App\Support\ModuleGate;
+use Filament\Forms;
 use Filament\Notifications\Notification;
 use Filament\Infolists;
 use Filament\Infolists\Infolist;
@@ -71,9 +74,13 @@ class SlipsRelationManager extends RelationManager
                         PayrollSlip::DIAN_SENT => 'warning',
                         default => 'gray',
                     })
-                    ->description(fn (PayrollSlip $record) => $record->cune
-                        ? 'CUNE '.substr($record->cune, 0, 12).'…'
-                        : $record->dian_error_message),
+                    ->description(fn (PayrollSlip $record) => match (true) {
+                        // Se re-liquido despues de reportarla: lo que la DIAN
+                        // tiene ya no es lo que dice el desprendible.
+                        (bool) $record->dian_needs_adjustment => 'Cambió tras reportarla — emite nota de ajuste',
+                        (bool) $record->cune => 'CUNE '.substr($record->cune, 0, 12).'…',
+                        default => $record->dian_error_message,
+                    }),
             ])
             ->actions([
                 Tables\Actions\Action::make('sendDian')
@@ -104,6 +111,50 @@ class SlipsRelationManager extends RelationManager
                         } catch (\Throwable $e) {
                             Notification::make()->danger()
                                 ->title('No se pudo enviar')
+                                ->body($e->getMessage())
+                                ->persistent()->send();
+                        }
+                    }),
+
+                Tables\Actions\Action::make('adjustmentNote')
+                    ->label('Nota de ajuste')
+                    ->icon('heroicon-o-pencil-square')
+                    ->color('warning')
+                    // Solo tiene sentido sobre lo que la DIAN ya acepto: una
+                    // nota corrige un documento que ella tiene.
+                    ->visible(fn (PayrollSlip $record) => ModuleGate::active('payroll') && filled($record->cune))
+                    ->form([
+                        Forms\Components\Radio::make('type_note')
+                            ->label('Qué hacer con la nómina reportada')
+                            ->options([
+                                PayrollCatalog::TYPE_NOTE_REEMPLAZAR => 'Reemplazarla con los valores actuales',
+                                PayrollCatalog::TYPE_NOTE_ELIMINAR => 'Anularla',
+                            ])
+                            ->default(PayrollCatalog::TYPE_NOTE_REEMPLAZAR)
+                            ->required(),
+                    ])
+                    ->modalHeading('Emitir nota de ajuste')
+                    ->modalDescription(fn (PayrollSlip $record) => 'La nómina '.$record->prefix.$record->consecutive
+                        .' ya fue aceptada por la DIAN y no se puede reenviar. La nota de ajuste es la forma '
+                        .'de corregirla: sale con su propia numeración y apunta a la original por su CUNE.')
+                    ->modalSubmitActionLabel('Emitir')
+                    ->action(function (PayrollSlip $record, array $data) {
+                        try {
+                            $resultado = app(PayrollAdjustmentNoteSender::class)
+                                ->emit($record, (int) $data['type_note']);
+
+                            $resultado['ok']
+                                ? Notification::make()->success()
+                                    ->title('Nota '.$resultado['note']->fullNumber().' emitida')
+                                    ->body($resultado['message'])
+                                    ->send()
+                                : Notification::make()->danger()
+                                    ->title('La DIAN no aceptó la nota de ajuste')
+                                    ->body($resultado['message'])
+                                    ->persistent()->send();
+                        } catch (\Throwable $e) {
+                            Notification::make()->danger()
+                                ->title('No se pudo emitir la nota')
                                 ->body($e->getMessage())
                                 ->persistent()->send();
                         }

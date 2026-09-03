@@ -115,7 +115,9 @@ class PayrollDianTest extends TestCase
                 'worked_days' => 30,
                 'base_salary' => 1500000,
                 'salary_earned' => 750000,
-                'transport_allowance' => 115000,
+                // 750.000 + 109.000 = 859.000. Los devengados tienen que
+                // cuadrar con el total: la DIAN lo valida.
+                'transport_allowance' => 109000,
                 'total_earnings' => 859000,
                 'total_deductions' => 120000,
                 'net_pay' => 739000,
@@ -175,7 +177,7 @@ class PayrollDianTest extends TestCase
         // Devengados y deducciones
         $this->assertSame(30, $payload['accrued']['worked_days']);
         $this->assertSame('750000.00', $payload['accrued']['salary']);
-        $this->assertSame('115000.00', $payload['accrued']['transportation_allowance']);
+        $this->assertSame('109000.00', $payload['accrued']['transportation_allowance']);
         $this->assertSame('859000.00', $payload['accrued']['accrued_total']);
         $this->assertSame('60000.00', $payload['deductions']['eps_deduction']);
         $this->assertSame('120000.00', $payload['deductions']['deductions_total']);
@@ -204,7 +206,14 @@ class PayrollDianTest extends TestCase
     public function test_el_auxilio_de_transporte_se_omite_cuando_no_aplica(): void
     {
         $colilla = $this->colilla();
-        $colilla->update(['prefix' => 'NI', 'consecutive' => 1, 'transport_allowance' => 0]);
+        // El total baja con el auxilio: los devengados tienen que seguir
+        // cuadrando o el envío se para antes de llegar a la DIAN.
+        $colilla->update([
+            'prefix' => 'NI',
+            'consecutive' => 1,
+            'transport_allowance' => 0,
+            'total_earnings' => 750000,
+        ]);
 
         $payload = app(PayrollDocumentBuilder::class)->build($colilla->fresh());
 
@@ -397,23 +406,32 @@ class PayrollDianTest extends TestCase
         $this->assertArrayNotHasKey('other_deductions', $payload['deductions']);
     }
 
-    /** Libranzas, préstamos y embargos van a la bolsa de "otras deducciones". */
-    public function test_los_descuentos_sin_concepto_propio_van_a_otras_deducciones(): void
+    /**
+     * Cada descuento en el campo que le corresponde. El estándar nombra las
+     * libranzas, los embargos, la cooperativa y el aporte voluntario; lo que
+     * no nombra cae en "otras deducciones".
+     */
+    public function test_cada_descuento_va_al_campo_que_le_corresponde(): void
     {
         $colilla = $this->colilla();
         $colilla->update([
             'prefix' => 'NI',
             'consecutive' => 1,
-            'total_deductions' => 170000,
+            'total_deductions' => 235000,
         ]);
 
-        $this->lineaDeDeduccion($colilla, 'libranza', 'Libranza banco', 30000);
-        $this->lineaDeDeduccion($colilla, 'prestamo', 'Préstamo empresa', 20000);
+        $this->lineaDeDeduccion($colilla, 'prestamo', 'Préstamo / libranza', 20000);
+        $this->lineaDeDeduccion($colilla, 'embargo', 'Embargo judicial', 30000);
+        $this->lineaDeDeduccion($colilla, 'cooperativa', 'Fondo de empleados', 15000);
+        $this->lineaDeDeduccion($colilla, 'otro_descuento', 'Descuento varios', 50000);
 
-        $payload = app(PayrollDocumentBuilder::class)->build($colilla->fresh());
+        $deducciones = app(PayrollDocumentBuilder::class)->build($colilla->fresh())['deductions'];
 
-        $this->assertSame('50000.00', $payload['deductions']['other_deductions'][0]['other_deduction']);
-        $this->assertSame('170000.00', $payload['deductions']['deductions_total']);
+        $this->assertSame('20000.00', $deducciones['orders'][0]['deduction']);
+        $this->assertSame('30000.00', $deducciones['tax_liens']);
+        $this->assertSame('15000.00', $deducciones['cooperative']);
+        $this->assertSame('50000.00', $deducciones['other_deductions'][0]['other_deduction']);
+        $this->assertSame('235000.00', $deducciones['deductions_total']);
     }
 
     /** Sin deducciones extra, los campos opcionales no viajan. */

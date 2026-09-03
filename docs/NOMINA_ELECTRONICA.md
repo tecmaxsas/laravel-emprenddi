@@ -91,8 +91,8 @@ decir *Pruebas*, aunque la empresa ya facture en producción.
 
 Que estén al día:
 
-- **Parámetros de nómina** — salario mínimo, auxilio de transporte, porcentajes
-  de seguridad social y parafiscales del año en curso.
+- **Parámetros de nómina** — salario mínimo, auxilio de transporte y UVT del
+  año. Sin ellos la liquidación no corre.
 - **Empleados** con su contrato vigente. Al crear un empleado, el contrato se
   captura en el mismo formulario (cargo, tipo de contrato, salario, frecuencia
   de pago). Los contratos posteriores se administran en la pestaña *Contratos*
@@ -160,7 +160,7 @@ La columna **DIAN** de la tabla:
 | **Rechazado** | La DIAN lo rechazó; la columna muestra el motivo |
 
 Un desprendible **aceptado no se puede volver a enviar**. Para corregirlo hay
-que emitir una nota de ajuste.
+que emitir una nota de ajuste (sección 6).
 
 El CUNE aceptado queda visible bajo el estado, y el desprendible guarda la URL
 de consulta pública:
@@ -187,7 +187,12 @@ salen con un mensaje en pantalla y **no gastan consecutivo**:
 | `salud` | `eps_deduction` (concepto 1) |
 | `pension` | `pension_deduction` (concepto 5, o **7** si es alto riesgo) |
 | `fsp` | `fondosp_deduction_SP` (concepto 9) |
+| `fsp_sub` | `fondosp_deduction_sub` (subcuenta de subsistencia) |
 | `retencion_fuente` | `withholding_at_source` |
+| `prestamo` | `orders` (libranzas) |
+| `embargo` | `tax_liens` |
+| `cooperativa` | `cooperative` |
+| `aporte_voluntario` | `voluntary_pension` |
 | Cualquier otro descuento | `other_deductions` |
 
 Los campos opcionales solo viajan si tienen valor. Mandarlos en cero hace que
@@ -195,40 +200,58 @@ la DIAN los lea como un concepto declarado en cero, no como ausente.
 
 ---
 
-## 6. Limitaciones actuales
+## 6. Corregir una nómina ya reportada
 
-Lo que **no** está implementado, para que no sorprenda:
+Una nómina que la DIAN aceptó **no se puede reenviar**: no admite dos veces el
+mismo documento. La única corrección es una **nota de ajuste**, que sale con su
+propia numeración (prefijo `NA`) y apunta a la original por su CUNE.
 
-### 6.1 Notas de ajuste solo en la habilitación
+En la fila del desprendible aparece **Nota de ajuste** con dos opciones:
 
-Las notas de ajuste están implementadas **únicamente para pasar el set de
-pruebas**. No existe el flujo para corregir una nómina real ya aceptada: ni la
-pantalla, ni la numeración en producción, ni la nota de eliminación.
+- **Reemplazarla** con los valores actuales del desprendible — la corrección
+  normal.
+- **Anularla** — deja sin efecto la nómina reportada. Después de anular no se
+  admiten más ajustes sobre ella.
 
-Hoy, si una nómina aceptada quedó mal, no hay cómo corregirla desde el sistema.
+### El flujo de una corrección
 
-### 6.2 Deducciones que el motor no calcula
+1. Se corrige lo que estaba mal (una novedad, el contrato, un parámetro).
+2. Se **re-liquida el período**. Los desprendibles se recalculan, pero **lo que
+   ya se reportó a la DIAN se conserva**: prefijo, consecutivo y CUNE siguen en
+   su sitio, porque la nota de ajuste los necesita.
+3. Los desprendibles cuyo neto cambió quedan marcados en la columna DIAN con
+   *"Cambió tras reportarla — emite nota de ajuste"*.
+4. Se emite la nota de ajuste de reemplazo.
 
-El documento sabe reportar salud, pensión, fondo de solidaridad, retención en
-la fuente y una bolsa de "otras deducciones" para libranzas, préstamos y
-embargos.
+> La DIAN exige que la nómina original ya le conste recibida. Si la nota sale
+> demasiado pronto responde `NIAE191a`; se espera unos minutos y se reintenta.
 
-Lo que la liquidación no calcula tampoco se reporta: **fondo de subsistencia**
-(el que aplica desde 16 SMLMV), aportes voluntarios a pensión, AFC y sanciones
-disciplinarias. Si el cliente los necesita, hay que agregarlos primero al motor
-de liquidación.
+---
 
-### 6.3 Devengados de un solo tipo
+## 7. Limitaciones actuales
 
-Se reportan salario y auxilio de transporte. El estándar de la DIAN admite
-horas extra, recargos, vacaciones, primas, cesantías, incapacidades y
-comisiones como conceptos con su propio detalle; hoy todo eso, si existe en la
-colilla, entra sumado en el total devengado.
+### 7.1 Horas extra, recargos, vacaciones e incapacidades
 
-Basta para una nómina ordinaria. No basta para reportar con detalle una
-liquidación con horas extra o prestaciones.
+El estándar de la DIAN los pide con **hora o fecha de inicio y fin**, y la
+novedad de nómina solo guarda un valor. Antes que inventarse esos datos, se
+reportan dentro de **"otros conceptos"** con su nombre — un bloque válido del
+estándar, con menos detalle del que la DIAN admite.
 
-## 7. Dónde mirar cuando algo falla
+Comisiones, bonificaciones, auxilios extralegales y "otro devengado" sí van en
+su bloque propio.
+
+Para reportarlos con detalle habría que capturar los rangos horarios en la
+novedad.
+
+### 7.2 El id de la subcuenta de subsistencia está sin verificar
+
+El fondo de solidaridad usa el concepto 9, confirmado contra la base de
+apidian. Para la **subcuenta de subsistencia** no encontramos un id propio en
+ese catálogo, así que se reporta con el mismo 9. Es el único mapeo que no
+pudimos verificar; si la DIAN rechaza un documento de un salario superior a 16
+SMLMV, ese es el campo a mirar.
+
+## 8. Dónde mirar cuando algo falla
 
 **En Emprenddi** — la columna DIAN del desprendible muestra el motivo del
 rechazo. En la pestaña de configuración, cada paso deja visible la respuesta
@@ -252,7 +275,7 @@ muestra recibidos, aceptados y rechazados.
 
 ---
 
-## 8. Resumen del flujo
+## 9. Resumen del flujo
 
 ```
 UNA VEZ POR EMPRESA
@@ -264,8 +287,11 @@ CADA MES
         ↓
   Crear período  →  Liquidar  →  [Contabilizar]
         ↓
-  Enviar a DIAN (desprendible por desprendible)
+  Enviar a DIAN (uno a uno o en lote)
         ↓
   Pendiente → Enviado → Aceptado (CUNE)
                      └→ Rechazado (motivo en la columna DIAN)
+
+SI HAY QUE CORREGIR ALGO YA ACEPTADO
+  Corregir  →  Re-liquidar (conserva el CUNE)  →  Nota de ajuste
 ```

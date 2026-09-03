@@ -3,6 +3,7 @@
 namespace App\Services\Dian;
 
 use App\Models\Dian\CompanyConfig;
+use App\Models\PayrollAdjustmentNote;
 use App\Models\PayrollSlip;
 use App\Models\PayrollSlipLine;
 use RuntimeException;
@@ -129,6 +130,57 @@ class PayrollDocumentBuilder
     }
 
     /**
+     * Nota de ajuste de una nomina ya reportada.
+     *
+     * Es el mismo documento de la nomina con dos diferencias: el tipo (10 en
+     * vez de 9), y el bloque `predecessor`, que dice a que documento corrige.
+     * La DIAN exige que esa nomina ya le conste recibida; si no, responde
+     * NIAE191a.
+     *
+     * Tipo 1 la reemplaza con los valores actuales de la colilla —que es la
+     * correccion normal— y tipo 2 la anula.
+     *
+     * @return array<string, mixed>
+     */
+    public function buildAdjustmentNote(PayrollAdjustmentNote $nota): array
+    {
+        $slip = $nota->slip;
+
+        if (! $slip) {
+            throw new RuntimeException('La nota de ajuste no tiene desprendible asociado.');
+        }
+
+        if (! $nota->predecessor_cune) {
+            throw new RuntimeException(
+                'La nota de ajuste no sabe qué documento corrige: falta el CUNE de la nómina original.'
+            );
+        }
+
+        $payload = $this->build($slip);
+
+        $payload['type_document_id'] = PayrollCatalog::TYPE_DOCUMENT_NOTA_AJUSTE;
+        $payload['type_note'] = $nota->type_note;
+
+        $payload['predecessor'] = [
+            // Entero y sin prefijo: apidian valida el tipo.
+            'predecessor_number' => (int) $nota->predecessor_consecutive,
+            'predecessor_cune' => $nota->predecessor_cune,
+            'predecessor_issue_date' => $nota->predecessor_issue_date?->toDateString()
+                ?? now()->toDateString(),
+        ];
+
+        // La nota lleva SU numeracion, no la de la nomina que corrige.
+        $payload['prefix'] = $nota->prefix;
+        $payload['consecutive'] = (int) $nota->consecutive;
+
+        $payload['notes'] = $nota->type_note === PayrollCatalog::TYPE_NOTE_ELIMINAR
+            ? 'Anula la nómina '.$nota->predecessor_prefix.$nota->predecessor_consecutive
+            : 'Reemplaza la nómina '.$nota->predecessor_prefix.$nota->predecessor_consecutive;
+
+        return $payload;
+    }
+
+    /**
      * La fecha de emision no puede ser anterior al cierre del periodo: seria
      * un documento que certifica un pago que todavia no ocurrio. La DIAN lo
      * rechaza, y el rechazo llega dias despues por la via asincrona, cuando el
@@ -165,12 +217,27 @@ class PayrollDocumentBuilder
         return (int) $slip->worked_days;
     }
 
+    /**
+     * Devengados.
+     *
+     * La DIAN valida que accrued_total sea la suma de lo detallado, igual que
+     * con las deducciones, asi que cada novedad de devengado tiene que caer en
+     * algun bloque.
+     *
+     * Comisiones, bonificaciones, auxilios y "otro devengado" tienen bloque
+     * propio. Horas extra, recargos, vacaciones e incapacidades NO se pueden
+     * reportar en el suyo: el estandar los pide con hora o fecha de inicio y
+     * fin, y la novedad solo guarda un valor. Antes que inventarse esos datos
+     * —que es lo que haria un documento falso— se reportan en "otros
+     * conceptos" con su nombre, que es un bloque valido del estandar.
+     *
+     * @return array<string, mixed>
+     */
     protected function devengados(PayrollSlip $slip): array
     {
         $devengados = [
             'worked_days' => (int) $slip->worked_days,
             'salary' => $this->monto($slip->salary_earned),
-            'accrued_total' => $this->monto($slip->total_earnings),
         ];
 
         // El auxilio de transporte solo va si aplica: mandarlo en 0 hace que la
@@ -179,7 +246,80 @@ class PayrollDocumentBuilder
             $devengados['transportation_allowance'] = $this->monto($slip->transport_allowance);
         }
 
+        $slip->loadMissing('lines');
+
+        $otros = [];
+
+        foreach ($slip->lines->where('type', PayrollSlipLine::TYPE_EARNING) as $linea) {
+            $codigo = (string) $linea->concept_code;
+            $monto = round((float) $linea->amount, 2);
+
+            // Ya van arriba con nombre propio.
+            if (in_array($codigo, ['salario', 'aux_transporte'], true) || $monto <= 0) {
+                continue;
+            }
+
+            match ($codigo) {
+                'comision' => $devengados['commissions'][] = ['commission' => $this->monto($monto)],
+                'bonificacion' => $devengados['bonuses'][] = ['non_salary_bonus' => $this->monto($monto)],
+                'auxilio_extralegal' => $devengados['aid'][] = ['non_salary_assistance' => $this->monto($monto)],
+                default => $otros[] = [
+                    'salary_concept' => $this->monto($monto),
+                    'description_concept' => mb_strtoupper((string) ($linea->concept_name ?: $codigo)),
+                ],
+            };
+        }
+
+        if ($otros !== []) {
+            $devengados['other_concepts'] = $otros;
+        }
+
+        $devengados['accrued_total'] = $this->monto($slip->total_earnings);
+
+        $this->exigirQueCuadre(
+            'devengados',
+            (float) $slip->total_earnings,
+            (float) $slip->salary_earned
+                + (float) $slip->transport_allowance
+                + $this->sumaDeDevengadosExtra($slip),
+        );
+
         return $devengados;
+    }
+
+    /** Devengados que no son salario ni auxilio de transporte. */
+    protected function sumaDeDevengadosExtra(PayrollSlip $slip): float
+    {
+        $slip->loadMissing('lines');
+
+        return (float) $slip->lines
+            ->where('type', PayrollSlipLine::TYPE_EARNING)
+            ->whereNotIn('concept_code', ['salario', 'aux_transporte'])
+            ->sum('amount');
+    }
+
+    /**
+     * La DIAN exige que el total sea la suma de lo detallado. Si no cuadra, el
+     * rechazo llega dias despues por la via asincrona y con el consecutivo ya
+     * gastado, asi que se para aqui.
+     */
+    protected function exigirQueCuadre(string $bloque, float $total, float $detallado): void
+    {
+        $diferencia = round($total - $detallado, 2);
+
+        if (abs($diferencia) <= 0.01) {
+            return;
+        }
+
+        throw new RuntimeException(sprintf(
+            'Los %s de la colilla no cuadran: el total es $%s pero los conceptos suman $%s '
+            .'(diferencia de $%s). La DIAN exige que el total sea la suma de lo detallado, así que '
+            .'rechazaría el documento. Revisa la liquidación del período antes de enviar.',
+            $bloque,
+            number_format($total, 2, ',', '.'),
+            number_format($detallado, 2, ',', '.'),
+            number_format($diferencia, 2, ',', '.'),
+        ));
     }
 
     /**
@@ -202,28 +342,20 @@ class PayrollDocumentBuilder
         $salud = round((float) $slip->employee_health, 2);
         $pension = round((float) $slip->employee_pension, 2);
         $fondoSolidaridad = round((float) $slip->solidarity_fund, 2);
+        $subsistencia = round((float) $slip->solidarity_sub, 2);
         $retencion = round($this->sumaDeConceptos($slip, ['retencion_fuente']), 2);
 
-        $otras = round($this->sumaDeConceptos(
-            $slip,
-            ['salud', 'pension', 'fsp', 'retencion_fuente'],
-            excluir: true,
-        ), 2);
+        // Cada descuento restante en su campo. Los que el estandar no nombra
+        // caen en "otras deducciones", que es la bolsa que deja para eso.
+        $otras = $this->descuentosPorConcepto($slip);
 
         $total = round((float) $slip->total_deductions, 2);
-        $desglosado = round($salud + $pension + $fondoSolidaridad + $retencion + $otras, 2);
-        $descuadre = round($total - $desglosado, 2);
 
-        if (abs($descuadre) > 0.01) {
-            throw new RuntimeException(sprintf(
-                'Las deducciones de la colilla no cuadran: el total es $%s pero los conceptos suman $%s '
-                .'(diferencia de $%s). La DIAN exige que el total sea la suma de lo detallado, así que '
-                .'rechazaría el documento. Revisa la liquidación del período antes de enviar.',
-                number_format($total, 2, ',', '.'),
-                number_format($desglosado, 2, ',', '.'),
-                number_format($descuadre, 2, ',', '.'),
-            ));
-        }
+        $this->exigirQueCuadre(
+            'deducciones',
+            $total,
+            $salud + $pension + $fondoSolidaridad + $subsistencia + $retencion + array_sum($otras),
+        );
 
         $deducciones = [
             'eps_type_law_deductions_id' => PayrollCatalog::DEDUCTION_SALUD,
@@ -241,19 +373,57 @@ class PayrollDocumentBuilder
             $deducciones['fondosp_deduction_SP'] = $this->monto($fondoSolidaridad);
         }
 
+        // La subcuenta de subsistencia va dentro del mismo bloque del fondo.
+        // OJO: el id del subconcepto es el unico que no pudimos verificar
+        // contra la base de apidian; si la DIAN lo rechaza, es este.
+        if ($subsistencia > 0) {
+            $deducciones['fondossp_sub_type_law_deductions_id'] = PayrollCatalog::DEDUCTION_FONDO_SOLIDARIDAD;
+            $deducciones['fondosp_deduction_sub'] = $this->monto($subsistencia);
+        }
+
         if ($retencion > 0) {
             $deducciones['withholding_at_source'] = $this->monto($retencion);
         }
 
-        if ($otras > 0) {
-            $deducciones['other_deductions'] = [
-                ['other_deduction' => $this->monto($otras)],
-            ];
+        foreach ($otras as $campo => $valor) {
+            $deducciones[$campo] = match ($campo) {
+                // Las libranzas llevan la descripcion del pedido.
+                'orders' => [['description' => 'LIBRANZA', 'deduction' => $this->monto($valor)]],
+                'other_deductions' => [['other_deduction' => $this->monto($valor)]],
+                default => $this->monto($valor),
+            };
         }
 
         $deducciones['deductions_total'] = $this->monto($total);
 
         return $deducciones;
+    }
+
+    /**
+     * Descuentos agrupados por el campo del documento DIAN que les toca.
+     *
+     * @return array<string, float>
+     */
+    protected function descuentosPorConcepto(PayrollSlip $slip): array
+    {
+        $slip->loadMissing('lines');
+
+        $deLey = ['salud', 'pension', 'fsp', 'fsp_sub', 'retencion_fuente'];
+        $porCampo = [];
+
+        foreach ($slip->lines->where('type', PayrollSlipLine::TYPE_DEDUCTION) as $linea) {
+            $codigo = (string) $linea->concept_code;
+            $monto = round((float) $linea->amount, 2);
+
+            if (in_array($codigo, $deLey, true) || $monto <= 0) {
+                continue;
+            }
+
+            $campo = PayrollCatalog::DEDUCTION_BLOCKS[$codigo] ?? 'other_deductions';
+            $porCampo[$campo] = round(($porCampo[$campo] ?? 0) + $monto, 2);
+        }
+
+        return $porCampo;
     }
 
     /**
