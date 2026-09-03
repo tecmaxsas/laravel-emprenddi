@@ -627,9 +627,16 @@ class DianSettings extends Page implements HasForms
         // la unica forma de avanzar es poder reproducir la peticion.
         $this->lastPayrollTestPayload = $payload;
 
-        // La DIAN puede responder rechazando aunque el HTTP salga bien: el
-        // veredicto esta dentro de ResponseDian.
-        $respuestaDian = $result['data']['ResponseDian']['Envelope']['Body']['SendNominaSyncResponse']['SendNominaSyncResult'] ?? null;
+        $cuerpo = $result['data']['ResponseDian']['Envelope']['Body'] ?? [];
+
+        // Al set de pruebas la DIAN responde por la operacion ASINCRONA
+        // (SendTestSetAsync): acusa recibo con un ZipKey y valida despues, asi
+        // que la respuesta NO trae IsValid. Buscar el veredicto aqui y no
+        // encontrarlo no significa que rechazo — significa que lo recibio.
+        $async = $cuerpo['SendTestSetAsyncResponse']['SendTestSetAsyncResult'] ?? null;
+
+        // La sincrona solo aparece en envios a produccion.
+        $respuestaDian = $cuerpo['SendNominaSyncResponse']['SendNominaSyncResult'] ?? null;
         $esValido = filter_var($respuestaDian['IsValid'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
         if (! $result['ok']) {
@@ -646,6 +653,32 @@ class DianSettings extends Page implements HasForms
         // rechazado.
         $config->update(['payroll_test_consecutive' => $consecutivo + 1]);
         $this->data['payroll_test_consecutive'] = $consecutivo + 1;
+
+        if ($async !== null) {
+            $erroresEstructura = $this->reglasDeLaDian($async);
+
+            // Si el XML viene mal armado la DIAN lo dice de inmediato, en la
+            // misma respuesta asincrona.
+            if ($erroresEstructura !== []) {
+                $this->errorNotif(
+                    'La DIAN no aceptó la nómina de prueba '.$prefijo.$consecutivo,
+                    implode(' · ', array_slice($erroresEstructura, 0, 6))
+                );
+
+                return;
+            }
+
+            $zipKey = (string) ($async['ZipKey'] ?? '');
+
+            $this->successNotif(
+                'La DIAN recibió la nómina de prueba '.$prefijo.$consecutivo,
+                'El set de pruebas se valida de forma asíncrona: el resultado no viene en esta respuesta. '
+                .'Revisa el avance en el portal de la DIAN'
+                .($zipKey !== '' ? ' (ZipKey '.$zipKey.').' : '.')
+            );
+
+            return;
+        }
 
         if ($esValido) {
             $this->successNotif(
@@ -678,21 +711,7 @@ class DianSettings extends Page implements HasForms
             return 'apidian respondió sin el bloque de la DIAN. Revisa la respuesta cruda más abajo.';
         }
 
-        $reglas = $respuestaDian['ErrorMessage']['string'] ?? $respuestaDian['ErrorMessage'] ?? null;
-
-        if (is_string($reglas)) {
-            $reglas = [$reglas];
-        }
-
-        $mensajes = [];
-
-        if (is_array($reglas)) {
-            array_walk_recursive($reglas, function ($v) use (&$mensajes) {
-                if (is_string($v) && trim($v) !== '') {
-                    $mensajes[] = trim($v);
-                }
-            });
-        }
+        $mensajes = $this->reglasDeLaDian($respuestaDian);
 
         $encabezado = array_filter([
             ($codigo = (string) ($respuestaDian['StatusCode'] ?? '')) !== '' ? "[{$codigo}]" : null,
@@ -712,6 +731,44 @@ class DianSettings extends Page implements HasForms
         }
 
         return implode(' — ', $partes);
+    }
+
+    /**
+     * Las reglas de validacion que la DIAN reporta como incumplidas.
+     *
+     * Segun la operacion las entrega en ErrorMessage (sincrona) o en
+     * ErrorMessageList (asincrona), y en cada una a veces como string suelto,
+     * a veces como lista bajo `string`. Se recorre todo y se recogen los
+     * textos.
+     *
+     * @param  array<string, mixed>|null  $respuestaDian
+     * @return list<string>
+     */
+    protected function reglasDeLaDian(?array $respuestaDian): array
+    {
+        if (! $respuestaDian) {
+            return [];
+        }
+
+        $reglas = [];
+
+        foreach (['ErrorMessage', 'ErrorMessageList'] as $clave) {
+            $bloque = $respuestaDian[$clave] ?? null;
+
+            if ($bloque === null || $bloque === '' || $bloque === []) {
+                continue;
+            }
+
+            // array_walk_recursive recibe por referencia: necesita variable.
+            $lista = is_array($bloque) ? $bloque : [$bloque];
+            array_walk_recursive($lista, function ($v) use (&$reglas) {
+                if (is_string($v) && trim($v) !== '') {
+                    $reglas[] = trim($v);
+                }
+            });
+        }
+
+        return array_values(array_unique($reglas));
     }
 
     /**
@@ -786,8 +843,11 @@ class DianSettings extends Page implements HasForms
 
             'period' => [
                 'admision_date' => '2024-01-01',
-                'settlement_start_date' => now()->startOfMonth()->toDateString(),
-                'settlement_end_date' => now()->endOfMonth()->toDateString(),
+                // El MES PASADO, ya cerrado. Liquidar el mes en curso daba un
+                // documento emitido antes de que terminara el periodo que
+                // liquida, y la DIAN lo rechaza.
+                'settlement_start_date' => now()->subMonthNoOverflow()->startOfMonth()->toDateString(),
+                'settlement_end_date' => now()->subMonthNoOverflow()->endOfMonth()->toDateString(),
                 'worked_time' => '30.00',
                 'issue_date' => now()->toDateString(),
             ],
@@ -831,7 +891,7 @@ class DianSettings extends Page implements HasForms
             ],
 
             'payment_dates' => [
-                ['payment_date' => now()->endOfMonth()->toDateString()],
+                ['payment_date' => now()->subMonthNoOverflow()->endOfMonth()->toDateString()],
             ],
 
             'accrued' => [

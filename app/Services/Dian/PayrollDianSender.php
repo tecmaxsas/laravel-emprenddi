@@ -48,6 +48,10 @@ class PayrollDianSender
             throw new RuntimeException('Falta el token DIAN de la empresa.');
         }
 
+        // Antes de reservar numeracion: un periodo sin cerrar lo rechaza la
+        // DIAN, y el consecutivo quemado deja un hueco que despues pregunta.
+        $this->builder->exigirPeriodoCerrado($slip);
+
         $this->asignarNumeracion($slip);
 
         $payload = $this->builder->build($slip->fresh());
@@ -122,12 +126,21 @@ class PayrollDianSender
             return $this->rechazar($slip, 'Excepción del API: '.$data['exception'], $data, alcanzoDian: false);
         }
 
-        // La nomina responde SendNominaSyncResponse, no SendBillSyncResponse.
-        $respuestaDian = $data['ResponseDian']['Envelope']['Body']['SendNominaSyncResponse']['SendNominaSyncResult']
-            ?? $data['ResponseDian']['Envelope']['Body']['SendBillSyncResponse']['SendBillSyncResult']
-            ?? null;
-
+        $cuerpo = $data['ResponseDian']['Envelope']['Body'] ?? [];
         $cune = $data['cune'] ?? $data['uuid'] ?? null;
+
+        // Envio al set de pruebas: la DIAN contesta por la operacion asincrona,
+        // acusa recibo con un ZipKey y valida despues. No hay IsValid, asi que
+        // tratarlo como rechazo seria falso: la colilla queda "enviada" y el
+        // veredicto se consulta luego.
+        if ($asincrona = ($cuerpo['SendTestSetAsyncResponse']['SendTestSetAsyncResult'] ?? null)) {
+            return $this->procesarAsincrona($slip, $asincrona, $data, $cune);
+        }
+
+        // La nomina responde SendNominaSyncResponse, no SendBillSyncResponse.
+        $respuestaDian = $cuerpo['SendNominaSyncResponse']['SendNominaSyncResult']
+            ?? $cuerpo['SendBillSyncResponse']['SendBillSyncResult']
+            ?? null;
 
         if (! $respuestaDian) {
             return $this->rechazar($slip, 'Sin respuesta de la DIAN. Reintenta en unos minutos.', $data, alcanzoDian: false, cune: $cune);
@@ -158,6 +171,65 @@ class PayrollDianSender
         $mensaje = $this->extraerError($respuestaDian, $statusCode);
 
         return $this->rechazar($slip, $mensaje, $data, alcanzoDian: true, cune: $cune, statusCode: $statusCode);
+    }
+
+    /**
+     * Acuse de la operacion asincrona (envio al set de pruebas).
+     *
+     * La DIAN solo confirma que recibio el archivo y devuelve un ZipKey; el
+     * veredicto llega despues y se consulta aparte. Por eso la colilla queda
+     * en 'enviada' y no se marca ni aceptada ni rechazada: dar por buena una
+     * nomina que la DIAN todavia no valido es peor que no saber.
+     *
+     * @param  array<string, mixed>  $asincrona
+     * @param  array<string, mixed>  $data
+     * @return array{ok:bool, message:string, cune:?string, status_code:?string, reached_dian:bool}
+     */
+    protected function procesarAsincrona(PayrollSlip $slip, array $asincrona, array $data, ?string $cune): array
+    {
+        // Si el archivo viene mal armado la DIAN lo dice en el mismo acuse.
+        $errores = [];
+        foreach (['ErrorMessageList', 'ErrorMessage'] as $clave) {
+            $bloque = $asincrona[$clave] ?? null;
+            if ($bloque === null || $bloque === '' || $bloque === []) {
+                continue;
+            }
+            // array_walk_recursive recibe por referencia: necesita variable.
+            $lista = is_array($bloque) ? $bloque : [$bloque];
+            array_walk_recursive($lista, function ($v) use (&$errores) {
+                if (is_string($v) && trim($v) !== '') {
+                    $errores[] = trim($v);
+                }
+            });
+        }
+
+        if ($errores !== []) {
+            return $this->rechazar(
+                $slip,
+                implode(' · ', array_slice(array_unique($errores), 0, 6)),
+                $data,
+                alcanzoDian: true,
+                cune: $cune,
+            );
+        }
+
+        $zipKey = (string) ($asincrona['ZipKey'] ?? '');
+
+        $slip->update([
+            'dian_status' => PayrollSlip::DIAN_SENT,
+            'cune' => $cune,
+            'dian_error_message' => null,
+            'dian_response' => $data,
+        ]);
+
+        return [
+            'ok' => true,
+            'message' => 'La DIAN recibió la nómina. La valida de forma asíncrona: el resultado no viene en '
+                .'esta respuesta'.($zipKey !== '' ? ' (ZipKey '.$zipKey.')' : '').'.',
+            'cune' => $cune,
+            'status_code' => null,
+            'reached_dian' => true,
+        ];
     }
 
     /**

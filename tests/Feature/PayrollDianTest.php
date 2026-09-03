@@ -650,6 +650,100 @@ class PayrollDianTest extends TestCase
             'El motivo tiene que quedar guardado en la colilla, no sólo en la notificación.');
     }
 
+    /**
+     * Al set de pruebas la DIAN contesta por SendTestSetAsync: acusa recibo y
+     * valida después. Esa respuesta no trae IsValid, y leerla como si lo
+     * trajera marcaba rechazada una nómina que la DIAN todavía no había
+     * mirado.
+     */
+    public function test_el_acuse_asincrono_no_se_toma_como_rechazo(): void
+    {
+        $colilla = $this->colilla();
+        $this->configDian();
+
+        Http::fake([
+            '*' => Http::response([
+                'message' => 'Nomina Individual #NI1 generada con éxito',
+                'ResponseDian' => ['Envelope' => ['Body' => ['SendTestSetAsyncResponse' => [
+                    'SendTestSetAsyncResult' => ['ZipKey' => 'abc-123', 'ErrorMessageList' => null],
+                ]]]],
+            ], 200),
+        ]);
+
+        $resultado = app(PayrollDianSender::class)->send($colilla, 'zz-set');
+
+        $this->assertTrue($resultado['ok'], 'Un acuse de recibo no es un rechazo.');
+        $this->assertStringContainsString('abc-123', $resultado['message']);
+        $this->assertSame(PayrollSlip::DIAN_SENT, $colilla->fresh()->dian_status,
+            'Queda enviada: la DIAN aún no dijo si la acepta.');
+    }
+
+    /** Si el archivo viene mal armado, la DIAN lo dice en el mismo acuse. */
+    public function test_los_errores_del_acuse_asincrono_si_son_rechazo(): void
+    {
+        $colilla = $this->colilla();
+        $this->configDian();
+
+        Http::fake([
+            '*' => Http::response([
+                'ResponseDian' => ['Envelope' => ['Body' => ['SendTestSetAsyncResponse' => [
+                    'SendTestSetAsyncResult' => ['ErrorMessageList' => ['string' => [
+                        'Regla: DIAN30 Rechazo: TestSetId no corresponde',
+                    ]]],
+                ]]]],
+            ], 200),
+        ]);
+
+        $resultado = app(PayrollDianSender::class)->send($colilla, 'zz-set');
+
+        $this->assertFalse($resultado['ok']);
+        $this->assertStringContainsString('DIAN30', $resultado['message']);
+        $this->assertSame(PayrollSlip::DIAN_REJECTED, $colilla->fresh()->dian_status);
+    }
+
+    /**
+     * Un documento que certifica un pago que todavía no ocurrió. La DIAN lo
+     * rechaza y el rechazo llega días después, con el consecutivo ya quemado.
+     */
+    public function test_no_se_envia_una_nomina_de_un_periodo_sin_cerrar(): void
+    {
+        $colilla = $this->colilla();
+        $colilla->period->update([
+            'start_date' => now()->startOfMonth(),
+            'end_date' => now()->addMonth()->endOfMonth(),
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessageMatches('/no ha cerrado/');
+
+        app(PayrollDocumentBuilder::class)->build($colilla->fresh());
+    }
+
+    /**
+     * El set de pruebas liquidaba el mes en curso: un documento emitido hoy
+     * para un periodo que termina dentro de tres semanas. La DIAN lo rechazó
+     * dos veces por eso.
+     */
+    public function test_la_nomina_de_prueba_liquida_un_periodo_ya_cerrado(): void
+    {
+        $this->configDian();
+
+        Filament::setCurrentPanel(Filament::getPanel('app'));
+        app(CurrentCompany::class)->set($this->company->refresh());
+
+        $pagina = new DianSettings;
+        $metodo = new \ReflectionMethod($pagina, 'buildTestPayrollPayload');
+        $metodo->setAccessible(true);
+        $payload = $metodo->invoke($pagina, 1, 'NI');
+
+        $fin = $payload['period']['settlement_end_date'];
+        $emision = $payload['period']['issue_date'];
+
+        $this->assertLessThanOrEqual($emision, $fin,
+            'El periodo tiene que haber terminado antes de la fecha de emisión.');
+        $this->assertLessThanOrEqual($emision, $payload['payment_dates'][0]['payment_date']);
+    }
+
     /** Sin TestSetId no se envía nada: no tiene a dónde ir. */
     public function test_no_se_envia_el_set_de_pruebas_sin_testsetid(): void
     {

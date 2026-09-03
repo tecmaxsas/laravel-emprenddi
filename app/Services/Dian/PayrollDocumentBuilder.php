@@ -41,6 +41,8 @@ class PayrollDocumentBuilder
         if (! $periodo) {
             throw new RuntimeException('La colilla no tiene periodo de nómina.');
         }
+        $this->exigirPeriodoCerrado($slip);
+
         if (! $slip->prefix || ! $slip->consecutive) {
             throw new RuntimeException('La colilla no tiene numeración asignada.');
         }
@@ -133,6 +135,30 @@ class PayrollDocumentBuilder
      * manda 30 para enero, o sea los dias del periodo. Es tambien lo que dice
      * el estandar: TiempoLaborado es la cantidad de dias laborados.
      */
+    /**
+     * La fecha de emision no puede ser anterior al cierre del periodo: seria
+     * un documento que certifica un pago que todavia no ocurrio. La DIAN lo
+     * rechaza, y el rechazo llega dias despues por la via asincrona, cuando el
+     * consecutivo ya se quemo. Se corta antes de enviar.
+     *
+     * Se llama tambien desde PayrollDianSender antes de reservar numeracion.
+     */
+    public function exigirPeriodoCerrado(PayrollSlip $slip): void
+    {
+        $periodo = $slip->period;
+
+        if (! $periodo || ! $periodo->end_date || ! $periodo->end_date->isFuture()) {
+            return;
+        }
+
+        throw new RuntimeException(sprintf(
+            'El periodo "%s" termina el %s y todavía no ha cerrado. La nómina electrónica se emite '
+            .'cuando el periodo ya terminó: la DIAN rechaza un documento emitido antes de esa fecha.',
+            $periodo->name,
+            $periodo->end_date->format('d/m/Y'),
+        ));
+    }
+
     protected function tiempoLaborado(PayrollSlip $slip): int
     {
         return (int) $slip->worked_days;
