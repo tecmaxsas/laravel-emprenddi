@@ -110,11 +110,17 @@ Que estén al día:
 de fin.
 
 Dentro del período, el botón **Liquidar nómina** genera **un desprendible por
-cada empleado activo con contrato vigente**. Si el período ya estaba liquidado,
-los reemplaza.
+cada empleado activo con contrato vigente**.
 
 Cada desprendible queda con devengados, deducciones, costo del empleador y
 provisiones (cesantías, intereses, prima, vacaciones).
+
+**Re-liquidar** recalcula todo y reemplaza los desprendibles, con una
+excepción: los que ya se reportaron a la DIAN **conservan su prefijo,
+consecutivo y CUNE**. Sin eso, la nómina reportada se quedaría sin forma de
+corregirse — la nota de ajuste necesita apuntar al documento original.
+
+Los que cambien de neto quedan marcados para nota de ajuste (sección 6).
 
 ### 3.3 Contabilizar (opcional)
 
@@ -159,6 +165,10 @@ La columna **DIAN** de la tabla:
 | **Aceptado** | Tiene CUNE y URL de consulta en el catálogo de la DIAN |
 | **Rechazado** | La DIAN lo rechazó; la columna muestra el motivo |
 
+Además, un desprendible reportado que se re-liquidó y cambió de neto muestra
+**"Cambió tras reportarla — emite nota de ajuste"**: lo que la DIAN tiene ya no
+coincide con lo liquidado.
+
 Un desprendible **aceptado no se puede volver a enviar**. Para corregirlo hay
 que emitir una nota de ajuste (sección 6).
 
@@ -174,11 +184,25 @@ El sistema no manda un documento que sabe que va a ser rechazado. Estos casos
 salen con un mensaje en pantalla y **no gastan consecutivo**:
 
 - **El período todavía no ha cerrado.** Dice qué día cierra.
-- **Las deducciones no cuadran con el total.** La DIAN exige que
-  `deductions_total` sea exactamente la suma de los conceptos detallados. Si la
-  colilla no cuadra consigo misma, el mensaje dice de cuánto es la diferencia.
+- **Los devengados o las deducciones no cuadran con su total.** La DIAN exige
+  que `accrued_total` y `deductions_total` sean exactamente la suma de los
+  conceptos detallados. Si el desprendible no cuadra consigo mismo, el mensaje
+  dice de cuánto es la diferencia.
 - **Falta el prefijo de nómina** o el registro DIAN de la empresa está
   incompleto.
+
+### Cómo se reportan los devengados
+
+| Concepto en la colilla | Campo del documento DIAN |
+|---|---|
+| `salario` | `salary` |
+| `aux_transporte` | `transportation_allowance` |
+| `comision` | `commissions` |
+| `bonificacion` | `bonuses` (no salarial) |
+| `auxilio_extralegal` | `aid` (no salarial) |
+| Horas extra, recargos, vacaciones, incapacidades, otro devengado | `other_concepts`, con el nombre del concepto como descripción |
+
+La última fila es una limitación conocida, no un descuido: ver 7.1.
 
 ### Cómo se reportan las deducciones
 
@@ -197,6 +221,12 @@ salen con un mensaje en pantalla y **no gastan consecutivo**:
 
 Los campos opcionales solo viajan si tienen valor. Mandarlos en cero hace que
 la DIAN los lea como un concepto declarado en cero, no como ausente.
+
+Dos mapeos son una simplificación: el concepto *Aporte voluntario a pensión /
+AFC* es uno solo en el sistema y la DIAN los separa (`voluntary_pension` y
+`afc`), así que todo se reporta como aporte voluntario a pensión; y
+*Préstamo / libranza* va a `orders`, el bloque de libranzas, aunque un préstamo
+directo de la empresa no lo sea en estricto sentido.
 
 ---
 
@@ -251,6 +281,17 @@ ese catálogo, así que se reporta con el mismo 9. Es el único mapeo que no
 pudimos verificar; si la DIAN rechaza un documento de un salario superior a 16
 SMLMV, ese es el campo a mirar.
 
+### 7.3 Los períodos liquidados antes de septiembre de 2026
+
+El **fondo de subsistencia** no se calculaba, así que a quien gana más de 16
+SMLMV se le descontó de menos en esos períodos. Re-liquidar el período lo
+corrige, y hacerlo ya no destruye lo que se reportó a la DIAN.
+
+Si esos períodos ya se enviaron, la corrección se cierra con una nota de
+ajuste.
+
+---
+
 ## 8. Dónde mirar cuando algo falla
 
 **En Emprenddi** — la columna DIAN del desprendible muestra el motivo del
@@ -271,6 +312,7 @@ muestra recibidos, aceptados y rechazados.
 | `NIE023` | El **ambiente** del documento. En habilitación tiene que ser Pruebas. apidian lo toma de la configuración de la empresa, no del JSON, así que no se ve revisando el payload. |
 | `NIAE191a` | La nómina que la nota reemplaza todavía no le consta recibida a la DIAN. Se espera y se reintenta. |
 | `Server Error` (HTTP 500) | Casi siempre un campo en `null` que apidian necesita, o un prefijo sin registrar. El 500 no dice cuál. |
+| `predecessor number debe ser un número entero` | Validación de apidian, no de la DIAN. El campo lleva sólo el consecutivo, sin el prefijo. |
 | Rechazo sin motivo | El documento salió al set de pruebas: la respuesta es un acuse asíncrono y el veredicto está en el portal de la DIAN, no en la respuesta. |
 
 ---
