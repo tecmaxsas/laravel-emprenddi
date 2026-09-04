@@ -21,8 +21,9 @@ class ExpenseResource extends Resource
 {
     use ChecksPermission;
 
-    protected static function viewPermission(): string { return 'purchases.view'; }
-    protected static function managePermission(): string { return 'purchases.create'; }
+    protected static function viewPermission(): string { return 'expenses.view'; }
+
+    protected static function managePermission(): string { return 'expenses.create'; }
 
     protected static ?string $model = Expense::class;
 

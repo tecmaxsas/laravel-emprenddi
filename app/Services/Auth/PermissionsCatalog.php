@@ -67,6 +67,15 @@ class PermissionsCatalog
                 'support_documents.create' => 'Crear documentos soporte (borrador)',
                 'support_documents.post' => 'Contabilizar documentos soporte',
             ],
+            'Gastos' => [
+                // Los gastos no son facturas de compra: son el arriendo, los
+                // servicios, la papeleria. Hasta ahora colgaban de los permisos
+                // de compras, asi que no se le podia dar uno sin el otro.
+                'expenses.view' => 'Ver gastos',
+                'expenses.create' => 'Crear gastos (borrador)',
+                'expenses.post' => 'Contabilizar gastos',
+                'expenses.cancel' => 'Anular gastos contabilizados',
+            ],
             'Ventas (futuro)' => [
                 'sales.view' => 'Ver facturas de venta',
                 'sales.create' => 'Crear facturas de venta',
@@ -205,6 +214,7 @@ class PermissionsCatalog
                 'journal_entries.view', 'journal_entries.create', 'journal_entries.post',
                 'partners.view', 'partners.manage',
                 'purchases.view', 'purchases.post', 'purchases.pay',
+                'expenses.view', 'expenses.create', 'expenses.post', 'expenses.cancel',
                 'support_documents.view', 'support_documents.post',
                 'sales.view', 'sales.post', 'sales.receive_payment', 'sales.send_dian',
                 'quotations.view', 'quotations.manage', 'quotations.convert',
@@ -256,6 +266,7 @@ class PermissionsCatalog
                 'journal_entries.view', 'journal_entries.create', 'journal_entries.post',
                 'partners.view',
                 'purchases.view', 'purchases.post', 'purchases.pay',
+                'expenses.view', 'expenses.post', 'expenses.cancel',
                 'support_documents.view', 'support_documents.post',
                 'sales.view', 'sales.post', 'sales.receive_payment',
                 'quotations.view',

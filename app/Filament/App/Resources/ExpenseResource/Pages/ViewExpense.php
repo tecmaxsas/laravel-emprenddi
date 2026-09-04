@@ -25,13 +25,17 @@ class ViewExpense extends ViewRecord
     {
         return [
             Actions\EditAction::make()
-                ->visible(fn (Expense $record) => $record->status === Expense::STATUS_DRAFT),
+                ->visible(fn (Expense $record) => $record->status === Expense::STATUS_DRAFT
+                    && auth()->user()?->can('expenses.create')),
 
             Actions\Action::make('post')
                 ->label('Contabilizar')
                 ->icon('heroicon-o-check-circle')
                 ->color('success')
-                ->visible(fn (Expense $record) => $record->status === Expense::STATUS_DRAFT)
+                // Contabilizar mueve la contabilidad: no basta con poder ver
+                // el gasto, que era lo unico que se pedia hasta ahora.
+                ->visible(fn (Expense $record) => $record->status === Expense::STATUS_DRAFT
+                    && auth()->user()?->can('expenses.post'))
                 ->requiresConfirmation()
                 ->modalHeading('Contabilizar gasto')
                 ->modalDescription(fn (Expense $record) => sprintf(
@@ -55,7 +59,10 @@ class ViewExpense extends ViewRecord
                 ->label('Anular')
                 ->icon('heroicon-o-x-circle')
                 ->color('danger')
-                ->visible(fn (Expense $record) => $record->status === Expense::STATUS_POSTED)
+                // Anular reversa el asiento. Es la accion mas delicada del
+                // modulo y tampoco pedia permiso.
+                ->visible(fn (Expense $record) => $record->status === Expense::STATUS_POSTED
+                    && auth()->user()?->can('expenses.cancel'))
                 ->requiresConfirmation()
                 ->form([
                     Forms\Components\Textarea::make('reason')
