@@ -186,6 +186,10 @@ class ThirdPartyImportEngine
             'credit_limit' => $data['credit_limit'] !== null && $data['credit_limit'] !== ''
                 ? (float) $data['credit_limit'] : 0,
             'credit_days' => (int) ($data['credit_days'] ?: 0),
+            'opening_balance' => $data['opening_balance'] !== null && $data['opening_balance'] !== ''
+                ? (float) $data['opening_balance'] : 0,
+            'opening_balance_date' => ! empty($data['opening_balance_date'])
+                ? date('Y-m-d', strtotime((string) $data['opening_balance_date'])) : null,
             'payment_terms_days' => (int) ($data['payment_terms_days'] ?: 0),
             'website' => $data['website'] ?: null,
             'notes' => $data['notes'] ?: null,
@@ -269,11 +273,23 @@ class ThirdPartyImportEngine
         }
 
         // Numéricos
-        foreach (['credit_limit', 'credit_days', 'payment_terms_days'] as $numCol) {
+        foreach (['credit_limit', 'credit_days', 'payment_terms_days', 'opening_balance'] as $numCol) {
             $v = $data[$numCol] ?? null;
             if ($v !== null && $v !== '' && ! is_numeric($v)) {
                 $errors[] = "{$numCol} debe ser numérico";
             }
+        }
+
+        // Un saldo de apertura sin fecha deja el estado de cuenta abriendo
+        // con una linea sin fecha, que no se puede ordenar ni explicar.
+        $saldo = $data['opening_balance'] ?? null;
+        if ($saldo !== null && $saldo !== '' && (float) $saldo != 0.0
+            && empty($data['opening_balance_date'])) {
+            $errors[] = 'opening_balance_date es obligatoria cuando hay saldo de apertura';
+        }
+
+        if (! empty($data['opening_balance_date']) && ! strtotime((string) $data['opening_balance_date'])) {
+            $errors[] = 'opening_balance_date no es una fecha válida (usa AAAA-MM-DD)';
         }
 
         return [

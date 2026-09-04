@@ -58,6 +58,10 @@ class ThirdPartyImportTemplateGenerator
         'payable_account_code',
         'credit_limit',
         'credit_days',
+        // Lo que el cliente ya debia al migrar desde otro sistema. Abre su
+        // estado de cuenta y no corresponde a ninguna factura de aqui.
+        'opening_balance',
+        'opening_balance_date',
         'payment_terms_days',
         'website',
         'notes',

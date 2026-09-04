@@ -22,6 +22,7 @@ class Payment extends Model
         'electronic' => 'PSE / Pago electrónico',
         'credit_note' => 'Nota crédito aplicada',
         'gift_card' => 'Tarjeta regalo',
+        'advance' => 'Anticipo del cliente',
         'other' => 'Otro',
     ];
 
@@ -30,6 +31,7 @@ class Payment extends Model
         'paymentable_type',
         'paymentable_id',
         'third_party_id',
+        'customer_advance_id',
         'date',
         'amount',
         'payment_method',
