@@ -126,6 +126,9 @@ class RestaurantReceiptPrinter
             if (! empty($entrega['customer_name'])) {
                 $b->line($entrega['customer_name']);
             }
+            if (! empty($entrega['customer_document'])) {
+                $b->line('CC '.$entrega['customer_document']);
+            }
             if (! empty($entrega['address'])) {
                 $b->line($entrega['address']);
             }

@@ -13,6 +13,7 @@ use App\Models\Restaurant\Reservation;
 use App\Models\Restaurant\ServiceZone;
 use App\Models\Restaurant\Table;
 use App\Models\ThirdParty;
+use App\Services\Restaurant\DeliveryCustomerRegistrar;
 use App\Services\Restaurant\RestaurantOrderEngine;
 use App\Support\AccountantContext;
 use App\Support\ModuleGate;
@@ -89,6 +90,9 @@ class RestaurantPos extends Page
     public bool $deliveryModalOpen = false;
     public string $deliveryCustomerName = '';
     public string $deliveryCustomerPhone = '';
+    public string $deliveryCustomerDocument = '';
+    /** Busqueda de un cliente ya registrado, para no volver a dictarlo todo. */
+    public string $deliveryCustomerSearch = '';
     public string $deliveryAddress = '';
     public string $deliveryAddressNotes = '';
     public string $deliveryFee = '0';
@@ -919,6 +923,8 @@ class RestaurantPos extends Page
         $this->deliveryModalOpen = true;
         $this->deliveryCustomerName = '';
         $this->deliveryCustomerPhone = '';
+        $this->deliveryCustomerDocument = '';
+        $this->deliveryCustomerSearch = '';
         $this->deliveryAddress = '';
         $this->deliveryAddressNotes = '';
         $this->deliveryFee = '0';
@@ -956,6 +962,7 @@ class RestaurantPos extends Page
                 trim($this->deliveryCustomerPhone) ?: null,
                 trim($this->deliveryAddressNotes) ?: null,
                 max(0, $fee),
+                document: trim($this->deliveryCustomerDocument) ?: null,
             );
 
             $this->activeOrderId = $order->id;
@@ -969,6 +976,44 @@ class RestaurantPos extends Page
         } catch (\Throwable $e) {
             Notification::make()->title('Error al abrir')->body($e->getMessage())->danger()->send();
         }
+    }
+
+    /**
+     * Clientes que coinciden con lo que se esta escribiendo en el buscador.
+     *
+     * @return \Illuminate\Support\Collection<int, \App\Models\ThirdParty>
+     */
+    public function getDeliveryCustomerMatchesProperty()
+    {
+        return app(DeliveryCustomerRegistrar::class)->search(
+            (int) auth()->user()?->company_id,
+            $this->deliveryCustomerSearch,
+        );
+    }
+
+    /** Precarga los datos de un cliente que ya pidio antes. */
+    public function selectDeliveryCustomer(int $thirdPartyId): void
+    {
+        $cliente = ThirdParty::query()
+            ->where('company_id', auth()->user()?->company_id)
+            ->find($thirdPartyId);
+
+        if (! $cliente) {
+            return;
+        }
+
+        $this->deliveryCustomerName = (string) $cliente->name;
+        $this->deliveryCustomerPhone = (string) ($cliente->phone ?: $cliente->mobile);
+        $this->deliveryAddress = (string) $cliente->address;
+        $this->deliveryAddressNotes = (string) $cliente->notes;
+
+        // El identificador de un contacto sin cedula es su telefono: no es un
+        // documento y no se precarga como tal.
+        $this->deliveryCustomerDocument = $cliente->is_delivery_contact
+            ? ''
+            : (string) $cliente->document_number;
+
+        $this->deliveryCustomerSearch = '';
     }
 
     /**
@@ -1501,7 +1546,15 @@ class RestaurantPos extends Page
             }
         }
 
-        $thirdPartyId = $this->ensureDefaultCustomer()->id;
+        // Un domicilio ya sabe a quien se le vende. Solo sirve para la factura
+        // si esta identificado de verdad: el contacto que solo dejo telefono
+        // lleva ese numero en el campo del documento, y ese dato viaja a la
+        // DIAN en la factura electronica.
+        $cliente = $order->thirdParty;
+
+        $thirdPartyId = ($cliente && ! $cliente->is_delivery_contact)
+            ? $cliente->id
+            : $this->ensureDefaultCustomer()->id;
 
         // Construir payload con pagos + extra_discount + gift_card_payments por tab
         $payload = [];

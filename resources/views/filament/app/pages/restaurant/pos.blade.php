@@ -1404,23 +1404,71 @@
                 </div>
 
                 <div style="padding:18px 22px; color:#111827; display:flex; flex-direction:column; gap:12px;">
+                    {{-- Buscar un cliente que ya pidio antes --}}
+                    <div>
+                        <label style="display:block; font-size:13px; font-weight:700; color:#111827; margin-bottom:6px;">
+                            ¿Ya pidió antes?
+                        </label>
+                        <input type="text" wire:model.live.debounce.300ms="deliveryCustomerSearch"
+                               placeholder="Busca por nombre, cédula o teléfono"
+                               autofocus
+                               style="width:100%; padding:10px 12px; border:1px solid #c4b5fd; border-radius:8px; font-size:14px; color:#111827; background:#faf5ff;" />
+
+                        @if (strlen($deliveryCustomerSearch) >= 3)
+                            @php($matches = $this->deliveryCustomerMatches)
+                            <div style="margin-top:6px; border:1px solid #e5e7eb; border-radius:8px; overflow:hidden; max-height:180px; overflow-y:auto;">
+                                @forelse ($matches as $match)
+                                    <button type="button" wire:click="selectDeliveryCustomer({{ $match->id }})"
+                                            style="display:block; width:100%; text-align:left; padding:9px 12px; background:#ffffff; border:0; border-bottom:1px solid #f3f4f6; cursor:pointer;">
+                                        <div style="font-weight:700; font-size:13px; color:#111827;">{{ $match->name }}</div>
+                                        <div style="font-size:11px; color:#6b7280;">
+                                            {{ $match->is_delivery_contact ? 'Tel. '.$match->document_number : 'CC '.$match->document_number }}
+                                            @if ($match->address) · {{ \Illuminate\Support\Str::limit($match->address, 40) }} @endif
+                                        </div>
+                                    </button>
+                                @empty
+                                    <div style="padding:10px 12px; font-size:12px; color:#6b7280; background:#ffffff;">
+                                        Ninguno coincide. Llena los datos abajo y queda guardado.
+                                    </div>
+                                @endforelse
+                            </div>
+                        @endif
+                    </div>
+
+                    <div style="border-top:1px solid #e5e7eb;"></div>
+
                     <div>
                         <label style="display:block; font-size:13px; font-weight:700; color:#111827; margin-bottom:6px;">
                             Nombre del cliente <span style="color:#dc2626;">*</span>
                         </label>
                         <input type="text" wire:model.live="deliveryCustomerName"
                                placeholder="Ej: Juan Pérez"
-                               autofocus
                                style="width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; color:#111827; background:#ffffff;" />
                     </div>
 
-                    <div>
-                        <label style="display:block; font-size:13px; font-weight:700; color:#111827; margin-bottom:6px;">
-                            Teléfono
-                        </label>
-                        <input type="tel" wire:model.live="deliveryCustomerPhone"
-                               placeholder="3001234567"
-                               style="width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; color:#111827; background:#ffffff;" />
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                        <div>
+                            <label style="display:block; font-size:13px; font-weight:700; color:#111827; margin-bottom:6px;">
+                                Cédula
+                            </label>
+                            <input type="text" wire:model.live="deliveryCustomerDocument"
+                                   placeholder="Opcional"
+                                   style="width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; color:#111827; background:#ffffff;" />
+                        </div>
+
+                        <div>
+                            <label style="display:block; font-size:13px; font-weight:700; color:#111827; margin-bottom:6px;">
+                                Teléfono
+                            </label>
+                            <input type="tel" wire:model.live="deliveryCustomerPhone"
+                                   placeholder="3001234567"
+                                   style="width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; color:#111827; background:#ffffff;" />
+                        </div>
+                    </div>
+
+                    <div style="font-size:11px; color:#6b7280; margin-top:-4px;">
+                        Con la cédula, la factura sale a su nombre. Sin ella se guarda igual y se busca por teléfono,
+                        pero la factura sale a consumidor final.
                     </div>
 
                     <div>

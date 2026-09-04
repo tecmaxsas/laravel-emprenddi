@@ -95,6 +95,7 @@ class ThirdParty extends Model
         'credit_days',
         'payment_terms_days',
         'birth_date',
+        'is_delivery_contact',
         'notes',
         'active',
     ];

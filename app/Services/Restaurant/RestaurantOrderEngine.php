@@ -136,6 +136,7 @@ class RestaurantOrderEngine
         ?string $addressNotes = null,
         float $deliveryFee = 0,
         int $guests = 1,
+        ?string $document = null,
     ): Order {
         if (! $location->active) {
             throw new RuntimeException('La sede está inactiva.');
@@ -150,9 +151,21 @@ class RestaurantOrderEngine
         $session = CashSessionGate::requireOpenSession();
         $company = Company::find($location->company_id);
 
+        // El cliente queda guardado como tercero para que la proxima vez se
+        // busque y se precargue en vez de volver a dictarlo todo.
+        $cliente = app(DeliveryCustomerRegistrar::class)->register(
+            (int) $location->company_id,
+            $customerName,
+            $document,
+            $phone,
+            $address,
+            $addressNotes,
+        );
+
         $metadata = [
             'customer_name' => $customerName,
             'customer_phone' => $phone ?: null,
+            'customer_document' => $document ?: null,
             'address' => $address,
             'address_notes' => $addressNotes ?: null,
             'driver_id' => null,
@@ -161,10 +174,11 @@ class RestaurantOrderEngine
             'delivered_at' => null,
         ];
 
-        return DB::transaction(function () use ($location, $guests, $session, $company, $metadata, $deliveryFee, $customerName) {
+        return DB::transaction(function () use ($location, $guests, $session, $company, $metadata, $deliveryFee, $customerName, $cliente) {
             return Order::create([
                 'company_id' => $location->company_id,
                 'location_id' => $location->id,
+                'third_party_id' => $cliente?->id,
                 'cash_register_session_id' => $session->id,
                 'table_id' => null,
                 'zone_id' => null,
@@ -183,6 +197,30 @@ class RestaurantOrderEngine
                 'notes' => "Domicilio — {$customerName}",
             ]);
         });
+    }
+
+    /**
+     * Datos de la entrega, para que queden en la factura.
+     *
+     * Vive en delivery_metadata y no en columnas, asi que se arma aqui en vez
+     * de repetir la lectura del JSON en cada sitio que lo necesita.
+     */
+    public function resumenDelDomicilio(Order $order): string
+    {
+        if (! $order->is_delivery) {
+            return '';
+        }
+
+        $meta = $order->delivery_metadata ?? [];
+
+        $partes = array_filter([
+            $meta['customer_name'] ?? null,
+            ($meta['customer_phone'] ?? null) ? 'Tel. '.$meta['customer_phone'] : null,
+            $meta['address'] ?? null,
+            $meta['address_notes'] ?? null,
+        ]);
+
+        return $partes === [] ? '' : ' — Domicilio: '.implode(' · ', $partes);
     }
 
     /**
@@ -937,7 +975,10 @@ class RestaurantOrderEngine
                 $tabLabel = $tab['label'] ?? null;
                 $notes = "Orden restaurante {$order->fullNumber()} — {$tableLabel}"
                     .($tabLabel ? " — Tab {$tabLabel}" : '')
-                    .($tipShare > 0 ? sprintf(' — Propina: $%s', number_format($tipShare, 0, ',', '.')) : '');
+                    .($tipShare > 0 ? sprintf(' — Propina: $%s', number_format($tipShare, 0, ',', '.')) : '')
+                    // Quien recibe y donde: es lo que el repartidor y el
+                    // cliente necesitan ver en el documento.
+                    .$this->resumenDelDomicilio($order);
 
                 // Consecutivo de la resolución (POS o Electrónica) de la sede.
                 $doc = $documentNumberer->reserveForLocation(
