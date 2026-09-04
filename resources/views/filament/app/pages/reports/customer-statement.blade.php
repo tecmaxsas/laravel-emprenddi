@@ -43,6 +43,8 @@
             </x-filament::button>
 
             {{ $this->sendEmailAction }}
+
+            {{ $this->registerAdvanceAction }}
         </div>
 
         {{-- Movimientos --}}

@@ -10,6 +10,7 @@ use App\Models\SaleInvoice;
 use App\Models\ThirdParty;
 use App\Models\User;
 use App\Services\Sales\CustomerAdvanceService;
+use App\Services\Sales\CustomerCreditGuard;
 use App\Services\Sales\CustomerStatement;
 use App\Services\ThirdParties\ThirdPartyImportTemplateGenerator;
 use Illuminate\Support\Facades\DB;
@@ -214,6 +215,85 @@ class CustomerAccountTest extends TestCase
         $this->assertContains('opening_balance_date', $columnas);
     }
 
+    /**
+     * Un cupo en 0 significa SIN LÍMITE. Es como viene la mayoría de terceros,
+     * así que si bloqueara, activar la validación dejaría a toda la base sin
+     * poder vender a crédito.
+     */
+    public function test_un_cupo_en_cero_no_bloquea_nada(): void
+    {
+        $this->cliente->update(['credit_limit' => 0]);
+
+        $factura = $this->facturaBorrador(5000000);
+
+        app(CustomerCreditGuard::class)->assertWithinLimit($factura);
+
+        $this->assertNull(app(CustomerCreditGuard::class)->availableCredit($this->cliente->fresh()));
+    }
+
+    public function test_la_venta_que_pasa_el_cupo_no_se_contabiliza(): void
+    {
+        $this->cliente->update(['credit_limit' => 100000]);
+        $this->facturaContabilizada(80000);
+
+        $nueva = $this->facturaBorrador(50000);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessageMatches('/cupo/');
+
+        app(CustomerCreditGuard::class)->assertWithinLimit($nueva);
+    }
+
+    public function test_la_venta_que_cabe_en_el_cupo_pasa(): void
+    {
+        $this->cliente->update(['credit_limit' => 100000]);
+        $this->facturaContabilizada(80000);
+
+        $nueva = $this->facturaBorrador(20000);
+
+        app(CustomerCreditGuard::class)->assertWithinLimit($nueva);
+
+        $this->assertSame(20000.0, app(CustomerCreditGuard::class)->availableCredit($this->cliente->fresh()));
+    }
+
+    /** El saldo que venía del otro sistema también consume cupo. */
+    public function test_el_saldo_de_apertura_consume_cupo(): void
+    {
+        $this->cliente->update(['credit_limit' => 100000, 'opening_balance' => 90000,
+            'opening_balance_date' => '2026-01-01']);
+
+        $nueva = $this->facturaBorrador(20000);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessageMatches('/cupo/');
+
+        app(CustomerCreditGuard::class)->assertWithinLimit($nueva->fresh());
+    }
+
+    /** Una factura ya pagada no consume cupo por mucho que valga. */
+    public function test_lo_pagado_no_consume_cupo(): void
+    {
+        $this->cliente->update(['credit_limit' => 50000]);
+
+        $factura = $this->facturaBorrador(500000);
+        $factura->update(['paid_amount' => 500000]);
+
+        app(CustomerCreditGuard::class)->assertWithinLimit($factura->fresh());
+
+        $this->assertTrue(true, 'No debía lanzar: no queda nada por cobrar.');
+    }
+
+    /** El saldo a favor libera cupo: es plata que el cliente ya puso. */
+    public function test_el_saldo_a_favor_libera_cupo(): void
+    {
+        $this->cliente->update(['credit_limit' => 100000]);
+        $this->facturaContabilizada(80000);
+        $this->servicio()->register($this->cliente, ['amount' => 80000]);
+
+        $this->assertSame(100000.0, app(CustomerCreditGuard::class)->availableCredit($this->cliente->fresh()),
+            'El anticipo cubrió la factura, así que el cupo vuelve a estar completo.');
+    }
+
     private function servicio(): CustomerAdvanceService
     {
         return app(CustomerAdvanceService::class);
@@ -249,6 +329,17 @@ class CustomerAccountTest extends TestCase
      */
     private function facturaContabilizada(float $total, ?string $fecha = null): SaleInvoice
     {
+        return $this->factura($total, $fecha, 'posted');
+    }
+
+    /** Sin contabilizar: es el estado en el que se valida el cupo. */
+    private function facturaBorrador(float $total, ?string $fecha = null): SaleInvoice
+    {
+        return $this->factura($total, $fecha, 'draft');
+    }
+
+    private function factura(float $total, ?string $fecha, string $estado): SaleInvoice
+    {
         return SaleInvoice::withoutGlobalScopes()->create([
             'company_id' => $this->companyId,
             'location_id' => Location::withoutGlobalScopes()
@@ -259,7 +350,7 @@ class CustomerAccountTest extends TestCase
             'invoice_kind' => 'pos',
             'date' => $fecha ?? now()->toDateString(),
             'currency' => 'COP',
-            'status' => 'posted',
+            'status' => $estado,
             'payment_status' => SaleInvoice::PAYMENT_PENDIENTE,
             'subtotal' => $total,
             'total' => $total,

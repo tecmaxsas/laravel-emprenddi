@@ -57,6 +57,11 @@ class SaleInvoiceEngine
         return DB::transaction(function () use ($invoice, $allowNegativeStock) {
             $this->recalculateTotals($invoice);
 
+            // El cupo se revisa despues de recalcular y antes de tocar nada
+            // mas: aqui es donde la venta se vuelve cartera de verdad, y con
+            // los totales ya en firme.
+            app(CustomerCreditGuard::class)->assertWithinLimit($invoice);
+
             // 1. El consecutivo YA viene reservado por DocumentNumberer desde
             //    quien crea la factura (POS, restaurante, parqueadero, alta
             //    manual). Aqui solo se marca el estado DIAN inicial.
@@ -136,6 +141,13 @@ class SaleInvoiceEngine
             // 6. Comisiones — causar al facturar si el modo es 'invoiced'.
             // (modo 'collected' se causa en recomputePaymentStatus al quedar pagada)
             $this->maybeCauseCommission($invoice->fresh(), CommissionsSettings::CAUSATION_INVOICED);
+
+            // 7. Si el cliente tenia saldo a favor, se va contra esta factura.
+            // Es el otro momento en que un anticipo puede quedar suelto: se
+            // recibio cuando el cliente no debia nada y ahora si.
+            if ($invoice->customer) {
+                app(CustomerAdvanceService::class)->applyToPendingInvoices($invoice->customer);
+            }
 
             return $invoice->fresh();
         });

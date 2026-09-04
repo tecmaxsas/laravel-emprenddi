@@ -3,7 +3,9 @@
 namespace App\Filament\App\Pages\Reports;
 
 use App\Mail\CustomerStatementMail;
+use App\Models\Payment;
 use App\Models\ThirdParty;
+use App\Services\Sales\CustomerAdvanceService;
 use App\Services\Sales\CustomerStatement;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Filament\Actions\Action;
@@ -151,6 +153,77 @@ class CustomerStatementPage extends Page implements HasActions, HasForms
                     ->required(),
             ])
             ->action(fn (array $data) => $this->sendByEmail($data));
+    }
+
+    /**
+     * Registrar plata que el cliente abona por adelantado.
+     *
+     * Vive aqui porque es donde se mira la cuenta del cliente: se ve el saldo,
+     * se recibe el abono y se ve el efecto de una vez.
+     */
+    public function registerAdvanceAction(): Action
+    {
+        return Action::make('registerAdvance')
+            ->label('Registrar anticipo')
+            ->icon('heroicon-o-banknotes')
+            ->color('success')
+            ->modalHeading('Registrar un anticipo del cliente')
+            ->modalDescription('Se aplica automáticamente a las facturas pendientes, de la más antigua a la '
+                .'más nueva. Lo que sobre queda como saldo a favor para la próxima venta.')
+            ->modalSubmitActionLabel('Registrar')
+            ->fillForm(fn () => ['date' => now()->toDateString(), 'payment_method' => 'cash'])
+            ->form([
+                Forms\Components\TextInput::make('amount')
+                    ->label('Valor')
+                    ->numeric()
+                    ->minValue(1)
+                    ->prefix('$')
+                    ->required(),
+                Forms\Components\DatePicker::make('date')
+                    ->label('Fecha')
+                    ->required(),
+                Forms\Components\Select::make('payment_method')
+                    ->label('Forma de pago')
+                    ->options(Payment::PAYMENT_METHODS)
+                    ->native(false)
+                    ->required(),
+                Forms\Components\TextInput::make('reference')
+                    ->label('Referencia')
+                    ->helperText('Número de consignación, recibo, etc.'),
+                Forms\Components\Textarea::make('notes')
+                    ->label('Observaciones')
+                    ->rows(2),
+            ])
+            ->action(function (array $data) {
+                $customer = $this->customer();
+
+                if (! $customer) {
+                    Notification::make()->warning()->title('Elige un cliente primero')->send();
+
+                    return;
+                }
+
+                try {
+                    $servicio = app(CustomerAdvanceService::class);
+                    $servicio->register($customer, $data);
+                    $this->generate();
+
+                    $aFavor = $servicio->availableBalance($customer);
+
+                    Notification::make()->success()
+                        ->title('Anticipo registrado')
+                        ->body($aFavor > 0.01
+                            ? 'Quedó $'.number_format($aFavor, 0, ',', '.').' de saldo a favor.'
+                            : 'Se aplicó completo a las facturas pendientes.')
+                        ->send();
+                } catch (\Throwable $e) {
+                    Notification::make()->danger()
+                        ->title('No se pudo registrar')
+                        ->body($e->getMessage())
+                        ->persistent()
+                        ->send();
+                }
+            });
     }
 
     public function downloadPdf(): ?StreamedResponse

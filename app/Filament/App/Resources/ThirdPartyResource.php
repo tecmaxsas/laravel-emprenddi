@@ -341,6 +341,24 @@ class ThirdPartyResource extends Resource
                 Tables\Columns\TextColumn::make('credit_limit')
                     ->label('Cupo')
                     ->money('COP')
+                    // Un cupo en 0 es SIN LIMITE, no "no puede comprar".
+                    ->formatStateUsing(fn ($state) => (float) $state > 0
+                        ? '$'.number_format((float) $state, 0, ',', '.')
+                        : 'Sin límite')
+                    // Lo util no es el cupo sino cuanto le queda: es lo que se
+                    // mira antes de despachar a credito.
+                    ->description(function (ThirdParty $record) {
+                        if (! $record->is_customer) {
+                            return null;
+                        }
+
+                        $disponible = app(\App\Services\Sales\CustomerCreditGuard::class)
+                            ->availableCredit($record);
+
+                        return $disponible === null
+                            ? null
+                            : 'Disponible $'.number_format($disponible, 0, ',', '.');
+                    })
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\IconColumn::make('active')
