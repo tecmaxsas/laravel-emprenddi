@@ -1415,9 +1415,8 @@
                                style="width:100%; padding:10px 12px; border:1px solid #c4b5fd; border-radius:8px; font-size:14px; color:#111827; background:#faf5ff;" />
 
                         @if (strlen($deliveryCustomerSearch) >= 3)
-                            @php($matches = $this->deliveryCustomerMatches)
                             <div style="margin-top:6px; border:1px solid #e5e7eb; border-radius:8px; overflow:hidden; max-height:180px; overflow-y:auto;">
-                                @forelse ($matches as $match)
+                                @forelse ($this->deliveryCustomerMatches as $match)
                                     <button type="button" wire:click="selectDeliveryCustomer({{ $match->id }})"
                                             style="display:block; width:100%; text-align:left; padding:9px 12px; background:#ffffff; border:0; border-bottom:1px solid #f3f4f6; cursor:pointer;">
                                         <div style="font-weight:700; font-size:13px; color:#111827;">{{ $match->name }}</div>
