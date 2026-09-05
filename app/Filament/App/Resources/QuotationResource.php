@@ -170,13 +170,13 @@ class QuotationResource extends Resource
                                     $set('unit_price', (float) $product->default_sale_price);
                                     $set('tax_id', $product->default_sale_tax_id);
                                 })
-                                ->columnSpan(4),
+                                ->columnSpan(['default' => 1, 'md' => 6, 'xl' => 4]),
 
                             Forms\Components\TextInput::make('description')
                                 ->label('Descripción')
                                 ->required()
                                 ->maxLength(250)
-                                ->columnSpan(4),
+                                ->columnSpan(['default' => 1, 'md' => 6, 'xl' => 3]),
 
                             Forms\Components\TextInput::make('quantity')
                                 ->label('Cant.')
@@ -186,7 +186,7 @@ class QuotationResource extends Resource
                                 ->required()
                                 ->live(onBlur: true)
                                 ->afterStateUpdated(fn (Forms\Set $set, Forms\Get $get) => self::recomputeLine($set, $get))
-                                ->columnSpan(1),
+                                ->columnSpan(['default' => 1, 'md' => 2, 'xl' => 2]),
 
                             Forms\Components\TextInput::make('unit_price')
                                 ->label('Precio unit.')
@@ -197,7 +197,7 @@ class QuotationResource extends Resource
                                 ->required()
                                 ->live(onBlur: true)
                                 ->afterStateUpdated(fn (Forms\Set $set, Forms\Get $get) => self::recomputeLine($set, $get))
-                                ->columnSpan(2),
+                                ->columnSpan(['default' => 1, 'md' => 2, 'xl' => 3]),
 
                             Forms\Components\TextInput::make('discount_percentage')
                                 ->label('Desc. %')
@@ -207,7 +207,7 @@ class QuotationResource extends Resource
                                 ->default(0)
                                 ->live(onBlur: true)
                                 ->afterStateUpdated(fn (Forms\Set $set, Forms\Get $get) => self::recomputeLine($set, $get))
-                                ->columnSpan(1),
+                                ->columnSpan(['default' => 1, 'md' => 2, 'xl' => 2]),
 
                             Forms\Components\Select::make('tax_id')
                                 ->label('Impuesto')
@@ -229,7 +229,7 @@ class QuotationResource extends Resource
                                     ? Tax::find($value)->code.' ('.Tax::find($value)->rate.'%)'
                                     : null)
                                 ->afterStateUpdated(fn (Forms\Set $set, Forms\Get $get) => self::recomputeLine($set, $get))
-                                ->columnSpan(2),
+                                ->columnSpan(['default' => 1, 'md' => 3, 'xl' => 3]),
 
                             Forms\Components\TextInput::make('total')
                                 ->label('Total')
@@ -238,14 +238,14 @@ class QuotationResource extends Resource
                                 ->disabled()
                                 ->dehydrated()
                                 ->default(0)
-                                ->columnSpan(2),
+                                ->columnSpan(['default' => 1, 'md' => 3, 'xl' => 3]),
 
                             Forms\Components\Hidden::make('subtotal')->default(0),
                             Forms\Components\Hidden::make('discount_amount')->default(0),
                             Forms\Components\Hidden::make('tax_rate')->default(0),
                             Forms\Components\Hidden::make('tax_amount')->default(0),
                         ])
-                        ->columns(16)
+                        ->columns(['default' => 1, 'md' => 6, 'xl' => 20])
                         ->minItems(1)
                         ->defaultItems(1)
                         ->live()
