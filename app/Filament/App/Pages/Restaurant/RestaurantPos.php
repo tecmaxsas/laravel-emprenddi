@@ -14,6 +14,7 @@ use App\Models\Restaurant\ServiceZone;
 use App\Models\Restaurant\Table;
 use App\Models\ThirdParty;
 use App\Services\Restaurant\DeliveryCustomerRegistrar;
+use App\Services\Sales\QuickCustomer;
 use App\Services\Restaurant\RestaurantOrderEngine;
 use App\Support\AccountantContext;
 use App\Support\ModuleGate;
@@ -106,6 +107,17 @@ class RestaurantPos extends Page
     public array $billingPayments = [];
     public string $billingReference = '';
     public string $billingInvoiceKind = 'pos';  // pos | electronic
+
+    /** Cliente elegido al cobrar. Null = consumidor final. */
+    public ?int $billingCustomerId = null;
+    public bool $billingCustomerModalOpen = false;
+    public string $billingCustomerSearch = '';
+    public string $newCustomerName = '';
+    public string $newCustomerDocumentType = 'cc';
+    public string $newCustomerDocument = '';
+    public string $newCustomerEmail = '';
+    public string $newCustomerPhone = '';
+    public string $newCustomerAddress = '';
 
     // ----------------------------------------------------------------
     // PROMOCIONES (modulo opcional — ver PromotionsSettings)
@@ -1234,6 +1246,109 @@ class RestaurantPos extends Page
     /**
      * Asegura un ThirdParty "Consumidor Final" para órdenes sin cliente.
      */
+    /**
+     * Cliente al que sale la factura, para mostrarlo en el modal de cobro.
+     */
+    public function getBillingCustomerProperty(): ?ThirdParty
+    {
+        if ($this->billingCustomerId) {
+            return ThirdParty::query()
+                ->where('company_id', auth()->user()?->company_id)
+                ->find($this->billingCustomerId);
+        }
+
+        // Un domicilio ya sabe a quien se le vende, salvo que solo haya
+        // dejado telefono: ese numero no es un documento y no puede ir a la
+        // DIAN como si lo fuera.
+        $delDomicilio = $this->activeOrder?->thirdParty;
+
+        return ($delDomicilio && ! $delDomicilio->is_delivery_contact) ? $delDomicilio : null;
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, ThirdParty>
+     */
+    public function getBillingCustomerMatchesProperty()
+    {
+        return app(QuickCustomer::class)->search(
+            (int) auth()->user()?->company_id,
+            $this->billingCustomerSearch,
+        );
+    }
+
+    public function openBillingCustomerModal(): void
+    {
+        $this->billingCustomerModalOpen = true;
+    }
+
+    public function closeBillingCustomerModal(): void
+    {
+        $this->billingCustomerModalOpen = false;
+        $this->billingCustomerSearch = '';
+        $this->newCustomerName = '';
+        $this->newCustomerDocumentType = 'cc';
+        $this->newCustomerDocument = '';
+        $this->newCustomerEmail = '';
+        $this->newCustomerPhone = '';
+        $this->newCustomerAddress = '';
+    }
+
+    public function selectBillingCustomer(int $thirdPartyId): void
+    {
+        $cliente = ThirdParty::query()
+            ->where('company_id', auth()->user()?->company_id)
+            ->find($thirdPartyId);
+
+        if (! $cliente) {
+            Notification::make()->title('Ese cliente ya no existe')->danger()->send();
+
+            return;
+        }
+
+        $this->billingCustomerId = $cliente->id;
+        $this->closeBillingCustomerModal();
+
+        Notification::make()->title("Factura a nombre de {$cliente->name}")->success()->send();
+    }
+
+    /** Vuelve a consumidor final. */
+    public function clearBillingCustomer(): void
+    {
+        $this->billingCustomerId = null;
+        $this->closeBillingCustomerModal();
+    }
+
+    /** Crea el cliente sin salir del cobro. Las reglas viven en QuickCustomer. */
+    public function createBillingCustomer(): void
+    {
+        try {
+            $resultado = app(QuickCustomer::class)->create((int) auth()->user()?->company_id, [
+                'name' => $this->newCustomerName,
+                'document_type' => $this->newCustomerDocumentType,
+                'document_number' => $this->newCustomerDocument,
+                'email' => $this->newCustomerEmail,
+                'phone' => $this->newCustomerPhone,
+                'address' => $this->newCustomerAddress,
+            ]);
+        } catch (\RuntimeException $e) {
+            Notification::make()->title('No se pudo crear el cliente')
+                ->body($e->getMessage())->danger()->send();
+
+            return;
+        }
+
+        $cliente = $resultado['customer'];
+        $this->billingCustomerId = $cliente->id;
+        $this->closeBillingCustomerModal();
+
+        $resultado['existed']
+            ? Notification::make()->warning()
+                ->title('Ese documento ya estaba registrado')
+                ->body("Se seleccionó {$cliente->name}.")->send()
+            : Notification::make()->success()
+                ->title("Cliente {$cliente->name} creado")->send();
+    }
+
     protected function ensureDefaultCustomer(): ThirdParty
     {
         return ThirdParty::firstOrCreate(
@@ -1550,7 +1665,11 @@ class RestaurantPos extends Page
         // si esta identificado de verdad: el contacto que solo dejo telefono
         // lleva ese numero en el campo del documento, y ese dato viaja a la
         // DIAN en la factura electronica.
-        $cliente = $order->thirdParty;
+        // Prioridad: el que el cajero eligio al cobrar, luego el del
+        // domicilio, y si no, consumidor final.
+        $cliente = $this->billingCustomerId
+            ? ThirdParty::query()->where('company_id', auth()->user()?->company_id)->find($this->billingCustomerId)
+            : $order->thirdParty;
 
         $thirdPartyId = ($cliente && ! $cliente->is_delivery_contact)
             ? $cliente->id

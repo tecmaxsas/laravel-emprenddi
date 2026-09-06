@@ -136,6 +136,11 @@ class ParkingExit extends Page implements HasForms
                             ->mapWithKeys(fn ($c) => [$c->id => trim(($c->document_number ?: '—').' · '.$c->name)])
                             ->all())
                         ->getOptionLabelUsing(fn ($v) => \App\Models\ThirdParty::find($v)?->name)
+                        // Crear sin salir de la salida del vehiculo: si toca
+                        // ir a Terceros, el carro espera en la talanquera y
+                        // todo termina saliendo a consumidor final.
+                        ->createOptionForm(\App\Support\QuickCustomerForm::schema())
+                        ->createOptionUsing(fn (array $data) => \App\Support\QuickCustomerForm::create($data))
                         ->columnSpan(3),
 
                     Forms\Components\FileUpload::make('exit_photo_path')

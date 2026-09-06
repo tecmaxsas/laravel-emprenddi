@@ -6,13 +6,14 @@ use App\Filament\App\Pages\PosTerminal;
 use App\Models\Company;
 use App\Models\ThirdParty;
 use App\Models\User;
+use App\Services\Sales\QuickCustomer;
 use App\Support\CurrentCompany;
 use Filament\Facades\Filament;
 use Livewire\Livewire;
 use Tests\TestCase;
 
 /**
- * Alta y búsqueda de clientes desde el POS de retail.
+ * Alta y búsqueda de clientes desde los tres POS.
  *
  * El cajero tiene la fila esperando: si para facturarle a un cliente
  * identificado hay que salir del POS, no se hace y todo sale a consumidor
@@ -212,6 +213,61 @@ class PosCustomerTest extends TestCase
         $this->assertSame($cliente->id, $pos->get('customer_id'));
         $this->assertFalse($pos->get('showCustomerModal'));
         $this->assertSame('', $pos->get('customerSearch'), 'El buscador debe quedar limpio.');
+    }
+
+    /**
+     * Los tres POS comparten QuickCustomer para que el cajero encuentre el
+     * mismo flujo en cualquier caja. Si alguno se sale del servicio, la regla
+     * se bifurca y empiezan a comportarse distinto.
+     */
+    public function test_los_tres_pos_usan_el_mismo_servicio(): void
+    {
+        $sinServicio = [];
+
+        $pantallas = [
+            'POS retail' => app_path('Filament/App/Pages/PosTerminal.php'),
+            'POS restaurante' => app_path('Filament/App/Pages/Restaurant/RestaurantPos.php'),
+            'Terminal de parqueadero' => app_path('Filament/App/Pages/Parking/ParkingTerminal.php'),
+            'Salida de parqueadero' => app_path('Filament/App/Pages/Parking/ParkingExit.php'),
+        ];
+
+        foreach ($pantallas as $nombre => $ruta) {
+            $codigo = file_get_contents($ruta);
+
+            // La salida de parqueadero usa el formulario de Filament, que a su
+            // vez delega en el mismo servicio.
+            $usa = str_contains($codigo, 'QuickCustomer::class')
+                || str_contains($codigo, 'QuickCustomerForm::');
+
+            if (! $usa) {
+                $sinServicio[] = $nombre;
+            }
+        }
+
+        $this->assertSame([], $sinServicio,
+            'Estas pantallas crean clientes por su cuenta: '.implode(', ', $sinServicio));
+    }
+
+    /** El servicio es el que decide, no cada pantalla. */
+    public function test_el_servicio_rechaza_lo_que_le_falta(): void
+    {
+        $servicio = app(QuickCustomer::class);
+
+        $casos = [
+            'sin nombre' => ['document_type' => 'cc', 'document_number' => '123', 'email' => 'a@b.co'],
+            'sin documento' => ['name' => 'X', 'document_type' => 'cc', 'email' => 'a@b.co'],
+            'sin correo' => ['name' => 'X', 'document_type' => 'cc', 'document_number' => '123'],
+            'tipo inválido' => ['name' => 'X', 'document_type' => 'zz', 'document_number' => '123', 'email' => 'a@b.co'],
+        ];
+
+        foreach ($casos as $caso => $datos) {
+            try {
+                $servicio->create($this->companyId, $datos);
+                $this->fail("Creó un cliente {$caso}.");
+            } catch (\RuntimeException $e) {
+                $this->assertNotEmpty($e->getMessage());
+            }
+        }
     }
 
     private function recoger(?ThirdParty $cliente): void

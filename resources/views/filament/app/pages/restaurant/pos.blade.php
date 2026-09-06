@@ -1384,6 +1384,121 @@
         </div>
     @endif
 
+    {{-- ============ MODAL CLIENTE DE LA FACTURA ============ --}}
+    @if ($billingCustomerModalOpen)
+        <div style="position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:10000; padding:20px;"
+             wire:click.self="closeBillingCustomerModal"
+             wire:keydown.escape.window="closeBillingCustomerModal">
+            <div style="background:#ffffff; border-radius:14px; max-width:520px; width:100%; max-height:92vh; overflow:auto; box-shadow:0 25px 50px rgba(0,0,0,0.4);">
+                <div style="padding:18px 22px; border-bottom:1px solid #e5e7eb; background:#ecfdf5; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <h2 style="margin:0; font-size:18px; font-weight:700; color:#065f46;">Cliente de la factura</h2>
+                        <div style="font-size:12px; color:#6b7280; margin-top:2px;">
+                            Busca uno existente o créalo sin salir del cobro
+                        </div>
+                    </div>
+                    <button type="button" wire:click="closeBillingCustomerModal"
+                            style="background:transparent; border:0; cursor:pointer; padding:6px; font-size:24px; color:#6b7280; line-height:1;">×</button>
+                </div>
+
+                <div style="padding:18px 22px; color:#111827; display:flex; flex-direction:column; gap:12px;">
+                    <div>
+                        <label style="display:block; font-size:13px; font-weight:700; margin-bottom:6px;">Buscar cliente</label>
+                        <input type="text" wire:model.live.debounce.300ms="billingCustomerSearch"
+                               placeholder="Nombre, documento o correo"
+                               autofocus
+                               style="width:100%; padding:10px 12px; border:1px solid #a7f3d0; border-radius:8px; font-size:14px; color:#111827; background:#f0fdf4;" />
+
+                        @if (strlen($billingCustomerSearch) >= 3)
+                            <div style="margin-top:6px; border:1px solid #e5e7eb; border-radius:8px; overflow:hidden; max-height:180px; overflow-y:auto;">
+                                @forelse ($this->billingCustomerMatches as $match)
+                                    <button type="button" wire:click="selectBillingCustomer({{ $match->id }})"
+                                            style="display:block; width:100%; text-align:left; padding:9px 12px; background:#ffffff; border:0; border-bottom:1px solid #f3f4f6; cursor:pointer;">
+                                        <div style="font-weight:700; font-size:13px; color:#111827;">{{ $match->name }}</div>
+                                        <div style="font-size:11px; color:#6b7280;">
+                                            {{ strtoupper($match->document_type ?? '') }} {{ $match->document_number }}
+                                            @if ($match->email) · {{ $match->email }} @endif
+                                        </div>
+                                    </button>
+                                @empty
+                                    <div style="padding:10px 12px; font-size:12px; color:#6b7280; background:#ffffff;">
+                                        Ninguno coincide. Créalo abajo.
+                                    </div>
+                                @endforelse
+                            </div>
+                        @endif
+                    </div>
+
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <div style="flex:1; height:1px; background:#e5e7eb;"></div>
+                        <span style="font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:#9ca3af;">o crea uno nuevo</span>
+                        <div style="flex:1; height:1px; background:#e5e7eb;"></div>
+                    </div>
+
+                    <div>
+                        <label style="display:block; font-size:13px; font-weight:700; margin-bottom:6px;">Nombre / razón social *</label>
+                        <input type="text" wire:model="newCustomerName" placeholder="Juan Pérez Gómez"
+                               style="width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; background:#ffffff;" />
+                    </div>
+
+                    <div style="display:grid; grid-template-columns:1fr 1.4fr; gap:10px;">
+                        <div>
+                            <label style="display:block; font-size:13px; font-weight:700; margin-bottom:6px;">Tipo de documento *</label>
+                            <select wire:model="newCustomerDocumentType"
+                                    style="width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; background:#ffffff;">
+                                @foreach (\App\Models\ThirdParty::DOCUMENT_TYPES as $codigo => $etiqueta)
+                                    <option value="{{ $codigo }}">{{ $etiqueta }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label style="display:block; font-size:13px; font-weight:700; margin-bottom:6px;">Número de documento *</label>
+                            <input type="text" wire:model="newCustomerDocument" placeholder="1234567890"
+                                   style="width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; background:#ffffff;" />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label style="display:block; font-size:13px; font-weight:700; margin-bottom:6px;">Correo *</label>
+                        <input type="email" wire:model="newCustomerEmail" placeholder="cliente@correo.com"
+                               style="width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; background:#ffffff;" />
+                        <div style="font-size:11px; color:#6b7280; margin-top:3px;">
+                            A esta dirección se le envía la factura electrónica.
+                        </div>
+                    </div>
+
+                    <div style="display:grid; grid-template-columns:1fr 1.4fr; gap:10px;">
+                        <div>
+                            <label style="display:block; font-size:13px; font-weight:700; margin-bottom:6px;">Teléfono</label>
+                            <input type="tel" wire:model="newCustomerPhone" placeholder="Opcional"
+                                   style="width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; background:#ffffff;" />
+                        </div>
+                        <div>
+                            <label style="display:block; font-size:13px; font-weight:700; margin-bottom:6px;">Dirección</label>
+                            <input type="text" wire:model="newCustomerAddress" placeholder="Opcional"
+                                   style="width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; background:#ffffff;" />
+                        </div>
+                    </div>
+                </div>
+
+                <div style="padding:14px 22px; border-top:1px solid #e5e7eb; background:#fafafa; display:flex; gap:10px; justify-content:flex-end;">
+                    <button type="button" wire:click="clearBillingCustomer"
+                            style="padding:10px 16px; background:transparent; color:#6b7280; border:1px solid #d1d5db; border-radius:8px; font-weight:600; cursor:pointer;">
+                        Consumidor final
+                    </button>
+                    <button type="button" wire:click="closeBillingCustomerModal"
+                            style="padding:10px 16px; background:transparent; color:#6b7280; border:1px solid #d1d5db; border-radius:8px; font-weight:600; cursor:pointer;">
+                        Cancelar
+                    </button>
+                    <button type="button" wire:click="createBillingCustomer"
+                            style="padding:10px 22px; background:#059669; color:white; border:0; border-radius:8px; font-weight:700; cursor:pointer;">
+                        ✓ Crear y usar
+                    </button>
+                </div>
+            </div>
+        </div>
+    @endif
+
     {{-- ============ MODAL NUEVO DOMICILIO ============ --}}
     @if ($rs['delivery'] && $deliveryModalOpen)
         <div
@@ -1698,6 +1813,37 @@
                                 📡 Electrónica (DIAN)
                             </button>
                         </div>
+                    </div>
+
+                    {{-- Cliente de la factura --}}
+                    <div>
+                        <label style="font-size:12px; font-weight:700; color:#374151; margin-bottom:4px; display:block;">
+                            Cliente
+                        </label>
+                        @php
+                            // Con @php(...) en una linea Blade deja el bloque
+                            // PHP abierto en este proyecto y tumba la pagina.
+                            $clienteFactura = $this->billingCustomer;
+                        @endphp
+                        <button type="button" wire:click="openBillingCustomerModal"
+                                style="width:100%; text-align:left; padding:9px 12px; border-radius:6px; cursor:pointer; border:1px solid #d1d5db; background:#ffffff;">
+                            <div style="font-size:13px; font-weight:700; color:#111827;">
+                                {{ $clienteFactura?->name ?? 'Consumidor Final' }}
+                            </div>
+                            <div style="font-size:11px; color:#6b7280;">
+                                @if ($clienteFactura)
+                                    {{ strtoupper($clienteFactura->document_type ?? '') }} {{ $clienteFactura->document_number }}
+                                @else
+                                    Toca para buscar o crear un cliente
+                                @endif
+                            </div>
+                        </button>
+                        @if ($billingInvoiceKind === 'electronic' && ! $clienteFactura)
+                            <div style="font-size:11px; color:#b45309; margin-top:4px;">
+                                La factura electrónica sale a consumidor final. Si el cliente la necesita a su
+                                nombre, elígelo aquí antes de cobrar.
+                            </div>
+                        @endif
                     </div>
 
                     {{-- Referencia común --}}

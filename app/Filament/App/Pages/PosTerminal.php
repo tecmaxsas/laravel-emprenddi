@@ -14,7 +14,7 @@ use App\Models\SaleInvoice;
 use App\Models\SuspendedSale;
 use App\Models\Tax;
 use App\Models\ThirdParty;
-use App\Support\DianDvCalculator;
+use App\Services\Sales\QuickCustomer;
 use App\Services\Sales\SaleInvoiceEngine;
 use App\Services\Sales\SaleInvoiceNumberer;
 use App\Support\PaymentAccountResolver;
@@ -1378,24 +1378,10 @@ class PosTerminal extends Page
      */
     public function getCustomerMatchesProperty()
     {
-        $termino = trim($this->customerSearch);
-
-        if (mb_strlen($termino) < 3) {
-            return collect();
-        }
-
-        return ThirdParty::query()
-            ->where('company_id', Auth::user()->company_id)
-            ->where('is_customer', true)
-            ->where('active', true)
-            ->where(function ($q) use ($termino) {
-                $q->where('name', 'ilike', "%{$termino}%")
-                    ->orWhere('document_number', 'like', "%{$termino}%")
-                    ->orWhere('email', 'ilike', "%{$termino}%");
-            })
-            ->orderBy('name')
-            ->limit(8)
-            ->get();
+        return app(QuickCustomer::class)->search(
+            (int) Auth::user()->company_id,
+            $this->customerSearch,
+        );
     }
 
     /** Usa un cliente que ya estaba creado. */
@@ -1436,87 +1422,35 @@ class PosTerminal extends Page
         $this->newCustomerAddress = '';
     }
 
-    /**
-     * Crea un cliente sin salir del POS.
-     *
-     * Obligatorios nombre, tipo y numero de documento y correo. El correo lo
-     * es porque la factura electronica se le envia al adquiriente y la DIAN lo
-     * exige: pedirlo despues obliga a interrumpir la venta.
-     *
-     * Lo demas queda opcional a proposito — el cajero tiene la fila esperando.
-     */
+    /** Crea un cliente sin salir del POS. Las reglas viven en QuickCustomer. */
     public function createQuickCustomer(): void
     {
-        $nombre = trim($this->newCustomerName);
-        $documento = trim($this->newCustomerDocument);
-        $correo = trim($this->newCustomerEmail);
-        $tipo = $this->newCustomerDocumentType;
-
-        $faltan = [];
-        if ($nombre === '') $faltan[] = 'nombre';
-        if ($documento === '') $faltan[] = 'número de documento';
-        if ($correo === '') $faltan[] = 'correo';
-        if (! isset(ThirdParty::DOCUMENT_TYPES[$tipo])) $faltan[] = 'tipo de documento';
-
-        if ($faltan !== []) {
-            Notification::make()
-                ->title('Faltan datos del cliente')
-                ->body('Sin '.implode(', ', $faltan).' no se puede crear.')
-                ->danger()->send();
+        try {
+            $resultado = app(QuickCustomer::class)->create((int) Auth::user()->company_id, [
+                'name' => $this->newCustomerName,
+                'document_type' => $this->newCustomerDocumentType,
+                'document_number' => $this->newCustomerDocument,
+                'email' => $this->newCustomerEmail,
+                'phone' => $this->newCustomerPhone,
+                'address' => $this->newCustomerAddress,
+            ]);
+        } catch (\RuntimeException $e) {
+            Notification::make()->title('No se pudo crear el cliente')
+                ->body($e->getMessage())->danger()->send();
 
             return;
         }
 
-        if (! filter_var($correo, FILTER_VALIDATE_EMAIL)) {
-            Notification::make()
-                ->title('El correo no es válido')
-                ->body('Revísalo: a esa dirección se le envía la factura electrónica.')
-                ->danger()->send();
-
-            return;
-        }
-
-        // Si el documento ya existe se usa ese, no se crea un duplicado ni se
-        // pisan sus datos: el que ya esta registrado puede tener mas
-        // informacion que la que se alcanza a digitar en una fila del POS.
-        $existente = ThirdParty::query()
-            ->where('company_id', Auth::user()->company_id)
-            ->where('document_number', $documento)
-            ->first();
-
-        if ($existente) {
-            $this->customer_id = $existente->id;
-            $this->closeCustomerModal();
-
-            Notification::make()
-                ->title("Ese documento ya estaba registrado")
-                ->body("Se seleccionó {$existente->name}.")
-                ->warning()->send();
-
-            return;
-        }
-
-        $cliente = ThirdParty::create([
-            'company_id' => Auth::user()->company_id,
-            'person_type' => $tipo === 'nit' ? 'juridica' : 'natural',
-            'document_type' => $tipo,
-            'document_number' => $documento,
-            // El NIT lleva digito de verificacion y la DIAN lo valida. Se
-            // calcula en vez de pedirlo: es una cuenta, no un dato.
-            'dv' => $tipo === 'nit' ? DianDvCalculator::calculate($documento) : null,
-            'name' => $nombre,
-            'email' => $correo,
-            'phone' => trim($this->newCustomerPhone) ?: null,
-            'address' => trim($this->newCustomerAddress) ?: null,
-            'is_customer' => true,
-            'is_supplier' => false,
-            'active' => true,
-        ]);
-
+        $cliente = $resultado['customer'];
         $this->customer_id = $cliente->id;
         $this->closeCustomerModal();
 
-        Notification::make()->title("Cliente {$cliente->name} creado")->success()->send();
+        $resultado['existed']
+            ? Notification::make()->warning()
+                ->title('Ese documento ya estaba registrado')
+                ->body("Se seleccionó {$cliente->name}.")->send()
+            : Notification::make()->success()
+                ->title("Cliente {$cliente->name} creado")->send();
     }
 
     // ================================================================

@@ -772,4 +772,110 @@ class ParkingTerminal extends Page
         };
         $n->send();
     }
+
+    /**
+     * Cliente de la salida: buscar uno existente o crearlo sin salir del
+     * terminal. Si toca ir a Terceros, el carro espera en la talanquera y
+     * todo termina saliendo a consumidor final.
+     */
+    public string $customerSearch = '';
+
+    public bool $customerModalOpen = false;
+
+    public string $newCustomerName = '';
+
+    public string $newCustomerDocumentType = 'cc';
+
+    public string $newCustomerDocument = '';
+
+    public string $newCustomerEmail = '';
+
+    public string $newCustomerPhone = '';
+
+    public string $newCustomerAddress = '';
+
+    /** @return \Illuminate\Support\Collection<int, \App\Models\ThirdParty> */
+    public function getCustomerMatchesProperty()
+    {
+        return app(\App\Services\Sales\QuickCustomer::class)->search(
+            (int) auth()->user()?->company_id,
+            $this->customerSearch,
+        );
+    }
+
+    public function openCustomerModal(): void
+    {
+        $this->customerModalOpen = true;
+    }
+
+    public function closeCustomerModal(): void
+    {
+        $this->customerModalOpen = false;
+        $this->customerSearch = '';
+        $this->newCustomerName = '';
+        $this->newCustomerDocumentType = 'cc';
+        $this->newCustomerDocument = '';
+        $this->newCustomerEmail = '';
+        $this->newCustomerPhone = '';
+        $this->newCustomerAddress = '';
+    }
+
+    public function selectCustomer(int $thirdPartyId): void
+    {
+        $cliente = \App\Models\ThirdParty::query()
+            ->where('company_id', auth()->user()?->company_id)
+            ->find($thirdPartyId);
+
+        if (! $cliente) {
+            \Filament\Notifications\Notification::make()->danger()
+                ->title('Ese cliente ya no existe')->send();
+
+            return;
+        }
+
+        $this->exitForm['third_party_id'] = $cliente->id;
+        $this->exitForm['third_party_label'] = $cliente->name;
+        $this->closeCustomerModal();
+    }
+
+    public function clearCustomer(): void
+    {
+        $this->exitForm['third_party_id'] = null;
+        $this->exitForm['third_party_label'] = null;
+        $this->closeCustomerModal();
+    }
+
+    public function createCustomer(): void
+    {
+        try {
+            $resultado = app(\App\Services\Sales\QuickCustomer::class)->create(
+                (int) auth()->user()?->company_id,
+                [
+                    'name' => $this->newCustomerName,
+                    'document_type' => $this->newCustomerDocumentType,
+                    'document_number' => $this->newCustomerDocument,
+                    'email' => $this->newCustomerEmail,
+                    'phone' => $this->newCustomerPhone,
+                    'address' => $this->newCustomerAddress,
+                ],
+            );
+        } catch (\RuntimeException $e) {
+            \Filament\Notifications\Notification::make()->danger()
+                ->title('No se pudo crear el cliente')->body($e->getMessage())->send();
+
+            return;
+        }
+
+        $cliente = $resultado['customer'];
+        $this->exitForm['third_party_id'] = $cliente->id;
+        $this->exitForm['third_party_label'] = $cliente->name;
+        $this->closeCustomerModal();
+
+        $resultado['existed']
+            ? \Filament\Notifications\Notification::make()->warning()
+                ->title('Ese documento ya estaba registrado')
+                ->body("Se seleccionó {$cliente->name}.")->send()
+            : \Filament\Notifications\Notification::make()->success()
+                ->title("Cliente {$cliente->name} creado")->send();
+    }
 }
