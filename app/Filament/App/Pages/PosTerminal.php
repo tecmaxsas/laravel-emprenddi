@@ -14,6 +14,7 @@ use App\Models\SaleInvoice;
 use App\Models\SuspendedSale;
 use App\Models\Tax;
 use App\Models\ThirdParty;
+use App\Support\DianDvCalculator;
 use App\Services\Sales\SaleInvoiceEngine;
 use App\Services\Sales\SaleInvoiceNumberer;
 use App\Support\PaymentAccountResolver;
@@ -92,8 +93,15 @@ class PosTerminal extends Page
     public bool $showRetentionsModal = false;
     public string $paymentMode = 'multi'; // multi | cash | card | transfer | credit
     public string $invoiceKind = 'pos';   // pos | electronic — tipo de factura a emitir
+    /** Busqueda de un cliente que ya existe, para no volver a crearlo. */
+    public string $customerSearch = '';
+
     public string $newCustomerName = '';
     public string $newCustomerDocument = '';
+    public string $newCustomerDocumentType = 'cc';
+    public string $newCustomerEmail = '';
+    public string $newCustomerPhone = '';
+    public string $newCustomerAddress = '';
     public string $suspendName = '';
 
     // Descuento global de la venta. Se distribuye sumándose proporcionalmente
@@ -1363,37 +1371,152 @@ class PosTerminal extends Page
     // CLIENTE
     // ================================================================
 
-    public function createQuickCustomer(): void
+    /**
+     * Clientes que coinciden con lo que se escribe en el buscador.
+     *
+     * @return \Illuminate\Support\Collection<int, ThirdParty>
+     */
+    public function getCustomerMatchesProperty()
     {
-        $name = trim($this->newCustomerName);
-        $doc = trim($this->newCustomerDocument);
+        $termino = trim($this->customerSearch);
 
-        if ($name === '' || $doc === '') {
-            Notification::make()->title('Nombre y documento requeridos')->danger()->send();
+        if (mb_strlen($termino) < 3) {
+            return collect();
+        }
+
+        return ThirdParty::query()
+            ->where('company_id', Auth::user()->company_id)
+            ->where('is_customer', true)
+            ->where('active', true)
+            ->where(function ($q) use ($termino) {
+                $q->where('name', 'ilike', "%{$termino}%")
+                    ->orWhere('document_number', 'like', "%{$termino}%")
+                    ->orWhere('email', 'ilike', "%{$termino}%");
+            })
+            ->orderBy('name')
+            ->limit(8)
+            ->get();
+    }
+
+    /** Usa un cliente que ya estaba creado. */
+    public function selectCustomer(int $thirdPartyId): void
+    {
+        $cliente = ThirdParty::query()
+            ->where('company_id', Auth::user()->company_id)
+            ->find($thirdPartyId);
+
+        if (! $cliente) {
+            Notification::make()->title('Ese cliente ya no existe')->danger()->send();
+
             return;
         }
 
-        $customer = ThirdParty::firstOrCreate(
-            [
-                'company_id' => Auth::user()->company_id,
-                'document_number' => $doc,
-            ],
-            [
-                'person_type' => strlen($doc) >= 9 ? 'juridica' : 'natural',
-                'document_type' => strlen($doc) >= 9 ? 'nit' : 'cc',
-                'name' => $name,
-                'is_customer' => true,
-                'is_supplier' => false,
-                'active' => true,
-            ],
-        );
+        $this->customer_id = $cliente->id;
+        $this->closeCustomerModal();
 
-        $this->customer_id = $customer->id;
+        Notification::make()->title("Cliente {$cliente->name}")->success()->send();
+    }
+
+    /** Vuelve a consumidor final sin salir del modal. */
+    public function useDefaultCustomer(): void
+    {
+        $this->customer_id = $this->ensureDefaultCustomer()->id;
+        $this->closeCustomerModal();
+    }
+
+    public function closeCustomerModal(): void
+    {
         $this->showCustomerModal = false;
+        $this->customerSearch = '';
         $this->newCustomerName = '';
         $this->newCustomerDocument = '';
+        $this->newCustomerDocumentType = 'cc';
+        $this->newCustomerEmail = '';
+        $this->newCustomerPhone = '';
+        $this->newCustomerAddress = '';
+    }
 
-        Notification::make()->title("Cliente {$customer->name} listo")->success()->send();
+    /**
+     * Crea un cliente sin salir del POS.
+     *
+     * Obligatorios nombre, tipo y numero de documento y correo. El correo lo
+     * es porque la factura electronica se le envia al adquiriente y la DIAN lo
+     * exige: pedirlo despues obliga a interrumpir la venta.
+     *
+     * Lo demas queda opcional a proposito — el cajero tiene la fila esperando.
+     */
+    public function createQuickCustomer(): void
+    {
+        $nombre = trim($this->newCustomerName);
+        $documento = trim($this->newCustomerDocument);
+        $correo = trim($this->newCustomerEmail);
+        $tipo = $this->newCustomerDocumentType;
+
+        $faltan = [];
+        if ($nombre === '') $faltan[] = 'nombre';
+        if ($documento === '') $faltan[] = 'número de documento';
+        if ($correo === '') $faltan[] = 'correo';
+        if (! isset(ThirdParty::DOCUMENT_TYPES[$tipo])) $faltan[] = 'tipo de documento';
+
+        if ($faltan !== []) {
+            Notification::make()
+                ->title('Faltan datos del cliente')
+                ->body('Sin '.implode(', ', $faltan).' no se puede crear.')
+                ->danger()->send();
+
+            return;
+        }
+
+        if (! filter_var($correo, FILTER_VALIDATE_EMAIL)) {
+            Notification::make()
+                ->title('El correo no es válido')
+                ->body('Revísalo: a esa dirección se le envía la factura electrónica.')
+                ->danger()->send();
+
+            return;
+        }
+
+        // Si el documento ya existe se usa ese, no se crea un duplicado ni se
+        // pisan sus datos: el que ya esta registrado puede tener mas
+        // informacion que la que se alcanza a digitar en una fila del POS.
+        $existente = ThirdParty::query()
+            ->where('company_id', Auth::user()->company_id)
+            ->where('document_number', $documento)
+            ->first();
+
+        if ($existente) {
+            $this->customer_id = $existente->id;
+            $this->closeCustomerModal();
+
+            Notification::make()
+                ->title("Ese documento ya estaba registrado")
+                ->body("Se seleccionó {$existente->name}.")
+                ->warning()->send();
+
+            return;
+        }
+
+        $cliente = ThirdParty::create([
+            'company_id' => Auth::user()->company_id,
+            'person_type' => $tipo === 'nit' ? 'juridica' : 'natural',
+            'document_type' => $tipo,
+            'document_number' => $documento,
+            // El NIT lleva digito de verificacion y la DIAN lo valida. Se
+            // calcula en vez de pedirlo: es una cuenta, no un dato.
+            'dv' => $tipo === 'nit' ? DianDvCalculator::calculate($documento) : null,
+            'name' => $nombre,
+            'email' => $correo,
+            'phone' => trim($this->newCustomerPhone) ?: null,
+            'address' => trim($this->newCustomerAddress) ?: null,
+            'is_customer' => true,
+            'is_supplier' => false,
+            'active' => true,
+        ]);
+
+        $this->customer_id = $cliente->id;
+        $this->closeCustomerModal();
+
+        Notification::make()->title("Cliente {$cliente->name} creado")->success()->send();
     }
 
     // ================================================================

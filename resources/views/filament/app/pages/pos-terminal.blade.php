@@ -132,6 +132,18 @@
         .pos-input:focus, .pos-select:focus, .pos-textarea:focus {
             border-color: rgb(99,102,241); box-shadow: 0 0 0 3px rgba(99,102,241,0.2);
         }
+        /* Resultado de la busqueda de clientes en el modal de cliente. */
+        .pos-customer-hit {
+            display: block; width: 100%; text-align: left; cursor: pointer;
+            padding: 8px 12px; border: 0; border-bottom: 1px solid #f3f4f6;
+            background: #ffffff; color: #111827;
+        }
+        .pos-customer-hit:hover { background: #eef2ff; }
+        :is(.dark) .pos-customer-hit {
+            background: #111827; color: #f3f4f6; border-bottom-color: #1f2937;
+        }
+        :is(.dark) .pos-customer-hit:hover { background: #1e293b; }
+
         .pos-label {
             font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase;
             letter-spacing: 0.05em; margin-bottom: 4px; display: block;
@@ -1554,24 +1566,94 @@
     @if ($showCustomerModal)
         <div class="fixed inset-0 flex items-center justify-center p-4 pos-modal-overlay"
              style="z-index: 100;"
-             wire:click.self="$set('showCustomerModal', false)">
-            <div class="pos-modal-content" style="max-width: 28rem;">
+             wire:click.self="closeCustomerModal">
+            <div class="pos-modal-content" style="max-width: 34rem;">
                 <div class="pos-modal-header">
                     <h2 class="text-base font-semibold flex-1">Cliente de la venta</h2>
-                    <button type="button" wire:click="$set('showCustomerModal', false)" class="pos-modal-close">×</button>
+                    <button type="button" wire:click="closeCustomerModal" class="pos-modal-close">×</button>
                 </div>
+
                 <div class="pos-modal-body">
+                    {{-- Buscar uno que ya exista: es el caso normal --}}
                     <div>
-                        <label class="pos-label">Nombre / razón social</label>
+                        <label class="pos-label">Buscar cliente</label>
+                        <input type="text"
+                               wire:model.live.debounce.300ms="customerSearch"
+                               placeholder="Nombre, documento o correo"
+                               autofocus
+                               class="pos-input" />
+
+                        @if (strlen($customerSearch) >= 3)
+                            <div style="margin-top:6px; border:1px solid rgba(0,0,0,0.1); border-radius:8px; overflow:hidden; max-height:200px; overflow-y:auto;">
+                                @forelse ($this->customerMatches as $match)
+                                    <button type="button" wire:click="selectCustomer({{ $match->id }})"
+                                            class="pos-customer-hit">
+                                        <div style="font-weight:700; font-size:13px;">{{ $match->name }}</div>
+                                        <div style="font-size:11px; opacity:.7;">
+                                            {{ strtoupper($match->document_type ?? '') }} {{ $match->document_number }}
+                                            @if ($match->email) · {{ $match->email }} @endif
+                                        </div>
+                                    </button>
+                                @empty
+                                    <div style="padding:10px 12px; font-size:12px; opacity:.7;">
+                                        Ninguno coincide. Créalo abajo.
+                                    </div>
+                                @endforelse
+                            </div>
+                        @endif
+                    </div>
+
+                    <div style="display:flex; align-items:center; gap:10px; margin:4px 0;">
+                        <div style="flex:1; height:1px; background:rgba(0,0,0,0.1);"></div>
+                        <span style="font-size:11px; text-transform:uppercase; letter-spacing:.5px; opacity:.6;">o crea uno nuevo</span>
+                        <div style="flex:1; height:1px; background:rgba(0,0,0,0.1);"></div>
+                    </div>
+
+                    <div>
+                        <label class="pos-label">Nombre / razón social *</label>
                         <input type="text" wire:model="newCustomerName" placeholder="Juan Pérez Gómez" class="pos-input" />
                     </div>
+
+                    <div style="display:grid; grid-template-columns:1fr 1.4fr; gap:10px;">
+                        <div>
+                            <label class="pos-label">Tipo de documento *</label>
+                            <select wire:model="newCustomerDocumentType" class="pos-input">
+                                @foreach (\App\Models\ThirdParty::DOCUMENT_TYPES as $codigo => $etiqueta)
+                                    <option value="{{ $codigo }}">{{ $etiqueta }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label class="pos-label">Número de documento *</label>
+                            <input type="text" wire:model="newCustomerDocument" placeholder="1234567890" class="pos-input" />
+                        </div>
+                    </div>
+
                     <div>
-                        <label class="pos-label">Documento (CC / NIT)</label>
-                        <input type="text" wire:model="newCustomerDocument" placeholder="1234567890" class="pos-input" />
+                        <label class="pos-label">Correo *</label>
+                        <input type="email" wire:model="newCustomerEmail" placeholder="cliente@correo.com" class="pos-input" />
+                        <div style="font-size:11px; opacity:.65; margin-top:3px;">
+                            A esta dirección se le envía la factura electrónica.
+                        </div>
+                    </div>
+
+                    <div style="display:grid; grid-template-columns:1fr 1.4fr; gap:10px;">
+                        <div>
+                            <label class="pos-label">Teléfono</label>
+                            <input type="tel" wire:model="newCustomerPhone" placeholder="Opcional" class="pos-input" />
+                        </div>
+                        <div>
+                            <label class="pos-label">Dirección</label>
+                            <input type="text" wire:model="newCustomerAddress" placeholder="Opcional" class="pos-input" />
+                        </div>
                     </div>
                 </div>
+
                 <div class="pos-modal-footer">
-                    <button type="button" wire:click="$set('showCustomerModal', false)" class="pos-btn pos-btn-secondary">Cancelar</button>
+                    <button type="button" wire:click="useDefaultCustomer" class="pos-btn pos-btn-secondary">
+                        Consumidor final
+                    </button>
+                    <button type="button" wire:click="closeCustomerModal" class="pos-btn pos-btn-secondary">Cancelar</button>
                     <button type="button" wire:click="createQuickCustomer" class="pos-btn pos-btn-primary">Crear y usar</button>
                 </div>
             </div>
