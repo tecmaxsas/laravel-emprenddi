@@ -878,4 +878,97 @@ class ParkingTerminal extends Page
             : \Filament\Notifications\Notification::make()->success()
                 ->title("Cliente {$cliente->name} creado")->send();
     }
+
+    /**
+     * Apertura de caja desde el terminal.
+     *
+     * Antes el boton llevaba al POS retail, que es donde vive el formulario.
+     * Eso dejo de funcionar cuando el POS retail empezo a redirigir al
+     * terminal en las empresas de parqueadero: el cajero daba clic, iba y
+     * volvia, y la pagina parecia solo recargarse.
+     *
+     * Un parqueadero no tiene por que pasar por el POS retail para nada, asi
+     * que abre su turno aqui.
+     */
+    public bool $openCashModalOpen = false;
+
+    public ?int $openingLocationId = null;
+
+    public ?float $openingAmount = 0.0;
+
+    public string $openingNotes = '';
+
+    public function openCashModal(): void
+    {
+        if ($this->openCashSession) {
+            \Filament\Notifications\Notification::make()->warning()
+                ->title('Ya tienes un turno abierto')->send();
+
+            return;
+        }
+
+        $this->openingLocationId = \App\Models\Location::query()
+            ->where('company_id', auth()->user()?->company_id)
+            ->where('active', true)
+            ->orderByDesc('is_main')
+            ->value('id');
+
+        $this->openingAmount = 0.0;
+        $this->openingNotes = '';
+        $this->openCashModalOpen = true;
+    }
+
+    public function closeCashModal(): void
+    {
+        $this->openCashModalOpen = false;
+    }
+
+    /** @return array<int, string> */
+    public function getOpeningLocationsProperty(): array
+    {
+        return \App\Models\Location::query()
+            ->where('company_id', auth()->user()?->company_id)
+            ->where('active', true)
+            ->orderByDesc('is_main')
+            ->orderBy('name')
+            ->pluck('name', 'id')
+            ->all();
+    }
+
+    public function openCashRegister(): void
+    {
+        if ($this->openCashSession) {
+            \Filament\Notifications\Notification::make()->warning()
+                ->title('Ya tienes un turno abierto')->send();
+
+            return;
+        }
+
+        if (! $this->openingLocationId) {
+            \Filament\Notifications\Notification::make()->danger()
+                ->title('Selecciona la sede')->send();
+
+            return;
+        }
+
+        $base = max(0, (float) ($this->openingAmount ?? 0));
+
+        $sesion = CashRegisterSession::create([
+            'company_id' => auth()->user()->company_id,
+            'location_id' => $this->openingLocationId,
+            'cashier_user_id' => auth()->id(),
+            'status' => CashRegisterSession::STATUS_OPEN,
+            'opened_at' => now(),
+            'opening_amount' => $base,
+            'opening_notes' => trim($this->openingNotes) ?: null,
+        ]);
+
+        $this->openCashModalOpen = false;
+        $this->openingNotes = '';
+
+        \Filament\Notifications\Notification::make()->success()
+            ->title('Caja abierta')
+            ->body('Sede '.$sesion->location?->name.'. Base: $'.number_format($base, 0, ',', '.'))
+            ->send();
+    }
 }

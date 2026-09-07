@@ -33,10 +33,10 @@
     @else
         <div style="border:1px solid #dc2626; background:#fee2e2; color:#991b1b; border-radius:8px; padding:10px 14px; font-size:13px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
             <div>🚨 <strong>Sin turno de caja abierto.</strong> Las salidas con cobro fallarán hasta que abras caja.</div>
-            <a href="{{ route('filament.app.pages.pos') }}"
-               style="background:#991b1b; color:#fff; padding:6px 12px; border-radius:6px; text-decoration:none; font-weight:700; font-size:12px;">
+            <button type="button" wire:click="openCashModal"
+               style="background:#991b1b; color:#fff; padding:6px 12px; border:0; border-radius:6px; cursor:pointer; font-weight:700; font-size:12px;">
                 🔓 Abrir caja
-            </a>
+            </button>
         </div>
     @endif
 
@@ -770,6 +770,66 @@
                     <button type="button" wire:click="createCustomer"
                             style="padding:10px 22px; background:#2563eb; color:white; border:0; border-radius:8px; font-weight:700; cursor:pointer;">
                         ✓ Crear y usar
+                    </button>
+                </div>
+            </div>
+        </div>
+    @endif
+
+
+    {{-- ============ MODAL ABRIR CAJA ============ --}}
+    @if ($openCashModalOpen)
+        <div style="position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:10000; padding:20px;"
+             wire:click.self="closeCashModal"
+             wire:keydown.escape.window="closeCashModal">
+            <div style="background:#ffffff; border-radius:14px; max-width:440px; width:100%; box-shadow:0 25px 50px rgba(0,0,0,0.4); color:#111827;">
+                <div style="padding:18px 22px; border-bottom:1px solid #e5e7eb; background:#f0fdf4; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <h2 style="margin:0; font-size:18px; font-weight:700; color:#166534;">Abrir turno de caja</h2>
+                        <div style="font-size:12px; color:#6b7280; margin-top:2px;">
+                            Sin turno abierto, las salidas con cobro fallan
+                        </div>
+                    </div>
+                    <button type="button" wire:click="closeCashModal"
+                            style="background:transparent; border:0; cursor:pointer; padding:6px; font-size:24px; color:#6b7280; line-height:1;">×</button>
+                </div>
+
+                <div style="padding:18px 22px; display:flex; flex-direction:column; gap:12px;">
+                    <div>
+                        <label style="display:block; font-size:13px; font-weight:700; margin-bottom:6px;">Sede *</label>
+                        <select wire:model="openingLocationId"
+                                style="width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; background:#ffffff; color:#111827;">
+                            <option value="">Selecciona una sede</option>
+                            @foreach ($this->openingLocations as $id => $nombre)
+                                <option value="{{ $id }}">{{ $nombre }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div>
+                        <label style="display:block; font-size:13px; font-weight:700; margin-bottom:6px;">Base inicial</label>
+                        <input type="number" step="1000" min="0" wire:model="openingAmount"
+                               style="width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; background:#ffffff; color:#111827;" />
+                        <div style="font-size:11px; color:#6b7280; margin-top:3px;">
+                            El efectivo con el que arranca el turno. Si no hay base, deja 0.
+                        </div>
+                    </div>
+
+                    <div>
+                        <label style="display:block; font-size:13px; font-weight:700; margin-bottom:6px;">Observaciones</label>
+                        <input type="text" wire:model="openingNotes" placeholder="Opcional"
+                               style="width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; background:#ffffff; color:#111827;" />
+                    </div>
+                </div>
+
+                <div style="padding:14px 22px; border-top:1px solid #e5e7eb; background:#fafafa; display:flex; gap:10px; justify-content:flex-end;">
+                    <button type="button" wire:click="closeCashModal"
+                            style="padding:10px 16px; background:transparent; color:#6b7280; border:1px solid #d1d5db; border-radius:8px; font-weight:600; cursor:pointer;">
+                        Cancelar
+                    </button>
+                    <button type="button" wire:click="openCashRegister"
+                            style="padding:10px 22px; background:#16a34a; color:white; border:0; border-radius:8px; font-weight:700; cursor:pointer;">
+                        🔓 Abrir caja
                     </button>
                 </div>
             </div>
