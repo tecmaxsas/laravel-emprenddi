@@ -8,15 +8,18 @@ use App\Models\Company;
 use App\Models\CustomerAdvance;
 use App\Models\Location;
 use App\Models\Payment;
+use App\Models\Plan;
 use App\Models\Product;
 use App\Models\SaleInvoice;
 use App\Models\SaleInvoiceLine;
+use App\Models\Subscription;
 use App\Models\Tax;
 use App\Models\ThirdParty;
 use App\Models\User;
 use App\Services\Onboarding\CompanyOnboarding;
 use App\Services\Sales\CustomerAdvanceService;
 use App\Services\Sales\SaleInvoiceEngine;
+use App\Support\CompanyRoles;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
@@ -61,8 +64,10 @@ class PerfumeryDemoSeeder extends Seeder
 
         $this->ensureCompany();
         $this->ensureAdmin();
+        $this->ensureSubscription();
         $this->bootstrapCompany();
         $this->resolveLocation();
+        $this->abrirCuentasQueUsaElDemo();
         $this->createProducts();
         $this->createCustomersAndSales();
 
@@ -126,13 +131,48 @@ class PerfumeryDemoSeeder extends Seeder
 
         if (Schema::hasTable('roles')) {
             try {
-                \App\Support\CompanyRoles::assign($this->admin, 'admin');
+                CompanyRoles::assign($this->admin, 'admin');
             } catch (\Throwable) {
             }
         }
 
         // Los engines leen auth()->id() para saber quién hizo qué.
         auth()->login($this->admin);
+    }
+
+    /**
+     * Sin suscripcion el panel devuelve 403 y la empresa demo no sirve para
+     * mostrar nada. Es lo que le faltaba a esta cuando se sembro.
+     */
+    protected function ensureSubscription(): void
+    {
+        if (Subscription::query()->where('company_id', $this->company->id)->exists()) {
+            return;
+        }
+
+        $plan = Plan::query()->where('slug', 'free-trial')->first()
+            ?? Plan::query()->where('is_active', true)->orderBy('sort_order')->first();
+
+        if (! $plan) {
+            $this->command->warn('   · Sin planes en la base: la empresa queda sin suscripción.');
+
+            return;
+        }
+
+        Subscription::create([
+            'company_id' => $this->company->id,
+            'plan_id' => $plan->id,
+            'status' => Subscription::STATUS_TRIAL,
+            'starts_at' => now(),
+            'ends_at' => now()->addYear(),
+            'price_paid' => 0,
+            'currency' => $plan->currency,
+            'billing_cycle' => $plan->billing_cycle,
+            'created_by_user_id' => $this->admin->id,
+            'notes' => 'Demo de perfumería.',
+        ]);
+
+        $this->command->line('   · Suscripción de demostración creada.');
     }
 
     protected function bootstrapCompany(): void
@@ -152,6 +192,28 @@ class PerfumeryDemoSeeder extends Seeder
             ->where('company_id', $this->company->id)
             ->where('rate', 19)
             ->first();
+    }
+
+    /**
+     * Abre las cuentas que el demo mueve.
+     *
+     * El plan se provisiona con las cuentas de 4 digitos cerradas —solo las
+     * hojas reciben movimientos—, pero el motor de ventas busca la 1305 por
+     * codigo exacto para la cartera. Una empresa real las habilita al
+     * configurarse; el demo tiene que hacer lo mismo o queda con cuentas en
+     * uso que no aceptan movimientos.
+     */
+    protected function abrirCuentasQueUsaElDemo(): void
+    {
+        $abiertas = Account::withoutGlobalScopes()
+            ->where('company_id', $this->company->id)
+            ->whereIn('code', ['1305', '1435', '4135', '110505', '1105'])
+            ->where('accepts_movements', false)
+            ->update(['accepts_movements' => true]);
+
+        if ($abiertas > 0) {
+            $this->command->line("   · Cuentas habilitadas para movimientos: {$abiertas}");
+        }
     }
 
     protected function createProducts(): void

@@ -10,7 +10,7 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
-use Spatie\Permission\Models\Role;
+use App\Models\Role;
 
 /**
  * Gestion de usuarios de una empresa desde el SuperAdmin.
@@ -84,8 +84,13 @@ class UsersRelationManager extends RelationManager
                             ->helperText('Mínimo 8 caracteres.'),
                         Forms\Components\CheckboxList::make('roles')
                             ->label('Roles')
-                            ->options(fn () => Role::query()->orderBy('name')->pluck('name', 'name')->all())
-                            ->default(['admin'])
+                            // Solo los de ESTA empresa, y por id: el nombre
+                            // esta repetido entre compañias.
+                            ->options(fn () => Role::query()
+                                ->where('company_id', $this->getOwnerRecord()->id)
+                                ->orderBy('name')
+                                ->pluck('name', 'id')
+                                ->all())
                             ->columns(3)
                             ->required(),
                         Forms\Components\Toggle::make('active')->label('Activo')->default(true),
@@ -116,7 +121,7 @@ class UsersRelationManager extends RelationManager
                             'password' => Hash::make($password),
                             'active' => (bool) ($data['active'] ?? true),
                         ]);
-                        $user->syncRoles($data['roles'] ?? []);
+                        $user->syncRoles($this->rolesDeLaEmpresa($data['roles'] ?? []));
 
                         Notification::make()->success()
                             ->title('Usuario creado')
@@ -135,7 +140,10 @@ class UsersRelationManager extends RelationManager
                         'name' => $record->name,
                         'last_name' => $record->last_name,
                         'email' => $record->email,
-                        'roles' => $record->roles->pluck('name')->all(),
+                        // Por id, para que case con las opciones del
+                        // checkbox: si se llenara con nombres, ninguna quedaria
+                        // marcada.
+                        'roles' => $record->roles->pluck('id')->all(),
                         'active' => $record->active,
                     ])
                     ->form([
@@ -144,7 +152,11 @@ class UsersRelationManager extends RelationManager
                         Forms\Components\TextInput::make('email')->label('Email')->required()->email()->maxLength(150),
                         Forms\Components\CheckboxList::make('roles')
                             ->label('Roles')
-                            ->options(fn () => Role::query()->orderBy('name')->pluck('name', 'name')->all())
+                            ->options(fn () => Role::query()
+                                ->where('company_id', $this->getOwnerRecord()->id)
+                                ->orderBy('name')
+                                ->pluck('name', 'id')
+                                ->all())
                             ->columns(3),
                         Forms\Components\Toggle::make('active')->label('Activo'),
                     ])
@@ -165,7 +177,7 @@ class UsersRelationManager extends RelationManager
                             'email' => $newEmail,
                             'active' => (bool) ($data['active'] ?? true),
                         ]);
-                        $record->syncRoles($data['roles'] ?? []);
+                        $record->syncRoles($this->rolesDeLaEmpresa($data['roles'] ?? []));
 
                         Notification::make()->success()->title('Usuario actualizado')->send();
                     }),
@@ -245,5 +257,23 @@ class UsersRelationManager extends RelationManager
         }
         $out .= random_int(10, 99);
         return $out;
+    }
+
+    /**
+     * Los roles de esta empresa a partir de los ids del formulario.
+     *
+     * Se devuelven modelos y no ids sueltos: Spatie interpreta una cadena
+     * numerica como el NOMBRE de un rol, y con los nombres repetidos entre
+     * empresas podria enganchar el de otra.
+     *
+     * @param  list<int|string>  $ids
+     * @return \Illuminate\Database\Eloquent\Collection<int, Role>
+     */
+    protected function rolesDeLaEmpresa(array $ids)
+    {
+        return Role::query()
+            ->where('company_id', $this->getOwnerRecord()->id)
+            ->whereIn('id', $ids)
+            ->get();
     }
 }

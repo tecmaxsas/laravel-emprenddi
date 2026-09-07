@@ -152,6 +152,57 @@ class CompanyRolesTest extends TestCase
     }
 
     /**
+     * El formulario de usuario solo puede ofrecer los roles de su empresa, y
+     * guardarlos por ID: el nombre esta repetido entre compañias.
+     */
+    public function test_el_formulario_de_usuario_solo_ofrece_los_roles_de_su_empresa(): void
+    {
+        [$empresaA] = $this->empresaConRoles('ZZFORMA');
+        [$empresaB, $usuarioB] = $this->empresaConRoles('ZZFORMB');
+
+        $this->actingAs($usuarioB);
+
+        $opciones = Role::query()
+            ->where('company_id', auth()->user()?->company_id)
+            ->pluck('name', 'id')
+            ->all();
+
+        $idsDeOtra = Role::query()->where('company_id', $empresaA->id)->pluck('id')->all();
+
+        $this->assertNotEmpty($opciones);
+        foreach ($idsDeOtra as $id) {
+            $this->assertArrayNotHasKey($id, $opciones,
+                'El formulario ofrece un rol de otra empresa.');
+        }
+
+        // Las claves son ids, no nombres: pasarle un nombre a syncRoles con
+        // roles repetidos entre empresas es lo que rompia la edicion.
+        foreach (array_keys($opciones) as $clave) {
+            $this->assertIsInt($clave);
+        }
+    }
+
+    /**
+     * Sincronizar con modelos y no con ids sueltos. Spatie lee una cadena
+     * numerica como el NOMBRE de un rol: por eso editar un usuario reventaba
+     * con "There is no role named 18".
+     */
+    public function test_asignar_roles_por_modelo_no_rompe_al_editar(): void
+    {
+        [$empresa, $usuario] = $this->empresaConRoles('ZZSYNC');
+
+        $roles = Role::query()
+            ->where('company_id', $empresa->id)
+            ->whereIn('name', ['cashier'])
+            ->get();
+
+        $usuario->syncRoles($roles);
+
+        $this->assertSame(['cashier'], $usuario->fresh()->roles->pluck('name')->all());
+        $this->assertSame($empresa->id, (int) $usuario->fresh()->roles->first()->company_id);
+    }
+
+    /**
      * @param  list<string>  $modulos
      * @return array{0: Company, 1: User}
      */

@@ -29,7 +29,11 @@ class DvCeroTest extends TestCase
     {
         parent::setUp();
 
-        $user = User::query()->whereNotNull('company_id')->firstOrFail();
+        // orderBy explicito: la prueba escribe un NIT fijo sobre la empresa
+        // que le toque, y sin orden Postgres puede devolver otra —entonces el
+        // NIT choca con el de la empresa que ya lo tiene—. La base de
+        // desarrollo tiene mas de una empresa desde que hay seeders de demo.
+        $user = User::query()->whereNotNull('company_id')->orderBy('id')->firstOrFail();
         $this->company = Company::findOrFail($user->company_id);
         $this->dvOriginal = $this->company->dv;
         $this->actingAs($user);

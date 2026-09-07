@@ -2,18 +2,19 @@
 
 namespace Tests\Feature;
 
-// use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class ExampleTest extends TestCase
 {
     /**
-     * A basic test example.
+     * La raíz no sirve contenido: redirige al panel.
+     *
+     * Venía del esqueleto de Laravel esperando un 200, que la aplicación dejó
+     * de dar cuando `/` pasó a ser un RedirectController. Afirmaba algo que ya
+     * no era cierto.
      */
-    public function test_the_application_returns_a_successful_response(): void
+    public function test_la_raiz_redirige(): void
     {
-        $response = $this->get('/');
-
-        $response->assertStatus(200);
+        $this->get('/')->assertRedirect();
     }
 }

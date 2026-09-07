@@ -13,7 +13,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rules\Password;
-use Spatie\Permission\Models\Role;
+use App\Models\Role;
 
 class UserResource extends Resource
 {
@@ -142,16 +142,37 @@ class UserResource extends Resource
                 ->schema([
                     Forms\Components\Select::make('roles')
                         ->label('Roles asignados')
-                        ->relationship('roles', 'name')
+                        // Por ID y no por nombre. Con roles por empresa el
+                        // nombre esta repetido, y ademas el estado que carga
+                        // ->relationship() son ids: al mezclarlos, syncRoles()
+                        // recibia "18" y lo buscaba como si fuera el nombre de
+                        // un rol.
+                        ->relationship(
+                            'roles',
+                            'name',
+                            fn ($query) => $query->where('company_id', auth()->user()?->company_id),
+                        )
                         ->multiple()
                         ->preload()
                         ->searchable()
                         ->options(fn () => Role::query()
+                            ->where('company_id', auth()->user()?->company_id)
                             ->orderBy('name')
-                            ->pluck('name', 'name')
+                            ->pluck('name', 'id')
                             ->all())
-                        ->saveRelationshipsUsing(function ($component, $state, $record) {
-                            $record->syncRoles($state ?? []);
+                        ->saveRelationshipsUsing(function ($state, $record) {
+                            // Se pasan los modelos, no ids sueltos: es lo unico
+                            // que no deja lugar a que Spatie resuelva el rol de
+                            // otra empresa.
+                            $roles = Role::query()
+                                ->where('company_id', auth()->user()?->company_id)
+                                ->whereIn('id', $state ?? [])
+                                ->get();
+
+                            $record->syncRoles($roles);
+
+                            app(\Spatie\Permission\PermissionRegistrar::class)
+                                ->forgetCachedPermissions();
                         }),
                 ])->columnSpanFull(),
         ]);
