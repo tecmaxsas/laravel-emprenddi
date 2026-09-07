@@ -269,7 +269,7 @@ class PerfumeryDemoSeeder extends Seeder
             'credit_limit' => 500000,
             'email' => 'laura.mejia@example.co',
         ]);
-        $f1 = $this->invoice($alDia, 20, [['PERF-002', 1], ['PERF-004', 2]]);
+        $f1 = $this->invoice($alDia, 1001, 20, [['PERF-002', 1], ['PERF-004', 2]]);
         $this->pay($f1, (float) $f1->net_payable, 18);
 
         // --- Con saldo: dos compras, una abonada a medias ----------------
@@ -277,9 +277,9 @@ class PerfumeryDemoSeeder extends Seeder
             'credit_limit' => 800000,
             'email' => 'carolina.ramirez@example.co',
         ]);
-        $f2 = $this->invoice($conSaldo, 35, [['PERF-003', 1]]);
+        $f2 = $this->invoice($conSaldo, 1002, 35, [['PERF-003', 1]]);
         $this->pay($f2, (float) $f2->net_payable, 30);
-        $f3 = $this->invoice($conSaldo, 12, [['PERF-005', 1], ['PERF-006', 1]]);
+        $f3 = $this->invoice($conSaldo, 1003, 12, [['PERF-005', 1], ['PERF-006', 1]]);
         $this->pay($f3, round((float) $f3->net_payable * 0.4, 2), 8);
 
         // --- Migró del sistema anterior debiendo -------------------------
@@ -289,7 +289,7 @@ class PerfumeryDemoSeeder extends Seeder
             'opening_balance_date' => now()->subMonths(2)->startOfMonth()->toDateString(),
             'email' => 'jorge.soto@example.co',
         ]);
-        $f4 = $this->invoice($conApertura, 15, [['PERF-001', 1]]);
+        $f4 = $this->invoice($conApertura, 1004, 15, [['PERF-001', 1]]);
         $this->pay($f4, 100000, 10);
 
         // --- Saldo a favor: abonó más de lo que debía --------------------
@@ -297,7 +297,7 @@ class PerfumeryDemoSeeder extends Seeder
             'credit_limit' => 400000,
             'email' => 'diana.patino@example.co',
         ]);
-        $f5 = $this->invoice($aFavor, 25, [['PERF-004', 1]]);
+        $f5 = $this->invoice($aFavor, 1005, 25, [['PERF-004', 1]]);
         $this->pay($f5, (float) $f5->net_payable, 22);
         $this->advance($aFavor, 150000, 5, 'Consignación Bancolombia 88213');
 
@@ -306,7 +306,7 @@ class PerfumeryDemoSeeder extends Seeder
             'credit_limit' => 250000,
             'email' => 'martha.gomez@example.co',
         ]);
-        $this->invoice($copado, 18, [['PERF-003', 1]]);
+        $this->invoice($copado, 1006, 18, [['PERF-003', 1]]);
 
         // --- El caso Broadway --------------------------------------------
         // En el sistema anterior este cliente quedaba con $20.000 a favor Y
@@ -316,7 +316,7 @@ class PerfumeryDemoSeeder extends Seeder
             'credit_limit' => 600000,
             'email' => 'wilson.villegas@example.co',
         ]);
-        $f6 = $this->invoice($broadway, 9, [['PERF-001', 1], ['PERF-006', 1]]);
+        $f6 = $this->invoice($broadway, 1007, 9, [['PERF-001', 1], ['PERF-006', 1]]);
         $this->advance($broadway, (float) $f6->net_payable + 20000, 7, 'Efectivo en caja');
 
         $this->command->line('   · Clientes con cartera: 6');
@@ -352,14 +352,18 @@ class PerfumeryDemoSeeder extends Seeder
      *
      * @param  list<array{0:string, 1:int}>  $items  [código, cantidad]
      */
-    protected function invoice(ThirdParty $cliente, int $diasAtras, array $items): SaleInvoice
+    protected function invoice(ThirdParty $cliente, int $numero, int $diasAtras, array $items): SaleInvoice
     {
         $fecha = now()->subDays($diasAtras);
 
+        // Se identifica por su NUMERO, no por la fecha. Con la fecha, correr
+        // el seeder otro dia creaba un juego nuevo de facturas encima del
+        // anterior: los saldos se duplicaban y el escenario que se queria
+        // mostrar dejaba de verse.
         $existente = SaleInvoice::withoutGlobalScopes()
             ->where('company_id', $this->company->id)
-            ->where('third_party_id', $cliente->id)
-            ->whereDate('date', $fecha->toDateString())
+            ->where('prefix', 'DEMO')
+            ->where('number', $numero)
             ->first();
 
         if ($existente) {
@@ -371,7 +375,7 @@ class PerfumeryDemoSeeder extends Seeder
             'location_id' => $this->location->id,
             'third_party_id' => $cliente->id,
             'prefix' => 'DEMO',
-            'number' => $this->nextNumber(),
+            'number' => $numero,
             'invoice_kind' => 'pos',
             'date' => $fecha->toDateString(),
             'due_date' => $fecha->copy()->addDays(30)->toDateString(),
@@ -450,14 +454,6 @@ class PerfumeryDemoSeeder extends Seeder
             'reference' => $referencia,
             'notes' => 'Anticipo de demostración',
         ]);
-    }
-
-    protected function nextNumber(): int
-    {
-        return (int) SaleInvoice::withoutGlobalScopes()
-            ->where('company_id', $this->company->id)
-            ->where('prefix', 'DEMO')
-            ->max('number') + 1;
     }
 
     protected function cashAccountId(): int
