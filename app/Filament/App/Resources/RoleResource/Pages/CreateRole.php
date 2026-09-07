@@ -10,6 +10,20 @@ class CreateRole extends CreateRecord
 {
     protected static string $resource = RoleResource::class;
 
+    /**
+     * El rol nace de la empresa que lo crea. Sin esto quedaria como plantilla
+     * del sistema y lo verian todas.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    protected function mutateFormDataBeforeCreate(array $data): array
+    {
+        $data['company_id'] = auth()->user()?->company_id;
+
+        return $data;
+    }
+
     protected function afterCreate(): void
     {
         $this->syncPermissionsFromForm();

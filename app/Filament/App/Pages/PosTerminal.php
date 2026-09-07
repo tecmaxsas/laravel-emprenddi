@@ -161,18 +161,22 @@ class PosTerminal extends Page
 
     public function mount(): void
     {
-        // Si la empresa tiene el modulo 'restaurant' activo, el POS tradicional
-        // no es su flujo de venta — redirigimos al POS Restaurante. El item
-        // del sidebar 'POS — Punto de Venta' sigue visible para no esconder
-        // la seccion 'Ventas', pero al clickearlo lleva al POS correcto.
+        // Si el POS de esta empresa es otro, aqui no es. El item del sidebar
+        // 'POS — Punto de Venta' sigue visible para no esconder la seccion
+        // 'Ventas', pero al clickearlo lleva al que le corresponde.
+        //
+        // La prioridad la decide PosDestination, la misma que usa el boton POS
+        // del topbar: antes esto solo contemplaba restaurante, asi que un
+        // parqueadero caia en el POS retail —que no es su flujo de venta— por
+        // el sidebar, aunque el boton del topbar lo mandara bien.
+        //
         // Importante: usar $this->redirect() (Livewire) en vez de redirect()->send()
         // — el segundo corta la respuesta en mount() y genera error 500.
-        if (\App\Support\ModuleGate::active('restaurant')) {
-            $user = auth()->user();
-            $target = $user?->can('restaurant.use')
-                ? route('filament.app.pages.restaurant-pos')
-                : route('filament.app.pages.dashboard');
-            $this->redirect($target);
+        $destino = \App\Support\PosDestination::resolve();
+
+        if ($destino !== null && $destino !== \App\Support\PosDestination::RETAIL) {
+            $this->redirect(\App\Support\PosDestination::urlFor($destino));
+
             return;
         }
 

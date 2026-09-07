@@ -52,6 +52,6 @@ class DemoDataSeeder extends Seeder
             ],
         );
 
-        $admin->assignRole('admin');
+        \App\Support\CompanyRoles::assign($admin, 'admin');
     }
 }

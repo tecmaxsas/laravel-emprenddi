@@ -74,7 +74,18 @@ class AccountantRegister extends BaseRegister
 
         // Rol con permisos contables limitados
         app(PermissionRegistrar::class)->forgetCachedPermissions();
-        $user->assignRole('accountant_external');
+        // El contador externo no pertenece a ninguna empresa: usa la
+        // plantilla. Buscarlo por nombre a secas podria caer en la copia de
+        // una compañia, que ahora existe y se llama igual.
+        $plantilla = \App\Models\Role::query()
+            ->whereNull('company_id')
+            ->where('name', 'accountant_external')
+            ->where('guard_name', 'web')
+            ->first();
+
+        if ($plantilla) {
+            $user->assignRole($plantilla);
+        }
 
         return $user;
     }

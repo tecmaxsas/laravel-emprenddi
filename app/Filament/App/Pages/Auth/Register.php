@@ -371,7 +371,10 @@ class Register extends BaseRegister
                 'email_verified_at' => ($data['admin_email'] ?? null) ? now() : null,
             ]);
 
-            $user->assignRole('admin');
+            // El rol de SU empresa, no la plantilla global: con roles por
+            // empresa el nombre esta repetido y assignRole('admin') tomaria
+            // el primero que encuentre, que puede ser de otra compañia.
+            \App\Support\CompanyRoles::assign($user, 'admin');
 
             $trialPlan = Plan::where('slug', 'free-trial')->first()
                 ?? Plan::where('is_active', true)->orderBy('sort_order')->first();

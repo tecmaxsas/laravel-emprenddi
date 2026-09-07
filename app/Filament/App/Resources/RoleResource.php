@@ -16,6 +16,20 @@ class RoleResource extends Resource
 {
     use ChecksPermission;
 
+    /**
+     * Solo los roles de la empresa activa.
+     *
+     * Las plantillas del sistema (company_id nulo) no se muestran: no se le
+     * asignan a nadie y editarlas afectaria a todas las empresas, que es
+     * justo lo que se acaba de corregir.
+     */
+    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    {
+        return parent::getEloquentQuery()
+            ->where('company_id', auth()->user()?->company_id);
+    }
+
+
     protected static function viewPermission(): string { return 'roles.view'; }
     protected static function managePermission(): string { return 'roles.manage'; }
 

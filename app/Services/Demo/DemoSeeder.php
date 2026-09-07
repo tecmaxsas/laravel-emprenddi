@@ -215,7 +215,7 @@ class DemoSeeder
         }
 
         if (! $user->hasRole('admin')) {
-            $user->assignRole('admin');
+            \App\Support\CompanyRoles::assign($user, 'admin');
         }
 
         return $user;

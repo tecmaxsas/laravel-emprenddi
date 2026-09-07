@@ -125,7 +125,7 @@ class ParkingDemoSeeder extends Seeder
             ],
         );
         if (Schema::hasTable('roles')) {
-            try { $this->admin->assignRole('admin'); } catch (\Throwable) {}
+            try { \App\Support\CompanyRoles::assign($this->admin, 'admin'); } catch (\Throwable) {}
         }
     }
 

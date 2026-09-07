@@ -23,7 +23,15 @@ class RolesSeeder extends Seeder
         $roles = ['admin', 'manager', 'accountant', 'cashier', 'seller', 'accountant_external'];
 
         foreach ($roles as $name) {
-            $role = Role::firstOrCreate(['name' => $name, 'guard_name' => 'web']);
+            // company_id NULL: el seeder mantiene las PLANTILLAS. Sin ese
+            // filtro, firstOrCreate podria enganchar la copia de una empresa
+            // que se llame igual y sincronizarle permisos que su
+            // administrador habia quitado a proposito.
+            $role = Role::firstOrCreate([
+                'name' => $name,
+                'guard_name' => 'web',
+                'company_id' => null,
+            ]);
 
             $defaultPermissions = PermissionsCatalog::defaultForRole($name);
 

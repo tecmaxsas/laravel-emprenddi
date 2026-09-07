@@ -5,6 +5,7 @@ namespace App\Services\Onboarding;
 use App\Models\Company;
 use App\Services\Accounting\PucProvisioner;
 use App\Services\Accounting\TaxesProvisioner;
+use App\Support\CompanyRoles;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -43,6 +44,7 @@ class CompanyOnboarding
             'location' => 0,
             'consumer_final' => 0,
             'invoice_templates' => 0,
+            'roles' => 0,
         ];
 
         DB::transaction(function () use ($company, &$summary) {
@@ -53,6 +55,9 @@ class CompanyOnboarding
             $summary['location'] = app(DefaultLocationProvisioner::class)->provision($company);
             $summary['consumer_final'] = app(ConsumerFinalProvisioner::class)->provision($company);
             $summary['invoice_templates'] = app(InvoiceTemplateProvisioner::class)->provision($company);
+            // Su propio juego de roles, copiado de las plantillas: editarle un
+            // permiso al cajero de una empresa no puede afectar a las demas.
+            $summary['roles'] = CompanyRoles::provision($company);
         });
 
         Log::info('[CompanyOnboarding] empresa provisionada', [
