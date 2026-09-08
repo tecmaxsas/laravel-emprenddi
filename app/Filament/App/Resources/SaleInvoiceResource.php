@@ -315,6 +315,18 @@ class SaleInvoiceResource extends Resource
                                     $set('tax_name', $tax->name);
                                     $set('tax_type', $tax->type);
                                     $set('rate', (float) $tax->rate);
+
+                                    // La base depende del tipo: ReteIVA va
+                                    // sobre el IVA, las demas sobre el
+                                    // subtotal. Se sugiere sola para que el
+                                    // error mas caro no dependa de recordarlo.
+                                    if ((float) ($get('base_amount') ?? 0) <= 0) {
+                                        $set('base_amount', self::retentionBaseFor(
+                                            $tax->type,
+                                            $get('../../lines'),
+                                        ));
+                                    }
+
                                     self::recomputeRetention($set, $get);
                                 })
                                 ->columnSpan(5),
@@ -328,7 +340,7 @@ class SaleInvoiceResource extends Resource
                                 ->required()
                                 ->live(onBlur: true)
                                 ->afterStateUpdated(fn (Forms\Set $set, Forms\Get $get) => self::recomputeRetention($set, $get))
-                                ->helperText('Típicamente subtotal − descuento. Ajusta si la base es distinta.')
+                                ->helperText('Se sugiere sola: subtotal menos descuentos, o el IVA si es ReteIVA. Ajústala si la base gravable es otra.')
                                 ->columnSpan(4),
 
                             Forms\Components\TextInput::make('rate')
@@ -404,6 +416,37 @@ class SaleInvoiceResource extends Resource
     /**
      * Recalcula el monto retenido = base × rate / 100.
      */
+    /**
+     * Base sugerida para una retencion, segun su tipo.
+     *
+     * No es lo mismo para todas, y ahi es facil equivocarse:
+     *
+     *   - Retefuente y ReteICA se calculan sobre el subtotal ANTES de IVA,
+     *     descontando los descuentos.
+     *   - ReteIVA se calcula sobre el IVA, no sobre el subtotal. Aplicarle la
+     *     tarifa al subtotal multiplicaria la retencion por varias veces su
+     *     valor.
+     *
+     * Es una sugerencia, no una imposicion: el usuario puede ajustarla cuando
+     * la base gravable no sea toda la factura.
+     *
+     * @param  array<int, array<string, mixed>>|null  $lines
+     */
+    protected static function retentionBaseFor(?string $taxType, ?array $lines): float
+    {
+        $lines = collect($lines ?? []);
+
+        if ($taxType === 'vat_withholding') {
+            return round($lines->sum(fn ($l) => (float) ($l['tax_amount'] ?? 0)), 2);
+        }
+
+        return round(
+            $lines->sum(fn ($l) => (float) ($l['subtotal'] ?? 0))
+            - $lines->sum(fn ($l) => (float) ($l['discount_amount'] ?? 0)),
+            2,
+        );
+    }
+
     protected static function recomputeRetention(Forms\Set $set, Forms\Get $get): void
     {
         $base = (float) ($get('base_amount') ?? 0);
