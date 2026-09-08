@@ -77,6 +77,8 @@ class PurchaseInvoice extends Model
         'discount_total',
         'tax_total',
         'total',
+        'retention_total',
+        'net_payable',
         'paid_amount',
         'payment_status',
         'status',
@@ -105,6 +107,8 @@ class PurchaseInvoice extends Model
             'discount_total' => 'decimal:2',
             'tax_total' => 'decimal:2',
             'total' => 'decimal:2',
+            'retention_total' => 'decimal:2',
+            'net_payable' => 'decimal:2',
             'paid_amount' => 'decimal:2',
             'exchange_rate' => 'decimal:6',
             'payment_terms_days' => 'integer',
@@ -132,6 +136,11 @@ class PurchaseInvoice extends Model
     public function lines(): HasMany
     {
         return $this->hasMany(PurchaseInvoiceLine::class)->orderBy('line_number');
+    }
+
+    public function retentions(): HasMany
+    {
+        return $this->hasMany(PurchaseInvoiceRetention::class);
     }
 
     public function payments(): MorphMany
@@ -164,9 +173,19 @@ class PurchaseInvoice extends Model
         return $this->prefix.'-'.str_pad((string) $this->number, 6, '0', STR_PAD_LEFT);
     }
 
+    /**
+     * Lo que falta por pagarle al proveedor.
+     *
+     * Se mide contra net_payable y no contra total: la retencion que le
+     * practicamos no se la pagamos a el sino a la DIAN, asi que nunca es
+     * saldo suyo. Sin esto, una factura con retencion quedaba eternamente en
+     * "parcial" porque el pago nunca alcanzaba el total.
+     */
     public function getBalanceAttribute(): float
     {
-        return (float) $this->total - (float) $this->paid_amount;
+        $netPayable = (float) ($this->net_payable ?: $this->total);
+
+        return $netPayable - (float) $this->paid_amount;
     }
 
     public function isPosted(): bool

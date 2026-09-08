@@ -39,7 +39,7 @@ class PurchaseInvoiceEngine
             throw new RuntimeException('Solo se puede contabilizar una factura en estado borrador.');
         }
 
-        $invoice->load(['lines.product', 'lines.tax', 'supplier', 'location']);
+        $invoice->load(['retentions.tax', 'lines.product', 'lines.tax', 'supplier', 'location']);
 
         if ($invoice->lines->isEmpty()) {
             throw new RuntimeException('La factura no tiene líneas.');
@@ -191,11 +191,18 @@ class PurchaseInvoiceEngine
             $total += (float) $line->total;
         }
 
+        // Lo que se le retiene al proveedor no se le paga a el sino a la
+        // DIAN, asi que sale del neto a pagar y no del total de la factura.
+        $invoice->loadMissing('retentions');
+        $retentions = round((float) $invoice->retentions->sum('amount'), 2);
+
         $invoice->update([
             'subtotal' => $subtotal,
             'discount_total' => $discount,
             'tax_total' => $tax,
             'total' => $total,
+            'retention_total' => $retentions,
+            'net_payable' => round($total - $retentions, 2),
         ]);
     }
 
@@ -205,7 +212,9 @@ class PurchaseInvoiceEngine
     public function recomputePaymentStatus(PurchaseInvoice $invoice): void
     {
         $paid = (float) $invoice->payments()->sum('amount');
-        $total = (float) $invoice->total;
+        // Contra el neto: con retencion, el proveedor nunca cobra el total y
+        // la factura se quedaria en "parcial" para siempre.
+        $total = (float) ($invoice->net_payable ?: $invoice->total);
 
         if ($paid <= 0.0) {
             $status = PurchaseInvoice::PAYMENT_PENDIENTE;
@@ -321,7 +330,32 @@ class PurchaseInvoiceEngine
             ]);
         }
 
-        // CR Cuenta por pagar (total)
+        // CR por cada retencion que le practicamos al proveedor. Es un pasivo
+        // con la DIAN, no con el: por eso se acredita aparte y la cuenta por
+        // pagar baja en la misma medida.
+        foreach ($invoice->retentions as $ret) {
+            $accountId = $ret->tax?->purchase_account_id;
+
+            if (! $accountId) {
+                throw new RuntimeException(sprintf(
+                    'La retención "%s" no tiene cuenta de compra configurada (Tax::purchase_account_id). '
+                    .'Configúrala en Contabilidad → Impuestos.',
+                    $ret->tax_name,
+                ));
+            }
+
+            JournalEntryLine::create([
+                'journal_entry_id' => $entry->id,
+                'line_number' => $line++,
+                'account_id' => $accountId,
+                'third_party_id' => $invoice->third_party_id,
+                'description' => "Retención {$ret->tax_name}",
+                'debit' => 0,
+                'credit' => $ret->amount,
+            ]);
+        }
+
+        // CR Cuenta por pagar: solo lo que de verdad se le debe al proveedor.
         JournalEntryLine::create([
             'journal_entry_id' => $entry->id,
             'line_number' => $line,
@@ -329,7 +363,7 @@ class PurchaseInvoiceEngine
             'third_party_id' => $invoice->third_party_id,
             'description' => "Cuenta por pagar {$invoice->supplier->name}",
             'debit' => 0,
-            'credit' => $invoice->total,
+            'credit' => $invoice->net_payable ?: $invoice->total,
         ]);
 
         return $entry;
@@ -412,7 +446,7 @@ class PurchaseInvoiceEngine
             );
         }
 
-        $invoice->load(['lines.product', 'supplier', 'location', 'journalEntry.lines']);
+        $invoice->load(['retentions.tax', 'lines.product', 'supplier', 'location', 'journalEntry.lines']);
 
         // Bloqueo previo: si algún serial entrado por esta compra ya se vendió,
         // no podemos anular sin dejar inconsistente la venta. El usuario debe
