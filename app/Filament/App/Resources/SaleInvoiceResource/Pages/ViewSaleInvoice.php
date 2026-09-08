@@ -11,6 +11,7 @@ use App\Services\Dian\DianInvoiceSender;
 use App\Services\Sales\CreditDebitNoteNumberer;
 use App\Services\Sales\SaleInvoiceEngine;
 use App\Support\Dian\DianInvoiceActions;
+use App\Support\PosSettings;
 use Filament\Actions;
 use Filament\Infolists;
 use Filament\Infolists\Infolist;
@@ -56,7 +57,10 @@ class ViewSaleInvoice extends ViewRecord
                 ->modalSubmitActionLabel('Contabilizar')
                 ->action(function (SaleInvoice $record) {
                     try {
-                        $invoice = app(SaleInvoiceEngine::class)->post($record);
+                        $invoice = app(SaleInvoiceEngine::class)->post(
+                            $record,
+                            allowNegativeStock: PosSettings::allowsNegativeStock(),
+                        );
                         Notification::make()
                             ->success()
                             ->title('Factura contabilizada')

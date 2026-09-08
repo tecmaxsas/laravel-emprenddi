@@ -1573,7 +1573,13 @@ class PosTerminal extends Page
                 }
 
                 $engine = app(SaleInvoiceEngine::class);
-                $invoice = $engine->post($invoice->fresh(['lines', 'retentions']));
+                // El ajuste "Permitir vender sin stock" se leia para el
+                // formulario pero no llegaba hasta aqui, asi que la venta se
+                // trababa igual aunque la empresa lo tuviera marcado.
+                $invoice = $engine->post(
+                    $invoice->fresh(['lines', 'retentions']),
+                    allowNegativeStock: (bool) ($this->posSettings['allow_negative_stock'] ?? false),
+                );
 
                 foreach ($this->payments as $payment) {
                     $amount = (float) ($payment['amount'] ?? 0);
