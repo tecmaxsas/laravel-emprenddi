@@ -2,27 +2,52 @@
 
 namespace App\Filament\App\Pages;
 
+use App\Models\Appointment;
 use App\Models\CashRegisterSession;
 use App\Models\Category;
 use App\Models\Company;
-use App\Services\Dian\PosDianTransmitter;
+use App\Models\GiftCard;
 use App\Models\Location;
 use App\Models\Payment;
 use App\Models\PaymentMethod;
 use App\Models\Product;
+use App\Models\ProductSerial;
+use App\Models\Promotion;
 use App\Models\SaleInvoice;
 use App\Models\SuspendedSale;
 use App\Models\Tax;
 use App\Models\ThirdParty;
+use App\Models\User;
+use App\Services\Cash\CashSessionCloser;
+use App\Services\Cash\CashSessionSummary;
+use App\Services\Dian\PosDianTransmitter;
+use App\Services\GiftCards\GiftCardEngine;
+use App\Services\GiftCards\GiftCardProductProvisioner;
+use App\Services\Promotions\CartContext;
+use App\Services\Promotions\CartLine;
+use App\Services\Promotions\PromotionEngine;
+use App\Services\Promotions\PromotionResult;
+use App\Services\Restaurant\BrowserPrintQueue;
+use App\Services\Sales\DocumentNumberer;
 use App\Services\Sales\QuickCustomer;
 use App\Services\Sales\SaleInvoiceEngine;
 use App\Services\Sales\SaleInvoiceNumberer;
+use App\Services\Sales\SaleReceiptPrinter;
+use App\Support\GiftCardsSettings;
 use App\Support\PaymentAccountResolver;
+use App\Support\PosDestination;
+use App\Support\PromotionsSettings;
+use App\Support\SerialsSettings;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\On;
 
 /**
@@ -50,8 +75,11 @@ class PosTerminal extends Page
 
     // Cabecera
     public ?int $location_id = null;
+
     public ?int $customer_id = null;
+
     public ?int $seller_user_id = null;
+
     public ?int $session_id = null;
 
     // Cita de origen (modulo Citas): si se llega al POS desde "Atender y
@@ -61,17 +89,23 @@ class PosTerminal extends Page
 
     // Apertura de caja
     public ?int $openingLocationId = null;
+
     public ?float $openingAmount = 0.0;
+
     public string $openingNotes = '';
 
     // Cierre de caja
     public ?float $closingCounted = 0.0;
+
     public string $closingNotes = '';
+
     public bool $showSessionDetailsModal = false;
+
     public bool $showCloseSessionModal = false;
 
     // Filtro de productos
     public ?int $selectedCategoryId = null;
+
     public string $productSearch = '';
 
     // Carrito
@@ -86,29 +120,57 @@ class PosTerminal extends Page
 
     // UI state
     public bool $showCustomerModal = false;
+
     public bool $showPaymentModal = false;
+
     public ?string $paymentError = null;
+
     public bool $showSuspendModal = false;
+
     public bool $showRecoverModal = false;
+
     public bool $showRetentionsModal = false;
+
     public string $paymentMode = 'multi'; // multi | cash | card | transfer | credit
+
     public string $invoiceKind = 'pos';   // pos | electronic — tipo de factura a emitir
+
     /** Busqueda de un cliente que ya existe, para no volver a crearlo. */
     public string $customerSearch = '';
 
     public string $newCustomerName = '';
+
     public string $newCustomerDocument = '';
+
     public string $newCustomerDocumentType = 'cc';
+
     public string $newCustomerEmail = '';
+
     public string $newCustomerPhone = '';
+
     public string $newCustomerAddress = '';
+
     public string $suspendName = '';
 
     // Descuento global de la venta. Se distribuye sumándose proporcionalmente
     // al descuento manual de cada línea en recomputeLine() para que el IVA
     // se calcule sobre la base correcta y no requiera líneas negativas.
+    /**
+     * Descuento global del carrito.
+     *
+     * `cartDiscountValue` es lo que el cajero escribio —10 (por ciento) o
+     * 50000 (pesos)— y `cartDiscountPct` es el porcentaje EFECTIVO que resulto,
+     * que solo se usa para mostrarlo y para decidir si hace falta autorizacion.
+     * Antes el monto se convertia a porcentaje y se guardaba solo eso, y por
+     * eso un descuento de $50.000 dejaba de valer $50.000 en cuanto se agregaba
+     * otro producto al carrito.
+     */
+    public float $cartDiscountValue = 0.0;
+
     public float $cartDiscountPct = 0.0;
+
     public float $cartDiscountAmount = 0.0;
+
     public string $cartDiscountMode = 'pct'; // pct | amount
 
     // ----------------------------------------------------------------
@@ -117,9 +179,11 @@ class PosTerminal extends Page
     // Codigo de cupon ingresado manualmente. Si esta vacio, solo se aplican
     // promociones automaticas (sin codigo).
     public string $couponCode = '';
+
     // Log de promociones aplicadas en la venta actual.
     // Cada item: ['promotion_id', 'name', 'code', 'discount']
     public array $appliedPromotions = [];
+
     // Total descontado por promociones (suma de appliedPromotions[*].discount).
     // Se aplica como descuento adicional a nivel ORDEN para no tocar la
     // logica de recomputeLine y mantener consistencia con impuestos.
@@ -130,6 +194,7 @@ class PosTerminal extends Page
     // ----------------------------------------------------------------
     // Codigo en validacion (input del cajero)
     public string $giftCardCodeInput = '';
+
     // Gift cards aplicadas como medio de pago en la venta actual.
     // Cada item: ['gift_card_id', 'code', 'amount', 'available_balance']
     public array $appliedGiftCards = [];
@@ -137,10 +202,15 @@ class PosTerminal extends Page
     // Modal de emision: cuando el cajero agrega el producto especial 'GIFTCARD'
     // al carrito, se abre este modal para capturar monto y destinatario.
     public bool $showGiftCardEmissionModal = false;
+
     public ?float $giftCardEmissionAmount = null;
+
     public string $giftCardEmissionRecipientName = '';
+
     public string $giftCardEmissionRecipientEmail = '';
+
     public string $giftCardEmissionSenderName = '';
+
     // Cuando el modal se confirma, esto guarda el index de la linea del
     // carrito que representa la gift card a emitir (asi sabemos a que
     // linea atar los datos cuando se procese la venta).
@@ -150,8 +220,11 @@ class PosTerminal extends Page
     // pendingDiscount estructura: ['type' => 'line'|'cart', 'index' => int|null,
     // 'pct' => float, 'mode' => 'pct'|'amount', 'value' => float]
     public bool $showSupervisorPinModal = false;
+
     public ?array $pendingDiscount = null;
+
     public string $supervisorPin = '';
+
     public ?string $supervisorPinError = null;
 
     public static function canAccess(): bool
@@ -172,10 +245,10 @@ class PosTerminal extends Page
         //
         // Importante: usar $this->redirect() (Livewire) en vez de redirect()->send()
         // — el segundo corta la respuesta en mount() y genera error 500.
-        $destino = \App\Support\PosDestination::resolve();
+        $destino = PosDestination::resolve();
 
-        if ($destino !== null && $destino !== \App\Support\PosDestination::RETAIL) {
-            $this->redirect(\App\Support\PosDestination::urlFor($destino));
+        if ($destino !== null && $destino !== PosDestination::RETAIL) {
+            $this->redirect(PosDestination::urlFor($destino));
 
             return;
         }
@@ -216,7 +289,7 @@ class PosTerminal extends Page
      */
     protected function loadAppointment(int $appointmentId): void
     {
-        $appt = \App\Models\Appointment::query()
+        $appt = Appointment::query()
             ->where('company_id', Auth::user()->company_id)
             ->whereNull('sale_invoice_id')
             ->find($appointmentId);
@@ -276,7 +349,8 @@ class PosTerminal extends Page
      */
     public function getPosSettingsProperty(): array
     {
-        $settings = \App\Models\Company::find(Auth::user()->company_id)?->settings ?? [];
+        $settings = Company::find(Auth::user()->company_id)?->settings ?? [];
+
         return array_merge([
             'allow_price_modification' => true,
             'allow_discount' => true,
@@ -342,8 +416,8 @@ class PosTerminal extends Page
         if ($term !== '') {
             $query->where(function ($q) use ($term) {
                 $q->where('code', 'ilike', "%{$term}%")
-                  ->orWhere('name', 'ilike', "%{$term}%")
-                  ->orWhere('barcode', 'ilike', "%{$term}%");
+                    ->orWhere('name', 'ilike', "%{$term}%")
+                    ->orWhere('barcode', 'ilike', "%{$term}%");
             });
         }
 
@@ -378,16 +452,18 @@ class PosTerminal extends Page
     public function addByBarcode(string $code): void
     {
         $code = trim($code);
-        if ($code === '') return;
+        if ($code === '') {
+            return;
+        }
 
         // 1. Si la feature de seriales está activa, primero probar si el
         // código pistoleado es un serial in_stock. Esto permite que el cajero
         // tenga UN solo input para barcode y serial — el sistema discrimina.
-        if (\App\Support\SerialsSettings::enabled()) {
-            $serial = \App\Models\ProductSerial::query()
+        if (SerialsSettings::enabled()) {
+            $serial = ProductSerial::query()
                 ->where('company_id', auth()->user()?->company_id)
                 ->where('serial_number', $code)
-                ->where('status', \App\Models\ProductSerial::STATUS_IN_STOCK)
+                ->where('status', ProductSerial::STATUS_IN_STOCK)
                 ->with('product')
                 ->first();
 
@@ -400,11 +476,13 @@ class PosTerminal extends Page
                             ->body("El serial {$serial->serial_number} ya fue agregado.")
                             ->warning()
                             ->send();
+
                         return;
                     }
                 }
                 $this->addProductBySerial($serial);
                 $this->productSearch = '';
+
                 return;
             }
         }
@@ -426,17 +504,19 @@ class PosTerminal extends Page
                 ->body("Código '{$code}' no coincide con ningún producto activo ni serial en stock.")
                 ->warning()
                 ->send();
+
             return;
         }
 
         // 3. Si el producto encontrado MANEJA seriales, exigir scan por serial.
         // No puedes vender un equipo serializado sin saber qué unidad sale.
-        if (\App\Support\SerialsSettings::enabled() && $product->tracks_serials) {
+        if (SerialsSettings::enabled() && $product->tracks_serials) {
             Notification::make()
                 ->title('Producto requiere número de serie')
                 ->body("'{$product->name}' se vende por serial. Escanea el serial específico de la unidad que sale.")
                 ->warning()
                 ->send();
+
             return;
         }
 
@@ -449,7 +529,7 @@ class PosTerminal extends Page
      * (qty=1 fija). El serial_id viaja en la línea para que al postear
      * el SaleInvoiceEngine pueda marcarlo como sold y vincular la garantía.
      */
-    protected function addProductBySerial(\App\Models\ProductSerial $serial): void
+    protected function addProductBySerial(ProductSerial $serial): void
     {
         $product = $serial->product;
         if (! $product || ! $product->is_sellable) {
@@ -458,6 +538,7 @@ class PosTerminal extends Page
                 ->body('Este producto no se puede vender por POS.')
                 ->warning()
                 ->send();
+
             return;
         }
 
@@ -491,7 +572,7 @@ class PosTerminal extends Page
         ];
 
         $i = count($this->cart) - 1;
-        $this->recomputeLine($i);
+        $this->recalcularCarrito();
     }
 
     public function addProductToCart(int $productId): void
@@ -504,13 +585,14 @@ class PosTerminal extends Page
         // Si es el producto especial 'Tarjeta Regalo', abrir modal de emision
         // en lugar de agregarlo como producto normal. El modal pide monto y
         // datos del destinatario; al confirmar, agrega la linea con esos datos.
-        if (\App\Services\GiftCards\GiftCardProductProvisioner::isGiftCardProduct($product)) {
-            if (! \App\Support\GiftCardsSettings::moduleActive()) {
+        if (GiftCardProductProvisioner::isGiftCardProduct($product)) {
+            if (! GiftCardsSettings::moduleActive()) {
                 Notification::make()
                     ->title('Gift Cards no esta activo')
                     ->body('Actívalo en Configuraciones → Gift Cards para vender tarjetas regalo.')
                     ->warning()
                     ->send();
+
                 return;
             }
             // Limpia el modal y lo abre
@@ -520,17 +602,19 @@ class PosTerminal extends Page
             $this->giftCardEmissionSenderName = '';
             $this->pendingGiftCardLineIndex = null;
             $this->showGiftCardEmissionModal = true;
+
             return;
         }
 
         // Si el producto maneja seriales, NO permitir tap directo desde el
         // grid de productos — el cajero debe escanear el serial puntual.
-        if (\App\Support\SerialsSettings::enabled() && $product->tracks_serials) {
+        if (SerialsSettings::enabled() && $product->tracks_serials) {
             Notification::make()
                 ->title('Escanea el serial')
                 ->body("'{$product->name}' se vende por número de serie. Usa el lector para escanear la unidad específica.")
                 ->warning()
                 ->send();
+
             return;
         }
 
@@ -542,7 +626,8 @@ class PosTerminal extends Page
             }
             if ($line['product_id'] === $productId) {
                 $this->cart[$i]['quantity']++;
-                $this->recomputeLine($i);
+                $this->recalcularCarrito();
+
                 return;
             }
         }
@@ -578,12 +663,14 @@ class PosTerminal extends Page
         ];
 
         $i = count($this->cart) - 1;
-        $this->recomputeLine($i);
+        $this->recalcularCarrito();
     }
 
     public function incLine(int $i): void
     {
-        if (! isset($this->cart[$i])) return;
+        if (! isset($this->cart[$i])) {
+            return;
+        }
         // Una línea con serial vale 1 unidad fija (es esa unidad concreta).
         if (isset($this->cart[$i]['serial_id'])) {
             Notification::make()
@@ -591,68 +678,174 @@ class PosTerminal extends Page
                 ->body('Escanea el serial de otra unidad para venderla.')
                 ->warning()
                 ->send();
+
             return;
         }
         $this->cart[$i]['quantity']++;
-        $this->recomputeLine($i);
+        $this->recalcularCarrito();
     }
 
     public function decLine(int $i): void
     {
-        if (! isset($this->cart[$i])) return;
+        if (! isset($this->cart[$i])) {
+            return;
+        }
         // Líneas con serial sólo pueden quitarse (no decrementar bajo 1).
         if (isset($this->cart[$i]['serial_id'])) {
             $this->removeLine($i);
+
             return;
         }
         if ($this->cart[$i]['quantity'] <= 1) {
             $this->removeLine($i);
+
             return;
         }
         $this->cart[$i]['quantity']--;
-        $this->recomputeLine($i);
+        $this->recalcularCarrito();
     }
 
     public function removeLine(int $i): void
     {
-        if (! isset($this->cart[$i])) return;
+        if (! isset($this->cart[$i])) {
+            return;
+        }
+
         unset($this->cart[$i]);
         $this->cart = array_values($this->cart);
+
+        // Al quitar una linea cambia la base, y con ella lo que le toca a cada
+        // una del descuento global.
+        $this->recalcularCarrito();
     }
 
     public function updatedCart(): void
     {
-        foreach ($this->cart as $i => $_) {
-            $this->recomputeLine($i);
-        }
+        $this->recalcularCarrito();
     }
 
     protected function recomputeLine(int $i): void
     {
-        if (! isset($this->cart[$i])) return;
+        if (! isset($this->cart[$i])) {
+            return;
+        }
 
         $line = &$this->cart[$i];
         $qty = (float) ($line['quantity'] ?? 0);
         $unitPrice = (float) ($line['unit_price'] ?? 0);
         $manualPct = (float) ($line['discount_percentage_manual'] ?? $line['discount_percentage'] ?? 0);
 
-        // El descuento global se suma al manual de la línea para que el IVA
-        // se calcule sobre la base correcta sin necesidad de líneas negativas.
-        $effectivePct = min(100, $manualPct + $this->cartDiscountPct);
-
+        // Solo el descuento propio de la linea. El global se reparte despues,
+        // en aplicarDescuentoGlobal(), sobre la base ya neta de este.
         $subtotal = round($qty * $unitPrice, 2);
-        $discountAmount = round($subtotal * ($effectivePct / 100), 2);
+        $discountAmount = round($subtotal * ($manualPct / 100), 2);
         $taxable = $subtotal - $discountAmount;
 
         $taxRate = (float) ($line['tax_rate'] ?? 0);
         $taxAmount = round($taxable * ($taxRate / 100), 2);
 
         $line['discount_percentage_manual'] = $manualPct;
-        $line['discount_percentage'] = $effectivePct;
+        $line['discount_percentage'] = $manualPct;
         $line['subtotal'] = $subtotal;
         $line['discount_amount'] = $discountAmount;
+        $line['global_discount_amount'] = 0.0;
         $line['tax_amount'] = $taxAmount;
         $line['total'] = $taxable + $taxAmount;
+    }
+
+    /**
+     * Recalcula todas las lineas y reparte el descuento global.
+     *
+     * Es el unico punto que deja el carrito consistente: recomputeLine() sola
+     * no basta porque el global depende del carrito entero.
+     */
+    protected function recalcularCarrito(): void
+    {
+        foreach (array_keys($this->cart) as $i) {
+            $this->recomputeLine($i);
+        }
+
+        $this->aplicarDescuentoGlobal();
+    }
+
+    /**
+     * Reparte el descuento global entre las lineas, proporcional a lo que pesa
+     * cada una, y sobre la base YA neta de los descuentos de linea.
+     *
+     * Es el mismo criterio de App\Services\Invoicing\GlobalDiscount, que es
+     * el que usan las facturas capturadas a mano: un 10 % de linea mas un 10 %
+     * global es un 19 % de descuento, no un 20 %. Antes aqui se sumaban los
+     * porcentajes y el POS daba un resultado distinto al de la pantalla de
+     * facturas para los mismos datos.
+     */
+    protected function aplicarDescuentoGlobal(): void
+    {
+        $indices = array_keys($this->cart);
+
+        if ($indices === []) {
+            $this->cartDiscountPct = 0.0;
+            $this->cartDiscountAmount = 0.0;
+
+            return;
+        }
+
+        $bases = [];
+        foreach ($indices as $i) {
+            $bases[$i] = max(0, round(
+                (float) ($this->cart[$i]['subtotal'] ?? 0) - (float) ($this->cart[$i]['discount_amount'] ?? 0),
+                2,
+            ));
+        }
+
+        $baseTotal = round(array_sum($bases), 2);
+        $valor = max(0, $this->cartDiscountValue);
+
+        $descuento = match (true) {
+            $valor <= 0 || $baseTotal <= 0 => 0.0,
+            $this->cartDiscountMode === 'amount' => round(min($valor, $baseTotal), 2),
+            default => round($baseTotal * min(100, $valor) / 100, 2),
+        };
+
+        // Lo efectivo, para mostrarlo y para el umbral de autorizacion.
+        $this->cartDiscountPct = $baseTotal > 0 ? round($descuento / $baseTotal * 100, 2) : 0.0;
+        $this->cartDiscountAmount = $descuento;
+
+        if ($descuento <= 0) {
+            return;
+        }
+
+        $repartido = 0.0;
+        $mayor = $indices[0];
+        $partes = [];
+
+        foreach ($indices as $i) {
+            $partes[$i] = $baseTotal > 0 ? round($descuento * $bases[$i] / $baseTotal, 2) : 0.0;
+            $repartido += $partes[$i];
+
+            if ($bases[$i] > $bases[$mayor]) {
+                $mayor = $i;
+            }
+        }
+
+        // Los centavos del redondeo van a la linea mas grande, para que lo
+        // repartido sume exactamente lo pactado.
+        $remanente = round($descuento - $repartido, 2);
+
+        if (abs($remanente) >= 0.01) {
+            $partes[$mayor] = round($partes[$mayor] + $remanente, 2);
+        }
+
+        foreach ($indices as $i) {
+            $linea = &$this->cart[$i];
+            $base = max(0, round($bases[$i] - $partes[$i], 2));
+            $impuesto = round($base * (float) ($linea['tax_rate'] ?? 0) / 100, 2);
+
+            $linea['global_discount_amount'] = $partes[$i];
+            $linea['discount_amount'] = round((float) $linea['discount_amount'] + $partes[$i], 2);
+            $linea['tax_amount'] = $impuesto;
+            $linea['total'] = round($base + $impuesto, 2);
+            unset($linea);
+        }
     }
 
     // ================================================================
@@ -685,9 +878,12 @@ class PosTerminal extends Page
     {
         if (! $this->posSettings['allow_discount']) {
             Notification::make()->title('Descuentos deshabilitados en este POS')->warning()->send();
+
             return;
         }
-        if (! isset($this->cart[$i])) return;
+        if (! isset($this->cart[$i])) {
+            return;
+        }
 
         $pct = max(0, min(100, (float) $pct));
 
@@ -696,6 +892,7 @@ class PosTerminal extends Page
             $this->showSupervisorPinModal = true;
             $this->supervisorPin = '';
             $this->supervisorPinError = null;
+
             return;
         }
 
@@ -705,47 +902,62 @@ class PosTerminal extends Page
     protected function applyLineDiscount(int $i, float $pct): void
     {
         $this->cart[$i]['discount_percentage_manual'] = $pct;
-        $this->recomputeLine($i);
+        $this->recalcularCarrito();
     }
 
     /**
      * Descuento global. Soporta % o monto fijo. El monto se convierte a %
      * sobre el subtotal actual para ser consistente con la línea.
      */
-    public function setCartDiscount(string $mode, float $value): void
+    public function setCartDiscount(string $mode, mixed $value = 0): void
     {
         if (! $this->posSettings['allow_discount']) {
             Notification::make()->title('Descuentos deshabilitados en este POS')->warning()->send();
+
             return;
         }
 
-        $value = max(0, (float) $value);
-        $pct = $value;
-        if ($mode === 'amount') {
-            $subtotal = collect($this->cart)->sum(fn ($l) => (float) ($l['subtotal'] ?? 0));
-            $pct = $subtotal > 0 ? min(100, round(($value / $subtotal) * 100, 2)) : 0;
-        }
-        $pct = min(100, max(0, $pct));
+        // Ojo: el valor llega del input del navegador. Al borrar el campo llega
+        // la cadena vacia, y con la firma `float $value` eso reventaba el POS
+        // con un TypeError en plena venta.
+        $value = max(0, (float) (is_numeric($value) ? $value : 0));
+        $mode = $mode === 'amount' ? 'amount' : 'pct';
+
+        // El porcentaje efectivo se estima sobre la base actual solo para
+        // decidir si hace falta autorizacion; el reparto real lo hace
+        // aplicarDescuentoGlobal().
+        $pct = $mode === 'amount'
+            ? $this->porcentajeEquivalente($value)
+            : min(100, $value);
 
         if ($this->needsApproval($pct)) {
             $this->pendingDiscount = ['type' => 'cart', 'mode' => $mode, 'value' => $value, 'pct' => $pct];
             $this->showSupervisorPinModal = true;
             $this->supervisorPin = '';
             $this->supervisorPinError = null;
+
             return;
         }
 
         $this->applyCartDiscount($mode, $value, $pct);
     }
 
+    /** Que porcentaje representa un monto sobre la base actual del carrito. */
+    protected function porcentajeEquivalente(float $monto): float
+    {
+        $base = collect($this->cart)->sum(
+            fn ($l) => (float) ($l['subtotal'] ?? 0) - (float) ($l['discount_amount'] ?? 0)
+        );
+
+        return $base > 0 ? min(100, round($monto / $base * 100, 2)) : 0.0;
+    }
+
     protected function applyCartDiscount(string $mode, float $value, float $pct): void
     {
         $this->cartDiscountMode = $mode;
-        $this->cartDiscountAmount = $mode === 'amount' ? $value : 0;
-        $this->cartDiscountPct = $pct;
-        foreach (array_keys($this->cart) as $i) {
-            $this->recomputeLine($i);
-        }
+        $this->cartDiscountValue = $value;
+
+        $this->recalcularCarrito();
     }
 
     public function clearCartDiscount(): void
@@ -756,8 +968,13 @@ class PosTerminal extends Page
     protected function needsApproval(float $pct): bool
     {
         $threshold = $this->discountThreshold();
-        if ($threshold <= 0) return false;        // umbral=0 → nunca exigir
-        if ($pct <= $threshold) return false;     // dentro del límite
+        if ($threshold <= 0) {
+            return false;
+        }        // umbral=0 → nunca exigir
+        if ($pct <= $threshold) {
+            return false;
+        }     // dentro del límite
+
         return ! $this->canApproveDiscounts;      // si user ya puede, omitir
     }
 
@@ -771,14 +988,16 @@ class PosTerminal extends Page
 
         if (! $this->pendingDiscount) {
             $this->showSupervisorPinModal = false;
+
             return;
         }
         if (trim($this->supervisorPin) === '') {
             $this->supervisorPinError = 'Ingresa la contraseña del supervisor.';
+
             return;
         }
 
-        $supervisors = \App\Models\User::query()
+        $supervisors = User::query()
             ->where('company_id', Auth::user()->company_id)
             ->where('active', true)
             ->permission('pos.discount.approve')
@@ -786,7 +1005,7 @@ class PosTerminal extends Page
 
         $ok = false;
         foreach ($supervisors as $sup) {
-            if (\Illuminate\Support\Facades\Hash::check($this->supervisorPin, $sup->password)) {
+            if (Hash::check($this->supervisorPin, $sup->password)) {
                 $ok = true;
                 break;
             }
@@ -795,6 +1014,7 @@ class PosTerminal extends Page
         if (! $ok) {
             $this->supervisorPinError = 'Contraseña no coincide con ningún supervisor con permiso de aprobación.';
             $this->supervisorPin = '';
+
             return;
         }
 
@@ -829,6 +1049,7 @@ class PosTerminal extends Page
     {
         if (empty($this->cart)) {
             Notification::make()->title('Carrito vacío')->warning()->send();
+
             return;
         }
 
@@ -875,7 +1096,9 @@ class PosTerminal extends Page
 
     public function removePayment(int $i): void
     {
-        if (! isset($this->payments[$i])) return;
+        if (! isset($this->payments[$i])) {
+            return;
+        }
         unset($this->payments[$i]);
         $this->payments = array_values($this->payments);
     }
@@ -888,6 +1111,7 @@ class PosTerminal extends Page
     {
         if (empty($this->cart)) {
             Notification::make()->title('Carrito vacío')->warning()->send();
+
             return;
         }
         $this->showRetentionsModal = true;
@@ -903,12 +1127,15 @@ class PosTerminal extends Page
             ->whereIn('applies_to', ['sale', 'both'])
             ->first();
 
-        if (! $tax) return;
+        if (! $tax) {
+            return;
+        }
 
         // Si ya existe esa retención, no duplicar
         foreach ($this->retentions as $r) {
             if ((int) ($r['tax_id'] ?? 0) === (int) $tax->id) {
                 Notification::make()->title('Esa retención ya está aplicada')->warning()->send();
+
                 return;
             }
         }
@@ -932,7 +1159,9 @@ class PosTerminal extends Page
 
     public function removeRetention(int $i): void
     {
-        if (! isset($this->retentions[$i])) return;
+        if (! isset($this->retentions[$i])) {
+            return;
+        }
         unset($this->retentions[$i]);
         $this->retentions = array_values($this->retentions);
     }
@@ -985,9 +1214,12 @@ class PosTerminal extends Page
                 ->title('Modificación de impuestos deshabilitada')
                 ->warning()
                 ->send();
+
             return;
         }
-        if (! isset($this->cart[$i])) return;
+        if (! isset($this->cart[$i])) {
+            return;
+        }
 
         $taxId = $taxId === '' || $taxId === null ? null : (int) $taxId;
         $rate = 0.0;
@@ -997,7 +1229,7 @@ class PosTerminal extends Page
 
         $this->cart[$i]['tax_id'] = $taxId;
         $this->cart[$i]['tax_rate'] = $rate;
-        $this->recomputeLine($i);
+        $this->recalcularCarrito();
     }
 
     /**
@@ -1018,7 +1250,7 @@ class PosTerminal extends Page
         // Reevalua promociones automaticas al inicio (las basadas en codigo
         // se evaluan solo al apretar 'Aplicar cupon'). Esto deja $this->
         // promotionsDiscountAmount actualizado segun el estado actual del carrito.
-        if (\App\Support\PromotionsSettings::moduleActive()) {
+        if (PromotionsSettings::moduleActive()) {
             $this->evaluateAutomaticPromotions();
         }
 
@@ -1081,8 +1313,8 @@ class PosTerminal extends Page
     protected function evaluateAutomaticPromotions(): void
     {
         $context = $this->buildCartContext($this->couponCode);
-        /** @var \App\Services\Promotions\PromotionEngine $engine */
-        $engine = app(\App\Services\Promotions\PromotionEngine::class);
+        /** @var PromotionEngine $engine */
+        $engine = app(PromotionEngine::class);
         $result = $engine->evaluate($context);
 
         $this->promotionsDiscountAmount = $result->totalDiscount();
@@ -1103,6 +1335,7 @@ class PosTerminal extends Page
         $code = trim($this->couponCode);
         if ($code === '') {
             Notification::make()->title('Ingresa un código de cupón')->warning()->send();
+
             return;
         }
 
@@ -1121,12 +1354,13 @@ class PosTerminal extends Page
                 ->body("El código '{$code}' no existe, está vencido, no cumple las condiciones del carrito o ya alcanzo su límite.")
                 ->danger()
                 ->send();
+
             return;
         }
 
         Notification::make()
             ->title('Cupón aplicado')
-            ->body('Se aplicaron descuentos por $' . number_format($this->promotionsDiscountAmount, 0, ',', '.'))
+            ->body('Se aplicaron descuentos por $'.number_format($this->promotionsDiscountAmount, 0, ',', '.'))
             ->success()
             ->send();
     }
@@ -1143,20 +1377,22 @@ class PosTerminal extends Page
      * Construye el CartContext que pasara al motor de promociones a partir
      * del estado actual del POS.
      */
-    protected function buildCartContext(?string $couponCode = null): \App\Services\Promotions\CartContext
+    protected function buildCartContext(?string $couponCode = null): CartContext
     {
         $lines = [];
         foreach ($this->cart as $idx => $line) {
             $productId = (int) ($line['product_id'] ?? 0);
-            if ($productId <= 0) continue;
+            if ($productId <= 0) {
+                continue;
+            }
 
             // Evitar contar la linea de gift card como producto regular
-            if (($line['code'] ?? null) === \App\Services\GiftCards\GiftCardProductProvisioner::PRODUCT_CODE) {
+            if (($line['code'] ?? null) === GiftCardProductProvisioner::PRODUCT_CODE) {
                 continue;
             }
 
             $product = Product::query()->where('company_id', auth()->user()?->company_id)->find($productId);
-            $lines[$idx] = new \App\Services\Promotions\CartLine(
+            $lines[$idx] = new CartLine(
                 productId: $productId,
                 categoryId: $product?->category_id,
                 quantity: (int) ($line['quantity'] ?? 0),
@@ -1165,7 +1401,7 @@ class PosTerminal extends Page
             );
         }
 
-        return new \App\Services\Promotions\CartContext(
+        return new CartContext(
             lines: $lines,
             customerId: $this->customer_id,
             serviceMode: 'dine_in', // POS tradicional no usa modos de servicio
@@ -1187,6 +1423,7 @@ class PosTerminal extends Page
         $code = trim($this->giftCardCodeInput);
         if ($code === '') {
             Notification::make()->title('Ingresa un código de gift card')->warning()->send();
+
             return;
         }
 
@@ -1198,12 +1435,13 @@ class PosTerminal extends Page
                     ->warning()
                     ->send();
                 $this->giftCardCodeInput = '';
+
                 return;
             }
         }
 
-        /** @var \App\Services\GiftCards\GiftCardEngine $engine */
-        $engine = app(\App\Services\GiftCards\GiftCardEngine::class);
+        /** @var GiftCardEngine $engine */
+        $engine = app(GiftCardEngine::class);
         $card = $engine->findRedeemable($code);
 
         if (! $card) {
@@ -1212,6 +1450,7 @@ class PosTerminal extends Page
                 ->body('La tarjeta no existe, está anulada, sin saldo o expirada.')
                 ->danger()
                 ->send();
+
             return;
         }
 
@@ -1232,8 +1471,8 @@ class PosTerminal extends Page
 
         Notification::make()
             ->title("Gift card {$card->code} aplicada")
-            ->body('Saldo disponible: $' . number_format($balance, 0, ',', '.')
-                . ' · Se redime: $' . number_format($amountToRedeem, 0, ',', '.'))
+            ->body('Saldo disponible: $'.number_format($balance, 0, ',', '.')
+                .' · Se redime: $'.number_format($amountToRedeem, 0, ',', '.'))
             ->success()
             ->send();
     }
@@ -1241,7 +1480,9 @@ class PosTerminal extends Page
     /** Quita una gift card aplicada de la venta actual. */
     public function removeAppliedGiftCard(int $index): void
     {
-        if (! isset($this->appliedGiftCards[$index])) return;
+        if (! isset($this->appliedGiftCards[$index])) {
+            return;
+        }
         unset($this->appliedGiftCards[$index]);
         $this->appliedGiftCards = array_values($this->appliedGiftCards);
     }
@@ -1256,19 +1497,21 @@ class PosTerminal extends Page
         $amount = (float) ($this->giftCardEmissionAmount ?? 0);
         if ($amount <= 0) {
             Notification::make()->title('Ingresa un monto válido')->danger()->send();
+
             return;
         }
 
-        $product = \App\Services\GiftCards\GiftCardProductProvisioner::find(Auth::user()->company_id);
+        $product = GiftCardProductProvisioner::find(Auth::user()->company_id);
         if (! $product) {
             Notification::make()->title('Producto "Gift Card" no encontrado. Actívalo en Configuraciones.')->danger()->send();
+
             return;
         }
 
         $this->cart[] = [
             'product_id' => $product->id,
             'code' => $product->code,
-            'description' => 'Tarjeta Regalo $' . number_format($amount, 0, ',', '.'),
+            'description' => 'Tarjeta Regalo $'.number_format($amount, 0, ',', '.'),
             'image_path' => null,
             'quantity' => 1.0,
             'unit_price' => $amount,
@@ -1319,21 +1562,27 @@ class PosTerminal extends Page
     {
         $cart = $this->cart;
         $discount = (float) $this->promotionsDiscountAmount;
-        if ($discount <= 0) return $cart;
+        if ($discount <= 0) {
+            return $cart;
+        }
 
         // Subtotal de lineas elegibles (excluye gift card)
         $eligibleIndices = [];
         $totalEligibleSubtotal = 0.0;
         foreach ($cart as $idx => $line) {
-            if (($line['code'] ?? null) === \App\Services\GiftCards\GiftCardProductProvisioner::PRODUCT_CODE) {
+            if (($line['code'] ?? null) === GiftCardProductProvisioner::PRODUCT_CODE) {
                 continue;
             }
             $sub = (float) ($line['subtotal'] ?? 0);
-            if ($sub <= 0) continue;
+            if ($sub <= 0) {
+                continue;
+            }
             $eligibleIndices[] = $idx;
             $totalEligibleSubtotal += $sub;
         }
-        if ($totalEligibleSubtotal <= 0) return $cart;
+        if ($totalEligibleSubtotal <= 0) {
+            return $cart;
+        }
 
         $effectiveDiscount = min($discount, $totalEligibleSubtotal);
         $distributed = 0.0;
@@ -1378,7 +1627,7 @@ class PosTerminal extends Page
     /**
      * Clientes que coinciden con lo que se escribe en el buscador.
      *
-     * @return \Illuminate\Support\Collection<int, ThirdParty>
+     * @return Collection<int, ThirdParty>
      */
     public function getCustomerMatchesProperty()
     {
@@ -1467,10 +1716,12 @@ class PosTerminal extends Page
 
         if (empty($this->cart)) {
             $this->paymentError = 'Carrito vacío.';
+
             return;
         }
         if (! $this->location_id || ! $this->customer_id) {
             $this->paymentError = 'Faltan sede o cliente.';
+
             return;
         }
 
@@ -1483,6 +1734,7 @@ class PosTerminal extends Page
                 ->find($this->customer_id);
             if ($customer && $customer->document_number === '222222222') {
                 $this->paymentError = 'Cliente obligatorio: la empresa no permite vender a "Consumidor Final".';
+
                 return;
             }
         }
@@ -1491,8 +1743,9 @@ class PosTerminal extends Page
 
         // En venta a crédito (paymentMode='credit'), no exigimos pagos.
         // Comparamos contra net_payable (descontadas retenciones), no contra total.
-        if ($this->paymentMode !== 'credit' && $totals['paid'] + 0.01 < $totals['net_payable']) {
+        if ($this->paymentMode !== 'credit' && $totals['net_payable'] > $totals['paid'] + 0.01) {
             $this->paymentError = 'Pagos insuficientes. Falta cubrir $'.number_format($totals['remaining'], 2).'.';
+
             return;
         }
 
@@ -1500,10 +1753,11 @@ class PosTerminal extends Page
         // de abrir la transacción. Si la sede no tiene resolución del tipo
         // elegido, esto lanza y abortamos con mensaje claro.
         try {
-            $doc = app(\App\Services\Sales\DocumentNumberer::class)
+            $doc = app(DocumentNumberer::class)
                 ->reserveForLocation((int) $this->location_id, $this->invoiceKind);
         } catch (\Throwable $e) {
             $this->paymentError = $e->getMessage();
+
             return;
         }
 
@@ -1513,7 +1767,7 @@ class PosTerminal extends Page
         $cartForInvoice = $this->distributePromotionsDiscountInLines();
 
         try {
-            $invoice = DB::transaction(function () use ($totals, $doc, $cartForInvoice) {
+            $invoice = DB::transaction(function () use ($doc, $cartForInvoice) {
                 $companyId = Auth::user()->company_id;
                 $company = Company::find($companyId);
 
@@ -1583,13 +1837,17 @@ class PosTerminal extends Page
 
                 foreach ($this->payments as $payment) {
                     $amount = (float) ($payment['amount'] ?? 0);
-                    if ($amount <= 0) continue;
+                    if ($amount <= 0) {
+                        continue;
+                    }
 
                     $balance = (float) $invoice->fresh()->balance;
                     if ($amount > $balance) {
                         $amount = $balance;
                     }
-                    if ($amount <= 0) break;
+                    if ($amount <= 0) {
+                        break;
+                    }
 
                     $engine->addPayment($invoice, [
                         'amount' => $amount,
@@ -1604,23 +1862,29 @@ class PosTerminal extends Page
                 // Redimir gift cards aplicadas como medio de pago. Cada una
                 // se descuenta del saldo de la tarjeta + se registra como
                 // payment en la venta con method='gift_card'.
-                $gcEngine = app(\App\Services\GiftCards\GiftCardEngine::class);
+                $gcEngine = app(GiftCardEngine::class);
                 $issuedGiftCards = [];
 
                 // Cuenta contable de pasivo gift card (240825 por defecto).
                 // El pago con gift card NO entra a caja — debita el pasivo
                 // que se creo al emitir la tarjeta. Sin cuenta, el asiento
                 // queda corrupto, asi que exigimos que exista.
-                $giftCardLiabilityAccountId = \App\Support\GiftCardsSettings::liabilityAccountId();
+                $giftCardLiabilityAccountId = GiftCardsSettings::liabilityAccountId();
 
                 foreach ($this->appliedGiftCards as $applied) {
-                    $card = \App\Models\GiftCard::query()->where('company_id', auth()->user()?->company_id)->find($applied['gift_card_id']);
-                    if (! $card) continue;
+                    $card = GiftCard::query()->where('company_id', auth()->user()?->company_id)->find($applied['gift_card_id']);
+                    if (! $card) {
+                        continue;
+                    }
                     $amount = (float) $applied['amount'];
-                    if ($amount <= 0) continue;
+                    if ($amount <= 0) {
+                        continue;
+                    }
                     $balance = (float) $invoice->fresh()->balance;
                     $amount = min($amount, $balance);
-                    if ($amount <= 0) continue;
+                    if ($amount <= 0) {
+                        continue;
+                    }
 
                     if (! $giftCardLiabilityAccountId) {
                         throw new \RuntimeException('No se encuentra la cuenta de pasivo Gift Card. Configurala en Configuraciones → Gift Cards o asegurate que la cuenta 240825 exista en el PUC.');
@@ -1646,7 +1910,9 @@ class PosTerminal extends Page
                 // tarjeta nueva ligada a esta venta. El codigo generado
                 // se entregara al cajero en la notificacion final.
                 foreach ($cartForInvoice as $line) {
-                    if (empty($line['gift_card_emission'])) continue;
+                    if (empty($line['gift_card_emission'])) {
+                        continue;
+                    }
                     $meta = $line['gift_card_emission'];
                     $newCard = $gcEngine->issue(
                         initialBalance: (float) $meta['amount'],
@@ -1664,12 +1930,14 @@ class PosTerminal extends Page
                 // Registrar uso de promociones aplicadas (para reportes y
                 // validar max_uses_per_customer en futuras ventas)
                 if (! empty($this->appliedPromotions)) {
-                    $promoEngine = app(\App\Services\Promotions\PromotionEngine::class);
+                    $promoEngine = app(PromotionEngine::class);
                     // Reconstruir un PromotionResult sintetico para recordUsages
-                    $result = new \App\Services\Promotions\PromotionResult($this->buildCartContext($this->couponCode));
+                    $result = new PromotionResult($this->buildCartContext($this->couponCode));
                     foreach ($this->appliedPromotions as $a) {
-                        $p = \App\Models\Promotion::query()->where('company_id', auth()->user()?->company_id)->find($a['promotion_id']);
-                        if ($p) $result->registerApplied($p, (float) $a['discount']);
+                        $p = Promotion::query()->where('company_id', auth()->user()?->company_id)->find($a['promotion_id']);
+                        if ($p) {
+                            $result->registerApplied($p, (float) $a['discount']);
+                        }
                     }
                     $promoEngine->recordUsages($result, $invoice->id, Auth::id());
                 }
@@ -1697,7 +1965,7 @@ class PosTerminal extends Page
             // gift cards porque el codigo NO debe perderse.
             $body = sprintf('Total $%s.', number_format($invoice->total, 2));
             if ($totals['change'] > 0) {
-                $body .= ' Vuelto: $' . number_format($totals['change'], 2) . '.';
+                $body .= ' Vuelto: $'.number_format($totals['change'], 2).'.';
             }
             if ($dian['accepted']) {
                 $body .= ' Factura electrónica autorizada por la DIAN.';
@@ -1742,11 +2010,11 @@ class PosTerminal extends Page
                 // la sede. Si hay impresora QZ Tray (browser), encolamos y
                 // disparamos qz-print-jobs (mismo bridge del restaurante).
                 // Si no hay impresora, fallback al HTML imprimible por navegador.
-                $printedNative = app(\App\Services\Sales\SaleReceiptPrinter::class)
+                $printedNative = app(SaleReceiptPrinter::class)
                     ->printReceipt($invoice, $this->payments);
 
                 if ($printedNative) {
-                    $jobs = app(\App\Services\Restaurant\BrowserPrintQueue::class)->flush();
+                    $jobs = app(BrowserPrintQueue::class)->flush();
                     if (! empty($jobs)) {
                         $this->dispatch('qz-print-jobs', jobs: $jobs);
                     }
@@ -1758,12 +2026,12 @@ class PosTerminal extends Page
             // Cierre del ciclo de Citas: si la venta vino de una cita,
             // marcarla completada y enlazar la factura.
             if ($this->appointment_id) {
-                \App\Models\Appointment::query()
+                Appointment::query()
                     ->where('company_id', Auth::user()->company_id)
                     ->where('id', $this->appointment_id)
                     ->whereNull('sale_invoice_id')
                     ->update([
-                        'status' => \App\Models\Appointment::STATUS_COMPLETED,
+                        'status' => Appointment::STATUS_COMPLETED,
                         'sale_invoice_id' => $invoice->id,
                     ]);
                 $this->appointment_id = null;
@@ -1801,7 +2069,7 @@ class PosTerminal extends Page
     {
         $msg = $e->getMessage();
 
-        if ($e instanceof \Illuminate\Database\QueryException) {
+        if ($e instanceof QueryException) {
             // Por código SQLSTATE estándar
             if (str_contains($msg, '23505') || str_contains($msg, 'Duplicate entry') || str_contains($msg, 'unique')) {
                 return 'Ese número de factura ya existe. Vuelve a intentarlo — el sistema asignará uno nuevo.';
@@ -1818,15 +2086,17 @@ class PosTerminal extends Page
             if (str_contains($msg, 'Connection') || str_contains($msg, 'could not find driver') || str_contains($msg, 'server has gone away')) {
                 return 'Se perdió la conexión con la base de datos. Reintenta en unos segundos.';
             }
+
             return 'Error de base de datos al guardar la venta. Reintenta — si persiste, contacta soporte.';
         }
 
-        if ($e instanceof \Illuminate\Validation\ValidationException) {
+        if ($e instanceof ValidationException) {
             $errors = collect($e->errors())->flatten()->take(3)->all();
+
             return implode(' · ', $errors);
         }
 
-        if ($e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException) {
+        if ($e instanceof ModelNotFoundException) {
             return 'Un recurso necesario para la venta ya no existe (cliente, producto o sede eliminada). Recarga el POS.';
         }
 
@@ -1844,6 +2114,7 @@ class PosTerminal extends Page
         if ($clean === '') {
             return 'Error inesperado al procesar la venta. Reintenta o contacta soporte.';
         }
+
         return mb_strlen($clean) > 220 ? mb_substr($clean, 0, 220).'…' : $clean;
     }
 
@@ -1851,6 +2122,7 @@ class PosTerminal extends Page
     {
         if (empty($this->cart)) {
             Notification::make()->title('Carrito vacío')->warning()->send();
+
             return;
         }
 
@@ -1922,11 +2194,13 @@ class PosTerminal extends Page
     {
         if ($this->openSession()) {
             Notification::make()->title('Ya tienes una sesión abierta')->warning()->send();
+
             return;
         }
 
         if (! $this->openingLocationId) {
             Notification::make()->title('Selecciona la sede')->danger()->send();
+
             return;
         }
 
@@ -1962,12 +2236,12 @@ class PosTerminal extends Page
         // Se resuelve por los modulos de la empresa y no por un parametro de
         // la URL: esto corre en una request Livewire hacia /livewire/update,
         // que no arrastra la query string de la pagina.
-        $destino = \App\Support\PosDestination::resolve();
+        $destino = PosDestination::resolve();
 
         // Solo se redirige si su POS es OTRO. Si es el retail ya esta aqui, y
         // recargar la pagina le borraria el aviso de caja abierta.
-        if ($destino !== null && $destino !== \App\Support\PosDestination::RETAIL) {
-            $this->redirect(\App\Support\PosDestination::urlFor($destino));
+        if ($destino !== null && $destino !== PosDestination::RETAIL) {
+            $this->redirect(PosDestination::urlFor($destino));
         }
     }
 
@@ -1980,6 +2254,7 @@ class PosTerminal extends Page
                 ->body('La empresa configuró "cierre de caja oculto" — solo verás el resumen al cerrar.')
                 ->warning()
                 ->send();
+
             return;
         }
 
@@ -1989,14 +2264,18 @@ class PosTerminal extends Page
     public function getSessionTotalsProperty(): ?array
     {
         $session = $this->currentSession;
-        if (! $session) return null;
-        return app(\App\Services\Cash\CashSessionSummary::class)->compute($session);
+        if (! $session) {
+            return null;
+        }
+
+        return app(CashSessionSummary::class)->compute($session);
     }
 
     public function openCloseSessionModal(): void
     {
         if (! $this->currentSession) {
             Notification::make()->title('No hay sesión abierta')->danger()->send();
+
             return;
         }
 
@@ -2010,11 +2289,13 @@ class PosTerminal extends Page
         $session = $this->currentSession;
         if (! $session) {
             Notification::make()->title('No hay sesión abierta')->danger()->send();
+
             return;
         }
 
         if (! auth()->user()->can('pos.cash_close')) {
             Notification::make()->title('Sin permiso para cerrar caja')->danger()->send();
+
             return;
         }
 
@@ -2024,10 +2305,11 @@ class PosTerminal extends Page
                 ->body('Termina o suspende la venta actual antes de cerrar caja.')
                 ->danger()
                 ->send();
+
             return;
         }
 
-        $result = app(\App\Services\Cash\CashSessionCloser::class)->close(
+        $result = app(CashSessionCloser::class)->close(
             $session,
             (float) ($this->closingCounted ?? 0),
             $this->closingNotes,
@@ -2072,6 +2354,13 @@ class PosTerminal extends Page
         $this->promotionsDiscountAmount = 0.0;
         $this->giftCardCodeInput = '';
         $this->appliedGiftCards = [];
+
+        // El descuento global es de ESA venta. Sin esto, el siguiente cliente
+        // heredaba el descuento del anterior sin que el cajero lo notara.
+        $this->cartDiscountMode = 'pct';
+        $this->cartDiscountValue = 0.0;
+        $this->cartDiscountPct = 0.0;
+        $this->cartDiscountAmount = 0.0;
     }
 
     public function closePaymentModal(): void
@@ -2089,6 +2378,7 @@ class PosTerminal extends Page
     {
         if (empty($this->cart)) {
             Notification::make()->title('Carrito vacío')->warning()->send();
+
             return;
         }
 
@@ -2103,6 +2393,7 @@ class PosTerminal extends Page
     {
         if (empty($this->cart)) {
             $this->showSuspendModal = false;
+
             return;
         }
 
@@ -2141,6 +2432,7 @@ class PosTerminal extends Page
 
         if (! $suspended) {
             Notification::make()->title('Venta no encontrada')->danger()->send();
+
             return;
         }
 
@@ -2151,6 +2443,7 @@ class PosTerminal extends Page
                 ->body('Vacía o suspende el carrito actual antes de recuperar otra venta.')
                 ->warning()
                 ->send();
+
             return;
         }
 
@@ -2226,5 +2519,4 @@ class PosTerminal extends Page
 
         return $methods ?: Payment::PAYMENT_METHODS;
     }
-
 }

@@ -82,13 +82,32 @@ Las migraciones solo agregan columnas con valor por defecto cero: **ninguna
 factura existente cambia**. Mientras el descuento global sea cero, el cálculo es
 byte por byte el de antes.
 
+## El del POS
+
+Existía desde antes y tenía cuatro fallos, corregidos en septiembre de 2026:
+
+1. **Vaciar el campo reventaba la pantalla** con un `TypeError` en plena venta:
+   el navegador manda la cadena vacía y el método exigía un `float`.
+2. **No se limpiaba entre ventas.** `resetCart()` no lo tocaba, así que el
+   siguiente cliente heredaba el descuento del anterior sin que el cajero lo
+   viera.
+3. **Un monto fijo se desajustaba.** Se convertía a porcentaje una sola vez, así
+   que un descuento de $50.000 crecía en cuanto entraba otro producto al
+   carrito.
+4. **Sumaba los porcentajes.** Un 10 % de línea más un 10 % global daba un 20 %
+   de descuento, cuando lo correcto es 19 % —el global va sobre lo que quedó—.
+   El POS y la pantalla de facturas daban resultados distintos con los mismos
+   datos.
+
+Ahora el POS guarda el valor tal como se escribió y lo reparte en cada
+recálculo, con el mismo criterio del motor de facturas.
+
 ## Limitaciones conocidas
 
-- **En el POS el mecanismo es otro.** Ahí el descuento global se suma al
-  porcentaje de cada línea del carrito, que es lo que ya hacía y funciona. El
-  resultado es el mismo —IVA sobre la base descontada— pero el código no es
-  compartido. Unificarlo tocaría el flujo de venta en caliente, y no valía el
-  riesgo por una diferencia que el usuario no ve.
+- **En el POS el código no es compartido.** El criterio sí: desde la corrección
+  de septiembre, el POS reparte el descuento igual que las facturas —proporcional
+  y sobre la base ya neta de los descuentos de línea— pero con su propia
+  implementación, porque el carrito vive en memoria y las facturas en la base.
 - **No hay umbral de autorización fuera del POS.** En el POS, un descuento por
   encima del umbral pide el PIN de un supervisor; en las facturas capturadas a
   mano no. Si se necesita, es el siguiente paso natural.

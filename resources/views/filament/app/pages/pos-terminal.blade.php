@@ -821,7 +821,7 @@
                         <div class="px-4 py-2.5">
                             <div class="flex items-center justify-between mb-1.5">
                                 <div class="text-[10px] text-amber-700 dark:text-amber-400 font-semibold uppercase tracking-wide">Descuento global</div>
-                                @if ($cartDiscountPct > 0)
+                                @if ($cartDiscountValue > 0)
                                     <button type="button" wire:click="clearCartDiscount"
                                             class="text-[10px] text-amber-700 dark:text-amber-400 hover:underline">Quitar</button>
                                 @endif
@@ -837,9 +837,9 @@
                                 </div>
                                 <input type="number" step="0.01" min="0"
                                        wire:change="setCartDiscount('{{ $cartDiscountMode }}', $event.target.value)"
-                                       value="{{ $cartDiscountMode === 'pct'
-                                           ? (rtrim(rtrim(number_format($cartDiscountPct, 2, '.', ''), '0'), '.') ?: '0')
-                                           : (int) $cartDiscountAmount }}"
+                                       value="{{ $cartDiscountValue > 0
+                                           ? rtrim(rtrim(number_format($cartDiscountValue, 2, '.', ''), '0'), '.')
+                                           : '' }}"
                                        class="flex-1 text-right text-xs rounded-md border border-amber-300 dark:border-amber-700 bg-white dark:bg-gray-900 px-2 py-1.5 outline-none focus:ring-2 focus:ring-amber-500"
                                        placeholder="0" />
                                 <div class="flex gap-1">
