@@ -111,7 +111,7 @@ class AiAssistant
 
         $costo = $ajustes->usaCuentaPropia()
             ? 0.0
-            : $this->costoEnPesos($modelo, $tokensEntrada, $tokensSalida);
+            : $this->costoEnDolares($modelo, $tokensEntrada, $tokensSalida);
 
         $mensaje = AiMessage::create([
             'ai_conversation_id' => $conversacion->id,
@@ -120,7 +120,7 @@ class AiAssistant
             'tools' => $usadas ?: null,
             'input_tokens' => $tokensEntrada,
             'output_tokens' => $tokensSalida,
-            'cost_cop' => $costo,
+            'cost_usd' => $costo,
             'error' => $error,
             'created_at' => now(),
         ]);
@@ -215,10 +215,17 @@ class AiAssistant
     }
 
     /**
-     * Lo que se le cobra a la empresa: el costo de Anthropic pasado a pesos,
-     * por el margen de Tecmax. Las tarifas viven en config/ai.php.
+     * Lo que se le descuenta del monedero, en dólares.
+     *
+     * Es el costo de Anthropic por el multiplicador de Tecmax: con 1,3333, cada
+     * dólar que cuesta la respuesta le descuenta 1,3333 al cliente, de modo que
+     * una recarga de 50 alcanza para 37,50 de consumo real. Las tarifas viven en
+     * config/ai.php.
+     *
+     * Seis decimales porque una respuesta corta cuesta centésimas de centavo y
+     * redondear a dos la cobraría en cero.
      */
-    private function costoEnPesos(string $modelo, int $entrada, int $salida): float
+    private function costoEnDolares(string $modelo, int $entrada, int $salida): float
     {
         $tarifas = config("ai.models.{$modelo}");
 
@@ -231,6 +238,6 @@ class AiAssistant
         $usd = ($entrada / 1_000_000) * (float) $tarifas['input_usd_per_mtok']
             + ($salida / 1_000_000) * (float) $tarifas['output_usd_per_mtok'];
 
-        return round($usd * (float) config('ai.usd_to_cop') * (float) config('ai.margin'), 2);
+        return round($usd * (float) config('ai.margin'), 6);
     }
 }

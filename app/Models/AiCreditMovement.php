@@ -31,7 +31,7 @@ class AiCreditMovement extends Model
     protected $fillable = [
         'company_id',
         'type',
-        'amount_cop',
+        'amount_usd',
         'balance_after',
         'description',
         'ai_conversation_id',
@@ -42,8 +42,8 @@ class AiCreditMovement extends Model
     protected function casts(): array
     {
         return [
-            'amount_cop' => 'decimal:2',
-            'balance_after' => 'decimal:2',
+            'amount_usd' => 'decimal:6',
+            'balance_after' => 'decimal:6',
             'created_at' => 'datetime',
         ];
     }

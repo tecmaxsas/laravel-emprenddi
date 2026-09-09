@@ -46,7 +46,14 @@ return [
         ],
     ],
 
-    // Tasa para pasar de dólares a pesos al cobrar el saldo.
+    /**
+     * Tasa del dólar, SOLO para mostrar un equivalente aproximado en pesos.
+     *
+     * El monedero se lleva en dólares —es lo que factura Anthropic y lo que
+     * vende Tecmax— así que cambiar este número no altera ningún cobro ni el
+     * saldo de nadie. Antes sí lo hacía, y subirlo le reducía el poder de compra
+     * a un saldo ya recargado.
+     */
     'usd_to_cop' => (float) env('AI_USD_TO_COP', 4200),
 
     /**

@@ -14,14 +14,18 @@
         <x-filament::section>
             <x-slot name="heading">Saldo</x-slot>
             <x-slot name="description">
-                Se descuenta según lo que consume cada respuesta. Para recargar, escríbele al equipo
-                comercial de Tecmax por WhatsApp.
+                El saldo está en dólares, que es como factura Anthropic. Se descuenta según lo que
+                consume cada respuesta. Para recargar, escríbele al equipo comercial de Tecmax por
+                WhatsApp.
             </x-slot>
 
             <div class="flex flex-wrap items-center justify-between gap-4">
                 <div>
                     <p class="text-3xl font-bold {{ $this->saldo > 0 ? 'text-gray-900 dark:text-white' : 'text-danger-600' }}">
-                        ${{ number_format($this->saldo, 0, ',', '.') }}
+                        {{ \App\Services\Ai\AiMoney::usd($this->saldo) }}
+                    </p>
+                    <p class="mt-1 text-xs text-gray-500">
+                        ≈ {{ \App\Services\Ai\AiMoney::cop($this->saldo) }} a la tasa de referencia
                     </p>
                     @if ($this->saldo <= 0)
                         <p class="mt-1 text-sm text-danger-600">
@@ -62,11 +66,11 @@
                                         {{ \App\Models\AiCreditMovement::TYPES[$movimiento->type] ?? $movimiento->type }}
                                     </td>
                                     <td class="py-2 text-gray-500">{{ $movimiento->description }}</td>
-                                    <td class="py-2 text-end {{ $movimiento->amount_cop < 0 ? 'text-danger-600' : 'text-success-600' }}">
-                                        ${{ number_format((float) $movimiento->amount_cop, 0, ',', '.') }}
+                                    <td class="py-2 text-end {{ $movimiento->amount_usd < 0 ? 'text-danger-600' : 'text-success-600' }}">
+                                        {{ \App\Services\Ai\AiMoney::usd((float) $movimiento->amount_usd) }}
                                     </td>
                                     <td class="py-2 text-end font-medium">
-                                        ${{ number_format((float) $movimiento->balance_after, 0, ',', '.') }}
+                                        {{ \App\Services\Ai\AiMoney::usd((float) $movimiento->balance_after) }}
                                     </td>
                                 </tr>
                             @endforeach

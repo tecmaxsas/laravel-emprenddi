@@ -90,11 +90,12 @@
                     <x-slot name="heading">Saldo</x-slot>
 
                     <p class="text-2xl font-bold {{ $this->saldo > 0 ? 'text-gray-900 dark:text-white' : 'text-danger-600' }}">
-                        ${{ number_format($this->saldo, 0, ',', '.') }}
+                        {{ \App\Services\Ai\AiMoney::usd($this->saldo) }}
                     </p>
 
                     <p class="mt-1 text-xs text-gray-500">
-                        Se descuenta según lo que consume cada respuesta.
+                        ≈ {{ \App\Services\Ai\AiMoney::cop($this->saldo) }} · se descuenta según lo
+                        que consume cada respuesta.
                     </p>
 
                     <x-filament::button

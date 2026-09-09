@@ -38,10 +38,10 @@ class AiConversation extends Model
         return $this->belongsTo(User::class);
     }
 
-    /** Lo que costó la conversación entera, para poder explicarle el saldo. */
+    /** Lo que costó la conversación entera, en dólares. */
     public function costoTotal(): float
     {
-        return (float) $this->messages()->sum('cost_cop');
+        return (float) $this->messages()->sum('cost_usd');
     }
 
     /**

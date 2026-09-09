@@ -23,7 +23,7 @@ class AiMessage extends Model
         'tools',
         'input_tokens',
         'output_tokens',
-        'cost_cop',
+        'cost_usd',
         'error',
         'created_at',
     ];
@@ -33,7 +33,7 @@ class AiMessage extends Model
         return [
             'tools' => 'array',
             'created_at' => 'datetime',
-            'cost_cop' => 'decimal:2',
+            'cost_usd' => 'decimal:6',
         ];
     }
 

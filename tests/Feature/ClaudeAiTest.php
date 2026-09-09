@@ -59,7 +59,7 @@ class ClaudeAiTest extends TestCase
                 ->update(['settings' => json_encode($ajustesOriginales)]);
         };
 
-        config(['ai.api_key' => 'sk-ant-de-prueba', 'ai.usd_to_cop' => 4000, 'ai.margin' => 1.0]);
+        config(['ai.api_key' => 'sk-ant-de-prueba', 'ai.margin' => 1.0]);
     }
 
     protected function tearDown(): void
@@ -224,10 +224,10 @@ class ClaudeAiTest extends TestCase
      */
     public function test_el_cobro_deja_el_veinticinco_por_ciento_de_ganancia(): void
     {
-        config(['ai.usd_to_cop' => 4200, 'ai.margin' => 1 / 0.75]);
+        config(['ai.margin' => 1 / 0.75]);
 
         $this->configurar(['enabled' => true, 'mode' => AiSettings::MODE_TECMAX, 'model' => 'claude-sonnet-5']);
-        $this->dejarSaldoEn(500000);
+        $this->dejarSaldoEn(500);
 
         Http::fake(['*' => Http::response([
             'content' => [['type' => 'text', 'text' => 'Listo.']],
@@ -238,23 +238,47 @@ class ClaudeAiTest extends TestCase
         $respuesta = app(AiAssistant::class)
             ->responder($this->nuevaConversacion(), 'Hola', $this->user);
 
-        $costoReal = 18 * 4200;                       // $75.600 que se le pagan a Anthropic
-        $cobrado = (float) $respuesta->cost_cop;
+        $costoReal = 18.0;                            // lo que se le paga a Anthropic
+        $cobrado = (float) $respuesta->cost_usd;
 
-        $this->assertEqualsWithDelta(100800, $cobrado, 1, 'USD 18 al 1,3333 son $100.800.');
+        $this->assertEqualsWithDelta(24, $cobrado, 0.001, 'USD 18 al 1,3333 son USD 24.');
 
         $this->assertEqualsWithDelta(0.25, ($cobrado - $costoReal) / $cobrado, 0.001,
             'La ganancia debe ser el 25 % de lo que se le descuenta al cliente.');
     }
 
+    /** La tasa del dólar ya no toca ningún cobro: solo se usa para mostrar. */
+    public function test_la_tasa_del_dolar_no_altera_lo_que_se_cobra(): void
+    {
+        $this->configurar(['enabled' => true, 'mode' => AiSettings::MODE_TECMAX, 'model' => 'claude-sonnet-5']);
+        $this->dejarSaldoEn(500);
+
+        Http::fake(['*' => Http::response([
+            'content' => [['type' => 'text', 'text' => 'Listo.']],
+            'usage' => ['input_tokens' => 1_000_000, 'output_tokens' => 0],
+        ])]);
+
+        config(['ai.margin' => 1.0, 'ai.usd_to_cop' => 4200]);
+        $conTasaBaja = (float) app(AiAssistant::class)
+            ->responder($this->nuevaConversacion(), 'Hola', $this->user)->cost_usd;
+
+        config(['ai.usd_to_cop' => 9999]);
+        $conTasaAlta = (float) app(AiAssistant::class)
+            ->responder($this->nuevaConversacion(), 'Hola', $this->user)->cost_usd;
+
+        $this->assertEqualsWithDelta($conTasaBaja, $conTasaAlta, 0.000001,
+            'Con el monedero en dólares, mover la tasa no puede cambiarle el saldo a nadie.');
+        $this->assertEqualsWithDelta(3, $conTasaBaja, 0.001);
+    }
+
     /** El multiplicador por descuento de saldo, visto como lo ve el comercial. */
     public function test_una_recarga_de_cincuenta_alcanza_para_treinta_y_siete_y_medio(): void
     {
-        config(['ai.usd_to_cop' => 1, 'ai.margin' => 1 / 0.75]);
+        config(['ai.margin' => 1 / 0.75]);
 
         $this->configurar(['enabled' => true, 'mode' => AiSettings::MODE_TECMAX, 'model' => 'claude-sonnet-5']);
 
-        // El cliente recarga 50 (en las unidades de la tasa, aquí USD).
+        // El cliente recarga US$ 50 y eso es lo que ve en su monedero.
         $this->dejarSaldoEn(50);
 
         // Consumo real de USD 37,50: 12,5M de tokens de entrada de Sonnet 5.
@@ -272,10 +296,10 @@ class ClaudeAiTest extends TestCase
     /** A costo, sin recargo, se cobra exactamente lo que cuesta. */
     public function test_sin_recargo_se_cobra_el_costo(): void
     {
-        config(['ai.usd_to_cop' => 4000, 'ai.margin' => 1.0]);
+        config(['ai.margin' => 1.0]);
 
         $this->configurar(['enabled' => true, 'mode' => AiSettings::MODE_TECMAX, 'model' => 'claude-haiku-4-5-20251001']);
-        $this->dejarSaldoEn(100000);
+        $this->dejarSaldoEn(100);
 
         Http::fake(['*' => Http::response([
             'content' => [['type' => 'text', 'text' => 'Listo.']],
@@ -285,8 +309,34 @@ class ClaudeAiTest extends TestCase
         $respuesta = app(AiAssistant::class)
             ->responder($this->nuevaConversacion(), 'Hola', $this->user);
 
-        // Haiku 4.5: USD 1 por millón de entrada × 4000 = $4.000.
-        $this->assertEqualsWithDelta(4000, (float) $respuesta->cost_cop, 1);
+        // Haiku 4.5: USD 1 por millón de tokens de entrada.
+        $this->assertEqualsWithDelta(1, (float) $respuesta->cost_usd, 0.001);
+    }
+
+    /**
+     * Una respuesta corta cuesta centésimas de centavo. Con dos decimales se
+     * cobraría cero y el saldo no bajaría nunca.
+     */
+    public function test_un_consumo_muy_pequeno_no_se_redondea_a_cero(): void
+    {
+        config(['ai.margin' => 1.0]);
+
+        $this->configurar(['enabled' => true, 'mode' => AiSettings::MODE_TECMAX, 'model' => 'claude-haiku-4-5-20251001']);
+        $this->dejarSaldoEn(10);
+
+        Http::fake(['*' => Http::response([
+            'content' => [['type' => 'text', 'text' => 'Sí.']],
+            'usage' => ['input_tokens' => 800, 'output_tokens' => 120],
+        ])]);
+
+        $respuesta = app(AiAssistant::class)
+            ->responder($this->nuevaConversacion(), 'Hola', $this->user);
+
+        $costo = (float) $respuesta->cost_usd;
+
+        $this->assertGreaterThan(0, $costo, 'Un consumo real no puede quedar cobrado en cero.');
+        $this->assertEqualsWithDelta(0.0014, $costo, 0.0001);
+        $this->assertEqualsWithDelta(10 - $costo, app(AiCredits::class)->saldo($this->company->fresh()), 0.000001);
     }
 
     // -------------------------------------------------------------- saldo
@@ -297,16 +347,16 @@ class ClaudeAiTest extends TestCase
         $creditos = app(AiCredits::class);
         $inicial = $creditos->saldo($this->company);
 
-        $recarga = $creditos->recargar($this->company, 50000, 'Prueba automatizada');
+        $recarga = $creditos->recargar($this->company, 50, 'Prueba automatizada');
         $this->registrarMovimiento($recarga->id);
 
-        $this->assertEqualsWithDelta($inicial + 50000, (float) $recarga->balance_after, 0.01);
-        $this->assertEqualsWithDelta($inicial + 50000, $creditos->saldo($this->company), 0.01);
+        $this->assertEqualsWithDelta($inicial + 50, (float) $recarga->balance_after, 0.000001);
+        $this->assertEqualsWithDelta($inicial + 50, $creditos->saldo($this->company), 0.000001);
 
-        $ajuste = $creditos->ajustar($this->company, -20000, 'Prueba automatizada');
+        $ajuste = $creditos->ajustar($this->company, -20, 'Prueba automatizada');
         $this->registrarMovimiento($ajuste->id);
 
-        $this->assertEqualsWithDelta($inicial + 30000, $creditos->saldo($this->company), 0.01);
+        $this->assertEqualsWithDelta($inicial + 30, $creditos->saldo($this->company), 0.000001);
     }
 
     // -------------------------------------------------- conversación completa
@@ -314,8 +364,10 @@ class ClaudeAiTest extends TestCase
     /** El camino feliz: se guarda la pregunta, la respuesta y se cobra. */
     public function test_una_conversacion_guarda_los_mensajes_y_descuenta_saldo(): void
     {
+        config(['ai.margin' => 1.0]);
+
         $this->configurar(['enabled' => true, 'mode' => AiSettings::MODE_TECMAX, 'model' => 'claude-sonnet-5']);
-        $this->dejarSaldoEn(100000);
+        $this->dejarSaldoEn(100);
 
         Http::fake([
             '*' => Http::response([
@@ -335,10 +387,9 @@ class ClaudeAiTest extends TestCase
         $this->assertSame(2, $conversacion->messages()->count(),
             'Deben quedar la pregunta y la respuesta.');
 
-        // 1M de tokens de entrada de Sonnet 5 = USD 3 = $12.000 con la tasa
-        // de la prueba (4000) y margen 1.
-        $this->assertEqualsWithDelta(12000, (float) $respuesta->cost_cop, 1);
-        $this->assertEqualsWithDelta(88000, app(AiCredits::class)->saldo($this->company->fresh()), 1);
+        // 1M de tokens de entrada de Sonnet 5 = USD 3, sin recargo en esta prueba.
+        $this->assertEqualsWithDelta(3, (float) $respuesta->cost_usd, 0.001);
+        $this->assertEqualsWithDelta(97, app(AiCredits::class)->saldo($this->company->fresh()), 0.001);
     }
 
     /** Con cuenta propia no se toca el saldo: le factura Anthropic al cliente. */
@@ -349,7 +400,7 @@ class ClaudeAiTest extends TestCase
             'mode' => AiSettings::MODE_OWN,
             'api_key' => 'sk-ant-del-cliente',
         ]);
-        $this->dejarSaldoEn(100000);
+        $this->dejarSaldoEn(100);
 
         Http::fake([
             '*' => Http::response([
@@ -361,15 +412,15 @@ class ClaudeAiTest extends TestCase
         $respuesta = app(AiAssistant::class)
             ->responder($this->nuevaConversacion(), 'Hola', $this->user);
 
-        $this->assertEqualsWithDelta(0, (float) $respuesta->cost_cop, 0.01);
-        $this->assertEqualsWithDelta(100000, app(AiCredits::class)->saldo($this->company->fresh()), 1);
+        $this->assertEqualsWithDelta(0, (float) $respuesta->cost_usd, 0.000001);
+        $this->assertEqualsWithDelta(100, app(AiCredits::class)->saldo($this->company->fresh()), 0.000001);
     }
 
     /** Claude consulta la base antes de responder, y queda registrado cuál usó. */
     public function test_se_registra_que_consultas_uso_para_responder(): void
     {
         $this->configurar(['enabled' => true, 'mode' => AiSettings::MODE_TECMAX]);
-        $this->dejarSaldoEn(100000);
+        $this->dejarSaldoEn(100);
 
         $llamadas = 0;
 
@@ -405,7 +456,7 @@ class ClaudeAiTest extends TestCase
     public function test_un_error_de_la_api_queda_registrado_en_la_conversacion(): void
     {
         $this->configurar(['enabled' => true, 'mode' => AiSettings::MODE_TECMAX]);
-        $this->dejarSaldoEn(100000);
+        $this->dejarSaldoEn(100);
 
         Http::fake(['*' => Http::response(['error' => ['message' => 'nope']], 401)]);
 
@@ -415,7 +466,7 @@ class ClaudeAiTest extends TestCase
         $this->assertNotNull($respuesta->error);
         $this->assertStringContainsString('llave', $respuesta->error,
             'Un 401 debe explicarse como problema de la llave, no como «invalid_request_error».');
-        $this->assertEqualsWithDelta(0, (float) $respuesta->cost_cop, 0.01);
+        $this->assertEqualsWithDelta(0, (float) $respuesta->cost_usd, 0.000001);
     }
 
     /** Bloqueada, ni siquiera se llama a la API. */
@@ -437,7 +488,7 @@ class ClaudeAiTest extends TestCase
     public function test_la_conversacion_se_puede_retomar(): void
     {
         $this->configurar(['enabled' => true, 'mode' => AiSettings::MODE_TECMAX]);
-        $this->dejarSaldoEn(100000);
+        $this->dejarSaldoEn(100);
 
         Http::fake(['*' => Http::response([
             'content' => [['type' => 'text', 'text' => 'Ok.']],

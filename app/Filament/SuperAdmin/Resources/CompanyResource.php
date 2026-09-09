@@ -10,6 +10,7 @@ use App\Models\Tax;
 use App\Services\Accounting\PucProvisioner;
 use App\Services\Accounting\TaxesProvisioner;
 use App\Services\Ai\AiCredits;
+use App\Services\Ai\AiMoney;
 use App\Services\Maintenance\CompanyDataReset;
 use Filament\Forms;
 use Filament\Forms\Components\TextInput;
@@ -238,8 +239,9 @@ class CompanyResource extends Resource
                     ->color('warning')
                     ->modalHeading(fn (Company $record) => 'Saldo Claude — '.$record->name)
                     ->modalDescription(fn (Company $record) => sprintf(
-                        'Saldo actual: $%s',
-                        number_format(app(AiCredits::class)->saldo($record), 0, ',', '.'),
+                        'Saldo actual: %s (≈ %s)',
+                        AiMoney::usd(app(AiCredits::class)->saldo($record)),
+                        AiMoney::cop(app(AiCredits::class)->saldo($record)),
                     ))
                     ->modalSubmitActionLabel('Aplicar')
                     ->form([
@@ -254,13 +256,19 @@ class CompanyResource extends Resource
                             ->required(),
 
                         TextInput::make('monto')
-                            ->label('Valor en pesos')
+                            ->label('Valor en dolares')
                             ->numeric()
+                            ->step(0.01)
                             ->required()
-                            ->prefix('$')
+                            ->prefix('US$')
+                            ->live(onBlur: true)
                             ->helperText(fn (Forms\Get $get) => $get('tipo') === 'ajuste'
                                 ? 'Usa un valor negativo para descontar.'
-                                : 'Lo que el cliente pago.'),
+                                : 'Lo que el cliente pago. El monedero va en dolares porque asi '
+                                    .'factura Anthropic: si recarga 50, ve 50.')
+                            ->hint(fn (Forms\Get $get) => $get('monto')
+                                ? '≈ '.AiMoney::cop((float) $get('monto'))
+                                : null),
 
                         TextInput::make('nota')
                             ->label('Nota')
@@ -278,9 +286,9 @@ class CompanyResource extends Resource
                         Notification::make()
                             ->success()
                             ->title('Saldo actualizado')
-                            ->body(sprintf('%s queda con $%s de saldo.',
+                            ->body(sprintf('%s queda con %s de saldo.',
                                 $record->name,
-                                number_format((float) $movimiento->balance_after, 0, ',', '.')))
+                                AiMoney::usd((float) $movimiento->balance_after)))
                             ->send();
                     }),
 

@@ -15,9 +15,15 @@ Grupo **Claude AI** en el panel de la empresa, con dos pantallas:
 
 ### 1. Saldo con Tecmax
 
-La llave la pone Tecmax y la empresa consume de un saldo en pesos. Cada
+La llave la pone Tecmax y la empresa consume de un saldo **en dólares**. Cada
 respuesta descuenta según los tokens que gastó. Cuando se acaba, Claude deja de
 responder y la pantalla lo dice.
+
+En dólares y no en pesos porque en dólares factura Anthropic y en dólares vende
+Tecmax: el cliente recarga US$ 50 y ve US$ 50. Con el monedero en pesos, subir
+la tasa de cambio le reducía el poder de compra a un saldo ya recargado, porque
+el costo se convertía al consumir y no al recargar. La pantalla muestra un
+equivalente aproximado en pesos, solo como referencia.
 
 Para recargar, el botón **Solicitar recarga por WhatsApp** abre un chat con el
 equipo comercial con el nombre de la empresa ya escrito. Tecmax cobra por fuera
@@ -25,8 +31,10 @@ y abona el saldo desde el panel de super admin: **Empresas → (fila) → Saldo
 Claude**, que permite recargar o ajustar.
 
 El saldo se lleva como libro de movimientos, igual que el kardex: cada fila trae
-el saldo que quedó después, así se puede explicar de dónde salió cada peso
-cobrado. La pantalla de conexión muestra los últimos 25 movimientos.
+el saldo que quedó después, así se puede explicar de dónde salió cada centavo
+cobrado. Se guarda con seis decimales porque una respuesta corta cuesta
+US$ 0,0008 y con dos se cobraría cero. La pantalla de conexión muestra los
+últimos 25 movimientos.
 
 ### 2. Cuenta propia de Anthropic
 
@@ -95,17 +103,19 @@ Agregar una consulta nueva es añadir una entrada en
 ## Cómo se calcula el cobro
 
 Anthropic devuelve cuántos tokens consumió cada respuesta. Se convierten a
-dólares con las tarifas del modelo, a pesos con la tasa configurada, y se
-multiplican por el margen de Tecmax. Todo vive en `config/ai.php` y se ajusta
-por variables de entorno:
+dólares con las tarifas del modelo y se multiplican por el margen de Tecmax.
+Todo vive en `config/ai.php` y se ajusta por variables de entorno:
 
 ```
 ANTHROPIC_API_KEY=sk-ant-...        # llave de Tecmax (modo saldo)
 TECMAX_SALES_WHATSAPP=57...         # a quién llega el botón de recarga
 ANTHROPIC_MODEL=claude-sonnet-5     # modelo por defecto
-AI_USD_TO_COP=4200                  # tasa para cobrar
 AI_MARGIN=1.3333                    # 25 % de ganancia sobre lo facturado
+AI_USD_TO_COP=4200                  # SOLO para mostrar el equivalente en pesos
 ```
+
+`AI_USD_TO_COP` ya no interviene en ningún cobro: cambiarlo no le mueve el saldo
+a nadie.
 
 Cada mensaje guarda sus tokens y su costo, así que un cobro siempre se puede
 explicar.
@@ -127,6 +137,10 @@ la venta. Para una ganancia del X % sobre lo facturado, el multiplicador es
 | **25 %** | **1.3333** |
 | 30 % | 1.4286 |
 | 40 % | 1.6667 |
+
+Con Sonnet 5 y el multiplicador en 1,3333, una conversación de diez preguntas
+ronda los US$ 0,10–US$ 0,40 según cuántos datos consulte. Una recarga de US$ 50
+da para mucho uso.
 
 ## Instalación
 
@@ -168,6 +182,10 @@ existen; sin ella la sección queda instalada y nadie puede abrirla.
   propósito: cortar a mitad de una respuesta ya generada dejaría al cliente sin
   lo que ya se le pagó a Anthropic. El bloqueo ocurre al empezar la siguiente
   pregunta.
+- **El equivalente en pesos usa la tasa de hoy**, así que un saldo viejo se ve
+  distinto en pesos aunque en dólares sea el mismo. Es correcto —lo que el
+  cliente compró fueron dólares— pero conviene saberlo antes de que lo
+  pregunten.
 - **Los cambios de la llave y del modo no quedan en la bitácora de auditoría**,
   porque viven dentro de `companies.settings`, que no se audita.
 - **Las conversaciones no se purgan solas.** Si con el tiempo pesan, habrá que

@@ -8,11 +8,16 @@ use App\Models\Company;
 use Illuminate\Support\Facades\DB;
 
 /**
- * El saldo de Claude de una empresa.
+ * El saldo de Claude de una empresa, **en dólares**.
+ *
+ * En dólares y no en pesos porque en dólares factura Anthropic y en dólares
+ * vende Tecmax: el cliente recarga 50, ve 50, y la tasa de cambio no entra en la
+ * cuenta. Guardarlo en pesos hacía que subir la tasa le redujera el poder de
+ * compra a un saldo ya recargado.
  *
  * El saldo no es una columna: es el `balance_after` del último movimiento. Así
- * cada peso cobrado se puede rastrear hasta la conversación que lo consumió, que
- * es lo primero que va a preguntar un cliente cuando vea que se le acabó.
+ * cada centavo cobrado se puede rastrear hasta la conversación que lo consumió,
+ * que es lo primero que pregunta un cliente cuando ve que se le acabó.
  *
  * Todo movimiento se escribe con la fila anterior bloqueada, para que dos
  * consumos simultáneos no lean el mismo saldo.
@@ -27,14 +32,14 @@ class AiCredits
             ->value('balance_after') ?? 0);
     }
 
-    /** Recarga hecha por Tecmax. */
+    /** Recarga hecha por Tecmax, en dólares. */
     public function recargar(Company $company, float $monto, ?string $nota = null, ?int $usuarioId = null): AiCreditMovement
     {
         return $this->mover($company, AiCreditMovement::TYPE_RECARGA, abs($monto),
             $nota ?: 'Recarga de saldo', null, $usuarioId);
     }
 
-    /** Ajuste manual, para arriba o para abajo. */
+    /** Ajuste manual en dólares, para arriba o para abajo. */
     public function ajustar(Company $company, float $monto, string $nota, ?int $usuarioId = null): AiCreditMovement
     {
         return $this->mover($company, AiCreditMovement::TYPE_AJUSTE, $monto, $nota, null, $usuarioId);
@@ -76,8 +81,8 @@ class AiCredits
             return AiCreditMovement::withoutGlobalScopes()->create([
                 'company_id' => $company->id,
                 'type' => $tipo,
-                'amount_cop' => round($monto, 2),
-                'balance_after' => round($anterior + $monto, 2),
+                'amount_usd' => round($monto, 6),
+                'balance_after' => round($anterior + $monto, 6),
                 'description' => mb_substr($descripcion, 0, 250),
                 'ai_conversation_id' => $conversacionId,
                 'created_by_user_id' => $usuarioId ?? auth()->id(),
