@@ -55,10 +55,17 @@ class DashboardSections
             'default_order' => 4,
             'permission' => ['payroll.employees.view', 'payroll.periods.view'],
         ],
+        'due_invoices' => [
+            'label' => 'Facturas vencidas y por vencer',
+            'description' => 'Facturas de venta y de compra con saldo, con cuántos días llevan vencidas '
+                .'o cuántos les faltan.',
+            'default_order' => 5,
+            'permission' => ['sales.view', 'purchases.view'],
+        ],
         'activity' => [
             'label' => 'Actividad reciente',
             'description' => 'Últimas ventas y compras registradas.',
-            'default_order' => 5,
+            'default_order' => 6,
             'permission' => ['sales.view', 'purchases.view'],
         ],
     ];
@@ -74,17 +81,21 @@ class DashboardSections
         $permission = self::SECTIONS[$key]['permission'];
 
         if ($permission === 'restaurant_module') {
-            return \App\Support\ModuleGate::active('restaurant') && $user->can('restaurant.use');
+            return ModuleGate::active('restaurant') && $user->can('restaurant.use');
         }
         if ($permission === 'appointments_module') {
-            return \App\Support\AppointmentsSettings::moduleActive() && $user->can('appointments.view');
+            return AppointmentsSettings::moduleActive() && $user->can('appointments.view');
         }
         if (is_array($permission)) {
             foreach ($permission as $p) {
-                if ($user->can($p)) return true;
+                if ($user->can($p)) {
+                    return true;
+                }
             }
+
             return false;
         }
+
         return (bool) $user->can($permission);
     }
 
@@ -102,6 +113,7 @@ class DashboardSections
                 $out[$key] = $meta;
             }
         }
+
         return $out;
     }
 }

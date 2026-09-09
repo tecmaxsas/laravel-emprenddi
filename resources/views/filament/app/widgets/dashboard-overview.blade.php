@@ -163,7 +163,7 @@
          usuario configuró en "Personalizar Escritorio". $visibleSections es
          una lista ordenada de keys; el @switch renderiza cada bloque. --}}
     @php
-        $visibleSections = $visibleSections ?? ['kpis','sales_chart','restaurant','appointments','payroll','activity'];
+        $visibleSections = $visibleSections ?? ['kpis','sales_chart','restaurant','appointments','payroll','due_invoices','activity'];
     @endphp
 
     @foreach ($visibleSections as $section)
@@ -315,6 +315,135 @@
                             <div class="ed-mini-label">Liquidaciones por pagar</div>
                             <div class="ed-mini-val">{{ $payroll['pending_settlements'] ?? 0 }}</div>
                         </div>
+                    </div>
+                @endif
+                @break
+
+            {{-- ============== FACTURAS VENCIDAS Y POR VENCER ============== --}}
+            @case('due_invoices')
+                @if (! empty($dueInvoices))
+                    @php
+                        // Cuántos días llevan vencidas es lo que decide el color y
+                        // el texto. Se resuelve una vez aquí para no repetirlo en
+                        // los dos bloques (ventas y compras).
+                        $estadoVencimiento = function (int $dias) {
+                            if ($dias < 0) {
+                                $d = abs($dias);
+
+                                return [
+                                    'texto' => 'Vencida hace '.$d.' '.($d === 1 ? 'día' : 'días'),
+                                    'fondo' => $d > 30 ? '#7f1d1d' : '#fee2e2',
+                                    'letra' => $d > 30 ? '#fecaca' : '#991b1b',
+                                ];
+                            }
+
+                            if ($dias === 0) {
+                                return ['texto' => 'Vence hoy', 'fondo' => '#fef3c7', 'letra' => '#92400e'];
+                            }
+
+                            return [
+                                'texto' => 'Vence en '.$dias.' '.($dias === 1 ? 'día' : 'días'),
+                                'fondo' => '#fef9c3',
+                                'letra' => '#854d0e',
+                            ];
+                        };
+
+                        $bloques = array_filter([
+                            'Facturas de venta por cobrar' => $dueInvoices['sales'] ?? null,
+                            'Facturas de compra por pagar' => $dueInvoices['purchases'] ?? null,
+                        ]);
+                    @endphp
+
+                    <div class="ed-card" style="animation-delay:220ms;">
+                        <div class="ed-card-head">
+                            <div>
+                                <div class="ed-card-title">⏰ Vencimientos</div>
+                                <div class="ed-card-hint">
+                                    Facturas vencidas y las que vencen en los próximos
+                                    {{ $dueInvoices['window'] }} días
+                                </div>
+                            </div>
+                        </div>
+
+                        @foreach ($bloques as $titulo => $bloque)
+                            @php $esVenta = str_contains($titulo, 'venta'); @endphp
+
+                            <div style="margin-top:{{ $loop->first ? '4px' : '26px' }};">
+                                <div style="display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 14px; margin-bottom:10px;">
+                                    <strong style="font-size:.92rem;">{{ $titulo }}</strong>
+
+                                    @if ($bloque['vencidas'] > 0)
+                                        <span class="ed-pill" style="background:#fee2e2; color:#991b1b;">
+                                            {{ $bloque['vencidas'] }} vencida{{ $bloque['vencidas'] === 1 ? '' : 's' }}
+                                            · ${{ number_format($bloque['monto_vencido'], 0, ',', '.') }}
+                                        </span>
+                                    @endif
+
+                                    @if ($bloque['por_vencer'] > 0)
+                                        <span class="ed-pill" style="background:#fef9c3; color:#854d0e;">
+                                            {{ $bloque['por_vencer'] }} por vencer
+                                            · ${{ number_format($bloque['monto_por_vencer'], 0, ',', '.') }}
+                                        </span>
+                                    @endif
+                                </div>
+
+                                @if ($bloque['filas']->isEmpty())
+                                    <div class="ed-empty">
+                                        Nada vencido ni próximo a vencerse. ✓
+                                    </div>
+                                @else
+                                    <div style="overflow-x:auto;">
+                                        <table class="ed-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Documento</th>
+                                                    <th>{{ ucfirst($bloque['rotulo_tercero']) }}</th>
+                                                    <th>Vencimiento</th>
+                                                    <th style="text-align:right;">Saldo</th>
+                                                    <th style="text-align:center;">Estado</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach ($bloque['filas'] as $f)
+                                                    @php
+                                                        $e = $estadoVencimiento($f['dias']);
+                                                        $url = ($esVenta ? '/app/sale-invoices/' : '/app/purchase-invoices/').$f['id'];
+                                                    @endphp
+                                                    <tr>
+                                                        <td>
+                                                            <a href="{{ $url }}" class="ed-link">{{ $f['numero'] }}</a>
+                                                        </td>
+                                                        <td>{{ $f['tercero'] }}</td>
+                                                        <td style="font-family:ui-monospace,monospace; white-space:nowrap;">
+                                                            {{ \Illuminate\Support\Carbon::parse($f['vence'])->format('d/m/Y') }}
+                                                        </td>
+                                                        <td style="text-align:right; font-weight:800;">
+                                                            ${{ number_format($f['saldo'], 0, ',', '.') }}
+                                                        </td>
+                                                        <td style="text-align:center;">
+                                                            <span class="ed-pill" style="background:{{ $e['fondo'] }}; color:{{ $e['letra'] }}; white-space:nowrap;">
+                                                                {{ $e['texto'] }}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                @endforeach
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    @if ($bloque['vencidas'] + $bloque['por_vencer'] > $bloque['filas']->count())
+                                        <div style="margin-top:8px; font-size:.82rem; opacity:.7;">
+                                            Se muestran las {{ $bloque['filas']->count() }} más próximas a vencer.
+                                            <a href="{{ $esVenta
+                                                ? \App\Filament\App\Pages\Reports\AccountsReceivablePage::getUrl()
+                                                : \App\Filament\App\Pages\Reports\AccountsPayablePage::getUrl() }}" class="ed-link">
+                                                Ver todas
+                                            </a>
+                                        </div>
+                                    @endif
+                                @endif
+                            </div>
+                        @endforeach
                     </div>
                 @endif
                 @break

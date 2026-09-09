@@ -3,6 +3,7 @@
 namespace App\Filament\App\Widgets;
 
 use App\Models\Appointment;
+use App\Models\DashboardPreference;
 use App\Models\Employee;
 use App\Models\PayrollPeriod;
 use App\Models\PayrollSettlement;
@@ -12,6 +13,7 @@ use App\Support\AppointmentsSettings;
 use App\Support\CurrentCompany;
 use App\Support\ModuleGate;
 use Filament\Widgets\Widget;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -24,6 +26,12 @@ class DashboardOverviewWidget extends Widget
     protected static string $view = 'filament.app.widgets.dashboard-overview';
 
     protected int|string|array $columnSpan = 'full';
+
+    /** Cuántos días hacia adelante se consideran «por vencer». */
+    private const VENTANA_POR_VENCER = 8;
+
+    /** Cuántas facturas se listan por bloque; los totales cuentan todas. */
+    private const MAX_FILAS_VENCIDAS = 8;
 
     public static function canView(): bool
     {
@@ -53,6 +61,7 @@ class DashboardOverviewWidget extends Widget
             'restaurant' => null,
             'appointments' => null,
             'activity' => collect(),
+            'dueInvoices' => null,
             'salesSeries' => [],
         ];
 
@@ -81,13 +90,14 @@ class DashboardOverviewWidget extends Widget
         }
         if ($data['canSales'] || $data['canPurchases']) {
             $data['activity'] = $this->recentActivity($companyId, $data['canSales'], $data['canPurchases']);
+            $data['dueInvoices'] = $this->dueInvoicesData($companyId, $data['canSales'], $data['canPurchases']);
         }
 
         // Preferencias del usuario: lista ordenada de secciones visibles.
         // El blade recorre $visibleSections en orden y renderiza cada una
         // solo si está en la lista. Respeta permisos (availableFor) + la
         // configuración personal (ocultas/orden) de PersonalizarEscritorio.
-        $data['visibleSections'] = \App\Models\DashboardPreference::visibleSectionsFor($user);
+        $data['visibleSections'] = DashboardPreference::visibleSectionsFor($user);
 
         return $data;
     }
@@ -336,10 +346,119 @@ class DashboardOverviewWidget extends Widget
         return $base->orderByDesc('sort_at')->limit(12)->get();
     }
 
+    /**
+     * Facturas con saldo que ya se vencieron o están por vencerse.
+     *
+     * Responde la pregunta que las tarjetas de «por cobrar» y «por pagar» no
+     * responden: no cuánto suman, sino **cuáles hay que llamar hoy**. Por eso lo
+     * que manda es la fecha de vencimiento y no el monto: una factura de
+     * $50.000 vencida hace tres meses es más urgente que una de $5.000.000 que
+     * vence la otra semana.
+     *
+     * Solo entran las que tienen fecha de vencimiento: una venta de contado no
+     * se vence, y meterla aquí llenaría la lista de ruido.
+     *
+     * @return array<string, mixed>
+     */
+    protected function dueInvoicesData(int $companyId, bool $canSales, bool $canPurchases): array
+    {
+        $datos = [
+            'window' => self::VENTANA_POR_VENCER,
+            'sales' => null,
+            'purchases' => null,
+        ];
+
+        if ($canSales) {
+            $datos['sales'] = $this->dueFrom('sale_invoices', $companyId, 'cliente');
+        }
+
+        if ($canPurchases) {
+            $datos['purchases'] = $this->dueFrom('purchase_invoices', $companyId, 'proveedor');
+        }
+
+        return $datos;
+    }
+
+    /**
+     * El mismo cálculo para ventas y compras: las dos tablas tienen la misma
+     * forma —`net_payable`, `paid_amount`, `due_date`— así que separarlas sería
+     * duplicar la consulta por gusto.
+     *
+     * @return array<string, mixed>
+     */
+    protected function dueFrom(string $tabla, int $companyId, string $rotuloTercero): array
+    {
+        $hoy = now()->startOfDay();
+        $limite = $hoy->copy()->addDays(self::VENTANA_POR_VENCER);
+
+        $filas = DB::table($tabla.' as f')
+            ->leftJoin('third_parties as t', 't.id', '=', 'f.third_party_id')
+            ->where('f.company_id', $companyId)
+            ->where('f.status', 'posted')
+            ->whereNull('f.deleted_at')
+            ->whereNotNull('f.due_date')
+            ->whereRaw('coalesce(f.net_payable, f.total) - coalesce(f.paid_amount, 0) > 0.01')
+            ->where('f.due_date', '<=', $limite->toDateString())
+            ->orderBy('f.due_date')
+            ->limit(self::MAX_FILAS_VENCIDAS)
+            ->selectRaw('f.id, f.prefix, f.number, f.date, f.due_date, t.name as tercero,
+                coalesce(f.net_payable, f.total) - coalesce(f.paid_amount, 0) as saldo')
+            ->get();
+
+        $conDias = $filas->map(function ($f) use ($hoy) {
+            // Días con signo: negativo = vencida hace tanto, positivo = le
+            // faltan tantos. Cero es hoy, que merece su propio texto.
+            $dias = $hoy->diffInDays(Carbon::parse($f->due_date)->startOfDay(), false);
+
+            return [
+                'id' => $f->id,
+                'numero' => $f->prefix.'-'.str_pad((string) $f->number, 6, '0', STR_PAD_LEFT),
+                'tercero' => $f->tercero ?: 'Sin identificar',
+                'fecha' => $f->date,
+                'vence' => $f->due_date,
+                'saldo' => round((float) $f->saldo, 2),
+                'dias' => (int) $dias,
+                'vencida' => $dias < 0,
+            ];
+        });
+
+        // Los totales se cuentan sobre TODO, no sobre las filas que se
+        // muestran: si hay ochenta vencidas, el encabezado tiene que decir
+        // ochenta aunque la tabla liste ocho.
+        $totales = DB::table($tabla)
+            ->where('company_id', $companyId)
+            ->where('status', 'posted')
+            ->whereNull('deleted_at')
+            ->whereNotNull('due_date')
+            ->whereRaw('coalesce(net_payable, total) - coalesce(paid_amount, 0) > 0.01')
+            ->selectRaw('
+                count(*) filter (where due_date < ?) as vencidas,
+                coalesce(sum(coalesce(net_payable, total) - coalesce(paid_amount, 0))
+                    filter (where due_date < ?), 0) as monto_vencido,
+                count(*) filter (where due_date between ? and ?) as por_vencer,
+                coalesce(sum(coalesce(net_payable, total) - coalesce(paid_amount, 0))
+                    filter (where due_date between ? and ?), 0) as monto_por_vencer
+            ', [
+                $hoy->toDateString(), $hoy->toDateString(),
+                $hoy->toDateString(), $limite->toDateString(),
+                $hoy->toDateString(), $limite->toDateString(),
+            ])
+            ->first();
+
+        return [
+            'rotulo_tercero' => $rotuloTercero,
+            'filas' => $conDias,
+            'vencidas' => (int) ($totales->vencidas ?? 0),
+            'monto_vencido' => round((float) ($totales->monto_vencido ?? 0), 2),
+            'por_vencer' => (int) ($totales->por_vencer ?? 0),
+            'monto_por_vencer' => round((float) ($totales->monto_por_vencer ?? 0), 2),
+        ];
+    }
+
     protected function lowStockCount(int $companyId): int
     {
         try {
-            return (int) DB::select("
+            return (int) DB::select('
                 select count(*) as c
                 from product_locations pl
                 join products p on p.id = pl.product_id
@@ -357,7 +476,7 @@ class DashboardOverviewWidget extends Widget
                   and pl.min_stock is not null
                   and pl.min_stock > 0
                   and coalesce(latest.stock, 0) <= pl.min_stock
-            ", [$companyId])[0]->c ?? 0;
+            ', [$companyId])[0]->c ?? 0;
         } catch (\Throwable $e) {
             return 0;
         }
