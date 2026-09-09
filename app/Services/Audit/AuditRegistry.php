@@ -23,6 +23,7 @@ use App\Models\PaymentMethod;
 use App\Models\PayrollPeriod;
 use App\Models\PayrollSettlement;
 use App\Models\Product;
+use App\Models\ProductCatalog;
 use App\Models\Promotion;
 use App\Models\PurchaseInvoice;
 use App\Models\PurchaseReturn;
@@ -77,6 +78,7 @@ class AuditRegistry
 
         // Catálogo y terceros
         Product::class => 'Producto',
+        ProductCatalog::class => 'Catálogo público',
         Category::class => 'Categoría',
         ThirdParty::class => 'Tercero',
         Tax::class => 'Impuesto',

@@ -1,7 +1,23 @@
 <?php
 
+use App\Http\Controllers\App\LabelPrintController;
+use App\Http\Controllers\App\OrderTakingCatalogTemplateController;
+use App\Http\Controllers\App\OrderTakingDebugController;
+use App\Http\Controllers\App\OrderTakingImportController;
+use App\Http\Controllers\App\OrderTakingPdfController;
+use App\Http\Controllers\App\ParkingReportExportController;
+use App\Http\Controllers\App\ParkingTicketController;
+use App\Http\Controllers\App\ProductImportController;
+use App\Http\Controllers\App\ReportExportController;
+use App\Http\Controllers\App\ThirdPartyImportController;
 use App\Http\Controllers\DeliveryTrackController;
+use App\Http\Controllers\KitchenTicketPrintController;
 use App\Http\Controllers\PosPrintController;
+use App\Http\Controllers\PublicCatalogController;
+use App\Http\Controllers\PublicMenuController;
+use App\Http\Controllers\QzSigningController;
+use App\Http\Controllers\WarrantyPrintController;
+use App\Http\Middleware\SetActiveCompany;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/app');
@@ -10,122 +26,122 @@ Route::redirect('/', '/app');
 // Se agrega SetActiveCompany asi CurrentCompany queda hidratado y el
 // CompanyScope global filtra automaticamente por empresa del usuario —
 // evitando que reportes / prints puedan leak data cross-tenant.
-Route::middleware(['web', 'auth', \App\Http\Middleware\SetActiveCompany::class])->group(function () {
+Route::middleware(['web', 'auth', SetActiveCompany::class])->group(function () {
     Route::get('/app/pos/print/{invoice}', [PosPrintController::class, 'show'])
         ->name('pos.print');
 
     // Comanda de cocina imprimible por navegador: se usa cuando ninguna
     // impresora activa enruta los productos de la orden.
-    Route::get('/app/restaurant/kot/print/{ticket}', [\App\Http\Controllers\KitchenTicketPrintController::class, 'show'])
+    Route::get('/app/restaurant/kot/print/{ticket}', [KitchenTicketPrintController::class, 'show'])
         ->name('restaurant.kot.print');
 
     // Comprobante imprimible de garantía (constancia de recepción)
-    Route::get('/app/warranties/{warranty}/print', [\App\Http\Controllers\WarrantyPrintController::class, 'show'])
+    Route::get('/app/warranties/{warranty}/print', [WarrantyPrintController::class, 'show'])
         ->name('warranties.print');
 
     // Firma de peticiones QZ Tray (impresión local).
-    Route::get('/qz/certificate', [\App\Http\Controllers\QzSigningController::class, 'certificate'])
+    Route::get('/qz/certificate', [QzSigningController::class, 'certificate'])
         ->name('qz.certificate');
-    Route::post('/qz/sign', [\App\Http\Controllers\QzSigningController::class, 'sign'])
+    Route::post('/qz/sign', [QzSigningController::class, 'sign'])
         ->name('qz.sign');
 
     // Exportacion XLSX de estados financieros.
     Route::get('/app/reports/export/income-statement',
-        [\App\Http\Controllers\App\ReportExportController::class, 'incomeStatement'])
+        [ReportExportController::class, 'incomeStatement'])
         ->name('reports.export.income_statement');
     Route::get('/app/reports/export/balance-sheet',
-        [\App\Http\Controllers\App\ReportExportController::class, 'balanceSheet'])
+        [ReportExportController::class, 'balanceSheet'])
         ->name('reports.export.balance_sheet');
     Route::get('/app/reports/export/financial-indicators',
-        [\App\Http\Controllers\App\ReportExportController::class, 'indicators'])
+        [ReportExportController::class, 'indicators'])
         ->name('reports.export.financial_indicators');
 
     // Exportacion XLSX de reportes tabulares operativos.
     Route::get('/app/reports/export/journal-book',
-        [\App\Http\Controllers\App\ReportExportController::class, 'journalBook'])
+        [ReportExportController::class, 'journalBook'])
         ->name('reports.export.journal_book');
     Route::get('/app/reports/export/general-ledger',
-        [\App\Http\Controllers\App\ReportExportController::class, 'generalLedger'])
+        [ReportExportController::class, 'generalLedger'])
         ->name('reports.export.general_ledger');
     Route::get('/app/reports/export/trial-balance',
-        [\App\Http\Controllers\App\ReportExportController::class, 'trialBalance'])
+        [ReportExportController::class, 'trialBalance'])
         ->name('reports.export.trial_balance');
     Route::get('/app/reports/export/kardex',
-        [\App\Http\Controllers\App\ReportExportController::class, 'kardex'])
+        [ReportExportController::class, 'kardex'])
         ->name('reports.export.kardex');
     Route::get('/app/reports/export/accounts-receivable',
-        [\App\Http\Controllers\App\ReportExportController::class, 'accountsReceivable'])
+        [ReportExportController::class, 'accountsReceivable'])
         ->name('reports.export.accounts_receivable');
     Route::get('/app/reports/export/accounts-payable',
-        [\App\Http\Controllers\App\ReportExportController::class, 'accountsPayable'])
+        [ReportExportController::class, 'accountsPayable'])
         ->name('reports.export.accounts_payable');
     Route::get('/app/reports/export/sales-by-period',
-        [\App\Http\Controllers\App\ReportExportController::class, 'salesByPeriod'])
+        [ReportExportController::class, 'salesByPeriod'])
         ->name('reports.export.sales_by_period');
     Route::get('/app/reports/export/stock-by-location',
-        [\App\Http\Controllers\App\ReportExportController::class, 'stockByLocation'])
+        [ReportExportController::class, 'stockByLocation'])
         ->name('reports.export.stock_by_location');
     Route::get('/app/reports/export/cash-closings',
-        [\App\Http\Controllers\App\ReportExportController::class, 'cashClosings'])
+        [ReportExportController::class, 'cashClosings'])
         ->name('reports.export.cash_closings');
 
     // Impresion de etiquetas con codigo de barras.
     // ?products=id:qty,id:qty,...  |  ?preview=1
     Route::get('/app/labels/print',
-        [\App\Http\Controllers\App\LabelPrintController::class, 'print'])
+        [LabelPrintController::class, 'print'])
         ->name('labels.print');
 
     // Descarga de la plantilla XLSX para importacion masiva de productos.
     Route::get('/app/products/import/template',
-        [\App\Http\Controllers\App\ProductImportController::class, 'template'])
+        [ProductImportController::class, 'template'])
         ->name('products.import.template');
 
     // Descarga de la plantilla XLSX para importacion masiva de terceros.
     Route::get('/app/third-parties/import/template',
-        [\App\Http\Controllers\App\ThirdPartyImportController::class, 'template'])
+        [ThirdPartyImportController::class, 'template'])
         ->name('third-parties.import.template');
 
     // Ticket imprimible de entrada al parqueadero (con QR para salida).
     Route::get('/app/parking/tickets/{session}/print',
-        [\App\Http\Controllers\App\ParkingTicketController::class, 'show'])
+        [ParkingTicketController::class, 'show'])
         ->name('parking.tickets.print');
 
     // Plantillas XLSX del catalogo (modulo Toma pedidos). Dos archivos
     // separados: el importador lee la primera hoja de cada uno.
     Route::get('/app/order-taking/import/template/{tipo}',
-        [\App\Http\Controllers\App\OrderTakingCatalogTemplateController::class, 'template'])
+        [OrderTakingCatalogTemplateController::class, 'template'])
         ->whereIn('tipo', ['precios', 'clientes'])
         ->name('order-taking.import.template');
 
     // PDF descargable del pedido (modulo Toma pedidos).
     Route::get('/app/order-taking/orders/{order}/pdf',
-        [\App\Http\Controllers\App\OrderTakingPdfController::class, 'show'])
+        [OrderTakingPdfController::class, 'show'])
         ->name('order-taking.orders.pdf');
 
     // Fallback HTTP puro para importar catalogo MAC DULCES (cuando Livewire
     // falla con 'This page has expired').
     Route::get('/app/order-taking/quick-import',
-        [\App\Http\Controllers\App\OrderTakingImportController::class, 'form'])
+        [OrderTakingImportController::class, 'form'])
         ->name('order-taking.import.form');
     Route::post('/app/order-taking/import/submit',
-        [\App\Http\Controllers\App\OrderTakingImportController::class, 'submit'])
+        [OrderTakingImportController::class, 'submit'])
         ->name('order-taking.import.submit');
 
     // TEMPORAL: endpoint de diagnostico para el 500 al abrir un pedido.
     // Eliminar cuando se resuelva.
     Route::get('/app/order-taking/debug/list',
-        [\App\Http\Controllers\App\OrderTakingDebugController::class, 'index'])
+        [OrderTakingDebugController::class, 'index'])
         ->name('order-taking.debug.list');
     Route::get('/app/order-taking/debug/{order}',
-        [\App\Http\Controllers\App\OrderTakingDebugController::class, 'show'])
+        [OrderTakingDebugController::class, 'show'])
         ->name('order-taking.debug');
 
     // Exportacion XLSX de reportes del modulo de parqueadero.
     Route::get('/app/parking/reports/export/sessions',
-        [\App\Http\Controllers\App\ParkingReportExportController::class, 'sessions'])
+        [ParkingReportExportController::class, 'sessions'])
         ->name('parking.reports.export.sessions');
     Route::get('/app/parking/reports/export/revenue',
-        [\App\Http\Controllers\App\ParkingReportExportController::class, 'revenue'])
+        [ParkingReportExportController::class, 'revenue'])
         ->name('parking.reports.export.revenue');
 });
 
@@ -135,8 +151,17 @@ Route::get('/track/{token}', [DeliveryTrackController::class, 'show'])
     ->where('token', '[A-Za-z0-9]{32}');
 
 // Carta pública del restaurante — sin auth, slug humano (ej: mi-pizzeria).
-Route::get('/menu/{slug}', [\App\Http\Controllers\PublicMenuController::class, 'show'])
+Route::get('/menu/{slug}', [PublicMenuController::class, 'show'])
     ->name('menu.public')
+    ->where('slug', '[a-z0-9-]+');
+
+// Catálogo público de productos — sin auth, slug humano (ej: perfumeria-aroma).
+// Con límite de peticiones: la página consulta la base en vivo para que los
+// cambios de precio se vean al instante, así que no conviene dejarla abierta a
+// que la golpeen sin freno.
+Route::get('/catalogo/{slug}', [PublicCatalogController::class, 'show'])
+    ->middleware('throttle:120,1')
+    ->name('catalog.public')
     ->where('slug', '[a-z0-9-]+');
 
 // Páginas legales — términos y política de privacidad (públicas).
