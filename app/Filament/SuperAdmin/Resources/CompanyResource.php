@@ -9,7 +9,10 @@ use App\Models\Company;
 use App\Models\Tax;
 use App\Services\Accounting\PucProvisioner;
 use App\Services\Accounting\TaxesProvisioner;
+use App\Services\Ai\AiCredits;
+use App\Services\Maintenance\CompanyDataReset;
 use Filament\Forms;
+use Filament\Forms\Components\TextInput;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
@@ -37,12 +40,12 @@ class CompanyResource extends Resource
             Forms\Components\Section::make('Identificación')
                 ->columns(2)
                 ->schema([
-                    Forms\Components\TextInput::make('name')
+                    TextInput::make('name')
                         ->label('Nombre comercial')
                         ->required()
                         ->maxLength(255),
 
-                    Forms\Components\TextInput::make('legal_name')
+                    TextInput::make('legal_name')
                         ->label('Razón social')
                         ->maxLength(255),
 
@@ -57,12 +60,12 @@ class CompanyResource extends Resource
                         ])
                         ->required(),
 
-                    Forms\Components\TextInput::make('nit')
+                    TextInput::make('nit')
                         ->label('Número')
                         ->required()
                         ->unique(ignoreRecord: true),
 
-                    Forms\Components\TextInput::make('dv')->label('DV')->maxLength(1),
+                    TextInput::make('dv')->label('DV')->maxLength(1),
 
                     Forms\Components\Select::make('organization_type')
                         ->label('Tipo de organización')
@@ -125,11 +128,11 @@ class CompanyResource extends Resource
             Forms\Components\Section::make('Contacto')
                 ->columns(2)
                 ->schema([
-                    Forms\Components\TextInput::make('email')->email(),
-                    Forms\Components\TextInput::make('phone')->tel(),
-                    Forms\Components\TextInput::make('address')->columnSpanFull(),
-                    Forms\Components\TextInput::make('city'),
-                    Forms\Components\TextInput::make('department'),
+                    TextInput::make('email')->email(),
+                    TextInput::make('phone')->tel(),
+                    TextInput::make('address')->columnSpanFull(),
+                    TextInput::make('city'),
+                    TextInput::make('department'),
                 ]),
 
             Forms\Components\Section::make('Estado')
@@ -226,6 +229,61 @@ class CompanyResource extends Resource
             ->actions([
                 Tables\Actions\EditAction::make(),
 
+                // Recarga del saldo de Claude. Es la contraparte del boton de
+                // WhatsApp que el cliente usa para pedirla: Tecmax cobra por
+                // fuera y aqui abona lo pagado.
+                Tables\Actions\Action::make('recargarSaldoClaude')
+                    ->label('Saldo Claude')
+                    ->icon('heroicon-o-sparkles')
+                    ->color('warning')
+                    ->modalHeading(fn (Company $record) => 'Saldo Claude — '.$record->name)
+                    ->modalDescription(fn (Company $record) => sprintf(
+                        'Saldo actual: $%s',
+                        number_format(app(AiCredits::class)->saldo($record), 0, ',', '.'),
+                    ))
+                    ->modalSubmitActionLabel('Aplicar')
+                    ->form([
+                        Forms\Components\Radio::make('tipo')
+                            ->label('Tipo de movimiento')
+                            ->options([
+                                'recarga' => 'Recarga (suma)',
+                                'ajuste' => 'Ajuste (puede restar)',
+                            ])
+                            ->default('recarga')
+                            ->live()
+                            ->required(),
+
+                        TextInput::make('monto')
+                            ->label('Valor en pesos')
+                            ->numeric()
+                            ->required()
+                            ->prefix('$')
+                            ->helperText(fn (Forms\Get $get) => $get('tipo') === 'ajuste'
+                                ? 'Usa un valor negativo para descontar.'
+                                : 'Lo que el cliente pago.'),
+
+                        TextInput::make('nota')
+                            ->label('Nota')
+                            ->maxLength(200)
+                            ->placeholder('Ej. Transferencia Bancolombia 12/09'),
+                    ])
+                    ->action(function (Company $record, array $data) {
+                        $creditos = app(AiCredits::class);
+                        $monto = (float) $data['monto'];
+
+                        $movimiento = $data['tipo'] === 'ajuste'
+                            ? $creditos->ajustar($record, $monto, $data['nota'] ?: 'Ajuste manual')
+                            : $creditos->recargar($record, $monto, $data['nota'] ?: null);
+
+                        Notification::make()
+                            ->success()
+                            ->title('Saldo actualizado')
+                            ->body(sprintf('%s queda con $%s de saldo.',
+                                $record->name,
+                                number_format((float) $movimiento->balance_after, 0, ',', '.')))
+                            ->send();
+                    }),
+
                 Tables\Actions\Action::make('provisionPuc')
                     ->label('Provisionar PUC')
                     ->icon('heroicon-o-list-bullet')
@@ -307,7 +365,7 @@ class CompanyResource extends Resource
             ->modalHeading($modeLabel)
             ->modalWidth('xl')
             ->modalDescription(function (Company $record) use ($withProducts) {
-                $preview = app(\App\Services\Maintenance\CompanyDataReset::class)
+                $preview = app(CompanyDataReset::class)
                     ->preview($record, withProducts: $withProducts);
                 $total = array_sum($preview);
 
@@ -339,7 +397,7 @@ class CompanyResource extends Resource
                 return $msg;
             })
             ->form([
-                \Filament\Forms\Components\TextInput::make('confirm_nit')
+                TextInput::make('confirm_nit')
                     ->label('Escribe el NIT de la empresa para confirmar')
                     ->placeholder('NIT exacto sin puntos ni guiones')
                     ->required()
@@ -355,11 +413,12 @@ class CompanyResource extends Resource
                         ->body('El NIT digitado no coincide con el de la empresa. No se borró nada.')
                         ->persistent()
                         ->send();
+
                     return;
                 }
 
                 try {
-                    $service = app(\App\Services\Maintenance\CompanyDataReset::class);
+                    $service = app(CompanyDataReset::class);
                     $counts = $withProducts
                         ? $service->resetTransactional($record)
                         : $service->resetTransactionalKeepingProducts($record);

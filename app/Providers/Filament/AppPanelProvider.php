@@ -3,6 +3,11 @@
 namespace App\Providers\Filament;
 
 use App\Filament\App\Pages\Auth\Register;
+use App\Filament\App\Widgets\DashboardOverviewWidget;
+use App\Filament\Auth\EditProfile;
+use App\Filament\Auth\Login;
+use App\Filament\Auth\RequestPasswordReset;
+use App\Filament\Auth\ResetPassword;
 use App\Http\Middleware\SetActiveCompany;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -12,11 +17,11 @@ use Filament\Pages;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
+use Filament\View\PanelsRenderHook;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
-use Filament\View\PanelsRenderHook;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 
@@ -28,9 +33,9 @@ class AppPanelProvider extends PanelProvider
             ->default()
             ->id('app')
             ->path('app')
-            ->login(\App\Filament\Auth\Login::class)
-            ->passwordReset(\App\Filament\Auth\RequestPasswordReset::class, \App\Filament\Auth\ResetPassword::class)
-            ->profile(\App\Filament\Auth\EditProfile::class, isSimple: false)
+            ->login(Login::class)
+            ->passwordReset(RequestPasswordReset::class, ResetPassword::class)
+            ->profile(EditProfile::class, isSimple: false)
             ->registration(Register::class)
             ->brandName('Emprenddi')
             ->brandLogo(asset('logos/logo_emprenddi.svg'))
@@ -65,13 +70,14 @@ class AppPanelProvider extends PanelProvider
                 'Reportes operativos',
                 'Contabilidad',
                 'Nómina',
+                'Claude AI',
                 'Configuración',
             ])
             ->pages([
                 Pages\Dashboard::class,
             ])
             ->widgets([
-                \App\Filament\App\Widgets\DashboardOverviewWidget::class,
+                DashboardOverviewWidget::class,
             ])
             ->middleware([
                 EncryptCookies::class,

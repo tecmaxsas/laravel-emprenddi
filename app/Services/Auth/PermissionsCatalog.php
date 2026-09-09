@@ -173,6 +173,10 @@ class PermissionsCatalog
                 // Quién hizo qué y cuándo. Solo el administrador: la bitácora
                 // muestra los movimientos de todos, incluido quien la consulta.
                 'audit.view' => 'Ver la bitácora de auditoría',
+                // Claude AI. `use` es para cualquiera que consulte; `manage`
+                // toca la llave de Anthropic y el saldo, que es plata.
+                'ai.use' => 'Conversar con Claude sobre los datos del negocio',
+                'ai.manage' => 'Configurar la conexión con Claude y ver el saldo',
             ],
         ];
     }
@@ -207,7 +211,7 @@ class PermissionsCatalog
             'admin' => $all,
             'manager' => array_diff($all, [
                 'users.manage', 'roles.manage', 'roles.view', 'company.settings',
-                'audit.view',
+                'audit.view', 'ai.manage',
                 'accounts.manage', 'taxes.manage', 'dian.manage', 'payment_methods.manage',
                 'pos.settings',
             ]),
