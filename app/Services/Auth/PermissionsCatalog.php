@@ -170,6 +170,9 @@ class PermissionsCatalog
                 'company.settings' => 'Editar configuración de la empresa',
                 'pos.settings' => 'Configurar comportamiento del POS',
                 'dian.manage' => 'Configurar facturación electrónica DIAN',
+                // Quién hizo qué y cuándo. Solo el administrador: la bitácora
+                // muestra los movimientos de todos, incluido quien la consulta.
+                'audit.view' => 'Ver la bitácora de auditoría',
             ],
         ];
     }
@@ -204,6 +207,7 @@ class PermissionsCatalog
             'admin' => $all,
             'manager' => array_diff($all, [
                 'users.manage', 'roles.manage', 'roles.view', 'company.settings',
+                'audit.view',
                 'accounts.manage', 'taxes.manage', 'dian.manage', 'payment_methods.manage',
                 'pos.settings',
             ]),
