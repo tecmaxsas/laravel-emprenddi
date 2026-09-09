@@ -217,6 +217,54 @@ class PosGlobalDiscountTest extends TestCase
         $this->assertEqualsWithDelta(20000, $this->totales($pos)['discount'], 0.01);
     }
 
+    /**
+     * El caso que dejaba ventas en cero: el selector en «%» y un valor en
+     * pesos. Recortarlo a 100 % regalaba la mercancía sin un solo aviso.
+     */
+    public function test_un_porcentaje_imposible_se_rechaza_en_vez_de_recortarse(): void
+    {
+        $pos = $this->conCarrito();
+
+        $pos->call('setCartDiscount', 'pct', 10000)->assertOk();
+
+        $totales = $this->totales($pos);
+
+        $this->assertEqualsWithDelta(0, $totales['discount'], 0.01,
+            'Un 10.000 % es un dedo o un modo equivocado: no se aplica nada.');
+        $this->assertEqualsWithDelta(119000, $totales['total'], 0.01,
+            'La venta no puede quedar en cero por escribir de más.');
+        $this->assertEqualsWithDelta(0, $pos->get('cartDiscountValue'), 0.01);
+    }
+
+    /** El 100 % sí es válido: a veces se regala. */
+    public function test_el_cien_por_ciento_si_se_aplica(): void
+    {
+        $pos = $this->conCarrito();
+
+        $pos->call('setCartDiscount', 'pct', 100);
+
+        $this->assertEqualsWithDelta(100000, $this->totales($pos)['discount'], 0.01);
+        $this->assertEqualsWithDelta(0, $this->totales($pos)['total'], 0.01);
+    }
+
+    /**
+     * Cambiar de «%» a «$» vuelve a aplicar lo que ya estaba escrito. Antes el
+     * botón solo cambiaba la propiedad y no recalculaba nada.
+     */
+    public function test_cambiar_de_modo_reaplica_el_valor(): void
+    {
+        $pos = $this->conCarrito();
+
+        $pos->call('setCartDiscount', 'pct', 10);
+        $this->assertEqualsWithDelta(10000, $this->totales($pos)['discount'], 0.01);
+
+        $pos->call('setCartDiscountMode', 'amount');
+
+        // Los mismos 10 ahora son $10, no el 10 %.
+        $this->assertEqualsWithDelta(10, $this->totales($pos)['discount'], 0.01);
+        $this->assertSame('amount', $pos->get('cartDiscountMode'));
+    }
+
     /** No se puede descontar más de lo que vale el carrito. */
     public function test_no_se_descuenta_mas_que_el_carrito(): void
     {

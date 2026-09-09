@@ -923,12 +923,41 @@ class PosTerminal extends Page
         $value = max(0, (float) (is_numeric($value) ? $value : 0));
         $mode = $mode === 'amount' ? 'amount' : 'pct';
 
+        // Un porcentaje mayor a 100 se RECHAZA, no se recorta.
+        //
+        // Recortarlo a 100 es lo que parece prudente y es justo lo que hacia
+        // dano: quien tenia el selector en «%» y escribia 10000 pensando en
+        // pesos veia la venta en cero, sin un solo aviso. Un descuento del
+        // 10.000 % no existe: es un dedo o un modo equivocado, y hay que
+        // decirlo.
+        if ($mode === 'pct' && $value > 100) {
+            Notification::make()
+                ->title('El descuento no puede pasar del 100 %')
+                ->body('Escribiste '.rtrim(rtrim(number_format($value, 2, '.', ''), '0'), '.')
+                    .' %. Si querias descontar ese valor en pesos, cambia el selector a «$».')
+                ->warning()
+                ->send();
+
+            return;
+        }
+
         // El porcentaje efectivo se estima sobre la base actual solo para
         // decidir si hace falta autorizacion; el reparto real lo hace
         // aplicarDescuentoGlobal().
         $pct = $mode === 'amount'
             ? $this->porcentajeEquivalente($value)
-            : min(100, $value);
+            : $value;
+
+        // Un monto mayor que la venta se aplica completo —dejar el total en
+        // cero es legitimo, a veces se regala— pero avisando: puede ser que se
+        // haya escrito de mas.
+        if ($mode === 'amount' && $value > 0 && $value > $this->baseDelCarrito()) {
+            Notification::make()
+                ->title('El descuento cubre toda la venta')
+                ->body('El valor supera el total del carrito, asi que la venta queda en cero.')
+                ->warning()
+                ->send();
+        }
 
         if ($this->needsApproval($pct)) {
             $this->pendingDiscount = ['type' => 'cart', 'mode' => $mode, 'value' => $value, 'pct' => $pct];
@@ -942,14 +971,32 @@ class PosTerminal extends Page
         $this->applyCartDiscount($mode, $value, $pct);
     }
 
+    /** La base gravable del carrito: subtotal menos los descuentos de linea. */
+    protected function baseDelCarrito(): float
+    {
+        return round((float) collect($this->cart)->sum(
+            fn ($l) => (float) ($l['subtotal'] ?? 0)
+                - ((float) ($l['discount_amount'] ?? 0) - (float) ($l['global_discount_amount'] ?? 0))
+        ), 2);
+    }
+
     /** Que porcentaje representa un monto sobre la base actual del carrito. */
     protected function porcentajeEquivalente(float $monto): float
     {
-        $base = collect($this->cart)->sum(
-            fn ($l) => (float) ($l['subtotal'] ?? 0) - (float) ($l['discount_amount'] ?? 0)
-        );
+        $base = $this->baseDelCarrito();
 
         return $base > 0 ? min(100, round($monto / $base * 100, 2)) : 0.0;
+    }
+
+    /**
+     * Cambia entre «%» y «$» y vuelve a aplicar lo que ya estaba escrito.
+     *
+     * Antes los botones solo cambiaban la propiedad: se escribia 10000, se
+     * pasaba a «$» y no pasaba nada, porque nadie recalculaba.
+     */
+    public function setCartDiscountMode(string $mode): void
+    {
+        $this->setCartDiscount($mode, $this->cartDiscountValue);
     }
 
     protected function applyCartDiscount(string $mode, float $value, float $pct): void

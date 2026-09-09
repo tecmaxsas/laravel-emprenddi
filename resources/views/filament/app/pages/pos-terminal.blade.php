@@ -829,10 +829,10 @@
                             <div class="flex items-center gap-1">
                                 <div class="flex rounded-md border border-amber-300 dark:border-amber-700 overflow-hidden text-xs font-semibold">
                                     <button type="button"
-                                            wire:click="$set('cartDiscountMode', 'pct')"
+                                            wire:click="setCartDiscountMode('pct')"
                                             class="px-2 py-1 {{ $cartDiscountMode === 'pct' ? 'bg-amber-500 text-white' : 'bg-white dark:bg-gray-900 text-amber-700 dark:text-amber-400' }}">%</button>
                                     <button type="button"
-                                            wire:click="$set('cartDiscountMode', 'amount')"
+                                            wire:click="setCartDiscountMode('amount')"
                                             class="px-2 py-1 {{ $cartDiscountMode === 'amount' ? 'bg-amber-500 text-white' : 'bg-white dark:bg-gray-900 text-amber-700 dark:text-amber-400' }}">$</button>
                                 </div>
                                 <input type="number" step="0.01" min="0"
@@ -841,7 +841,7 @@
                                            ? rtrim(rtrim(number_format($cartDiscountValue, 2, '.', ''), '0'), '.')
                                            : '' }}"
                                        class="flex-1 text-right text-xs rounded-md border border-amber-300 dark:border-amber-700 bg-white dark:bg-gray-900 px-2 py-1.5 outline-none focus:ring-2 focus:ring-amber-500"
-                                       placeholder="0" />
+                                       placeholder="{{ $cartDiscountMode === 'pct' ? '% de descuento' : '$ a descontar' }}" />
                                 <div class="flex gap-1">
                                     @foreach ([5, 10, 20] as $quick)
                                         <button type="button"

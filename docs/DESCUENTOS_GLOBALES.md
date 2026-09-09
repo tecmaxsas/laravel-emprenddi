@@ -98,6 +98,13 @@ Existía desde antes y tenía cuatro fallos, corregidos en septiembre de 2026:
    de descuento, cuando lo correcto es 19 % —el global va sobre lo que quedó—.
    El POS y la pantalla de facturas daban resultados distintos con los mismos
    datos.
+5. **Un porcentaje imposible dejaba la venta en cero, sin avisar.** Con el
+   selector en «%» y un valor pensado en pesos —10000— el sistema lo recortaba
+   a 100 % y regalaba la mercancía. Recortar parecía lo prudente y era justo lo
+   que hacía daño: ahora se rechaza y se explica que probablemente quería el
+   modo «$». El 100 % sí se acepta, porque a veces se regala de verdad.
+6. **El selector «%» / «$» no recalculaba.** Se escribía el valor, se cambiaba
+   de modo y no pasaba nada.
 
 Ahora el POS guarda el valor tal como se escribió y lo reparte en cada
 recálculo, con el mismo criterio del motor de facturas.
