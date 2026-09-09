@@ -44,6 +44,8 @@
 
             {{ $this->sendEmailAction }}
 
+            {{ $this->shareWhatsappAction }}
+
             {{ $this->registerAdvanceAction }}
         </div>
 

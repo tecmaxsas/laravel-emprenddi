@@ -14,6 +14,7 @@ use App\Http\Controllers\DeliveryTrackController;
 use App\Http\Controllers\KitchenTicketPrintController;
 use App\Http\Controllers\PosPrintController;
 use App\Http\Controllers\PublicCatalogController;
+use App\Http\Controllers\PublicCustomerStatementController;
 use App\Http\Controllers\PublicMenuController;
 use App\Http\Controllers\QzSigningController;
 use App\Http\Controllers\WarrantyPrintController;
@@ -163,6 +164,14 @@ Route::get('/catalogo/{slug}', [PublicCatalogController::class, 'show'])
     ->middleware('throttle:120,1')
     ->name('catalog.public')
     ->where('slug', '[a-z0-9-]+');
+
+// Estado de cuenta que el cliente abre desde el WhatsApp que le llegó.
+// Token aleatorio de 40 caracteres y con caducidad: es informacion financiera
+// de un tercero viajando por un chat que se puede reenviar.
+Route::get('/estado-cuenta/{token}', [PublicCustomerStatementController::class, 'show'])
+    ->middleware('throttle:60,1')
+    ->name('customer-statement.public')
+    ->where('token', '[A-Za-z0-9]{40}');
 
 // Páginas legales — términos y política de privacidad (públicas).
 Route::get('/legal/{doc}', fn (string $doc) => view('legal.policy', ['doc' => $doc]))

@@ -3,6 +3,7 @@
 namespace App\Filament\App\Pages\Reports;
 
 use App\Mail\CustomerStatementMail;
+use App\Models\CustomerStatementShare;
 use App\Models\Payment;
 use App\Models\ThirdParty;
 use App\Services\Sales\CustomerAdvanceService;
@@ -153,6 +154,151 @@ class CustomerStatementPage extends Page implements HasActions, HasForms
                     ->required(),
             ])
             ->action(fn (array $data) => $this->sendByEmail($data));
+    }
+
+    /**
+     * Compartir la hoja por WhatsApp.
+     *
+     * No manda el PDF: manda un enlace. Dos razones —adjuntar un archivo exige
+     * un API de WhatsApp que la empresa no tiene, y un enlace se abre en el
+     * celular sin descargar nada y muestra el saldo del día en que se abre, no
+     * el del día en que se envió—.
+     *
+     * El envío lo hace el usuario desde su propio WhatsApp Web: aquí solo se
+     * arma el mensaje y se abre la conversación.
+     */
+    public function shareWhatsappAction(): Action
+    {
+        return Action::make('shareWhatsapp')
+            ->label('Compartir por WhatsApp')
+            ->icon('heroicon-o-chat-bubble-left-right')
+            ->color('success')
+            ->modalHeading('Enviar el estado de cuenta por WhatsApp')
+            ->modalDescription('Se abre tu WhatsApp Web con el mensaje listo. El cliente recibe un '
+                .'enlace donde ve su cuenta actualizada, sin descargar nada.')
+            ->modalSubmitActionLabel('Abrir WhatsApp')
+            ->fillForm(fn () => [
+                'phone' => $this->defaultWhatsappNumber(),
+                'days' => CustomerStatementShare::DIAS_POR_DEFECTO,
+            ])
+            ->form([
+                Forms\Components\TextInput::make('phone')
+                    ->label('Número de WhatsApp')
+                    ->tel()
+                    ->required()
+                    ->maxLength(25)
+                    ->placeholder('3105551234')
+                    ->helperText('Se sugiere el del tercero, pero puedes cambiarlo para mandarlo a otro '
+                        .'número. Si escribes 10 dígitos se asume Colombia; para otro país incluye el '
+                        .'indicativo.'),
+
+                Forms\Components\Select::make('days')
+                    ->label('El enlace caduca en')
+                    ->options([
+                        7 => '7 días',
+                        15 => '15 días',
+                        30 => '30 días',
+                        90 => '90 días',
+                    ])
+                    ->default(CustomerStatementShare::DIAS_POR_DEFECTO)
+                    ->native(false)
+                    ->required()
+                    ->helperText('Después de esa fecha el enlace deja de funcionar. Es información '
+                        .'financiera del cliente viajando por un chat que se puede reenviar.'),
+            ])
+            ->action(fn (array $data) => $this->shareByWhatsapp($data));
+    }
+
+    /** @param  array<string, mixed>  $data */
+    public function shareByWhatsapp(array $data): void
+    {
+        $customer = $this->customer();
+
+        if (! $customer) {
+            Notification::make()->warning()->title('Elige un cliente primero')->send();
+
+            return;
+        }
+
+        $numero = $this->normalizarWhatsapp((string) $data['phone']);
+
+        if (! $numero) {
+            Notification::make()->danger()
+                ->title('Número inválido')
+                ->body('Escribe solo dígitos, con indicativo si es de otro país.')
+                ->send();
+
+            return;
+        }
+
+        $enlace = CustomerStatementShare::paraCliente(
+            $customer,
+            $this->filters['from'] ?? null,
+            $this->filters['to'] ?? null,
+            $numero,
+            (int) $data['days'],
+        );
+
+        $this->generate();
+
+        $mensaje = rawurlencode($this->whatsappMessage($customer, $enlace->publicUrl()));
+
+        // Se abre en otra pestaña porque el usuario ya tiene WhatsApp Web
+        // abierto: mandarlo en la misma le haría perder la pantalla.
+        $this->js('window.open('.json_encode("https://wa.me/{$numero}?text={$mensaje}").', "_blank")');
+
+        Notification::make()->success()
+            ->title('Enlace generado')
+            ->body('Se abrió WhatsApp con el mensaje listo. El enlace caduca el '
+                .$enlace->expires_at->format('d/m/Y').'.')
+            ->send();
+    }
+
+    /** El texto que va en el chat, con el saldo ya adentro. */
+    public function whatsappMessage(ThirdParty $customer, string $enlace): string
+    {
+        $empresa = auth()->user()?->company?->name ?? '';
+        $saldo = (float) ($this->statement['due'] ?? 0);
+        $nombre = Str::of($customer->name)->trim()->explode(' ')->first();
+
+        $situacion = match (true) {
+            abs($saldo) <= 0.01 => 'A la fecha no registra saldo pendiente.',
+            $saldo < 0 => 'A la fecha tiene un saldo a favor de $'
+                .number_format(abs($saldo), 0, ',', '.').'.',
+            default => 'A la fecha su saldo pendiente es de $'
+                .number_format($saldo, 0, ',', '.').'.',
+        };
+
+        return "Hola {$nombre}, le compartimos su estado de cuenta con {$empresa}.\n\n"
+            ."{$situacion}\n\n"
+            ."Puede consultarlo aquí:\n{$enlace}";
+    }
+
+    /** El teléfono del tercero, priorizando el celular. */
+    public function defaultWhatsappNumber(): ?string
+    {
+        $cliente = $this->customer();
+
+        return $cliente?->mobile ?: $cliente?->phone;
+    }
+
+    /**
+     * El número en el formato que espera wa.me: solo dígitos, con indicativo.
+     * Diez dígitos que empiezan por 3 son un celular colombiano sin indicativo.
+     */
+    protected function normalizarWhatsapp(string $telefono): ?string
+    {
+        $numero = preg_replace('/\D+/', '', $telefono);
+
+        if (strlen((string) $numero) < 7) {
+            return null;
+        }
+
+        if (strlen($numero) === 10 && str_starts_with($numero, '3')) {
+            return '57'.$numero;
+        }
+
+        return $numero;
     }
 
     /**
