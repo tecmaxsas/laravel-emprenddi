@@ -12,6 +12,9 @@ use App\Models\Tax;
 use App\Models\ThirdParty;
 use App\Models\User;
 use App\Support\Dian\DianInvoiceActions;
+use App\Support\ProductOptions;
+use App\Support\TaxOptions;
+use Carbon\Carbon;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -26,8 +29,15 @@ class SaleInvoiceResource extends Resource
 {
     use ChecksPermission;
 
-    protected static function viewPermission(): string { return 'sales.view'; }
-    protected static function managePermission(): string { return 'sales.create'; }
+    protected static function viewPermission(): string
+    {
+        return 'sales.view';
+    }
+
+    protected static function managePermission(): string
+    {
+        return 'sales.create';
+    }
 
     protected static ?string $model = SaleInvoice::class;
 
@@ -79,7 +89,7 @@ class SaleInvoiceResource extends Resource
                             ->where('active', true)
                             ->where(function ($q) use ($search) {
                                 $q->where('document_number', 'ilike', "%{$search}%")
-                                  ->orWhere('name', 'ilike', "%{$search}%");
+                                    ->orWhere('name', 'ilike', "%{$search}%");
                             })
                             ->orderBy('name')
                             ->limit(30)
@@ -98,7 +108,7 @@ class SaleInvoiceResource extends Resource
                             ->where('company_id', auth()->user()->company_id)
                             ->where(function ($q) use ($search) {
                                 $q->where('name', 'ilike', "%{$search}%")
-                                  ->orWhere('email', 'ilike', "%{$search}%");
+                                    ->orWhere('email', 'ilike', "%{$search}%");
                             })
                             ->limit(20)
                             ->get()
@@ -140,7 +150,7 @@ class SaleInvoiceResource extends Resource
                         ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
                             $date = $get('date');
                             if ($date && $state !== null) {
-                                $set('due_date', \Carbon\Carbon::parse($date)->addDays((int) $state)->toDateString());
+                                $set('due_date', Carbon::parse($date)->addDays((int) $state)->toDateString());
                             }
                         }),
 
@@ -165,40 +175,31 @@ class SaleInvoiceResource extends Resource
                                 ->label('Producto')
                                 ->searchable()
                                 ->live()
-                                ->getSearchResultsUsing(fn (string $search) => Product::query()
-                                    ->where('company_id', auth()->user()?->company_id)
-                                    ->where('active', true)
-                                    ->where('is_sellable', true)
-                                    ->where('type', '!=', 'variable')
-                                    ->where(function ($q) use ($search) {
-                                        $q->where('code', 'ilike', "%{$search}%")
-                                          ->orWhere('name', 'ilike', "%{$search}%")
-                                          ->orWhere('barcode', 'ilike', "%{$search}%");
-                                    })
-                                    ->orderBy('name')
-                                    ->limit(30)
-                                    ->get()
-                                    ->mapWithKeys(fn (Product $p) => [$p->id => "{$p->code} — {$p->name}"])
-                                    ->all())
-                                ->getOptionLabelUsing(fn ($value) => Product::find($value)
-                                    ? Product::find($value)->code.' — '.Product::find($value)->name
-                                    : null)
+                                // Precargado: al abrirlo ya hay productos, no
+                                // un cajon vacio que exige saber el nombre.
+                                ->options(fn () => ProductOptions::initial('sale'))
+                                ->getSearchResultsUsing(fn (string $search) => ProductOptions::search('sale', $search))
+                                ->getOptionLabelUsing(fn ($value) => ProductOptions::label($value))
                                 ->afterStateUpdated(function ($state, Forms\Set $set) {
-                                    if (! $state) return;
+                                    if (! $state) {
+                                        return;
+                                    }
                                     $product = Product::find($state);
-                                    if (! $product) return;
+                                    if (! $product) {
+                                        return;
+                                    }
                                     $set('description', $product->name);
                                     $set('unit_price', (float) $product->default_sale_price);
                                     $set('cost_at_sale', (float) ($product->default_purchase_price ?? 0));
                                     $set('tax_id', $product->default_sale_tax_id);
                                 })
-                                ->columnSpan(['default' => 1, 'md' => 6, 'xl' => 4]),
+                                ->columnSpan(['default' => 1, 'md' => 6, 'xl' => 5]),
 
                             Forms\Components\TextInput::make('description')
                                 ->label('Descripción')
                                 ->required()
                                 ->maxLength(250)
-                                ->columnSpan(['default' => 1, 'md' => 6, 'xl' => 3]),
+                                ->columnSpan(['default' => 1, 'md' => 6, 'xl' => 7]),
 
                             Forms\Components\TextInput::make('quantity')
                                 ->label('Cant.')
@@ -235,20 +236,10 @@ class SaleInvoiceResource extends Resource
                                 ->label('Impuesto')
                                 ->live()
                                 ->searchable()
-                                ->getSearchResultsUsing(fn (string $search) => Tax::query()
-                                    ->where('company_id', auth()->user()?->company_id)
-                                    ->where('is_active', true)
-                                    ->whereIn('applies_to', ['sale', 'both'])
-                                    ->where(function ($q) use ($search) {
-                                        $q->where('code', 'ilike', "%{$search}%")
-                                          ->orWhere('name', 'ilike', "%{$search}%");
-                                    })
-                                    ->limit(20)
-                                    ->get()
-                                    ->mapWithKeys(fn (Tax $t) => [$t->id => "{$t->code} ({$t->rate}%)"])
-                                    ->all())
-                                ->getOptionLabelUsing(fn ($value) => Tax::find($value)
-                                    ? Tax::find($value)->code.' ('.Tax::find($value)->rate.'%)'
+                                // Son pocos por empresa: se cargan todos.
+                                ->options(fn () => TaxOptions::taxes('sale'))
+                                ->getOptionLabelUsing(fn ($value) => ($t = Tax::find($value))
+                                    ? TaxOptions::shortLabel($t)
                                     : null)
                                 ->afterStateUpdated(fn (Forms\Set $set, Forms\Get $get) => self::recomputeLine($set, $get))
                                 ->columnSpan(['default' => 1, 'md' => 3, 'xl' => 3]),
@@ -260,7 +251,7 @@ class SaleInvoiceResource extends Resource
                                 ->disabled()
                                 ->dehydrated()
                                 ->default(0)
-                                ->columnSpan(['default' => 1, 'md' => 3, 'xl' => 3]),
+                                ->columnSpan(['default' => 1, 'md' => 3, 'xl' => 2]),
 
                             Forms\Components\Hidden::make('subtotal')->default(0),
                             Forms\Components\Hidden::make('discount_amount')->default(0),
@@ -268,7 +259,7 @@ class SaleInvoiceResource extends Resource
                             Forms\Components\Hidden::make('tax_amount')->default(0),
                             Forms\Components\Hidden::make('cost_at_sale')->default(0),
                         ])
-                        ->columns(['default' => 1, 'md' => 6, 'xl' => 20])
+                        ->columns(['default' => 1, 'md' => 6, 'xl' => 12])
                         ->minItems(1)
                         ->defaultItems(1)
                         ->live()
@@ -278,7 +269,7 @@ class SaleInvoiceResource extends Resource
 
             Forms\Components\Section::make('Retenciones')
                 ->description('Solo si el cliente es agente retenedor (Gran Contribuyente, Estado, etc.). Vacío para clientes finales.')
-                ->collapsed(fn (?\App\Models\SaleInvoice $record) => ! $record || $record->retentions()->doesntExist())
+                ->collapsed(fn (?SaleInvoice $record) => ! $record || $record->retentions()->doesntExist())
                 ->schema([
                     Forms\Components\Repeater::make('retentions')
                         ->relationship('retentions')
@@ -289,28 +280,18 @@ class SaleInvoiceResource extends Resource
                                 ->required()
                                 ->live()
                                 ->searchable()
-                                ->getSearchResultsUsing(fn (string $search) => Tax::query()
-                                    ->where('company_id', auth()->user()?->company_id)
-                                    ->where('is_active', true)
-                                    ->whereIn('type', ['income_withholding', 'vat_withholding', 'ica_withholding'])
-                                    ->whereIn('applies_to', ['sale', 'both'])
-                                    ->where(function ($q) use ($search) {
-                                        $q->where('code', 'ilike', "%{$search}%")
-                                          ->orWhere('name', 'ilike', "%{$search}%");
-                                    })
-                                    ->limit(20)
-                                    ->get()
-                                    ->mapWithKeys(fn (Tax $t) => [
-                                        $t->id => "{$t->code} — {$t->name} ({$t->rate}%)",
-                                    ])
-                                    ->all())
-                                ->getOptionLabelUsing(fn ($value) => Tax::find($value)
-                                    ? Tax::find($value)->code.' — '.Tax::find($value)->name
+                                ->options(fn () => TaxOptions::retentions('sale'))
+                                ->getOptionLabelUsing(fn ($value) => ($t = Tax::find($value))
+                                    ? TaxOptions::longLabel($t)
                                     : null)
                                 ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
-                                    if (! $state) return;
+                                    if (! $state) {
+                                        return;
+                                    }
                                     $tax = Tax::find($state);
-                                    if (! $tax) return;
+                                    if (! $tax) {
+                                        return;
+                                    }
                                     $set('tax_code', $tax->code);
                                     $set('tax_name', $tax->name);
                                     $set('tax_type', $tax->type);
@@ -329,7 +310,7 @@ class SaleInvoiceResource extends Resource
 
                                     self::recomputeRetention($set, $get);
                                 })
-                                ->columnSpan(5),
+                                ->columnSpan(['default' => 1, 'md' => 6, 'xl' => 5]),
 
                             Forms\Components\TextInput::make('base_amount')
                                 ->label('Base (gravable)')
@@ -341,7 +322,7 @@ class SaleInvoiceResource extends Resource
                                 ->live(onBlur: true)
                                 ->afterStateUpdated(fn (Forms\Set $set, Forms\Get $get) => self::recomputeRetention($set, $get))
                                 ->helperText('Se sugiere sola: subtotal menos descuentos, o el IVA si es ReteIVA. Ajústala si la base gravable es otra.')
-                                ->columnSpan(4),
+                                ->columnSpan(['default' => 1, 'md' => 3, 'xl' => 4]),
 
                             Forms\Components\TextInput::make('rate')
                                 ->label('%')
@@ -352,7 +333,7 @@ class SaleInvoiceResource extends Resource
                                 ->suffix('%')
                                 ->disabled()
                                 ->dehydrated()
-                                ->columnSpan(2),
+                                ->columnSpan(['default' => 1, 'md' => 3, 'xl' => 2]),
 
                             Forms\Components\TextInput::make('amount')
                                 ->label('Monto retenido')
@@ -361,13 +342,13 @@ class SaleInvoiceResource extends Resource
                                 ->disabled()
                                 ->dehydrated()
                                 ->default(0)
-                                ->columnSpan(3),
+                                ->columnSpan(['default' => 1, 'md' => 6, 'xl' => 3]),
 
                             Forms\Components\Hidden::make('tax_code')->default(''),
                             Forms\Components\Hidden::make('tax_name')->default(''),
                             Forms\Components\Hidden::make('tax_type')->default(''),
                         ])
-                        ->columns(14)
+                        ->columns(['default' => 1, 'md' => 6, 'xl' => 14])
                         ->defaultItems(0)
                         ->live()
                         ->addActionLabel('+ Añadir retención')

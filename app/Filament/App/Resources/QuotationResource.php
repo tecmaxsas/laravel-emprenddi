@@ -10,6 +10,8 @@ use App\Models\Quotation;
 use App\Models\Tax;
 use App\Models\ThirdParty;
 use App\Models\User;
+use App\Support\ProductOptions;
+use App\Support\TaxOptions;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -22,8 +24,15 @@ class QuotationResource extends Resource
 {
     use ChecksPermission;
 
-    protected static function viewPermission(): string { return 'quotations.view'; }
-    protected static function managePermission(): string { return 'quotations.manage'; }
+    protected static function viewPermission(): string
+    {
+        return 'quotations.view';
+    }
+
+    protected static function managePermission(): string
+    {
+        return 'quotations.manage';
+    }
 
     protected static ?string $model = Quotation::class;
 
@@ -69,7 +78,7 @@ class QuotationResource extends Resource
                             ->where('active', true)
                             ->where(function ($q) use ($search) {
                                 $q->where('document_number', 'ilike', "%{$search}%")
-                                  ->orWhere('name', 'ilike', "%{$search}%");
+                                    ->orWhere('name', 'ilike', "%{$search}%");
                             })
                             ->orderBy('name')
                             ->limit(30)
@@ -88,7 +97,7 @@ class QuotationResource extends Resource
                             ->where('company_id', auth()->user()->company_id)
                             ->where(function ($q) use ($search) {
                                 $q->where('name', 'ilike', "%{$search}%")
-                                  ->orWhere('email', 'ilike', "%{$search}%");
+                                    ->orWhere('email', 'ilike', "%{$search}%");
                             })
                             ->limit(20)
                             ->get()
@@ -144,39 +153,30 @@ class QuotationResource extends Resource
                                 ->label('Producto')
                                 ->searchable()
                                 ->live()
-                                ->getSearchResultsUsing(fn (string $search) => Product::query()
-                                    ->where('company_id', auth()->user()?->company_id)
-                                    ->where('active', true)
-                                    ->where('is_sellable', true)
-                                    ->where('type', '!=', 'variable')
-                                    ->where(function ($q) use ($search) {
-                                        $q->where('code', 'ilike', "%{$search}%")
-                                          ->orWhere('name', 'ilike', "%{$search}%")
-                                          ->orWhere('barcode', 'ilike', "%{$search}%");
-                                    })
-                                    ->orderBy('name')
-                                    ->limit(30)
-                                    ->get()
-                                    ->mapWithKeys(fn (Product $p) => [$p->id => "{$p->code} — {$p->name}"])
-                                    ->all())
-                                ->getOptionLabelUsing(fn ($value) => Product::find($value)
-                                    ? Product::find($value)->code.' — '.Product::find($value)->name
-                                    : null)
+                                // Precargado: al abrirlo ya hay productos, no un cajon
+                                // vacio que exige saber el nombre de memoria.
+                                ->options(fn () => ProductOptions::initial('sale'))
+                                ->getSearchResultsUsing(fn (string $search) => ProductOptions::search('sale', $search))
+                                ->getOptionLabelUsing(fn ($value) => ProductOptions::label($value))
                                 ->afterStateUpdated(function ($state, Forms\Set $set) {
-                                    if (! $state) return;
+                                    if (! $state) {
+                                        return;
+                                    }
                                     $product = Product::find($state);
-                                    if (! $product) return;
+                                    if (! $product) {
+                                        return;
+                                    }
                                     $set('description', $product->name);
                                     $set('unit_price', (float) $product->default_sale_price);
                                     $set('tax_id', $product->default_sale_tax_id);
                                 })
-                                ->columnSpan(['default' => 1, 'md' => 6, 'xl' => 4]),
+                                ->columnSpan(['default' => 1, 'md' => 6, 'xl' => 5]),
 
                             Forms\Components\TextInput::make('description')
                                 ->label('Descripción')
                                 ->required()
                                 ->maxLength(250)
-                                ->columnSpan(['default' => 1, 'md' => 6, 'xl' => 3]),
+                                ->columnSpan(['default' => 1, 'md' => 6, 'xl' => 7]),
 
                             Forms\Components\TextInput::make('quantity')
                                 ->label('Cant.')
@@ -213,20 +213,10 @@ class QuotationResource extends Resource
                                 ->label('Impuesto')
                                 ->live()
                                 ->searchable()
-                                ->getSearchResultsUsing(fn (string $search) => Tax::query()
-                                    ->where('company_id', auth()->user()?->company_id)
-                                    ->where('is_active', true)
-                                    ->whereIn('applies_to', ['sale', 'both'])
-                                    ->where(function ($q) use ($search) {
-                                        $q->where('code', 'ilike', "%{$search}%")
-                                          ->orWhere('name', 'ilike', "%{$search}%");
-                                    })
-                                    ->limit(20)
-                                    ->get()
-                                    ->mapWithKeys(fn (Tax $t) => [$t->id => "{$t->code} ({$t->rate}%)"])
-                                    ->all())
-                                ->getOptionLabelUsing(fn ($value) => Tax::find($value)
-                                    ? Tax::find($value)->code.' ('.Tax::find($value)->rate.'%)'
+                                // Son pocos por empresa: se cargan todos.
+                                ->options(fn () => TaxOptions::taxes('sale'))
+                                ->getOptionLabelUsing(fn ($value) => ($t = Tax::find($value))
+                                    ? TaxOptions::shortLabel($t)
                                     : null)
                                 ->afterStateUpdated(fn (Forms\Set $set, Forms\Get $get) => self::recomputeLine($set, $get))
                                 ->columnSpan(['default' => 1, 'md' => 3, 'xl' => 3]),
@@ -238,14 +228,14 @@ class QuotationResource extends Resource
                                 ->disabled()
                                 ->dehydrated()
                                 ->default(0)
-                                ->columnSpan(['default' => 1, 'md' => 3, 'xl' => 3]),
+                                ->columnSpan(['default' => 1, 'md' => 3, 'xl' => 2]),
 
                             Forms\Components\Hidden::make('subtotal')->default(0),
                             Forms\Components\Hidden::make('discount_amount')->default(0),
                             Forms\Components\Hidden::make('tax_rate')->default(0),
                             Forms\Components\Hidden::make('tax_amount')->default(0),
                         ])
-                        ->columns(['default' => 1, 'md' => 6, 'xl' => 20])
+                        ->columns(['default' => 1, 'md' => 6, 'xl' => 12])
                         ->minItems(1)
                         ->defaultItems(1)
                         ->live()
@@ -322,9 +312,10 @@ class QuotationResource extends Resource
                 // Auto-marca expired las que pasaron de fecha sin aprobación
                 $query->where(function ($q) {
                     $q->whereNotIn('status', [Quotation::STATUS_DRAFT, Quotation::STATUS_SENT])
-                      ->orWhereNull('valid_until')
-                      ->orWhere('valid_until', '>=', now()->toDateString());
+                        ->orWhereNull('valid_until')
+                        ->orWhere('valid_until', '>=', now()->toDateString());
                 });
+
                 return $query;
             })
             ->columns([

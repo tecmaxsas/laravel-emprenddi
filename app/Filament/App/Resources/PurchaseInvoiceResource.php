@@ -5,12 +5,15 @@ namespace App\Filament\App\Resources;
 use App\Filament\App\Resources\PurchaseInvoiceResource\Pages;
 use App\Filament\App\Resources\PurchaseInvoiceResource\RelationManagers;
 use App\Filament\Concerns\ChecksPermission;
-use App\Models\Account;
 use App\Models\Location;
 use App\Models\Product;
 use App\Models\PurchaseInvoice;
 use App\Models\Tax;
 use App\Models\ThirdParty;
+use App\Support\ProductOptions;
+use App\Support\SerialsSettings;
+use App\Support\TaxOptions;
+use Carbon\Carbon;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -22,8 +25,15 @@ class PurchaseInvoiceResource extends Resource
 {
     use ChecksPermission;
 
-    protected static function viewPermission(): string { return 'purchases.view'; }
-    protected static function managePermission(): string { return 'purchases.create'; }
+    protected static function viewPermission(): string
+    {
+        return 'purchases.view';
+    }
+
+    protected static function managePermission(): string
+    {
+        return 'purchases.create';
+    }
 
     protected static ?string $model = PurchaseInvoice::class;
 
@@ -75,7 +85,7 @@ class PurchaseInvoiceResource extends Resource
                             ->where('active', true)
                             ->where(function ($q) use ($search) {
                                 $q->where('document_number', 'ilike', "%{$search}%")
-                                  ->orWhere('name', 'ilike', "%{$search}%");
+                                    ->orWhere('name', 'ilike', "%{$search}%");
                             })
                             ->orderBy('name')
                             ->limit(30)
@@ -119,7 +129,7 @@ class PurchaseInvoiceResource extends Resource
                         ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
                             $date = $get('date');
                             if ($date && $state !== null) {
-                                $set('due_date', \Carbon\Carbon::parse($date)->addDays((int) $state)->toDateString());
+                                $set('due_date', Carbon::parse($date)->addDays((int) $state)->toDateString());
                             }
                         }),
 
@@ -144,39 +154,30 @@ class PurchaseInvoiceResource extends Resource
                                 ->label('Producto')
                                 ->searchable()
                                 ->live()
-                                ->getSearchResultsUsing(fn (string $search) => Product::query()
-                                    ->where('company_id', auth()->user()?->company_id)
-                                    ->where('active', true)
-                                    ->where('is_purchasable', true)
-                                    ->where('type', '!=', 'variable')
-                                    ->where(function ($q) use ($search) {
-                                        $q->where('code', 'ilike', "%{$search}%")
-                                          ->orWhere('name', 'ilike', "%{$search}%")
-                                          ->orWhere('barcode', 'ilike', "%{$search}%");
-                                    })
-                                    ->orderBy('name')
-                                    ->limit(30)
-                                    ->get()
-                                    ->mapWithKeys(fn (Product $p) => [$p->id => "{$p->code} — {$p->name}"])
-                                    ->all())
-                                ->getOptionLabelUsing(fn ($value) => Product::find($value)
-                                    ? Product::find($value)->code.' — '.Product::find($value)->name
-                                    : null)
+                                // Precargado: al abrirlo ya hay productos, no
+                                // un cajon vacio que exige saber el nombre.
+                                ->options(fn () => ProductOptions::initial('purchase'))
+                                ->getSearchResultsUsing(fn (string $search) => ProductOptions::search('purchase', $search))
+                                ->getOptionLabelUsing(fn ($value) => ProductOptions::label($value))
                                 ->afterStateUpdated(function ($state, Forms\Set $set) {
-                                    if (! $state) return;
+                                    if (! $state) {
+                                        return;
+                                    }
                                     $product = Product::find($state);
-                                    if (! $product) return;
+                                    if (! $product) {
+                                        return;
+                                    }
                                     $set('description', $product->name);
                                     $set('unit_cost', (float) $product->default_purchase_price);
                                     $set('tax_id', $product->default_purchase_tax_id);
                                 })
-                                ->columnSpan(['default' => 1, 'md' => 6, 'xl' => 4]),
+                                ->columnSpan(['default' => 1, 'md' => 6, 'xl' => 5]),
 
                             Forms\Components\TextInput::make('description')
                                 ->label('Descripción')
                                 ->required()
                                 ->maxLength(250)
-                                ->columnSpan(['default' => 1, 'md' => 6, 'xl' => 3]),
+                                ->columnSpan(['default' => 1, 'md' => 6, 'xl' => 7]),
 
                             Forms\Components\TextInput::make('quantity')
                                 ->label('Cant.')
@@ -213,20 +214,10 @@ class PurchaseInvoiceResource extends Resource
                                 ->label('Impuesto')
                                 ->live()
                                 ->searchable()
-                                ->getSearchResultsUsing(fn (string $search) => Tax::query()
-                                    ->where('company_id', auth()->user()?->company_id)
-                                    ->where('is_active', true)
-                                    ->whereIn('applies_to', ['purchase', 'both'])
-                                    ->where(function ($q) use ($search) {
-                                        $q->where('code', 'ilike', "%{$search}%")
-                                          ->orWhere('name', 'ilike', "%{$search}%");
-                                    })
-                                    ->limit(20)
-                                    ->get()
-                                    ->mapWithKeys(fn (Tax $t) => [$t->id => "{$t->code} ({$t->rate}%)"])
-                                    ->all())
-                                ->getOptionLabelUsing(fn ($value) => Tax::find($value)
-                                    ? Tax::find($value)->code.' ('.Tax::find($value)->rate.'%)'
+                                // Son pocos por empresa: se cargan todos.
+                                ->options(fn () => TaxOptions::taxes('purchase'))
+                                ->getOptionLabelUsing(fn ($value) => ($t = Tax::find($value))
+                                    ? TaxOptions::shortLabel($t)
                                     : null)
                                 ->afterStateUpdated(fn (Forms\Set $set, Forms\Get $get) => self::recomputeLine($set, $get))
                                 ->columnSpan(['default' => 1, 'md' => 3, 'xl' => 3]),
@@ -238,7 +229,7 @@ class PurchaseInvoiceResource extends Resource
                                 ->disabled()
                                 ->dehydrated()
                                 ->default(0)
-                                ->columnSpan(['default' => 1, 'md' => 3, 'xl' => 3]),
+                                ->columnSpan(['default' => 1, 'md' => 3, 'xl' => 2]),
 
                             Forms\Components\Hidden::make('subtotal')->default(0),
                             Forms\Components\Hidden::make('discount_amount')->default(0),
@@ -254,12 +245,12 @@ class PurchaseInvoiceResource extends Resource
                                 ->label('Números de serie')
                                 ->placeholder('Escanea o pega un serial y presiona Enter')
                                 ->helperText(fn (Forms\Get $get) => 'Debes capturar la misma cantidad de seriales que de unidades ('.((int) ($get('quantity') ?? 0)).').')
-                                ->visible(fn (Forms\Get $get) => \App\Support\SerialsSettings::enabled()
+                                ->visible(fn (Forms\Get $get) => SerialsSettings::enabled()
                                     && ($pid = $get('product_id'))
-                                    && (bool) \App\Models\Product::query()->where('company_id', auth()->user()?->company_id)->whereKey($pid)->value('tracks_serials'))
+                                    && (bool) Product::query()->where('company_id', auth()->user()?->company_id)->whereKey($pid)->value('tracks_serials'))
                                 ->columnSpanFull(),
                         ])
-                        ->columns(['default' => 1, 'md' => 6, 'xl' => 20])
+                        ->columns(['default' => 1, 'md' => 6, 'xl' => 12])
                         ->minItems(1)
                         ->defaultItems(1)
                         ->live()
@@ -270,7 +261,7 @@ class PurchaseInvoiceResource extends Resource
             Forms\Components\Section::make('Retenciones')
                 ->description('Lo que la empresa le retiene al proveedor. No se le paga a él sino a la DIAN, '
                     .'así que se descuenta del neto a pagar.')
-                ->collapsed(fn (?\App\Models\PurchaseInvoice $record) => ! $record || $record->retentions()->doesntExist())
+                ->collapsed(fn (?PurchaseInvoice $record) => ! $record || $record->retentions()->doesntExist())
                 ->schema([
                     Forms\Components\Repeater::make('retentions')
                         ->relationship('retentions')
@@ -281,23 +272,9 @@ class PurchaseInvoiceResource extends Resource
                                 ->required()
                                 ->live()
                                 ->searchable()
-                                ->getSearchResultsUsing(fn (string $search) => Tax::query()
-                                    ->where('company_id', auth()->user()?->company_id)
-                                    ->where('is_active', true)
-                                    ->whereIn('type', ['income_withholding', 'vat_withholding', 'ica_withholding'])
-                                    ->whereIn('applies_to', ['purchase', 'both'])
-                                    ->where(function ($q) use ($search) {
-                                        $q->where('code', 'ilike', "%{$search}%")
-                                            ->orWhere('name', 'ilike', "%{$search}%");
-                                    })
-                                    ->limit(20)
-                                    ->get()
-                                    ->mapWithKeys(fn (Tax $t) => [
-                                        $t->id => "{$t->code} — {$t->name} ({$t->rate}%)",
-                                    ])
-                                    ->all())
-                                ->getOptionLabelUsing(fn ($value) => Tax::find($value)
-                                    ? Tax::find($value)->code.' — '.Tax::find($value)->name
+                                ->options(fn () => TaxOptions::retentions('purchase'))
+                                ->getOptionLabelUsing(fn ($value) => ($t = Tax::find($value))
+                                    ? TaxOptions::longLabel($t)
                                     : null)
                                 ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
                                     if (! $state) {

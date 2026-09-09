@@ -10,6 +10,8 @@ use App\Models\Product;
 use App\Models\SaleInvoice;
 use App\Models\Tax;
 use App\Models\ThirdParty;
+use App\Support\ProductOptions;
+use App\Support\TaxOptions;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -21,8 +23,15 @@ class CreditDebitNoteResource extends Resource
 {
     use ChecksPermission;
 
-    protected static function viewPermission(): string { return 'credit_debit_notes.view'; }
-    protected static function managePermission(): string { return 'credit_debit_notes.create'; }
+    protected static function viewPermission(): string
+    {
+        return 'credit_debit_notes.view';
+    }
+
+    protected static function managePermission(): string
+    {
+        return 'credit_debit_notes.create';
+    }
 
     protected static ?string $model = CreditDebitNote::class;
 
@@ -90,9 +99,13 @@ class CreditDebitNoteResource extends Resource
                             ? SaleInvoice::find($value)->fullNumber().' — '.SaleInvoice::find($value)->customer?->name
                             : null)
                         ->afterStateUpdated(function ($state, Forms\Set $set) {
-                            if (! $state) return;
+                            if (! $state) {
+                                return;
+                            }
                             $invoice = SaleInvoice::find($state);
-                            if (! $invoice) return;
+                            if (! $invoice) {
+                                return;
+                            }
                             // Pre-llena cliente y sede desde la factura
                             $set('third_party_id', $invoice->third_party_id);
                             $set('location_id', $invoice->location_id);
@@ -163,32 +176,26 @@ class CreditDebitNoteResource extends Resource
                                 ->label('Producto')
                                 ->searchable()
                                 ->live()
-                                ->getSearchResultsUsing(fn (string $search) => Product::query()
-                                    ->where('company_id', auth()->user()?->company_id)
-                                    ->where('active', true)
-                                    ->where(function ($q) use ($search) {
-                                        $q->where('code', 'ilike', "%{$search}%")
-                                          ->orWhere('name', 'ilike', "%{$search}%");
-                                    })
-                                    ->orderBy('name')
-                                    ->limit(30)
-                                    ->get()
-                                    ->mapWithKeys(fn (Product $p) => [$p->id => "{$p->code} — {$p->name}"])
-                                    ->all())
-                                ->getOptionLabelUsing(fn ($value) => Product::find($value)
-                                    ? Product::find($value)->code.' — '.Product::find($value)->name
-                                    : null)
+                                // Precargado: al abrirlo ya hay productos, no un cajon
+                                // vacio que exige saber el nombre de memoria.
+                                ->options(fn () => ProductOptions::initial('sale'))
+                                ->getSearchResultsUsing(fn (string $search) => ProductOptions::search('sale', $search))
+                                ->getOptionLabelUsing(fn ($value) => ProductOptions::label($value))
                                 ->afterStateUpdated(function ($state, Forms\Set $set) {
-                                    if (! $state) return;
+                                    if (! $state) {
+                                        return;
+                                    }
                                     $product = Product::find($state);
-                                    if (! $product) return;
+                                    if (! $product) {
+                                        return;
+                                    }
                                     $set('description', $product->name);
                                     $set('unit_price', (float) $product->default_sale_price);
                                     $set('tax_id', $product->default_sale_tax_id);
                                 })
-                                ->columnSpan(['default' => 1, 'md' => 6, 'xl' => 4]),
+                                ->columnSpan(['default' => 1, 'md' => 6, 'xl' => 5]),
 
-                            Forms\Components\TextInput::make('description')->label('Descripción')->required()->maxLength(250)->columnSpan(['default' => 1, 'md' => 6, 'xl' => 3]),
+                            Forms\Components\TextInput::make('description')->label('Descripción')->required()->maxLength(250)->columnSpan(['default' => 1, 'md' => 6, 'xl' => 7]),
 
                             Forms\Components\TextInput::make('quantity')
                                 ->label('Cant.')
@@ -215,32 +222,22 @@ class CreditDebitNoteResource extends Resource
                                 ->label('Impuesto')
                                 ->live()
                                 ->searchable()
-                                ->getSearchResultsUsing(fn (string $search) => Tax::query()
-                                    ->where('company_id', auth()->user()?->company_id)
-                                    ->where('is_active', true)
-                                    ->whereIn('applies_to', ['sale', 'both'])
-                                    ->where(function ($q) use ($search) {
-                                        $q->where('code', 'ilike', "%{$search}%")
-                                          ->orWhere('name', 'ilike', "%{$search}%");
-                                    })
-                                    ->limit(20)
-                                    ->get()
-                                    ->mapWithKeys(fn (Tax $t) => [$t->id => "{$t->code} ({$t->rate}%)"])
-                                    ->all())
-                                ->getOptionLabelUsing(fn ($value) => Tax::find($value)
-                                    ? Tax::find($value)->code.' ('.Tax::find($value)->rate.'%)'
+                                // Son pocos por empresa: se cargan todos.
+                                ->options(fn () => TaxOptions::taxes('sale'))
+                                ->getOptionLabelUsing(fn ($value) => ($t = Tax::find($value))
+                                    ? TaxOptions::shortLabel($t)
                                     : null)
                                 ->afterStateUpdated(fn (Forms\Set $set, Forms\Get $get) => self::recomputeLine($set, $get))
                                 ->columnSpan(['default' => 1, 'md' => 3, 'xl' => 3]),
 
-                            Forms\Components\TextInput::make('total')->label('Total')->numeric()->prefix('$')->disabled()->dehydrated()->default(0)->columnSpan(['default' => 1, 'md' => 3, 'xl' => 3]),
+                            Forms\Components\TextInput::make('total')->label('Total')->numeric()->prefix('$')->disabled()->dehydrated()->default(0)->columnSpan(['default' => 1, 'md' => 3, 'xl' => 2]),
 
                             Forms\Components\Hidden::make('subtotal')->default(0),
                             Forms\Components\Hidden::make('discount_amount')->default(0),
                             Forms\Components\Hidden::make('tax_rate')->default(0),
                             Forms\Components\Hidden::make('tax_amount')->default(0),
                         ])
-                        ->columns(['default' => 1, 'md' => 6, 'xl' => 20])
+                        ->columns(['default' => 1, 'md' => 6, 'xl' => 12])
                         ->minItems(1)
                         ->defaultItems(1)
                         ->live()
