@@ -104,11 +104,29 @@ ANTHROPIC_API_KEY=sk-ant-...        # llave de Tecmax (modo saldo)
 TECMAX_SALES_WHATSAPP=57...         # a quién llega el botón de recarga
 ANTHROPIC_MODEL=claude-sonnet-5     # modelo por defecto
 AI_USD_TO_COP=4200                  # tasa para cobrar
-AI_MARGIN=1.35                      # margen sobre el costo
+AI_MARGIN=1.3333                    # 25 % de ganancia sobre lo facturado
 ```
 
 Cada mensaje guarda sus tokens y su costo, así que un cobro siempre se puede
 explicar.
+
+`AI_MARGIN` es un **multiplicador, no un porcentaje**, y sale del modelo de
+negocio: el cliente recarga 50 USD, ve 50 USD en su monedero, y por dentro esos
+50 le alcanzan para 37,5 USD de consumo real. Tecmax se queda con 12,5 — el
+**25 % de lo facturado**. El multiplicador que produce eso es
+
+    50 / 37,5 = 1 / (1 − 0,25) = 1,3333
+
+Ojo con la confusión: `1.25` **no** es una ganancia del 25 %, es del 20 % sobre
+la venta. Para una ganancia del X % sobre lo facturado, el multiplicador es
+`1/(1−X)`:
+
+| Ganancia sobre la venta | `AI_MARGIN` |
+|---|---|
+| 20 % | 1.25 |
+| **25 %** | **1.3333** |
+| 30 % | 1.4286 |
+| 40 % | 1.6667 |
 
 ## Instalación
 
@@ -119,9 +137,17 @@ docker exec emprenddi_app php artisan migrate --force
 docker exec emprenddi_app php artisan optimize:clear
 ```
 
-Después, en el `.env` del servidor, agregar al menos `ANTHROPIC_API_KEY` si se
-va a ofrecer el modo con saldo de Tecmax. Sin esa variable, las empresas en modo
-saldo ven un aviso y solo funciona el modo de cuenta propia.
+Después hay que agregar las variables en **`/opt/emprenddi/.env.production`** —no
+en `.env`: en producción el contenedor arranca con `env_file: .env.production` y
+el despliegue usa `--env-file .env.production`—. Basta con `ANTHROPIC_API_KEY`
+para ofrecer el modo con saldo; sin esa variable las empresas en ese modo ven un
+aviso y solo funciona el de cuenta propia.
+
+```bash
+nano /opt/emprenddi/.env.production
+docker compose --env-file .env.production -f docker-compose.prod.yml restart app
+docker exec emprenddi_app php artisan optimize:clear
+```
 
 La migración `2026_09_13_100300` entrega los permisos a los roles que ya
 existen; sin ella la sección queda instalada y nadie puede abrirla.

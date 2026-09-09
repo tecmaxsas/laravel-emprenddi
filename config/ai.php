@@ -49,8 +49,21 @@ return [
     // Tasa para pasar de dólares a pesos al cobrar el saldo.
     'usd_to_cop' => (float) env('AI_USD_TO_COP', 4200),
 
-    // Margen de Tecmax sobre el costo. 1.0 = a precio de costo.
-    'margin' => (float) env('AI_MARGIN', 1.35),
+    /**
+     * Cuanto se le descuenta al cliente por cada peso que cuesta Anthropic.
+     *
+     * Es un multiplicador, no un porcentaje, y el valor sale del modelo de
+     * negocio de Tecmax: el cliente recarga 50 USD, ve 50 USD en su monedero, y
+     * por dentro esos 50 le alcanzan para 37,5 USD de consumo real. Tecmax se
+     * queda con 12,5 = el 25 % de lo facturado.
+     *
+     *     multiplicador = 50 / 37.5 = 1 / (1 - 0.25) = 1.3333
+     *
+     * Ojo con la confusion: 1.25 NO es una ganancia del 25 %, es del 20 % sobre
+     * la venta. Para una ganancia del X % sobre lo facturado, el multiplicador
+     * es 1/(1-X).
+     */
+    'margin' => (float) env('AI_MARGIN', 1.3333),
 
     // Cuántas vueltas de herramientas se permiten en una respuesta. Sin tope,
     // un modelo confundido podría encadenar consultas sin parar.

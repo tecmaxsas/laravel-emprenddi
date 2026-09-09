@@ -211,6 +211,84 @@ class ClaudeAiTest extends TestCase
         $this->assertStringContainsString('saldo', AiSettings::para($this->company->fresh())->motivoParaNoUsar());
     }
 
+    // ------------------------------------------------------------- tarifas
+
+    /**
+     * La aritmética del cobro, con las tarifas reales y el margen del negocio.
+     *
+     * Se fija aquí porque es plata y porque `AI_MARGIN` se presta a confusión:
+     * es un multiplicador, no un porcentaje. El modelo de Tecmax es que el
+     * cliente recargue 50, consuma 37,5 reales y Tecmax se quede con 12,5 —el
+     * 25 % de lo facturado—, y eso da 1/(1-0.25) = 1,3333. Poner 1.25 dejaría
+     * un 20 % sin que nada fallara.
+     */
+    public function test_el_cobro_deja_el_veinticinco_por_ciento_de_ganancia(): void
+    {
+        config(['ai.usd_to_cop' => 4200, 'ai.margin' => 1 / 0.75]);
+
+        $this->configurar(['enabled' => true, 'mode' => AiSettings::MODE_TECMAX, 'model' => 'claude-sonnet-5']);
+        $this->dejarSaldoEn(500000);
+
+        Http::fake(['*' => Http::response([
+            'content' => [['type' => 'text', 'text' => 'Listo.']],
+            // 1M de entrada (USD 3) + 1M de salida (USD 15) = USD 18.
+            'usage' => ['input_tokens' => 1_000_000, 'output_tokens' => 1_000_000],
+        ])]);
+
+        $respuesta = app(AiAssistant::class)
+            ->responder($this->nuevaConversacion(), 'Hola', $this->user);
+
+        $costoReal = 18 * 4200;                       // $75.600 que se le pagan a Anthropic
+        $cobrado = (float) $respuesta->cost_cop;
+
+        $this->assertEqualsWithDelta(100800, $cobrado, 1, 'USD 18 al 1,3333 son $100.800.');
+
+        $this->assertEqualsWithDelta(0.25, ($cobrado - $costoReal) / $cobrado, 0.001,
+            'La ganancia debe ser el 25 % de lo que se le descuenta al cliente.');
+    }
+
+    /** El multiplicador por descuento de saldo, visto como lo ve el comercial. */
+    public function test_una_recarga_de_cincuenta_alcanza_para_treinta_y_siete_y_medio(): void
+    {
+        config(['ai.usd_to_cop' => 1, 'ai.margin' => 1 / 0.75]);
+
+        $this->configurar(['enabled' => true, 'mode' => AiSettings::MODE_TECMAX, 'model' => 'claude-sonnet-5']);
+
+        // El cliente recarga 50 (en las unidades de la tasa, aquí USD).
+        $this->dejarSaldoEn(50);
+
+        // Consumo real de USD 37,50: 12,5M de tokens de entrada de Sonnet 5.
+        Http::fake(['*' => Http::response([
+            'content' => [['type' => 'text', 'text' => 'Listo.']],
+            'usage' => ['input_tokens' => 12_500_000, 'output_tokens' => 0],
+        ])]);
+
+        app(AiAssistant::class)->responder($this->nuevaConversacion(), 'Hola', $this->user);
+
+        $this->assertEqualsWithDelta(0, app(AiCredits::class)->saldo($this->company->fresh()), 0.05,
+            'Con 50 recargados, 37,50 de consumo real deben dejar el monedero en cero.');
+    }
+
+    /** A costo, sin recargo, se cobra exactamente lo que cuesta. */
+    public function test_sin_recargo_se_cobra_el_costo(): void
+    {
+        config(['ai.usd_to_cop' => 4000, 'ai.margin' => 1.0]);
+
+        $this->configurar(['enabled' => true, 'mode' => AiSettings::MODE_TECMAX, 'model' => 'claude-haiku-4-5-20251001']);
+        $this->dejarSaldoEn(100000);
+
+        Http::fake(['*' => Http::response([
+            'content' => [['type' => 'text', 'text' => 'Listo.']],
+            'usage' => ['input_tokens' => 1_000_000, 'output_tokens' => 0],
+        ])]);
+
+        $respuesta = app(AiAssistant::class)
+            ->responder($this->nuevaConversacion(), 'Hola', $this->user);
+
+        // Haiku 4.5: USD 1 por millón de entrada × 4000 = $4.000.
+        $this->assertEqualsWithDelta(4000, (float) $respuesta->cost_cop, 1);
+    }
+
     // -------------------------------------------------------------- saldo
 
     /** El saldo es el del último movimiento, y cada uno deja rastro. */
