@@ -77,31 +77,4 @@
         </x-filament::section>
     @endunless
 
-    <x-filament::section collapsible collapsed>
-        <x-slot name="heading">Qué puede ver Claude</x-slot>
-
-        <div class="prose prose-sm max-w-none dark:prose-invert">
-            <p>
-                Claude <strong>no escribe consultas libres</strong> contra la base. Tiene un juego cerrado
-                de consultas ya escritas y elige cuál usar según lo que le preguntes:
-            </p>
-
-            <ul>
-                <li>Resumen del negocio, ventas por período, por día y por mes.</li>
-                <li>Productos más vendidos y clientes que más compran.</li>
-                <li>Existencias por producto y productos agotados.</li>
-                <li>Cartera de clientes y cuentas por pagar a proveedores.</li>
-                <li>Gastos por concepto y cierres de caja con sus diferencias.</li>
-                <li>Ficha de un producto o de un tercero.</li>
-            </ul>
-
-            <p>
-                Todas llevan cosido el filtro de <strong>esta empresa</strong> y ninguna escribe: Claude no
-                puede crear, modificar ni borrar nada. El diseño es así a propósito — dejar que un modelo
-                arme el SQL en una base multiempresa es la forma más fácil de mostrarle a un cliente los
-                datos de otro.
-            </p>
-        </div>
-    </x-filament::section>
-
 </x-filament-panels::page>
