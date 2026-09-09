@@ -5,6 +5,7 @@ namespace App\Filament\App\Resources;
 use App\Filament\App\Resources\SaleInvoiceResource\Pages;
 use App\Filament\App\Resources\SaleInvoiceResource\RelationManagers;
 use App\Filament\Concerns\ChecksPermission;
+use App\Filament\Concerns\PreviewsGlobalDiscount;
 use App\Models\Location;
 use App\Models\Product;
 use App\Models\SaleInvoice;
@@ -27,7 +28,7 @@ use Illuminate\Support\Facades\Auth;
 
 class SaleInvoiceResource extends Resource
 {
-    use ChecksPermission;
+    use ChecksPermission, PreviewsGlobalDiscount;
 
     protected static function viewPermission(): string
     {
@@ -52,6 +53,11 @@ class SaleInvoiceResource extends Resource
     protected static ?string $navigationGroup = 'Ventas';
 
     protected static ?int $navigationSort = 20;
+
+    protected static function allowsGlobalDiscount(): bool
+    {
+        return static::discountsEnabledFor('sales');
+    }
 
     public static function form(Form $form): Form
     {
@@ -355,6 +361,8 @@ class SaleInvoiceResource extends Resource
                         ->reorderableWithButtons(),
                 ]),
 
+            ...self::globalDiscountSection(),
+
             Forms\Components\Section::make('Totales')
                 ->columns(6)
                 ->schema([
@@ -365,15 +373,15 @@ class SaleInvoiceResource extends Resource
                     Forms\Components\Placeholder::make('discount_display')
                         ->label('Descuento')
                         ->content(fn (Forms\Get $get) => '$ '.number_format(
-                            collect($get('lines') ?? [])->sum(fn ($l) => (float) ($l['discount_amount'] ?? 0)), 2)),
+                            self::previewTotals($get)['discount'], 2)),
                     Forms\Components\Placeholder::make('tax_display')
                         ->label('IVA')
                         ->content(fn (Forms\Get $get) => '$ '.number_format(
-                            collect($get('lines') ?? [])->sum(fn ($l) => (float) ($l['tax_amount'] ?? 0)), 2)),
+                            self::previewTotals($get)['tax'], 2)),
                     Forms\Components\Placeholder::make('total_display')
                         ->label('Total')
                         ->content(fn (Forms\Get $get) => '$ '.number_format(
-                            collect($get('lines') ?? [])->sum(fn ($l) => (float) ($l['total'] ?? 0)), 2)),
+                            self::previewTotals($get)['total'], 2)),
                     Forms\Components\Placeholder::make('retention_display')
                         ->label('Retenciones')
                         ->content(fn (Forms\Get $get) => '− $ '.number_format(
@@ -381,7 +389,7 @@ class SaleInvoiceResource extends Resource
                     Forms\Components\Placeholder::make('net_payable_display')
                         ->label('NETO A PAGAR')
                         ->content(fn (Forms\Get $get) => '$ '.number_format(
-                            collect($get('lines') ?? [])->sum(fn ($l) => (float) ($l['total'] ?? 0))
+                            self::previewTotals($get)['total']
                             - collect($get('retentions') ?? [])->sum(fn ($r) => (float) ($r['amount'] ?? 0)),
                             2,
                         )),

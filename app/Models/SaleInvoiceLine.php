@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class SaleInvoiceLine extends Model
 {
@@ -21,6 +22,7 @@ class SaleInvoiceLine extends Model
         'subtotal',
         'discount_percentage',
         'discount_amount',
+        'global_discount_amount',
         'tax_id',
         'tax_rate',
         'tax_amount',
@@ -47,7 +49,7 @@ class SaleInvoiceLine extends Model
         ];
     }
 
-    public function productSerials(): \Illuminate\Database\Eloquent\Relations\HasMany
+    public function productSerials(): HasMany
     {
         return $this->hasMany(ProductSerial::class, 'sale_invoice_line_id');
     }

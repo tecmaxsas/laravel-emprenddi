@@ -7,9 +7,11 @@ use App\Models\Company;
 use App\Models\JournalEntry;
 use App\Models\JournalEntryLine;
 use App\Models\Payment;
+use App\Models\ProductSerial;
 use App\Models\PurchaseInvoice;
 use App\Services\Accounting\JournalEntryNumberer;
 use App\Services\Inventory\InventoryEngine;
+use App\Services\Invoicing\GlobalDiscount;
 use App\Support\CashSessionGate;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -179,6 +181,12 @@ class PurchaseInvoiceEngine
      */
     public function recalculateTotals(PurchaseInvoice $invoice): void
     {
+        // Igual que en ventas: el descuento global baja la base de cada linea
+        // antes de calcular el IVA. Ver App\Services\Invoicing\GlobalDiscount.
+        $invoice->loadMissing('lines');
+        $globalDiscount = app(GlobalDiscount::class)->aplicar($invoice);
+        $invoice->load('lines');
+
         $subtotal = 0;
         $discount = 0;
         $tax = 0;
@@ -199,6 +207,7 @@ class PurchaseInvoiceEngine
         $invoice->update([
             'subtotal' => $subtotal,
             'discount_total' => $discount,
+            'global_discount_amount' => $globalDiscount,
             'tax_total' => $tax,
             'total' => $total,
             'retention_total' => $retentions,
@@ -451,9 +460,9 @@ class PurchaseInvoiceEngine
         // Bloqueo previo: si algún serial entrado por esta compra ya se vendió,
         // no podemos anular sin dejar inconsistente la venta. El usuario debe
         // anular las ventas primero (que restablecerán los seriales).
-        $soldSerials = \App\Models\ProductSerial::query()
+        $soldSerials = ProductSerial::query()
             ->whereIn('purchase_invoice_line_id', $invoice->lines->pluck('id'))
-            ->where('status', \App\Models\ProductSerial::STATUS_SOLD)
+            ->where('status', ProductSerial::STATUS_SOLD)
             ->exists();
         if ($soldSerials) {
             throw new RuntimeException(
@@ -488,9 +497,9 @@ class PurchaseInvoiceEngine
                 // (todos están in_stock — los vendidos los bloquea el guard
                 // de arriba). Quedan en deleted_at para auditoría.
                 if ($line->product->tracks_serials) {
-                    \App\Models\ProductSerial::query()
+                    ProductSerial::query()
                         ->where('purchase_invoice_line_id', $line->id)
-                        ->where('status', \App\Models\ProductSerial::STATUS_IN_STOCK)
+                        ->where('status', ProductSerial::STATUS_IN_STOCK)
                         ->delete();
                 }
             }
@@ -580,7 +589,7 @@ class PurchaseInvoiceEngine
         // Choque con seriales ya existentes en la empresa (otro producto u otra
         // compra). El unique (company_id, serial_number) lo atrapa al insert
         // pero damos un error más útil acá.
-        $existing = \App\Models\ProductSerial::query()
+        $existing = ProductSerial::query()
             ->where('company_id', $invoice->company_id)
             ->whereIn('serial_number', $serials)
             ->pluck('serial_number')
@@ -594,12 +603,12 @@ class PurchaseInvoiceEngine
 
         $now = now();
         foreach ($serials as $serial) {
-            \App\Models\ProductSerial::create([
+            ProductSerial::create([
                 'company_id' => $invoice->company_id,
                 'product_id' => $line->product_id,
                 'location_id' => $invoice->location_id,
                 'serial_number' => $serial,
-                'status' => \App\Models\ProductSerial::STATUS_IN_STOCK,
+                'status' => ProductSerial::STATUS_IN_STOCK,
                 'purchase_invoice_line_id' => $line->id,
                 'received_at' => $invoice->date ?? $now,
             ]);

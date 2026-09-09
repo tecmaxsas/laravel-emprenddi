@@ -7,12 +7,17 @@ use App\Models\Company;
 use App\Models\JournalEntry;
 use App\Models\JournalEntryLine;
 use App\Models\Payment;
+use App\Models\ProductSerial;
 use App\Models\SaleInvoice;
+use App\Models\SaleInvoiceLine;
 use App\Services\Accounting\JournalEntryNumberer;
+use App\Services\Commissions\CommissionEngine;
 use App\Services\Inventory\InventoryEngine;
+use App\Services\Invoicing\GlobalDiscount;
 use App\Support\CommissionsSettings;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 /**
@@ -82,6 +87,7 @@ class SaleInvoiceEngine
                 if ($cameFromDelivery && $line->inventory_movement_id) {
                     // Heredó el movimiento del despacho — usamos su costo para COGS.
                     $totalCogs += abs((float) $line->quantity) * (float) ($line->cost_at_sale ?? 0);
+
                     continue;
                 }
 
@@ -160,14 +166,18 @@ class SaleInvoiceEngine
      */
     protected function maybeCauseCommission(SaleInvoice $invoice, string $forBasis): void
     {
-        if (! CommissionsSettings::moduleActive()) return;
-        if (CommissionsSettings::causation() !== $forBasis) return;
+        if (! CommissionsSettings::moduleActive()) {
+            return;
+        }
+        if (CommissionsSettings::causation() !== $forBasis) {
+            return;
+        }
 
         try {
-            app(\App\Services\Commissions\CommissionEngine::class)
+            app(CommissionEngine::class)
                 ->causeForInvoice($invoice, $forBasis);
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning('No se pudo causar comisión', [
+            Log::warning('No se pudo causar comisión', [
                 'invoice_id' => $invoice->id,
                 'basis' => $forBasis,
                 'error' => $e->getMessage(),
@@ -252,6 +262,13 @@ class SaleInvoiceEngine
 
     public function recalculateTotals(SaleInvoice $invoice): void
     {
+        // El descuento global se reparte entre las lineas ANTES de sumar: baja
+        // la base de cada una y por eso el IVA sale sobre la base descontada,
+        // que es lo que exige la DIAN. Ver App\Services\Invoicing\GlobalDiscount.
+        $invoice->loadMissing('lines');
+        $globalDiscount = app(GlobalDiscount::class)->aplicar($invoice);
+        $invoice->load('lines');
+
         $subtotal = 0;
         $discount = 0;
         $tax = 0;
@@ -268,7 +285,10 @@ class SaleInvoiceEngine
 
         $invoice->update([
             'subtotal' => $subtotal,
+            // `discount_total` incluye el global: ya viene sumado en cada
+            // linea. `global_discount_amount` guarda cuanto de eso fue global.
             'discount_total' => $discount,
+            'global_discount_amount' => $globalDiscount,
             'tax_total' => $tax,
             'retention_total' => $retentionTotal,
             'total' => $total,
@@ -498,7 +518,9 @@ class SaleInvoiceEngine
                 continue;
             }
             $cost = abs((float) $line->quantity) * (float) ($line->cost_at_sale ?? 0);
-            if ($cost <= 0) continue;
+            if ($cost <= 0) {
+                continue;
+            }
 
             $cogsId = $line->product?->effectiveCostAccountId() ?? $defaultCogsAccountId;
             $invId = $line->product?->effectiveInventoryAccountId() ?? $defaultInventoryAccountId;
@@ -506,7 +528,9 @@ class SaleInvoiceEngine
             // Si una cuenta no resuelve por ningún lado, omitimos esa línea
             // del asiento (saldos de inventario quedan correctos por los
             // inventory_movements; reportes contables omitirán esa parte).
-            if (! $cogsId || ! $invId) continue;
+            if (! $cogsId || ! $invId) {
+                continue;
+            }
 
             $key = "{$cogsId}:{$invId}";
             if (! isset($pairs[$key])) {
@@ -626,7 +650,7 @@ class SaleInvoiceEngine
     protected function dummyEntry(): JournalEntry
     {
         // No-op para mantener el tipo de retorno cuando faltan cuentas COGS.
-        return new JournalEntry();
+        return new JournalEntry;
     }
 
     /**
@@ -689,11 +713,11 @@ class SaleInvoiceEngine
                 // Libera seriales vendidos por esta línea: vuelven a in_stock
                 // y se desvinculan de la línea para poder vender de nuevo.
                 if ($line->product->tracks_serials) {
-                    \App\Models\ProductSerial::query()
+                    ProductSerial::query()
                         ->where('sale_invoice_line_id', $line->id)
-                        ->where('status', \App\Models\ProductSerial::STATUS_SOLD)
+                        ->where('status', ProductSerial::STATUS_SOLD)
                         ->update([
-                            'status' => \App\Models\ProductSerial::STATUS_IN_STOCK,
+                            'status' => ProductSerial::STATUS_IN_STOCK,
                             'sale_invoice_line_id' => null,
                             'sold_at' => null,
                         ]);
@@ -734,9 +758,9 @@ class SaleInvoiceEngine
             // liquidadas no se tocan — se ajustan en la siguiente liquidación).
             if (CommissionsSettings::moduleActive()) {
                 try {
-                    app(\App\Services\Commissions\CommissionEngine::class)->reverseForInvoice($invoice);
+                    app(CommissionEngine::class)->reverseForInvoice($invoice);
                 } catch (\Throwable $e) {
-                    \Illuminate\Support\Facades\Log::warning('No se pudo reversar comisión al anular factura', [
+                    Log::warning('No se pudo reversar comisión al anular factura', [
                         'invoice_id' => $invoice->id,
                         'error' => $e->getMessage(),
                     ]);
@@ -802,7 +826,7 @@ class SaleInvoiceEngine
      * cada serial esté in_stock antes de pasarlo a sold y vincularlo
      * con la línea (para que después se pueda buscar la garantía).
      */
-    protected function markSerialsSoldForLine(SaleInvoice $invoice, \App\Models\SaleInvoiceLine $line): void
+    protected function markSerialsSoldForLine(SaleInvoice $invoice, SaleInvoiceLine $line): void
     {
         $raw = $line->serials ?? [];
         $serials = array_values(array_unique(array_filter(array_map(
@@ -820,7 +844,7 @@ class SaleInvoiceEngine
             ));
         }
 
-        $records = \App\Models\ProductSerial::query()
+        $records = ProductSerial::query()
             ->where('company_id', $invoice->company_id)
             ->where('product_id', $line->product_id)
             ->whereIn('serial_number', $serials)
@@ -834,7 +858,7 @@ class SaleInvoiceEngine
             );
         }
 
-        $notInStock = $records->where('status', '!=', \App\Models\ProductSerial::STATUS_IN_STOCK)
+        $notInStock = $records->where('status', '!=', ProductSerial::STATUS_IN_STOCK)
             ->pluck('serial_number')->all();
         if (! empty($notInStock)) {
             throw new RuntimeException(
@@ -844,7 +868,7 @@ class SaleInvoiceEngine
 
         foreach ($records as $serial) {
             $serial->update([
-                'status' => \App\Models\ProductSerial::STATUS_SOLD,
+                'status' => ProductSerial::STATUS_SOLD,
                 'sale_invoice_line_id' => $line->id,
                 'sold_at' => $invoice->date ?? now(),
             ]);

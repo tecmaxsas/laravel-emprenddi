@@ -2,12 +2,15 @@
 
 namespace App\Filament\App\Pages;
 
+use App\Models\Account;
 use App\Models\Company;
-use App\Support\ModuleGate;
+use App\Services\GiftCards\GiftCardProductProvisioner;
 use App\Support\AppointmentsSettings;
 use App\Support\CommissionsSettings;
+use App\Support\CurrentCompany;
 use App\Support\GiftCardsSettings;
-use App\Support\ParkingSettings;
+use App\Support\LabelsSettings;
+use App\Support\ModuleGate;
 use App\Support\PromotionsSettings;
 use App\Support\RestaurantSettings;
 use Filament\Forms;
@@ -17,6 +20,7 @@ use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\HtmlString;
 
 /**
  * Configuraciones de la empresa. Página única con tabs:
@@ -84,7 +88,7 @@ class Settings extends Page implements HasForms
             // Etiquetas (settings.labels.*)
             'labels_enabled' => (bool) data_get($settings, 'labels.enabled', false),
             'labels_print_mode' => (string) data_get($settings, 'labels.print_mode', 'sheet'),
-            'labels_fields' => (array) data_get($settings, 'labels.fields', \App\Support\LabelsSettings::DEFAULT_FIELDS),
+            'labels_fields' => (array) data_get($settings, 'labels.fields', LabelsSettings::DEFAULT_FIELDS),
             'labels_barcode_type' => (string) data_get($settings, 'labels.barcode_type', 'CODE128'),
             'labels_columns_per_sheet' => (int) data_get($settings, 'labels.columns_per_sheet', 3),
             'labels_width_mm' => (int) data_get($settings, 'labels.width_mm', 50),
@@ -95,6 +99,8 @@ class Settings extends Page implements HasForms
             'pos_default_invoice_kind' => (string) data_get($settings, 'pos.default_invoice_kind', 'pos'),
             'pos_allow_price_modification' => (bool) data_get($settings, 'pos.allow_price_modification', true),
             'pos_allow_discount' => (bool) data_get($settings, 'pos.allow_discount', true),
+            'discounts_sales' => (bool) data_get($settings, 'discounts.sales', false),
+            'discounts_purchases' => (bool) data_get($settings, 'discounts.purchases', false),
             'pos_require_customer' => (bool) data_get($settings, 'pos.require_customer', false),
             'pos_print_after_sale' => (bool) data_get($settings, 'pos.print_after_sale', true),
             'pos_blind_cash_close' => (bool) data_get($settings, 'pos.blind_cash_close', false),
@@ -219,6 +225,28 @@ class Settings extends Page implements HasForms
     protected function companyTabSchema(): array
     {
         return [
+            Forms\Components\Section::make('Descuentos globales en facturas')
+                ->description('El descuento de pie de factura: uno solo para todo el documento, en vez '
+                    .'de ir línea por línea. Se aplica sobre la base gravable, así que el IVA se '
+                    .'calcula sobre el valor ya descontado.')
+                ->columns(2)
+                ->schema([
+                    Forms\Components\Toggle::make('discounts_sales')
+                        ->label('Permitir en facturas de venta')
+                        ->helperText('Aparece un campo de descuento global al crear o editar la factura.'),
+
+                    Forms\Components\Toggle::make('discounts_purchases')
+                        ->label('Permitir en facturas de compra')
+                        ->helperText('Para registrar el descuento que le hace el proveedor al total.'),
+
+                    Forms\Components\Placeholder::make('descuentos_pos')
+                        ->label('')
+                        ->columnSpanFull()
+                        ->content('El descuento del POS se configura en la pestaña POS, con «Permitir '
+                            .'descuentos»: ahí gobierna también el descuento por línea y el umbral que '
+                            .'exige autorización de un supervisor.'),
+                ]),
+
             Forms\Components\Section::make('Identidad visual')
                 ->description('El logo aparece en los tickets de venta, facturas impresas, menú público y otros documentos.')
                 ->schema([
@@ -322,7 +350,7 @@ class Settings extends Page implements HasForms
                                 ->required()
                                 ->native(false)
                                 ->live()
-                                ->options(\App\Support\LabelsSettings::PRINT_MODES)
+                                ->options(LabelsSettings::PRINT_MODES)
                                 ->default('sheet')
                                 ->helperText(fn ($state) => $state === 'roll'
                                     ? '🖨️ Rollo: cada etiqueta se envía como una página con dimensiones exactas. Ideal para Zebra, Brother QL, TSC, Xprinter, etc.'
@@ -331,14 +359,14 @@ class Settings extends Page implements HasForms
 
                             Forms\Components\CheckboxList::make('labels_fields')
                                 ->label('Campos que aparecen en la etiqueta')
-                                ->options(\App\Support\LabelsSettings::AVAILABLE_FIELDS)
-                                ->default(\App\Support\LabelsSettings::DEFAULT_FIELDS)
+                                ->options(LabelsSettings::AVAILABLE_FIELDS)
+                                ->default(LabelsSettings::DEFAULT_FIELDS)
                                 ->columns(2)
                                 ->columnSpanFull(),
 
                             Forms\Components\Select::make('labels_barcode_type')
                                 ->label('Tipo de código de barras')
-                                ->options(\App\Support\LabelsSettings::BARCODE_TYPES)
+                                ->options(LabelsSettings::BARCODE_TYPES)
                                 ->default('CODE128')
                                 ->native(false)
                                 ->helperText('CODE128 acepta cualquier texto (código o barcode). EAN-13 exige 12 dígitos.'),
@@ -370,7 +398,7 @@ class Settings extends Page implements HasForms
                                 ->label('')
                                 ->columnSpanFull()
                                 ->visible(fn (Forms\Get $get) => $get('labels_print_mode') === 'roll')
-                                ->content(new \Illuminate\Support\HtmlString(
+                                ->content(new HtmlString(
                                     '<div style="background:#fef3c7; border-left:4px solid #f59e0b; padding:12px 14px; border-radius:6px; font-size:13px; color:#78350f; line-height:1.55;">'
                                     .'<strong>💡 Configuración de la impresora de etiquetas (una sola vez por PC):</strong>'
                                     .'<ol style="margin:6px 0 0 20px;">'
@@ -490,6 +518,7 @@ class Settings extends Page implements HasForms
     {
         if (! auth()->user()->can('company.settings')) {
             $this->errorNotif('Sin permiso para editar la empresa');
+
             return;
         }
 
@@ -513,12 +542,17 @@ class Settings extends Page implements HasForms
             'print_mode' => in_array($labelsPrintMode, ['sheet', 'roll'], true)
                 ? $labelsPrintMode
                 : 'sheet',
-            'fields' => array_values((array) ($state['labels_fields'] ?? \App\Support\LabelsSettings::DEFAULT_FIELDS)),
+            'fields' => array_values((array) ($state['labels_fields'] ?? LabelsSettings::DEFAULT_FIELDS)),
             'barcode_type' => (string) ($state['labels_barcode_type'] ?? 'CODE128'),
             'columns_per_sheet' => max(1, min(10, (int) ($state['labels_columns_per_sheet'] ?? 3))),
             'width_mm' => max(20, min(200, (int) ($state['labels_width_mm'] ?? 50))),
             'height_mm' => max(10, min(150, (int) ($state['labels_height_mm'] ?? 30))),
             'show_currency_symbol' => (bool) ($state['labels_show_currency_symbol'] ?? true),
+        ]);
+
+        $settings['discounts'] = array_merge($settings['discounts'] ?? [], [
+            'sales' => (bool) ($state['discounts_sales'] ?? false),
+            'purchases' => (bool) ($state['discounts_purchases'] ?? false),
         ]);
 
         $company->update([
@@ -546,6 +580,7 @@ class Settings extends Page implements HasForms
     {
         if (! auth()->user()->can('pos.settings')) {
             $this->errorNotif('Sin permiso para editar configuración POS');
+
             return;
         }
 
@@ -601,7 +636,7 @@ class Settings extends Page implements HasForms
                     Forms\Components\Select::make('restaurant_tip_payable_account_id')
                         ->label('Cuenta de propinas por pagar (mesero/staff)')
                         ->helperText('Al cobrar una orden con propina, el sistema crea un asiento DR Caja / CR esta cuenta — así la propina queda registrada como pasivo a pagar al staff. Si no se configura, las propinas siguen contándose en order.tip_amount pero NO se genera asiento. Default sugerido: cuenta 218505.')
-                        ->options(fn () => \App\Models\Account::query()
+                        ->options(fn () => Account::query()
                             ->where('company_id', auth()->user()?->company_id)
                             ->where('accepts_movements', true)
                             ->where('active', true)
@@ -619,7 +654,7 @@ class Settings extends Page implements HasForms
             // dispara saveRestaurant() de forma confiable.
             Forms\Components\Placeholder::make('save_restaurant_hint')
                 ->label('')
-                ->content(new \Illuminate\Support\HtmlString(
+                ->content(new HtmlString(
                     '<div style="display:flex; justify-content:flex-end; padding-top:8px;">'
                     .'<button type="button" wire:click="saveRestaurant" '
                     .'style="padding:10px 20px; background:#6366f1; color:white; border:0; border-radius:8px; font-weight:700; cursor:pointer; font-size:14px; display:inline-flex; align-items:center; gap:6px;">'
@@ -634,6 +669,7 @@ class Settings extends Page implements HasForms
     {
         if (! auth()->user()->can('company.settings')) {
             $this->errorNotif('Sin permiso para editar configuración');
+
             return;
         }
 
@@ -672,7 +708,7 @@ class Settings extends Page implements HasForms
         $company->update(['settings' => $settings]);
 
         // Refrescar singleton de empresa por si hay re-render que usa la version vieja
-        app(\App\Support\CurrentCompany::class)->set($company->fresh());
+        app(CurrentCompany::class)->set($company->fresh());
 
         Notification::make()->title('Configuración de Restaurante guardada')->success()->send();
     }
@@ -694,7 +730,9 @@ class Settings extends Page implements HasForms
         // Sub-toggles — solo visibles si master esta ON
         $subToggles = [];
         foreach (PromotionsSettings::FEATURES as $key => $meta) {
-            if ($key === 'enabled') continue;
+            if ($key === 'enabled') {
+                continue;
+            }
             $subToggles[] = Forms\Components\Toggle::make("promotions_{$key}")
                 ->label($meta['label'])
                 ->helperText($meta['description'])
@@ -715,7 +753,7 @@ class Settings extends Page implements HasForms
 
             Forms\Components\Placeholder::make('save_promotions_hint')
                 ->label('')
-                ->content(new \Illuminate\Support\HtmlString(
+                ->content(new HtmlString(
                     '<div style="display:flex; justify-content:flex-end; padding-top:8px;">'
                     .'<button type="button" wire:click="savePromotions" '
                     .'style="padding:10px 20px; background:#6366f1; color:white; border:0; border-radius:8px; font-weight:700; cursor:pointer; font-size:14px; display:inline-flex; align-items:center; gap:6px;">'
@@ -730,6 +768,7 @@ class Settings extends Page implements HasForms
     {
         if (! auth()->user()->can('company.settings')) {
             $this->errorNotif('Sin permiso para editar configuración');
+
             return;
         }
 
@@ -748,7 +787,7 @@ class Settings extends Page implements HasForms
         $settings['promotions'] = $promotions;
         $company->update(['settings' => $settings]);
 
-        app(\App\Support\CurrentCompany::class)->set($company->fresh());
+        app(CurrentCompany::class)->set($company->fresh());
 
         Notification::make()->title('Configuración de Promociones guardada')->success()->send();
     }
@@ -769,7 +808,9 @@ class Settings extends Page implements HasForms
         // Sub-features — toggle (default), input numerico (expiry) o select de cuenta (liability)
         $subFields = [];
         foreach (GiftCardsSettings::FEATURES as $key => $meta) {
-            if ($key === 'enabled') continue;
+            if ($key === 'enabled') {
+                continue;
+            }
             if ($key === 'default_expiry_months') {
                 $subFields[] = Forms\Components\TextInput::make("gift_cards_{$key}")
                     ->label($meta['label'])
@@ -779,13 +820,14 @@ class Settings extends Page implements HasForms
                     ->maxValue(120)
                     ->default((int) $meta['default'])
                     ->suffix('meses');
+
                 continue;
             }
             if ($key === 'liability_account_id') {
                 $subFields[] = Forms\Components\Select::make("gift_cards_{$key}")
                     ->label($meta['label'])
                     ->helperText($meta['description'])
-                    ->options(fn () => \App\Models\Account::query()
+                    ->options(fn () => Account::query()
                         ->where('company_id', auth()->user()?->company_id)
                         ->where('accepts_movements', true)
                         ->where('active', true)
@@ -796,6 +838,7 @@ class Settings extends Page implements HasForms
                         ->all())
                     ->searchable()
                     ->placeholder('— Usar 240825 por defecto —');
+
                 continue;
             }
             $subFields[] = Forms\Components\Toggle::make("gift_cards_{$key}")
@@ -818,7 +861,7 @@ class Settings extends Page implements HasForms
 
             Forms\Components\Placeholder::make('save_gift_cards_hint')
                 ->label('')
-                ->content(new \Illuminate\Support\HtmlString(
+                ->content(new HtmlString(
                     '<div style="display:flex; justify-content:flex-end; padding-top:8px;">'
                     .'<button type="button" wire:click="saveGiftCards" '
                     .'style="padding:10px 20px; background:#6366f1; color:white; border:0; border-radius:8px; font-weight:700; cursor:pointer; font-size:14px; display:inline-flex; align-items:center; gap:6px;">'
@@ -833,6 +876,7 @@ class Settings extends Page implements HasForms
     {
         if (! auth()->user()->can('company.settings')) {
             $this->errorNotif('Sin permiso para editar configuración');
+
             return;
         }
 
@@ -844,6 +888,7 @@ class Settings extends Page implements HasForms
             $stateKey = 'gift_cards_'.$key;
             if (! array_key_exists($stateKey, $this->data)) {
                 $gc[$key] = $gc[$key] ?? GiftCardsSettings::FEATURES[$key]['default'];
+
                 continue;
             }
             // Cast por tipo de feature:
@@ -862,13 +907,13 @@ class Settings extends Page implements HasForms
         $settings['gift_cards'] = $gc;
         $company->update(['settings' => $settings]);
 
-        app(\App\Support\CurrentCompany::class)->set($company->fresh());
+        app(CurrentCompany::class)->set($company->fresh());
 
         // Si se activo el modulo, asegurar que el producto especial 'Tarjeta
         // Regalo' exista (idempotente). Si se desactiva, lo dejamos por si
         // se reactiva luego — no se borran productos automaticamente.
         if (! empty($gc['enabled'])) {
-            app(\App\Services\GiftCards\GiftCardProductProvisioner::class)->provision($company);
+            app(GiftCardProductProvisioner::class)->provision($company);
         }
 
         Notification::make()->title('Configuración de Gift Cards guardada')->success()->send();
@@ -926,7 +971,7 @@ class Settings extends Page implements HasForms
                     Forms\Components\Select::make('commissions_expense_account_id')
                         ->label(CommissionsSettings::FEATURES['expense_account_id']['label'])
                         ->helperText(CommissionsSettings::FEATURES['expense_account_id']['description'])
-                        ->options(fn () => \App\Models\Account::query()
+                        ->options(fn () => Account::query()
                             ->where('company_id', auth()->user()?->company_id)
                             ->where('accepts_movements', true)->where('active', true)
                             ->where(fn ($q) => $q->where('code', 'like', '51%')->orWhere('code', 'like', '52%')->orWhere('code', 'like', '53%'))
@@ -938,7 +983,7 @@ class Settings extends Page implements HasForms
                     Forms\Components\Select::make('commissions_payable_account_id')
                         ->label(CommissionsSettings::FEATURES['payable_account_id']['label'])
                         ->helperText(CommissionsSettings::FEATURES['payable_account_id']['description'])
-                        ->options(fn () => \App\Models\Account::query()
+                        ->options(fn () => Account::query()
                             ->where('company_id', auth()->user()?->company_id)
                             ->where('accepts_movements', true)->where('active', true)
                             ->where('code', 'like', '23%')
@@ -950,7 +995,7 @@ class Settings extends Page implements HasForms
 
             Forms\Components\Placeholder::make('save_commissions_hint')
                 ->label('')
-                ->content(new \Illuminate\Support\HtmlString(
+                ->content(new HtmlString(
                     '<div style="display:flex; justify-content:flex-end; padding-top:8px;">'
                     .'<button type="button" wire:click="saveCommissions" '
                     .'style="padding:10px 20px; background:#6366f1; color:white; border:0; border-radius:8px; font-weight:700; cursor:pointer; font-size:14px; display:inline-flex; align-items:center; gap:6px;">'
@@ -965,6 +1010,7 @@ class Settings extends Page implements HasForms
     {
         if (! auth()->user()->can('company.settings')) {
             $this->errorNotif('Sin permiso para editar configuración');
+
             return;
         }
 
@@ -976,6 +1022,7 @@ class Settings extends Page implements HasForms
             $stateKey = 'commissions_'.$key;
             if (! array_key_exists($stateKey, $this->data)) {
                 $c[$key] = $c[$key] ?? CommissionsSettings::FEATURES[$key]['default'];
+
                 continue;
             }
             if ($key === 'enabled') {
@@ -989,7 +1036,7 @@ class Settings extends Page implements HasForms
 
         $settings['commissions'] = $c;
         $company->update(['settings' => $settings]);
-        app(\App\Support\CurrentCompany::class)->set($company->fresh());
+        app(CurrentCompany::class)->set($company->fresh());
 
         Notification::make()->title('Configuración de Comisiones guardada')->success()->send();
     }
@@ -1041,7 +1088,7 @@ class Settings extends Page implements HasForms
 
             Forms\Components\Placeholder::make('save_appointments_hint')
                 ->label('')
-                ->content(new \Illuminate\Support\HtmlString(
+                ->content(new HtmlString(
                     '<div style="display:flex; justify-content:flex-end; padding-top:8px;">'
                     .'<button type="button" wire:click="saveAppointments" '
                     .'style="padding:10px 20px; background:#6366f1; color:white; border:0; border-radius:8px; font-weight:700; cursor:pointer; font-size:14px; display:inline-flex; align-items:center; gap:6px;">'
@@ -1056,6 +1103,7 @@ class Settings extends Page implements HasForms
     {
         if (! auth()->user()->can('company.settings')) {
             $this->errorNotif('Sin permiso para editar configuración');
+
             return;
         }
 
@@ -1067,6 +1115,7 @@ class Settings extends Page implements HasForms
             $stateKey = 'appointments_'.$key;
             if (! array_key_exists($stateKey, $this->data)) {
                 $a[$key] = $a[$key] ?? AppointmentsSettings::FEATURES[$key]['default'];
+
                 continue;
             }
             if ($key === 'default_duration_minutes') {
@@ -1078,7 +1127,7 @@ class Settings extends Page implements HasForms
 
         $settings['appointments'] = $a;
         $company->update(['settings' => $settings]);
-        app(\App\Support\CurrentCompany::class)->set($company->fresh());
+        app(CurrentCompany::class)->set($company->fresh());
 
         Notification::make()->title('Configuración de Citas guardada')->success()->send();
     }
@@ -1109,6 +1158,7 @@ class Settings extends Page implements HasForms
     {
         if (! auth()->user()->can('company.settings')) {
             $this->errorNotif('Sin permiso para editar configuración');
+
             return;
         }
 
@@ -1120,7 +1170,7 @@ class Settings extends Page implements HasForms
 
         $settings['parking'] = $parking;
         $company->update(['settings' => $settings]);
-        app(\App\Support\CurrentCompany::class)->set($company->fresh());
+        app(CurrentCompany::class)->set($company->fresh());
 
         Notification::make()->title('Configuración de Parqueadero guardada')->success()->send();
     }
@@ -1131,6 +1181,7 @@ class Settings extends Page implements HasForms
         if (! $companyId) {
             abort(403, 'Usuario sin empresa asociada.');
         }
+
         return Company::findOrFail($companyId);
     }
 

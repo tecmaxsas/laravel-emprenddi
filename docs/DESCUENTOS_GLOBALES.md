@@ -1,0 +1,96 @@
+# Descuentos globales (pie de factura)
+
+Un descuento a toda la factura, además de los de cada línea.
+
+## Dónde se habilita
+
+**Configuraciones → Empresa → Descuentos globales en facturas**, con dos
+interruptores independientes:
+
+- Permitir en **facturas de venta**
+- Permitir en **facturas de compra**
+
+Vienen **apagados**. Un descuento a toda la factura es una decisión comercial
+que no todos deben poder tomar; quien lo necesita lo enciende.
+
+El **POS ya lo tenía** desde antes y se configura en su propia pestaña, con
+«Permitir descuentos»: ahí el mismo interruptor gobierna el descuento por línea,
+el global, y el umbral que exige autorización de un supervisor por PIN.
+
+## Se aplica sobre la base, no sobre el total
+
+Esta es la regla que importa. Primero baja la base gravable y **después** se
+calcula el IVA.
+
+Con una factura de $1.000.000, IVA del 19 % y un 10 % de descuento:
+
+| | Sobre la base (correcto) | Sobre el total (incorrecto) |
+|---|---|---|
+| Subtotal | $1.000.000 | $1.000.000 |
+| Descuento | −$100.000 | — |
+| Base gravable | $900.000 | $1.000.000 |
+| IVA 19 % | $171.000 | $190.000 |
+| Descuento | — | −$119.000 |
+| **Total** | **$1.071.000** | **$1.071.000** |
+
+El total coincide, y por eso el error pasa desapercibido. Lo que no coincide es
+el **IVA declarado**: $19.000 de más en cada factura, que la empresa le paga a la
+DIAN sin habérselos cobrado a nadie. Es lo que exige la DIAN para un descuento
+no condicionado y hay una prueba dedicada a ello.
+
+## Cómo se reparte
+
+El descuento se prorratea entre las líneas en proporción a lo que pesa cada una,
+y se suma al descuento de cada línea. Así, una factura con una línea gravada al
+19 % y otra excluida paga el IVA correcto: cada línea aplica su propia tarifa
+sobre lo que le quedó.
+
+El redondeo del reparto deja centavos sueltos; se le cargan a la línea más grande
+para que lo repartido sume exactamente lo pactado.
+
+### Por qué se suma al descuento de la línea
+
+Podría haberse guardado aparte y restarse después, pero **doce lugares del
+sistema calculan la base gravable como `subtotal - discount_amount`**: el asiento
+contable, los tres constructores de payload de la DIAN, el costeo de compras y
+las comisiones. Metiéndolo ahí, los doce quedan correctos sin tocar ninguno —que
+es exactamente lo que uno quiere cuando una base mal calculada significa una
+factura rechazada por la DIAN.
+
+El precio de esa decisión es que en una línea con descuento global,
+`discount_amount` deja de ser `subtotal × discount_percentage`. La columna
+`global_discount_amount` de la línea guarda cuánto de ese descuento vino del
+global, y es lo que permite recalcular sin que el descuento se aplique dos veces.
+
+## Qué se guarda
+
+En la factura: el tipo (`percent` / `amount`), el valor que escribió el usuario y
+el monto en pesos que efectivamente se descontó. Se guardan los tres porque el
+valor pactado —«10 %»— es información distinta del resultado, y al reeditar la
+factura hay que poder ver lo que se acordó.
+
+## Instalación
+
+```bash
+cd /opt/emprenddi
+git pull origin main
+docker exec emprenddi_app php artisan migrate --force
+docker exec emprenddi_app php artisan optimize:clear
+```
+
+Las migraciones solo agregan columnas con valor por defecto cero: **ninguna
+factura existente cambia**. Mientras el descuento global sea cero, el cálculo es
+byte por byte el de antes.
+
+## Limitaciones conocidas
+
+- **En el POS el mecanismo es otro.** Ahí el descuento global se suma al
+  porcentaje de cada línea del carrito, que es lo que ya hacía y funciona. El
+  resultado es el mismo —IVA sobre la base descontada— pero el código no es
+  compartido. Unificarlo tocaría el flujo de venta en caliente, y no valía el
+  riesgo por una diferencia que el usuario no ve.
+- **No hay umbral de autorización fuera del POS.** En el POS, un descuento por
+  encima del umbral pide el PIN de un supervisor; en las facturas capturadas a
+  mano no. Si se necesita, es el siguiente paso natural.
+- **Las plantillas de impresión muestran el descuento sumado**, no desglosado
+  entre «de línea» y «global». El número es correcto; el desglose no está.

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Dian\Resolution;
 use App\Traits\BelongsToCompany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -12,9 +13,10 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class PurchaseInvoice extends Model
 {
-    use HasFactory, BelongsToCompany, SoftDeletes;
+    use BelongsToCompany, HasFactory, SoftDeletes;
 
     public const KIND_INVOICE = 'invoice';
+
     public const KIND_SUPPORT_DOCUMENT = 'support_document';
 
     public const KINDS = [
@@ -23,8 +25,11 @@ class PurchaseInvoice extends Model
     ];
 
     public const DIAN_PENDING = 'pending';
+
     public const DIAN_SENT = 'sent';
+
     public const DIAN_ACCEPTED = 'accepted';
+
     public const DIAN_REJECTED = 'rejected';
 
     public const DIAN_STATUSES = [
@@ -35,7 +40,9 @@ class PurchaseInvoice extends Model
     ];
 
     public const STATUS_DRAFT = 'draft';
+
     public const STATUS_POSTED = 'posted';
+
     public const STATUS_CANCELLED = 'cancelled';
 
     public const STATUSES = [
@@ -45,9 +52,13 @@ class PurchaseInvoice extends Model
     ];
 
     public const PAYMENT_PENDIENTE = 'pendiente';
+
     public const PAYMENT_PARCIAL = 'parcial';
+
     public const PAYMENT_PAGADO = 'pagado';
+
     public const PAYMENT_VENCIDO = 'vencido';
+
     public const PAYMENT_CANCELADA = 'cancelada';
 
     public const PAYMENT_STATUSES = [
@@ -75,6 +86,9 @@ class PurchaseInvoice extends Model
         'exchange_rate',
         'subtotal',
         'discount_total',
+        'global_discount_type',
+        'global_discount_value',
+        'global_discount_amount',
         'tax_total',
         'total',
         'retention_total',
@@ -155,7 +169,7 @@ class PurchaseInvoice extends Model
 
     public function dianResolution(): BelongsTo
     {
-        return $this->belongsTo(\App\Models\Dian\Resolution::class, 'dian_resolution_id');
+        return $this->belongsTo(Resolution::class, 'dian_resolution_id');
     }
 
     public function createdBy(): BelongsTo
