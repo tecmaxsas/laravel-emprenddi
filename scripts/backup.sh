@@ -138,6 +138,7 @@ if [ "${PROBAR_NUBE:-false}" = true ]; then
     echo -n "  2. gcloud instalado .................... "
     command -v gcloud >/dev/null 2>&1 && echo "sí" || { echo "NO"; exit 1; }
 
+    CUENTA=""
     echo -n "  3. Llave de cuenta de servicio ......... "
     if [ -z "$KEY_FILE" ]; then
         echo "no se usa (se usarán las credenciales de la VM)"
@@ -155,7 +156,20 @@ if [ "${PROBAR_NUBE:-false}" = true ]; then
     fi
 
     echo -n "  4. Autenticación ....................... "
-    if autenticar_nube; then echo "ok"; else echo "FALLÓ"; exit 1; fi
+    if autenticar_nube; then
+        # Cual es la cuenta que gcloud esta usando REALMENTE. Si no es la de la
+        # llave, el permiso se le dio a una cuenta y escribe otra.
+        ACTIVA=$(gcloud auth list --filter=status:ACTIVE --format='value(account)' 2>/dev/null | head -1)
+        echo "ok — usando ${ACTIVA:-(desconocida)}"
+
+        if [ -n "$CUENTA" ] && [ -n "$ACTIVA" ] && [ "$CUENTA" != "$ACTIVA" ]; then
+            echo "     ⚠ La llave es de $CUENTA pero gcloud está usando $ACTIVA."
+            echo "       El permiso se le dio a una cuenta y escribe otra."
+        fi
+    else
+        echo "FALLÓ"
+        exit 1
+    fi
 
     echo -n "  5. El bucket existe y es accesible ..... "
     if SALIDA=$(gcloud storage ls "$BUCKET" 2>&1); then
@@ -179,15 +193,32 @@ if [ "${PROBAR_NUBE:-false}" = true ]; then
     echo -n "  6. Se puede escribir ................... "
     PRUEBA="$(mktemp)"
     echo "prueba de escritura $(date -Iseconds)" > "$PRUEBA"
-    if gcloud storage cp "$PRUEBA" "$BUCKET/.prueba-de-escritura" --quiet 2>/dev/null; then
+
+    # El error de gcloud se MUESTRA. Esconderlo era el problema: «no se puede
+    # escribir» sin decir por que deja igual de perdido que el error vacio que
+    # este diagnostico venia a resolver.
+    if SALIDA=$(gcloud storage cp "$PRUEBA" "$BUCKET/.prueba-de-escritura" 2>&1); then
         gcloud storage rm "$BUCKET/.prueba-de-escritura" --quiet 2>/dev/null || true
         echo "sí"
         rm -f "$PRUEBA"
     else
         echo "NO"
         rm -f "$PRUEBA"
-        echo "     La cuenta puede LEER el bucket pero no escribir en él."
-        echo "     Le falta el rol roles/storage.objectAdmin (o objectCreator)."
+        echo
+        echo "     Lo que respondió Google:"
+        echo "$SALIDA" | sed 's/^/       /' | head -8
+        echo
+        echo "     Qué mirar, según lo que diga arriba:"
+        echo "       • «does not have storage.objects.create access» → falta el rol."
+        echo "         Desde Cloud Shell:"
+        echo "         gcloud storage buckets add-iam-policy-binding $BUCKET \\"
+        echo "           --member=\"serviceAccount:${CUENTA:-LA_CUENTA}\" --role=roles/storage.objectAdmin"
+        echo "       • Si el rol YA aparece en get-iam-policy, suele ser propagación:"
+        echo "         espera un minuto y vuelve a correr esta prueba."
+        echo "       • «retention policy» o «bucket lock» → el bucket tiene retención"
+        echo "         y no admite sobrescribir un objeto con el mismo nombre."
+        echo "       • «billing» o «has not enabled» → falta habilitar la API o la"
+        echo "         facturación del proyecto."
         FALLOS=1
     fi
 
