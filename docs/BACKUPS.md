@@ -62,44 +62,178 @@ Hay dos salidas.
 Con una llave de cuenta de servicio, `gcloud` no pasa por el servidor de
 metadatos y los scopes de la instancia dejan de aplicar.
 
-**Desde Cloud Shell o tu máquina** (donde tú sí tienes permisos, no desde la VM):
+Son cuatro pasos. Los tres primeros **no se hacen en la VM**, porque la VM es
+justamente la que no tiene permiso.
+
+---
+
+##### Paso 1 · Abrir Cloud Shell
+
+Cloud Shell es una terminal de Google, dentro del navegador, que se abre **ya
+autenticada con tu propia cuenta** —la que sí tiene permisos para crear buckets
+y cuentas de servicio—.
+
+1. Entra a <https://console.cloud.google.com>.
+2. Arriba a la derecha, junto a la campana de notificaciones, hay un icono de
+   terminal: **`>_`**. Se llama *Activar Cloud Shell*.
+3. Haz clic. Se abre un panel negro en la parte de abajo. La primera vez tarda
+   medio minuto y puede pedirte **Autorizar**: acepta.
+4. Cuando el prompt diga algo como `tu_usuario@cloudshell:~ (emprenddi-454013)$`
+   ya estás dentro.
+
+> **No confundas Cloud Shell con el SSH de la VM.** Son dos terminales
+> distintas. El SSH de la VM se abre desde *Compute Engine → Instancias de VM →
+> SSH* y es la máquina donde vive Emprenddi. Cloud Shell es una máquina
+> temporal de Google, y es la única de las dos que tiene permisos para crear el
+> bucket.
+
+##### Paso 2 · Crear el bucket, la cuenta de servicio y la llave
+
+Copia esto y pégalo **completo** en Cloud Shell (clic derecho → Pegar, o
+`Ctrl+Shift+V`):
 
 ```bash
 PROYECTO=emprenddi-454013
 
+# a) La identidad que va a subir los respaldos
 gcloud iam service-accounts create emprenddi-respaldos \
   --display-name="Respaldos Emprenddi" --project=$PROYECTO
 
+# b) El bucket donde se guardan
 gcloud storage buckets create gs://emprenddi-respaldos \
   --location=us-central1 --uniform-bucket-level-access --project=$PROYECTO
 
+# c) Permiso de esa identidad SOBRE ESE BUCKET, y solo sobre ese
 gcloud storage buckets add-iam-policy-binding gs://emprenddi-respaldos \
   --member="serviceAccount:emprenddi-respaldos@$PROYECTO.iam.gserviceaccount.com" \
   --role=roles/storage.objectAdmin
 
+# d) La llave: el archivo que le da esa identidad a la VM
 gcloud iam service-accounts keys create clave-respaldos.json \
   --iam-account=emprenddi-respaldos@$PROYECTO.iam.gserviceaccount.com
 ```
 
-Sube `clave-respaldos.json` a la VM (el SSH del navegador tiene **SUBIR
-ARCHIVO**) y en la VM:
+Al terminar debe decir algo como:
+
+```
+created key [a1b2c3...] of type [json] as [clave-respaldos.json]
+```
+
+Compruébalo:
 
 ```bash
-mv ~/clave-respaldos.json /opt/emprenddi/gcs-respaldos.json
+ls -la clave-respaldos.json
+```
+
+##### Paso 3 · Llevar la llave a la VM
+
+Hay dos formas. **La segunda es más corta y evita descargar la credencial a tu
+computador**, que es preferible.
+
+**Forma 1 — descargar y subir**
+
+1. En Cloud Shell, arriba a la derecha del panel negro, el menú de tres puntos
+   **⋮** → **Descargar** (*Download*).
+2. Te pide una ruta. Escribe exactamente:
+   `clave-respaldos.json`
+   y dale **Descargar**. El archivo cae en las descargas de tu computador.
+3. Abre el **SSH de la VM** (*Compute Engine → Instancias de VM → SSH*).
+4. Arriba de esa ventana, botón **SUBIR ARCHIVO**. Elige el
+   `clave-respaldos.json` que acabas de descargar.
+5. El archivo queda en tu carpeta personal de la VM, en
+   `/home/desarrollotecmax/clave-respaldos.json`.
+
+**Forma 2 — copiar y pegar el contenido** (sin que toque tu computador)
+
+1. En **Cloud Shell**:
+   ```bash
+   cat clave-respaldos.json
+   ```
+2. Selecciona con el mouse **todo** lo que imprimió —desde la primera `{` hasta
+   la última `}`— y cópialo.
+3. En el **SSH de la VM**:
+   ```bash
+   sudo nano /opt/emprenddi/gcs-respaldos.json
+   ```
+4. Pega (clic derecho → Pegar). Guarda con `Ctrl+O`, `Enter`, y sal con
+   `Ctrl+X`.
+5. Comprueba que quedó bien:
+   ```bash
+   sudo python3 -c "import json;json.load(open('/opt/emprenddi/gcs-respaldos.json'));print('la llave es válida')"
+   ```
+
+##### Paso 4 · Configurar y probar, en la VM
+
+```bash
+sudo su root
+cd /opt/emprenddi
+git pull origin main
+
+# Solo si usaste la Forma 1 (si usaste la 2, el archivo ya está en su sitio)
+mv /home/desarrollotecmax/clave-respaldos.json /opt/emprenddi/gcs-respaldos.json
+
+# Una credencial no se deja legible para todo el mundo
 chown root:root /opt/emprenddi/gcs-respaldos.json
 chmod 600 /opt/emprenddi/gcs-respaldos.json
 
-nano /opt/emprenddi/.env.production
-#   BACKUP_GCS_BUCKET=gs://emprenddi-respaldos
-#   BACKUP_GCS_KEY_FILE=/opt/emprenddi/gcs-respaldos.json
-
-bash /opt/emprenddi/scripts/backup.sh
+nano .env.production
 ```
 
-Esa llave **es una credencial**: con ella se escribe y se lee el bucket de
-respaldos. Va con permisos 600, fuera de git (`.gitignore` la cubre) y no se
-comparte. Si se filtra, se revoca con
-`gcloud iam service-accounts keys delete`.
+Dentro de `nano`, busca las líneas de `BACKUP_` (están al final) y déjalas así:
+
+```
+BACKUP_GCS_BUCKET=gs://emprenddi-respaldos
+BACKUP_GCS_KEY_FILE=/opt/emprenddi/gcs-respaldos.json
+```
+
+Guarda con `Ctrl+O`, `Enter`, sal con `Ctrl+X`. Y prueba:
+
+```bash
+bash scripts/backup.sh
+```
+
+Ahora debe decir:
+
+```
+   • Subiendo a gs://emprenddi-respaldos...
+     Listo.
+==> Respaldo terminado.
+```
+
+Confírmalo desde dos lados:
+
+```bash
+docker exec emprenddi_app php artisan backup:status   # «Fuera del servidor: sí»
+gcloud storage ls gs://emprenddi-respaldos            # el archivo, desde Cloud Shell
+```
+
+##### Después: borra la copia suelta de la llave
+
+Si usaste la Forma 1, el archivo quedó en tres sitios. Deja solo el de la VM:
+
+```bash
+# En Cloud Shell
+rm clave-respaldos.json
+```
+
+Y borra el de las descargas de tu computador.
+
+> **Qué es esa llave, en serio.** Da acceso de escritura y lectura al bucket de
+> respaldos, y ese bucket contiene la base de datos completa —clientes, ventas,
+> cartera— y el `.env` con las contraseñas. No la mandes por correo, ni por
+> WhatsApp, ni la subas a ningún repositorio. Si alguna vez se filtra, se
+> revoca así, desde Cloud Shell:
+>
+> ```bash
+> gcloud iam service-accounts keys list \
+>   --iam-account=emprenddi-respaldos@emprenddi-454013.iam.gserviceaccount.com
+> gcloud iam service-accounts keys delete EL_ID_DE_LA_LLAVE \
+>   --iam-account=emprenddi-respaldos@emprenddi-454013.iam.gserviceaccount.com
+> ```
+>
+> Y se genera una nueva repitiendo el paso 2d.
+
+---
 
 #### Opción B — ampliar los permisos de la VM (con apagón)
 
