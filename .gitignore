@@ -29,3 +29,8 @@ desktop.ini
 .phpstorm.meta.php
 _ide_helper.php
 _ide_helper_models.php
+
+# Llave de cuenta de servicio para subir los respaldos a Google Cloud Storage.
+# Es una credencial: con ella se escribe y se lee el bucket de respaldos.
+/gcs-respaldos.json
+/clave-respaldos.json

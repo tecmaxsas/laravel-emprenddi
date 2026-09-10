@@ -15,31 +15,111 @@ los cachés, ni los logs. Recuperar eso es un `git pull` y un deploy.
 
 ## Instalación
 
-En la VM, una sola vez:
+El bucket y los permisos **no se crean desde la VM**: sus credenciales suelen
+venir recortadas y fallan con `Provided scope(s) are not authorized`. Se crean
+desde Cloud Shell o desde tu máquina, siguiendo *«Si la VM no puede subir al
+bucket»* más abajo.
+
+Una vez existe el bucket y la VM tiene con qué escribir en él:
 
 ```bash
 cd /opt/emprenddi
 git pull origin main
 
-# 1. Crear el bucket (una vez, desde tu máquina o la VM)
-gcloud storage buckets create gs://emprenddi-respaldos \
-  --location=us-central1 \
-  --uniform-bucket-level-access
+nano .env.production
+#   BACKUP_GCS_BUCKET=gs://emprenddi-respaldos
+#   BACKUP_GCS_KEY_FILE=/opt/emprenddi/gcs-respaldos.json   (si usas llave)
 
-# 2. Que la VM pueda escribir en él
-gcloud storage buckets add-iam-policy-binding gs://emprenddi-respaldos \
-  --member="serviceAccount:$(gcloud compute instances describe instance-20260502-170340 \
-      --zone=us-central1-c --format='value(serviceAccounts[0].email)')" \
-  --role=roles/storage.objectAdmin
-
-# 3. Apuntar la aplicación al bucket
-nano .env.production        # BACKUP_GCS_BUCKET=gs://emprenddi-respaldos
-
-# 4. Probar UNA vez a mano antes de automatizar
+# Probar UNA vez a mano antes de automatizar
 sudo bash scripts/backup.sh
 
-# 5. Dejar el cron diario (3:15 a. m.)
+# Comprobar que dice «Fuera del servidor: sí»
+docker exec emprenddi_app php artisan backup:status
+
+# Dejar el cron diario (3:15 a. m.)
 sudo bash scripts/backup.sh --instalar-cron
+```
+
+### Si la VM no puede subir al bucket
+
+Si al correr `backup.sh` aparece:
+
+```
+Provided scope(s) are not authorized
+```
+
+no es un problema de permisos IAM: es que **la VM se creó con permisos de
+acceso (*scopes*) limitados**. Una máquina de Compute Engine pide sus
+credenciales al servidor de metadatos, y ese token viene recortado según los
+scopes con que se creó la instancia. El habitual por defecto solo deja **leer**
+de Storage. Por muchos roles que se le den a la cuenta de servicio, el token no
+alcanza.
+
+Hay dos salidas.
+
+#### Opción A — una llave propia (sin apagar nada) ← recomendada
+
+Con una llave de cuenta de servicio, `gcloud` no pasa por el servidor de
+metadatos y los scopes de la instancia dejan de aplicar.
+
+**Desde Cloud Shell o tu máquina** (donde tú sí tienes permisos, no desde la VM):
+
+```bash
+PROYECTO=emprenddi-454013
+
+gcloud iam service-accounts create emprenddi-respaldos \
+  --display-name="Respaldos Emprenddi" --project=$PROYECTO
+
+gcloud storage buckets create gs://emprenddi-respaldos \
+  --location=us-central1 --uniform-bucket-level-access --project=$PROYECTO
+
+gcloud storage buckets add-iam-policy-binding gs://emprenddi-respaldos \
+  --member="serviceAccount:emprenddi-respaldos@$PROYECTO.iam.gserviceaccount.com" \
+  --role=roles/storage.objectAdmin
+
+gcloud iam service-accounts keys create clave-respaldos.json \
+  --iam-account=emprenddi-respaldos@$PROYECTO.iam.gserviceaccount.com
+```
+
+Sube `clave-respaldos.json` a la VM (el SSH del navegador tiene **SUBIR
+ARCHIVO**) y en la VM:
+
+```bash
+mv ~/clave-respaldos.json /opt/emprenddi/gcs-respaldos.json
+chown root:root /opt/emprenddi/gcs-respaldos.json
+chmod 600 /opt/emprenddi/gcs-respaldos.json
+
+nano /opt/emprenddi/.env.production
+#   BACKUP_GCS_BUCKET=gs://emprenddi-respaldos
+#   BACKUP_GCS_KEY_FILE=/opt/emprenddi/gcs-respaldos.json
+
+bash /opt/emprenddi/scripts/backup.sh
+```
+
+Esa llave **es una credencial**: con ella se escribe y se lee el bucket de
+respaldos. Va con permisos 600, fuera de git (`.gitignore` la cubre) y no se
+comparte. Si se filtra, se revoca con
+`gcloud iam service-accounts keys delete`.
+
+#### Opción B — ampliar los permisos de la VM (con apagón)
+
+Más limpio a largo plazo, pero **exige apagar la máquina**: los scopes no se
+pueden cambiar en caliente.
+
+```bash
+gcloud compute instances stop instance-20260502-170340 --zone=us-central1-c
+gcloud compute instances set-service-account instance-20260502-170340 \
+  --zone=us-central1-c --scopes=cloud-platform
+gcloud compute instances start instance-20260502-170340 --zone=us-central1-c
+```
+
+**Antes de hacerlo, comprueba que la IP externa sea estática.** Si es efímera,
+al apagar la VM se pierde y `pos.emprenddi.com` deja de resolver hasta que se
+actualice el DNS:
+
+```bash
+gcloud compute addresses list
+# Si 104.154.82.129 no aparece ahí, es efímera: reservarla ANTES de apagar.
 ```
 
 ### Que el bucket no se pueda borrar por accidente

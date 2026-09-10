@@ -64,6 +64,13 @@ trap 'rm -rf "$TRABAJO"' EXIT
 # ---- Traer el archivo -------------------------------------------------------
 if [[ "$ORIGEN" == gs://* ]]; then
     echo "==> Descargando de $ORIGEN..."
+
+    # Misma llave que usa el respaldo, si esta configurada. Ver backup.sh.
+    KEY_FILE="$(leer_env BACKUP_GCS_KEY_FILE)"
+    if [ -n "$KEY_FILE" ] && [ -r "$KEY_FILE" ]; then
+        export CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE="$KEY_FILE"
+    fi
+
     gcloud storage cp "$ORIGEN" "$TRABAJO/respaldo.tar.gz" --quiet
     ARCHIVO="$TRABAJO/respaldo.tar.gz"
 else

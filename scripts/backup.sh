@@ -24,6 +24,8 @@
 #
 # Variables (en .env.production):
 #   BACKUP_GCS_BUCKET   gs://mi-bucket-de-respaldos   ← el respaldo de verdad
+#   BACKUP_GCS_KEY_FILE llave JSON de cuenta de servicio, si la VM no tiene
+#                       permiso para escribir en Storage (ver docs/BACKUPS.md)
 #   BACKUP_RETENCION    dias que se conservan (por defecto 30)
 #   BACKUP_DIR          donde se guardan localmente (por defecto storage/backups)
 # =============================================================================
@@ -63,6 +65,19 @@ leer_env() {
 BACKUP_DIR="$(leer_env BACKUP_DIR)"
 BACKUP_DIR="${BACKUP_DIR:-$PROJECT_DIR/storage/backups}"
 BUCKET="$(leer_env BACKUP_GCS_BUCKET)"
+
+# Llave de cuenta de servicio, opcional.
+#
+# Una VM de Compute Engine pide sus credenciales al metadata server, y esas
+# credenciales estan limitadas por los "scopes" con que se CREO la maquina. Si
+# se creo con el scope de solo lectura de Storage —el habitual por defecto—, la
+# subida falla con «Provided scope(s) are not authorized» por mas permisos IAM
+# que tenga la cuenta, y ampliarlos exige APAGAR la VM.
+#
+# Con una llave propia gcloud no pasa por el metadata server y los scopes de la
+# instancia dejan de aplicar. Se usa solo para esta subida: no toca la sesion de
+# gcloud de la maquina.
+KEY_FILE="$(leer_env BACKUP_GCS_KEY_FILE)"
 RETENCION="$(leer_env BACKUP_RETENCION)"
 RETENCION="${RETENCION:-30}"
 
@@ -169,12 +184,21 @@ elif ! command -v gcloud >/dev/null 2>&1; then
     echo "   ⚠ gcloud no está instalado: no se pudo subir la copia externa." >&2
 else
     echo "   • Subiendo a $BUCKET..."
+
+    if [ -n "$KEY_FILE" ] && [ -r "$KEY_FILE" ]; then
+        export CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE="$KEY_FILE"
+    elif [ -n "$KEY_FILE" ]; then
+        echo "   ⚠ BACKUP_GCS_KEY_FILE apunta a $KEY_FILE y no se puede leer." >&2
+    fi
+
     if gcloud storage cp "$BACKUP_DIR/$ARCHIVO" "$BUCKET/$ARCHIVO" --quiet; then
         FUERA=true
         echo "     Listo."
     else
         DETALLE="el respaldo se creó pero no se pudo subir a $BUCKET"
         echo "   ✗ $DETALLE" >&2
+        echo "     Si el error dice «Provided scope(s) are not authorized», la VM se creó" >&2
+        echo "     con permisos limitados. Ver docs/BACKUPS.md → «Si la VM no puede subir»." >&2
         exit 1
     fi
 fi
