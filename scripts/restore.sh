@@ -65,10 +65,19 @@ trap 'rm -rf "$TRABAJO"' EXIT
 if [[ "$ORIGEN" == gs://* ]]; then
     echo "==> Descargando de $ORIGEN..."
 
-    # Misma llave que usa el respaldo, si esta configurada. Ver backup.sh.
+    # Misma llave que usa el respaldo. Ojo con el detalle: no basta con
+    # activarla, hay que FORZAR que gcloud la use —en una VM de Compute Engine
+    # la cuenta de la maquina sigue siendo la predeterminada—.
     KEY_FILE="$(leer_env BACKUP_GCS_KEY_FILE)"
+
     if [ -n "$KEY_FILE" ] && [ -r "$KEY_FILE" ]; then
-        export CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE="$KEY_FILE"
+        export CLOUDSDK_CONFIG="$PROJECT_DIR/.gcloud-respaldos"
+        mkdir -p "$CLOUDSDK_CONFIG"
+        gcloud auth activate-service-account --key-file="$KEY_FILE" --quiet 2>/dev/null || true
+        export CLOUDSDK_CORE_ACCOUNT="$(
+            python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('client_email',''))" "$KEY_FILE" 2>/dev/null \
+                || grep -o '"client_email"[^,]*' "$KEY_FILE" | cut -d'"' -f4
+        )"
     fi
 
     gcloud storage cp "$ORIGEN" "$TRABAJO/respaldo.tar.gz" --quiet

@@ -97,6 +97,13 @@ CONTENEDOR_DB="${BACKUP_DB_CONTAINER:-emprenddi_postgres}"
 # credenciales a medias y Storage responde un error vacío —`GcsApiError('')`—
 # que no dice nada. Lo que sí funciona es activar la cuenta, y para no pisar la
 # sesión de gcloud de la máquina se hace en una configuración aparte.
+cuenta_de_la_llave() {
+    [ -r "$KEY_FILE" ] || return 1
+
+    python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('client_email',''))" "$KEY_FILE" 2>/dev/null \
+        || grep -o '"client_email"[^,]*' "$KEY_FILE" | cut -d'"' -f4
+}
+
 autenticar_nube() {
     [ -n "$KEY_FILE" ] || return 0
 
@@ -109,13 +116,28 @@ autenticar_nube() {
     mkdir -p "$CLOUDSDK_CONFIG"
     chmod 700 "$CLOUDSDK_CONFIG"
 
-    # Se activa una sola vez; despues queda en esa configuracion.
-    if ! gcloud auth list --filter=status:ACTIVE --format='value(account)' 2>/dev/null | grep -q .; then
-        gcloud auth activate-service-account --key-file="$KEY_FILE" --quiet || {
-            echo "   ✗ La llave no sirve para autenticarse. ¿Está completa el JSON?" >&2
-            return 1
-        }
+    # Se activa SIEMPRE, y aqui esta la trampa que costo dos vueltas: en una VM
+    # de Compute Engine `gcloud auth list` muestra la cuenta de la maquina como
+    # activa aunque la configuracion este recien creada —viene del servidor de
+    # metadatos—, asi que preguntar «¿ya hay cuenta?» siempre respondia que si y
+    # la llave no se activaba nunca. El sintoma era el peor posible: todo decia
+    # «ok» y la escritura fallaba, porque el permiso estaba en una cuenta y
+    # escribia otra.
+    gcloud auth activate-service-account --key-file="$KEY_FILE" --quiet 2>/dev/null || {
+        echo "   ✗ La llave no sirve para autenticarse. ¿El JSON está completo?" >&2
+        return 1
+    }
+
+    # Y se fuerza a usarla: activarla no basta si la de la maquina sigue siendo
+    # la predeterminada.
+    CUENTA_LLAVE="$(cuenta_de_la_llave)"
+
+    if [ -z "$CUENTA_LLAVE" ]; then
+        echo "   ✗ La llave no tiene client_email: no parece una llave de cuenta de servicio." >&2
+        return 1
     fi
+
+    export CLOUDSDK_CORE_ACCOUNT="$CUENTA_LLAVE"
 
     return 0
 }
@@ -151,7 +173,7 @@ if [ "${PROBAR_NUBE:-false}" = true ]; then
         echo "     desde la primera llave { hasta la última }."
         exit 1
     else
-        CUENTA=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('client_email',''))" "$KEY_FILE")
+        CUENTA="$(cuenta_de_la_llave)"
         echo "ok — $CUENTA"
     fi
 
