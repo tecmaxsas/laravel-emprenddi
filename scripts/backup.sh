@@ -372,11 +372,28 @@ echo "==> Respaldo terminado."
 
 # ---- Cron -------------------------------------------------------------------
 if [ "${INSTALAR_CRON:-false}" = true ]; then
-    LINEA="15 3 * * * PROJECT_DIR=$PROJECT_DIR bash $PROJECT_DIR/scripts/backup.sh >> $PROJECT_DIR/storage/logs/backup.log 2>&1"
-    if crontab -l 2>/dev/null | grep -q 'scripts/backup.sh'; then
-        echo "==> El cron de respaldo ya estaba puesto."
-    else
-        (crontab -l 2>/dev/null; echo "$LINEA") | crontab -
-        echo "==> Cron instalado: todos los días a las 3:15 a. m."
+    # El PATH va explicito. Cron corre con un entorno minimo —normalmente solo
+    # /usr/bin:/bin— y si gcloud no esta ahi, el respaldo nocturno se hace pero
+    # NO sube, avisando a un log que nadie lee. El respaldo mas peligroso es el
+    # que uno cree que esta en la nube y esta en el mismo disco.
+    RUTA_GCLOUD="$(command -v gcloud 2>/dev/null || true)"
+    PATH_CRON="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+    if [ -n "$RUTA_GCLOUD" ]; then
+        DIR_GCLOUD="$(dirname "$RUTA_GCLOUD")"
+        case ":$PATH_CRON:" in
+            *":$DIR_GCLOUD:"*) ;;
+            *) PATH_CRON="$DIR_GCLOUD:$PATH_CRON" ;;
+        esac
     fi
+
+    LINEA="15 3 * * * PATH=$PATH_CRON PROJECT_DIR=$PROJECT_DIR bash $PROJECT_DIR/scripts/backup.sh >> $PROJECT_DIR/storage/logs/backup.log 2>&1"
+
+    # Se reemplaza si ya existia, en vez de saltarse: si no, una correccion como
+    # esta nunca llegaria a las maquinas que ya tenian el cron viejo.
+    ACTUAL="$(crontab -l 2>/dev/null | grep -v 'scripts/backup.sh' || true)"
+    printf '%s\n%s\n' "$ACTUAL" "$LINEA" | grep -v '^$' | crontab -
+
+    echo "==> Cron instalado: todos los días a las 3:15 a. m."
+    echo "    $LINEA"
 fi
