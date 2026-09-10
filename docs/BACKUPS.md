@@ -192,7 +192,19 @@ Guarda con `Ctrl+O`, `Enter`, sal con `Ctrl+X`. Y prueba:
 bash scripts/backup.sh
 ```
 
-Ahora debe decir:
+Si algo falla, **antes de investigar a ciegas**:
+
+```bash
+bash scripts/backup.sh --probar-nube
+```
+
+Comprueba una por una las seis cosas que pueden estar mal —el bucket
+configurado, gcloud, la llave, la autenticación, que el bucket exista, y que se
+pueda escribir en él— y nombra la que falla con el comando para arreglarla. Se
+escribió porque el error de Google en este punto es literalmente
+`GcsApiError('')`, sin mensaje, y no le dice a nadie qué hacer.
+
+Cuando todo esté bien, `bash scripts/backup.sh` debe decir:
 
 ```
    • Subiendo a gs://emprenddi-respaldos...

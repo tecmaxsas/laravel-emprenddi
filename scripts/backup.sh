@@ -21,6 +21,7 @@
 #   sudo bash scripts/backup.sh                 # respaldo normal
 #   sudo bash scripts/backup.sh --solo-local    # sin subir a la nube
 #   sudo bash scripts/backup.sh --instalar-cron # deja el cron diario puesto
+#   sudo bash scripts/backup.sh --probar-nube   # diagnostica la conexion a GCS
 #
 # Variables (en .env.production):
 #   BACKUP_GCS_BUCKET   gs://mi-bucket-de-respaldos   ← el respaldo de verdad
@@ -51,6 +52,7 @@ for arg in "$@"; do
     case "$arg" in
         --solo-local) SOLO_LOCAL=true ;;
         --instalar-cron) INSTALAR_CRON=true ;;
+        --probar-nube) PROBAR_NUBE=true ;;
         -h|--help) grep -E '^# ' "$0" | sed 's/^# \?//'; exit 0 ;;
     esac
 done
@@ -88,6 +90,112 @@ DB_USER="$(leer_env DB_USERNAME)"
 # script contra un entorno de desarrollo sin tocar produccion, y para que un
 # rename del stack no rompa los respaldos en silencio.
 CONTENEDOR_DB="${BACKUP_DB_CONTAINER:-emprenddi_postgres}"
+
+# ---- Autenticación con la nube ---------------------------------------------
+# `CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE` parecía lo más limpio pero no es lo
+# que gcloud espera para una llave de cuenta de servicio: la petición sale con
+# credenciales a medias y Storage responde un error vacío —`GcsApiError('')`—
+# que no dice nada. Lo que sí funciona es activar la cuenta, y para no pisar la
+# sesión de gcloud de la máquina se hace en una configuración aparte.
+autenticar_nube() {
+    [ -n "$KEY_FILE" ] || return 0
+
+    if [ ! -r "$KEY_FILE" ]; then
+        echo "   ✗ BACKUP_GCS_KEY_FILE apunta a $KEY_FILE y no se puede leer." >&2
+        return 1
+    fi
+
+    export CLOUDSDK_CONFIG="$PROJECT_DIR/.gcloud-respaldos"
+    mkdir -p "$CLOUDSDK_CONFIG"
+    chmod 700 "$CLOUDSDK_CONFIG"
+
+    # Se activa una sola vez; despues queda en esa configuracion.
+    if ! gcloud auth list --filter=status:ACTIVE --format='value(account)' 2>/dev/null | grep -q .; then
+        gcloud auth activate-service-account --key-file="$KEY_FILE" --quiet || {
+            echo "   ✗ La llave no sirve para autenticarse. ¿Está completa el JSON?" >&2
+            return 1
+        }
+    fi
+
+    return 0
+}
+
+# ---- Diagnóstico de la nube -------------------------------------------------
+# Existe porque «GcsApiError('')» no le dice a nadie qué hacer. Comprueba una
+# por una las cosas que pueden estar mal y nombra la que falla.
+if [ "${PROBAR_NUBE:-false}" = true ]; then
+    echo "==> Probando la conexión con Google Cloud Storage"
+    FALLOS=0
+
+    echo -n "  1. BACKUP_GCS_BUCKET configurado ....... "
+    if [ -z "$BUCKET" ]; then
+        echo "NO"
+        echo "     Falta en .env.production. Ej: BACKUP_GCS_BUCKET=gs://emprenddi-respaldos"
+        exit 1
+    fi
+    echo "$BUCKET"
+
+    echo -n "  2. gcloud instalado .................... "
+    command -v gcloud >/dev/null 2>&1 && echo "sí" || { echo "NO"; exit 1; }
+
+    echo -n "  3. Llave de cuenta de servicio ......... "
+    if [ -z "$KEY_FILE" ]; then
+        echo "no se usa (se usarán las credenciales de la VM)"
+    elif [ ! -r "$KEY_FILE" ]; then
+        echo "NO SE PUEDE LEER: $KEY_FILE"
+        exit 1
+    elif ! python3 -c "import json,sys;json.load(open(sys.argv[1]))" "$KEY_FILE" 2>/dev/null; then
+        echo "NO ES UN JSON VÁLIDO"
+        echo "     Si la pegaste a mano, seguramente quedó cortada. Vuelve a copiarla completa,"
+        echo "     desde la primera llave { hasta la última }."
+        exit 1
+    else
+        CUENTA=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('client_email',''))" "$KEY_FILE")
+        echo "ok — $CUENTA"
+    fi
+
+    echo -n "  4. Autenticación ....................... "
+    if autenticar_nube; then echo "ok"; else echo "FALLÓ"; exit 1; fi
+
+    echo -n "  5. El bucket existe y es accesible ..... "
+    if SALIDA=$(gcloud storage ls "$BUCKET" 2>&1); then
+        echo "sí"
+    else
+        echo "NO"
+        echo "     $SALIDA" | head -3
+        echo
+        echo "     Causas frecuentes, en orden:"
+        echo "       • El bucket no se creó. Créalo desde Cloud Shell:"
+        echo "         gcloud storage buckets create $BUCKET --location=us-central1 \\"
+        echo "           --uniform-bucket-level-access --project=TU_PROYECTO"
+        echo "       • La cuenta de la llave no tiene permiso SOBRE ESE bucket:"
+        echo "         gcloud storage buckets add-iam-policy-binding $BUCKET \\"
+        echo "           --member=\"serviceAccount:${CUENTA:-LA_CUENTA}\" --role=roles/storage.objectAdmin"
+        echo "       • La API de Cloud Storage está apagada en el proyecto:"
+        echo "         gcloud services enable storage.googleapis.com --project=TU_PROYECTO"
+        exit 1
+    fi
+
+    echo -n "  6. Se puede escribir ................... "
+    PRUEBA="$(mktemp)"
+    echo "prueba de escritura $(date -Iseconds)" > "$PRUEBA"
+    if gcloud storage cp "$PRUEBA" "$BUCKET/.prueba-de-escritura" --quiet 2>/dev/null; then
+        gcloud storage rm "$BUCKET/.prueba-de-escritura" --quiet 2>/dev/null || true
+        echo "sí"
+        rm -f "$PRUEBA"
+    else
+        echo "NO"
+        rm -f "$PRUEBA"
+        echo "     La cuenta puede LEER el bucket pero no escribir en él."
+        echo "     Le falta el rol roles/storage.objectAdmin (o objectCreator)."
+        FALLOS=1
+    fi
+
+    echo
+    [ "$FALLOS" -eq 0 ] && echo "==> Todo en orden: los respaldos pueden subir a la nube." \
+        || { echo "==> Hay que corregir lo marcado arriba." >&2; exit 1; }
+    exit 0
+fi
 
 SELLO="$(date +%Y%m%d-%H%M%S)"
 DESTINO="$BACKUP_DIR/$SELLO"
@@ -185,11 +293,7 @@ elif ! command -v gcloud >/dev/null 2>&1; then
 else
     echo "   • Subiendo a $BUCKET..."
 
-    if [ -n "$KEY_FILE" ] && [ -r "$KEY_FILE" ]; then
-        export CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE="$KEY_FILE"
-    elif [ -n "$KEY_FILE" ]; then
-        echo "   ⚠ BACKUP_GCS_KEY_FILE apunta a $KEY_FILE y no se puede leer." >&2
-    fi
+    autenticar_nube || exit 1
 
     if gcloud storage cp "$BACKUP_DIR/$ARCHIVO" "$BUCKET/$ARCHIVO" --quiet; then
         FUERA=true
