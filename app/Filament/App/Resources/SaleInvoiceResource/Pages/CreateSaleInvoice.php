@@ -35,14 +35,21 @@ class CreateSaleInvoice extends CreateRecord
             ]);
         }
 
-        // Consecutivo de la resolución (POS o Electrónica) de la sede.
-        $kind = $data['invoice_kind'] ?? 'electronic';
-        $doc = app(DocumentNumberer::class)->reserveForLocation(
-            $locationId,
-            $kind,
-        );
+        // El consecutivo sale de la resolución elegida a mano, si la hay, y si
+        // no de la que tenga asignada la sede. Elegirla es lo excepcional: una
+        // empresa con varias resoluciones vigentes a veces necesita emitir con
+        // una concreta sin reasignarla.
+        $numerador = app(DocumentNumberer::class);
+        $resolucionElegida = (int) ($data['dian_resolution_id'] ?? 0);
+
+        $doc = $resolucionElegida > 0
+            ? $numerador->reserveForResolution($resolucionElegida, $companyId, $locationId)
+            : $numerador->reserveForLocation($locationId, $data['invoice_kind'] ?? 'electronic');
         $data['prefix'] = $doc['prefix'];
         $data['number'] = $doc['number'];
+        // El tipo lo decide la resolucion y no el selector: si alguien elige
+        // una resolucion POS con «Electronica» marcado, la factura es POS. Al
+        // reves se enviaria a la DIAN un consecutivo que no le corresponde.
         $data['invoice_kind'] = $doc['kind'];
         $data['dian_resolution_id'] = $doc['resolution_id'];
 

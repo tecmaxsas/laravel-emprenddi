@@ -23,9 +23,9 @@ use RuntimeException;
 class DocumentNumberer
 {
     /**
-     * @param  int     $locationId  Sede donde se emite la factura.
-     * @param  string  $kind        Resolution::KIND_POS | KIND_ELECTRONIC.
-     * @param  int     $documentTypeId  1 = Factura (default).
+     * @param  int  $locationId  Sede donde se emite la factura.
+     * @param  string  $kind  Resolution::KIND_POS | KIND_ELECTRONIC.
+     * @param  int  $documentTypeId  1 = Factura (default).
      */
     public function reserveForLocation(int $locationId, string $kind, int $documentTypeId = 1): array
     {
@@ -124,13 +124,145 @@ class DocumentNumberer
     }
 
     /**
+     * Reserva el consecutivo de una resolución concreta, esté o no asignada a
+     * la sede desde la que se factura.
+     *
+     * Existe porque la asignación resolución↔sede es una comodidad, no una
+     * regla del negocio: una empresa puede tener varias resoluciones vigentes y
+     * necesitar emitir con una determinada —la del contrato de un cliente, la
+     * que está por vencerse y hay que agotar, la de una sede que factura desde
+     * otra— sin tener que reasignarla y volver a dejarla como estaba.
+     *
+     * **De dónde sale el número cuando no hay asignación.** El contador vive en
+     * `dian_location_resolutions.current_consecutive`, que solo existe si la
+     * resolución está asignada a alguna sede. Sin asignación no hay contador, y
+     * por eso aquí el siguiente número se deduce de tres fuentes y se toma la
+     * mayor:
+     *
+     *   1. el contador más alto entre sus asignaciones, si las tiene;
+     *   2. la factura más alta ya emitida con ese prefijo en la empresa;
+     *   3. el inicio del rango autorizado.
+     *
+     * Deducirlo de la realidad y no de un contador suelto es lo que impide
+     * repetir un número: si alguien emitió por la vía de la sede, esta vía lo
+     * ve, y al revés.
+     *
+     * Si se indica la sede, la asignación (sede, resolución) se crea si no
+     * existía y su contador queda al día. Se crea **inactiva**: sirve para
+     * llevar la cuenta, no para convertirse en la resolución por defecto de esa
+     * sede. Facturar una vez con otra resolución no debería cambiar en silencio
+     * con cuál factura esa sede de ahí en adelante.
+     *
+     * @param  int  $resolutionId  La resolución elegida en el formulario.
+     * @param  int  $companyId  La empresa del usuario, para no confiar en el id que llega.
+     * @param  int|null  $locationId  La sede desde la que se emite.
+     * @return array{number: int, prefix: string, resolution_id: int, kind: string}
+     */
+    public function reserveForResolution(int $resolutionId, int $companyId, ?int $locationId = null): array
+    {
+        $resolution = Resolution::query()
+            ->withoutGlobalScopes()
+            ->where('id', $resolutionId)
+            ->where('company_id', $companyId)
+            ->first();
+
+        if (! $resolution) {
+            throw new RuntimeException('La resolución seleccionada no existe o no es de tu empresa.');
+        }
+
+        if (! $resolution->active) {
+            throw new RuntimeException(
+                "La resolución {$resolution->prefix} está inactiva. Actívala o elige otra."
+            );
+        }
+
+        $kindLabel = $resolution->isPos() ? 'POS' : 'de facturación electrónica';
+
+        return DB::transaction(function () use ($resolution, $companyId, $kindLabel, $locationId) {
+            // Sin fila de asignación no hay nada que bloquear, así que el
+            // candado va sobre (empresa, prefijo), que es justamente lo que
+            // protege el índice único de sale_invoices.
+            if (DB::connection()->getDriverName() === 'pgsql') {
+                DB::statement('SELECT pg_advisory_xact_lock(?)', [
+                    crc32('res:'.$companyId.':'.$resolution->prefix),
+                ]);
+            }
+
+            // La asignacion de ESTA sede se crea si no existia, para que la
+            // resolucion tenga contador propio de aqui en adelante. Inactiva:
+            // lleva la cuenta sin volverse la predeterminada de la sede.
+            if ($locationId) {
+                $pertenece = Location::query()
+                    ->where('id', $locationId)
+                    ->where('company_id', $companyId)
+                    ->exists();
+
+                if ($pertenece) {
+                    LocationResolution::query()->firstOrCreate(
+                        ['location_id' => $locationId, 'dian_resolution_id' => $resolution->id],
+                        ['current_consecutive' => (int) $resolution->range_from, 'active' => false],
+                    );
+                }
+            }
+
+            $asignaciones = LocationResolution::query()
+                ->where('dian_resolution_id', $resolution->id)
+                ->lockForUpdate()
+                ->get();
+
+            $candidatos = [(int) $resolution->range_from];
+
+            if ($asignaciones->isNotEmpty()) {
+                $candidatos[] = (int) $asignaciones->max('current_consecutive');
+            }
+
+            $maxUsado = SaleInvoice::query()
+                ->withoutGlobalScopes()
+                ->where('company_id', $companyId)
+                ->where('prefix', $resolution->prefix)
+                ->max('number');
+
+            if ($maxUsado !== null) {
+                $candidatos[] = (int) $maxUsado + 1;
+            }
+
+            $numero = max($candidatos);
+
+            if ($numero > (int) $resolution->range_to) {
+                throw new RuntimeException(
+                    "La resolución {$resolution->prefix} {$kindLabel} se agotó "
+                    ."(rango {$resolution->range_from} – {$resolution->range_to}). "
+                    .'Carga una resolución nueva.'
+                );
+            }
+
+            // Las asignaciones se adelantan también: si mañana se factura por
+            // la vía de la sede, tiene que arrancar donde quedó esta.
+            foreach ($asignaciones as $asignacion) {
+                if ((int) $asignacion->current_consecutive <= $numero) {
+                    $asignacion->update(['current_consecutive' => $numero + 1]);
+                }
+            }
+
+            return [
+                'number' => $numero,
+                'prefix' => $resolution->prefix,
+                'resolution_id' => $resolution->id,
+                'kind' => $resolution->kind,
+            ];
+        });
+    }
+
+    /**
      * ¿La sede tiene una resolución activa de este tipo? Útil para la UI
      * (deshabilitar el selector, mostrar avisos) sin reservar nada.
      */
     public function hasResolution(int $locationId, string $kind, int $documentTypeId = 1): bool
     {
         $companyId = (int) Location::query()->where('id', $locationId)->value('company_id');
-        if ($companyId <= 0) return false;
+        if ($companyId <= 0) {
+            return false;
+        }
 
         return LocationResolution::query()
             ->where('location_id', $locationId)

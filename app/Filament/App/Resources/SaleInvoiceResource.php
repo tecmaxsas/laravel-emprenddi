@@ -6,6 +6,8 @@ use App\Filament\App\Resources\SaleInvoiceResource\Pages;
 use App\Filament\App\Resources\SaleInvoiceResource\RelationManagers;
 use App\Filament\Concerns\ChecksPermission;
 use App\Filament\Concerns\PreviewsGlobalDiscount;
+use App\Models\Dian\LocationResolution;
+use App\Models\Dian\Resolution;
 use App\Models\Location;
 use App\Models\Product;
 use App\Models\SaleInvoice;
@@ -54,6 +56,60 @@ class SaleInvoiceResource extends Resource
 
     protected static ?int $navigationSort = 20;
 
+    /**
+     * Las resoluciones que se pueden elegir para numerar.
+     *
+     * Se listan TODAS las activas del tipo pedido, no solo las asignadas a la
+     * sede: ese es el punto de este selector. La etiqueta dice lo que hay que
+     * saber para escoger —rango, cuánto queda y si está vencida— porque emitir
+     * con una resolución vencida es un rechazo seguro de la DIAN y el sistema no
+     * lo impide: a veces la fecha en el sistema está desactualizada y bloquear
+     * la facturación sería peor.
+     *
+     * @return array<int, string>
+     */
+    public static function resolutionOptions(?string $kind): array
+    {
+        $kind = $kind === 'pos' ? Resolution::KIND_POS : Resolution::KIND_ELECTRONIC;
+
+        $sedes = LocationResolution::query()
+            ->where('active', true)
+            ->pluck('dian_resolution_id')
+            ->unique()
+            ->all();
+
+        return Resolution::query()
+            ->where('company_id', auth()->user()?->company_id)
+            ->where('kind', $kind)
+            ->where('document_type_id', 1)
+            ->where('active', true)
+            ->orderBy('prefix')
+            ->get()
+            ->mapWithKeys(function (Resolution $r) use ($sedes) {
+                $partes = [$r->prefix];
+
+                if ($r->resolution_number) {
+                    $partes[] = 'Res. '.$r->resolution_number;
+                }
+
+                $partes[] = number_format((float) $r->range_from, 0, ',', '.')
+                    .'–'.number_format((float) $r->range_to, 0, ',', '.');
+
+                if ($r->date_to && $r->date_to->isPast()) {
+                    $partes[] = '⚠ VENCIDA el '.$r->date_to->format('d/m/Y');
+                } elseif ($r->date_to) {
+                    $partes[] = 'vence '.$r->date_to->format('d/m/Y');
+                }
+
+                if (! in_array($r->id, $sedes, true)) {
+                    $partes[] = 'sin asignar a ninguna sede';
+                }
+
+                return [$r->id => implode(' · ', $partes)];
+            })
+            ->all();
+    }
+
     protected static function allowsGlobalDiscount(): bool
     {
         return static::discountsEnabledFor('sales');
@@ -75,7 +131,25 @@ class SaleInvoiceResource extends Resource
                         ->required()
                         ->native(false)
                         ->disabledOn('edit')
+                        ->live()
+                        ->afterStateUpdated(fn (Forms\Set $set) => $set('dian_resolution_id', null))
                         ->helperText('Define de qué resolución sale el consecutivo.'),
+
+                    // La resolucion se puede elegir a mano, este o no asignada a
+                    // la sede. La asignacion es una comodidad, no una regla del
+                    // negocio: una empresa con varias resoluciones vigentes
+                    // necesita poder emitir con una concreta —la del contrato de
+                    // un cliente, la que esta por vencerse y hay que agotar— sin
+                    // reasignarla y volver a dejarla como estaba.
+                    Forms\Components\Select::make('dian_resolution_id')
+                        ->label('Resolución')
+                        ->placeholder('La que tenga asignada la sede')
+                        ->options(fn (Forms\Get $get) => self::resolutionOptions($get('invoice_kind')))
+                        ->native(false)
+                        ->searchable()
+                        ->disabledOn('edit')
+                        ->helperText('Déjalo vacío para usar la resolución asignada a la sede. '
+                            .'Elige una para numerar con esa, esté asignada o no.'),
 
                     Forms\Components\TextInput::make('number')
                         ->label('Número')
