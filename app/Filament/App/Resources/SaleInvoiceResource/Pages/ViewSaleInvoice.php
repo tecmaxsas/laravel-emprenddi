@@ -9,10 +9,12 @@ use App\Models\CreditDebitNote;
 use App\Models\SaleInvoice;
 use App\Services\Dian\DianInvoiceSender;
 use App\Services\Sales\CreditDebitNoteNumberer;
+use App\Services\Sales\SaleInvoiceDeleter;
 use App\Services\Sales\SaleInvoiceEngine;
 use App\Support\Dian\DianInvoiceActions;
 use App\Support\PosSettings;
 use Filament\Actions;
+use Filament\Forms\Components\Textarea;
 use Filament\Infolists;
 use Filament\Infolists\Infolist;
 use Filament\Notifications\Notification;
@@ -170,6 +172,65 @@ class ViewSaleInvoice extends ViewRecord
                         Notification::make()
                             ->danger()
                             ->title('No se pudo anular')
+                            ->body($e->getMessage())
+                            ->persistent()
+                            ->send();
+                    }
+                }),
+
+            // Borrar solo aplica a POS. Se pide el motivo porque la nota queda
+            // en la factura borrada y en la bitacoria: dentro de seis meses,
+            // «quien la borro y por que» es la unica pregunta que importa.
+            Actions\Action::make('deleteInvoice')
+                ->label('Borrar factura')
+                ->icon('heroicon-o-trash')
+                ->color('danger')
+                ->visible(fn (SaleInvoice $record) => $record->isPosInvoice()
+                    && auth()->user()?->can('sales.delete'))
+                ->disabled(fn (SaleInvoice $record) => app(SaleInvoiceDeleter::class)
+                    ->motivoParaNoBorrar($record) !== null)
+                // Un botón deshabilitado no abre su modal, así que el motivo
+                // tiene que caber aquí: si no, el usuario ve un botón gris y no
+                // sabe si es un permiso, un turno cerrado o una falla.
+                ->tooltip(fn (SaleInvoice $record) => app(SaleInvoiceDeleter::class)
+                    ->motivoParaNoBorrar($record))
+                ->modalHeading('Borrar factura POS')
+                ->modalDescription(function (SaleInvoice $record) {
+                    return sprintf(
+                        'Vas a borrar la factura %s por $%s. Se devuelve el inventario al stock, '
+                        .'se reversan los asientos de venta, de costo y de los pagos, vuelven los '
+                        .'anticipos y los bonos redimidos, y se liberan los usos de promoción. '
+                        .'La factura deja de aparecer en los listados pero el consecutivo queda '
+                        .'registrado: un número que desaparece sin rastro es un hueco que no se '
+                        .'le puede explicar a la DIAN.',
+                        $record->fullNumber(),
+                        number_format((float) $record->total, 0, ',', '.'),
+                    );
+                })
+                ->form([
+                    Textarea::make('motivo')
+                        ->label('¿Por qué se borra?')
+                        ->rows(2)
+                        ->required()
+                        ->maxLength(200)
+                        ->placeholder('Ej. Venta registrada dos veces por error del cajero.'),
+                ])
+                ->modalSubmitActionLabel('Borrar')
+                ->action(function (SaleInvoice $record, array $data) {
+                    try {
+                        app(SaleInvoiceDeleter::class)->delete($record, $data['motivo']);
+
+                        Notification::make()
+                            ->success()
+                            ->title('Factura borrada')
+                            ->body('Se devolvieron inventario, asientos, pagos y bonos.')
+                            ->send();
+
+                        return redirect(SaleInvoiceResource::getUrl('index'));
+                    } catch (\Throwable $e) {
+                        Notification::make()
+                            ->danger()
+                            ->title('No se pudo borrar')
                             ->body($e->getMessage())
                             ->persistent()
                             ->send();

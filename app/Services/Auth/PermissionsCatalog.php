@@ -80,6 +80,9 @@ class PermissionsCatalog
                 'sales.view' => 'Ver facturas de venta',
                 'sales.create' => 'Crear facturas de venta',
                 'sales.post' => 'Contabilizar facturas de venta',
+                // Borrar una venta devuelve inventario, asientos, pagos y bonos.
+                // Solo POS, y solo para quien pueda responder por el descuadre.
+                'sales.delete' => 'Borrar facturas POS (devuelve inventario y asientos)',
                 'sales.receive_payment' => 'Recibir pagos de clientes',
                 'sales.send_dian' => 'Enviar facturas a DIAN',
                 'quotations.view' => 'Ver cotizaciones',
@@ -211,7 +214,7 @@ class PermissionsCatalog
             'admin' => $all,
             'manager' => array_diff($all, [
                 'users.manage', 'roles.manage', 'roles.view', 'company.settings',
-                'audit.view', 'ai.manage',
+                'audit.view', 'ai.manage', 'sales.delete',
                 'accounts.manage', 'taxes.manage', 'dian.manage', 'payment_methods.manage',
                 'pos.settings',
             ]),
