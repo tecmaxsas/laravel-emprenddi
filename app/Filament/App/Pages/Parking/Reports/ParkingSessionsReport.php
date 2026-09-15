@@ -4,6 +4,7 @@ namespace App\Filament\App\Pages\Parking\Reports;
 
 use App\Models\Parking\ParkingLot;
 use App\Models\Parking\ParkingSession;
+use App\Support\ClockFormat;
 use App\Support\ModuleGate;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
@@ -95,8 +96,8 @@ class ParkingSessionsReport extends Page implements HasForms, HasTable
                 Tables\Columns\TextColumn::make('plate')->label('Placa')->fontFamily('mono')->weight('semibold'),
                 Tables\Columns\TextColumn::make('parkingLot.name')->label('Parqueadero')->toggleable(),
                 Tables\Columns\TextColumn::make('vehicleType.name')->label('Vehículo')->toggleable()->placeholder('—'),
-                Tables\Columns\TextColumn::make('entry_at')->label('Entrada')->dateTime('Y-m-d H:i'),
-                Tables\Columns\TextColumn::make('exit_at')->label('Salida')->dateTime('Y-m-d H:i')->placeholder('—'),
+                Tables\Columns\TextColumn::make('entry_at')->label('Entrada')->dateTime(ClockFormat::DATETIME),
+                Tables\Columns\TextColumn::make('exit_at')->label('Salida')->dateTime(ClockFormat::DATETIME)->placeholder('—'),
                 Tables\Columns\TextColumn::make('total_minutes')->label('Min')->alignEnd(),
                 Tables\Columns\TextColumn::make('amount')->label('Monto')->money('COP')->alignEnd()->weight('semibold'),
                 Tables\Columns\TextColumn::make('status')->label('Estado')->badge()

@@ -16,6 +16,7 @@ use App\Models\ThirdParty;
 use App\Services\Parking\ParkingBillingEngine;
 use App\Services\Parking\ParkingProductProvisioner;
 use App\Services\Parking\ParkingSessionEngine;
+use App\Support\ClockFormat;
 use App\Support\ModuleGate;
 use App\Support\PaymentAccountResolver;
 use Filament\Notifications\Notification;
@@ -595,7 +596,7 @@ class ParkingTerminal extends Page
             Notification::make()
                 ->title("✓ Entrada · {$session->plate}")
                 ->body('Ticket #'.str_pad((string) $session->id, 6, '0', STR_PAD_LEFT)
-                    .' · '.$session->entry_at->format('H:i'))
+                    .' · '.$session->entry_at->format(ClockFormat::TIME))
                 ->success()->send();
 
             // Dispara JS para abrir ventana de impresion del ticket

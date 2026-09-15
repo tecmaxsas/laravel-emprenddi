@@ -7,6 +7,7 @@ use App\Models\Parking\ParkingSession;
 use App\Models\Parking\ParkingSpace;
 use App\Models\Parking\VehicleType;
 use App\Services\Parking\ParkingSessionEngine;
+use App\Support\ClockFormat;
 use App\Support\ModuleGate;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
@@ -156,7 +157,7 @@ class ParkingEntry extends Page implements HasForms
 
             Notification::make()
                 ->title("Entrada registrada · {$session->plate}")
-                ->body("Hora: {$session->entry_at->format('d/m/Y H:i:s')}")
+                ->body("Hora: {$session->entry_at->format(ClockFormat::DATETIME_SECONDS)}")
                 ->success()
                 ->send();
 

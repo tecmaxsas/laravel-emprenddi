@@ -13,6 +13,7 @@ use App\Services\Dian\PosDianTransmitter;
 use App\Models\ThirdParty;
 use App\Services\Sales\DocumentNumberer;
 use App\Services\Sales\SaleInvoiceEngine;
+use App\Support\ClockFormat;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -145,8 +146,8 @@ class ParkingBillingEngine
                         'Parqueo placa %s — %d min — %s a %s',
                         $session->plate,
                         (int) ($session->total_minutes ?? 0),
-                        $session->entry_at?->format('d/m/Y H:i') ?? '—',
-                        $session->exit_at?->format('d/m/Y H:i') ?? '—',
+                        $session->entry_at?->format(ClockFormat::DATETIME) ?? '—',
+                        $session->exit_at?->format(ClockFormat::DATETIME) ?? '—',
                     ),
                     quantity: 1,
                     totalAtPublic: (float) $session->amount,

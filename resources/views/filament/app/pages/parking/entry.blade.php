@@ -13,7 +13,7 @@
             </div>
             <div style="font-size:13px; margin-top:4px;">
                 {{ $lastSession->parkingLot?->name }} · Entrada
-                <strong>{{ $lastSession->entry_at->format('d/m/Y H:i:s') }}</strong>
+                <strong>{{ $lastSession->entry_at->format(\App\Support\ClockFormat::DATETIME_SECONDS) }}</strong>
                 · Ticket <code>#{{ str_pad($lastSession->id, 6, '0', STR_PAD_LEFT) }}</code>
             </div>
             @if ($membership)
