@@ -34,6 +34,7 @@ class CreditDebitNoteEngine
     public function __construct(
         protected InventoryEngine $inventory,
         protected JournalEntryNumberer $numberer,
+        protected DocumentNumberer $documentNumberer,
     ) {}
 
     public function post(CreditDebitNote $note): CreditDebitNote
@@ -51,8 +52,9 @@ class CreditDebitNoteEngine
         return DB::transaction(function () use ($note) {
             $this->recalculateTotals($note);
 
-            // 1. Si la sede tiene resolución DIAN del tipo correspondiente
-            //    (NC=2, ND=3), reservamos consecutivo. Si no, usamos número manual.
+            // 1. Consecutivo de la resolución de notas de la EMPRESA (NC=2,
+            //    ND=3). No se busca por sede: ver reserveDianNumberIfApplicable.
+            //    Sin resolución, la nota conserva su número manual.
             $this->reserveDianNumberIfApplicable($note);
 
             // 2. Inventario solo en NC con flag affects_inventory (devolución física).
@@ -113,6 +115,85 @@ class CreditDebitNoteEngine
         });
     }
 
+    /**
+     * Le pone resolución DIAN a una nota que se contabilizó sin ella.
+     *
+     * Existe para rescatar las notas que quedaron numeradas a mano mientras el
+     * motor las buscaba por la sede. Sin esto habría que anularlas y rehacerlas,
+     * y una nota crédito anulada deja la cuenta del cliente donde no debe.
+     *
+     * Renumerar un documento contabilizado no es gratis, así que solo procede
+     * cuando la DIAN nunca lo aceptó: si lo aceptó, ese número ya existe fuera
+     * de aquí y cambiarlo dejaría los dos sistemas hablando de documentos
+     * distintos. El asiento se arrastra con la nota, porque su referencia es
+     * justamente el número que cambia.
+     *
+     * @throws RuntimeException con un mensaje que se le puede mostrar al usuario
+     */
+    public function asignarResolucionDian(CreditDebitNote $note): CreditDebitNote
+    {
+        if (! $note->isPosted()) {
+            throw new RuntimeException('La nota todavía no está contabilizada.');
+        }
+
+        if ($note->dian_status === CreditDebitNote::DIAN_ACCEPTED) {
+            throw new RuntimeException(
+                'La DIAN ya aceptó esta nota con su número actual. Cambiarlo dejaría '
+                .'a Emprenddi y a la DIAN hablando de documentos distintos.'
+            );
+        }
+
+        if ($note->dian_resolution_id) {
+            throw new RuntimeException('Esta nota ya tiene resolución asignada.');
+        }
+
+        $docTypeId = $note->isCredit() ? 2 : 3;
+
+        return DB::transaction(function () use ($note, $docTypeId) {
+            $reserva = $this->documentNumberer->reserveGlobal(
+                $note->company_id,
+                $docTypeId,
+                'credit_debit_notes',
+            );
+
+            if (! $reserva) {
+                throw new RuntimeException(sprintf(
+                    'La empresa no tiene una resolución activa de %s. Cárgala en '
+                    .'Configuración → DIAN → Resoluciones. No hay que asignarla a '
+                    .'ninguna sede: la numeración de notas es de toda la empresa.',
+                    $note->isCredit() ? 'nota crédito' : 'nota débito',
+                ));
+            }
+
+            $anterior = $note->fullNumber();
+
+            $note->update([
+                'prefix' => $reserva['prefix'] ?: $note->prefix,
+                'number' => $reserva['number'],
+                'dian_resolution_id' => $reserva['resolution_id'],
+                'dian_status' => CreditDebitNote::DIAN_PENDING,
+                'dian_error_message' => null,
+            ]);
+
+            $note->refresh();
+
+            // El asiento referencia el número de la nota: si no se mueve con
+            // ella, el libro apunta a un documento que ya no existe.
+            if ($note->journal_entry_id) {
+                JournalEntry::withoutGlobalScopes()
+                    ->whereKey($note->journal_entry_id)
+                    ->update(['reference' => $note->fullNumber()]);
+            }
+
+            JournalEntry::withoutGlobalScopes()
+                ->where('company_id', $note->company_id)
+                ->where('reference', $anterior)
+                ->update(['reference' => $note->fullNumber()]);
+
+            return $note->fresh();
+        });
+    }
+
     public function recalculateTotals(CreditDebitNote $note): void
     {
         $subtotal = 0;
@@ -135,32 +216,44 @@ class CreditDebitNoteEngine
         ]);
     }
 
+    /**
+     * Toma el consecutivo de la resolución de notas de la empresa.
+     *
+     * **La resolución de notas no se asigna a una sede.** La DIAN autoriza los
+     * rangos de facturación por establecimiento —cada punto de venta factura con
+     * el suyo—, pero las notas crédito y débito llevan un solo consecutivo para
+     * toda la empresa, lo emita quien lo emita.
+     *
+     * Antes se buscaba por la sede. Como nadie asigna una resolución de notas a
+     * una sede —no tiene por qué hacerlo—, nunca la encontraba, salía en
+     * silencio y la nota se quedaba con su número manual y sin resolución. El
+     * daño aparecía después, al enviarla: el proveedor respondía «La resolución
+     * no está configurada» y no había manera de relacionar ese mensaje con una
+     * asignación que nadie sabía que hacía falta.
+     *
+     * Si la empresa no tiene resolución de notas, la nota conserva su número
+     * manual. Es válido: sirve para el control interno y para la contabilidad,
+     * solo que no se puede transmitir. La pantalla lo dice.
+     */
     protected function reserveDianNumberIfApplicable(CreditDebitNote $note): void
     {
-        // type_document_id en location_resolutions: 2=NC, 3=ND
+        // Tipo de documento DIAN: 2=Nota Crédito, 3=Nota Débito.
         $docTypeId = $note->isCredit() ? 2 : 3;
-        $assignment = $note->location->activeResolution(documentTypeId: $docTypeId);
 
-        if (! $assignment) {
+        $reserva = $this->documentNumberer->reserveGlobal(
+            $note->company_id,
+            $docTypeId,
+            'credit_debit_notes',
+        );
+
+        if (! $reserva) {
             return;
         }
 
-        $resolution = $assignment->resolution;
-        $next = $assignment->reserveNextNumber();
-
-        if ($next > $resolution->range_to) {
-            throw new RuntimeException(sprintf(
-                'Consecutivo agotado para la resolución %s (rango %s-%s).',
-                $resolution->resolution_number ?: '?',
-                number_format($resolution->range_from),
-                number_format($resolution->range_to),
-            ));
-        }
-
         $note->update([
-            'prefix' => $resolution->prefix ?: $note->prefix,
-            'number' => $next,
-            'dian_resolution_id' => $resolution->id,
+            'prefix' => $reserva['prefix'] ?: $note->prefix,
+            'number' => $reserva['number'],
+            'dian_resolution_id' => $reserva['resolution_id'],
             'dian_status' => CreditDebitNote::DIAN_PENDING,
         ]);
 
@@ -234,7 +327,9 @@ class CreditDebitNoteEngine
                     ?? $invLine->product?->effectiveSaleAccountId()
                     ?? $defaultIncomeAccountId;
                 $netAmount = (float) $invLine->subtotal - (float) $invLine->discount_amount;
-                if ($netAmount <= 0) continue;
+                if ($netAmount <= 0) {
+                    continue;
+                }
 
                 JournalEntryLine::create([
                     'journal_entry_id' => $entry->id,
@@ -289,7 +384,9 @@ class CreditDebitNoteEngine
                     ?? $invLine->product?->effectiveSaleAccountId()
                     ?? $defaultIncomeAccountId;
                 $netAmount = (float) $invLine->subtotal - (float) $invLine->discount_amount;
-                if ($netAmount <= 0) continue;
+                if ($netAmount <= 0) {
+                    continue;
+                }
 
                 JournalEntryLine::create([
                     'journal_entry_id' => $entry->id,
@@ -350,12 +447,16 @@ class CreditDebitNoteEngine
                 continue;
             }
             $cost = abs((float) $line->quantity) * (float) ($line->cost_at_return ?? 0);
-            if ($cost <= 0) continue;
+            if ($cost <= 0) {
+                continue;
+            }
 
             $cogsId = $line->product?->effectiveCostAccountId() ?? $defaultCogsAccountId;
             $invId = $line->product?->effectiveInventoryAccountId() ?? $defaultInventoryAccountId;
 
-            if (! $cogsId || ! $invId) continue;
+            if (! $cogsId || ! $invId) {
+                continue;
+            }
 
             $key = "{$cogsId}:{$invId}";
             if (! isset($pairs[$key])) {

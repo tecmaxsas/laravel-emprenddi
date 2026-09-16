@@ -59,6 +59,75 @@ no la base.
 
 **3. Se implementó la descarga del PDF**, que sí faltaba de verdad.
 
+## La resolución de notas es de la empresa, no de una sede
+
+Esta es la regla que hay que tener clara, porque el sistema la tenía mal y el
+síntoma era imposible de relacionar con la causa.
+
+La DIAN autoriza los rangos de **facturación** por establecimiento: cada punto de
+venta factura con el suyo. Por eso una resolución de facturación se carga y
+**después se asigna a una o varias sedes**.
+
+Las **notas crédito y débito no funcionan así**. Son un solo consecutivo para
+toda la empresa, lo emita quien lo emita y desde donde sea. Lo mismo el documento
+soporte y la nómina electrónica. Con cargarlas en *Configuración → DIAN →
+Resoluciones* es suficiente: **no hay que asignarlas a ninguna sede**, y de hecho
+la pantalla de asignación ya no las ofrece.
+
+### Qué estaba pasando
+
+El motor de notas buscaba la resolución **por la sede**. Como nadie le asigna una
+resolución de notas a una sede —no tiene por qué hacerlo—, nunca la encontraba,
+salía en silencio y numeraba la nota por su cuenta: quedaba en `NC1`, sin
+resolución.
+
+El daño aparecía mucho después, al enviarla, con este mensaje del proveedor:
+
+```
+La resolución no está configurada
+number tiene que estar entre  -  o no se establecio el atributo
+que define el minimo y maximo
+```
+
+Nada en ese texto apunta a una asignación que nadie sabía que hacía falta. Peor
+aún: quien intentaba arreglarlo asignando la resolución a una sede tampoco
+resolvía nada, porque el número ya estaba puesto en la nota.
+
+### Qué se hizo
+
+- El motor busca la resolución **de la empresa**, sin pasar por la sede.
+- El consecutivo sale del rango autorizado y se deduce de las notas ya emitidas,
+  así que dos notas seguidas no repiten número.
+- La pantalla de asignar a sede ya **no ofrece** resoluciones de nota crédito,
+  nota débito, documento soporte ni nómina, y explica por qué.
+- Si alguien igual las envía, se rechaza con un mensaje que lo aclara.
+- Las notas que ya quedaron mal numeradas se pueden rescatar.
+
+### Rescatar una nota que quedó en «NC1»
+
+Una nota contabilizada sin resolución no se puede enviar nunca: el número que
+lleva no pertenece a ningún rango autorizado. Anularla y rehacerla tampoco sirve
+—una nota crédito anulada deja la cuenta del cliente donde no debe—.
+
+Por eso hay un botón **Asignar resolución DIAN** en la nota, que aparece cuando
+está contabilizada y no tiene resolución. Le pone el siguiente consecutivo de la
+resolución de la empresa y **arrastra el asiento contable con ella**, porque la
+referencia del asiento es justamente el número que cambia. Después ya se puede
+enviar.
+
+No funciona si la DIAN ya aceptó la nota: en ese caso el número existe fuera de
+Emprenddi y cambiarlo dejaría los dos sistemas hablando de documentos distintos.
+
+Si la nota no tiene resolución, la pantalla lo dice en un recuadro antes de que
+alguien intente enviarla y se lleve el rechazo.
+
+### Sin resolución, la nota igual se contabiliza
+
+Es deliberado. Hay empresas que llevan notas para control interno sin
+transmitirlas, y bloquear la contabilización sería peor. Lo que no puede pasar es
+que el usuario se entere solo cuando la DIAN la rechaza — de eso se encarga el
+aviso.
+
 ## El PDF oficial
 
 El PDF con CUFE y código QR **no lo genera Emprenddi**. Lo genera el proveedor
@@ -119,11 +188,19 @@ resuelve. No significa que se haya perdido nada.
   abriría un «PDF» que en realidad son dos líneas de JSON. Esa comprobación está
   en `DianApiClient::downloadFile()` y tiene prueba propia.
 
+- `Resolution::DOCUMENT_TYPES_GLOBALES` es la lista de tipos cuya numeración es
+  de la empresa entera (`[2, 3, 4, 5]`: nota crédito, nota débito, documento
+  soporte, nómina). La factura electrónica y la de exportación **no** están ahí
+  a propósito: esas sí van por establecimiento.
+- `DocumentNumberer::reserveGlobal()` reserva ese consecutivo sin tocar
+  `dian_location_resolutions`. Si mañana hay que numerar documentos soporte o
+  nómina por esta vía, el método ya sirve: solo cambia el tipo y la tabla.
+
 Las pruebas se corren contra la base de desarrollo:
 
 ```bash
 docker compose exec -T \
   -e DB_CONNECTION=pgsql -e DB_HOST=postgres -e DB_PORT=5432 \
   -e DB_DATABASE=emprenddi -e DB_USERNAME=emprenddi -e DB_PASSWORD=secret \
-  app php artisan test --filter="JournalEntryTypes|CreditNotePost|DianPdfDownload"
+  app php artisan test --filter="JournalEntryTypes|CreditNotePost|CreditNoteResolution|DianPdfDownload"
 ```

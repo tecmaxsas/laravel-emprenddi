@@ -88,6 +88,45 @@ class ViewCreditDebitNote extends ViewRecord
                     }
                 }),
 
+            // Rescate de las notas que se contabilizaron sin resolución mientras
+            // el motor la buscaba por la sede. Sin esto habría que anularlas y
+            // rehacerlas, y una nota crédito anulada deja la cuenta del cliente
+            // donde no debe.
+            Actions\Action::make('assignResolution')
+                ->label('Asignar resolución DIAN')
+                ->icon('heroicon-o-hashtag')
+                ->color('warning')
+                ->visible(fn (CreditDebitNote $r) => $r->isPosted()
+                    && ! $r->dian_resolution_id
+                    && $r->dian_status !== CreditDebitNote::DIAN_ACCEPTED
+                    && auth()->user()?->can('credit_debit_notes.post'))
+                ->requiresConfirmation()
+                ->modalHeading('Numerar con la resolución de la empresa')
+                ->modalDescription(fn (CreditDebitNote $r) => sprintf(
+                    'Esta nota se numeró a mano (%s) y por eso la DIAN la rechaza: el '
+                    .'documento no tiene resolución. Se le va a asignar el siguiente '
+                    .'consecutivo de la resolución de %s de la empresa, y el asiento '
+                    .'contable se actualiza con el número nuevo. Después podrás enviarla.',
+                    $r->fullNumber(),
+                    $r->isCredit() ? 'nota crédito' : 'nota débito',
+                ))
+                ->modalSubmitActionLabel('Asignar y renumerar')
+                ->action(function (CreditDebitNote $r) {
+                    try {
+                        $nota = app(CreditDebitNoteEngine::class)->asignarResolucionDian($r);
+
+                        Notification::make()
+                            ->success()
+                            ->title('Nota renumerada')
+                            ->body("Ahora es {$nota->fullNumber()}. Ya se puede enviar a la DIAN.")
+                            ->send();
+
+                        $this->refreshFormData(['prefix', 'number', 'dian_resolution_id', 'dian_status', 'dian_error_message']);
+                    } catch (\Throwable $e) {
+                        Notification::make()->danger()->title('No se pudo asignar')->body($e->getMessage())->persistent()->send();
+                    }
+                }),
+
             // El PDF con CUFE y QR lo genera el proveedor al autorizar la DIAN;
             // uno hecho aquí se parecería pero no sería el documento válido.
             Actions\Action::make('downloadPdf')
@@ -193,6 +232,25 @@ class ViewCreditDebitNote extends ViewRecord
                         ->columnSpan(3)
                         ->visible(fn (CreditDebitNote $r) => ! empty($r->dian_error_message))
                         ->color('danger'),
+                ]),
+
+            // El rechazo de la DIAN («la resolución no está configurada») no le
+            // dice a nadie qué hacer. Esto sí, y aparece antes de intentarlo.
+            Infolists\Components\Section::make('Sin resolución DIAN')
+                ->visible(fn (CreditDebitNote $r) => $r->isPosted() && ! $r->dian_resolution_id)
+                ->schema([
+                    Infolists\Components\TextEntry::make('sin_resolucion')
+                        ->label('')
+                        ->color('warning')
+                        ->state(fn (CreditDebitNote $r) => sprintf(
+                            'Esta nota se numeró a mano (%s) porque la empresa no tenía resolución '
+                            .'de %s cuando se contabilizó. Así no se puede enviar a la DIAN. '
+                            .'Carga la resolución en Configuración → DIAN (no hay que asignarla a '
+                            .'ninguna sede: la numeración de notas es de toda la empresa) y usa el '
+                            .'botón «Asignar resolución DIAN» de arriba.',
+                            $r->fullNumber(),
+                            $r->isCredit() ? 'nota crédito' : 'nota débito',
+                        )),
                 ]),
 
             Infolists\Components\Section::make('Notas')

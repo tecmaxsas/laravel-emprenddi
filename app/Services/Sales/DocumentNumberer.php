@@ -156,10 +156,18 @@ class DocumentNumberer
      * @param  int  $resolutionId  La resolución elegida en el formulario.
      * @param  int  $companyId  La empresa del usuario, para no confiar en el id que llega.
      * @param  int|null  $locationId  La sede desde la que se emite.
+     * @param  string  $tabla  Dónde buscar el número más alto ya emitido con ese
+     *                         prefijo. Las notas crédito llevan su propia
+     *                         numeración, en su propia tabla: mirar la de
+     *                         facturas les daría un consecutivo ajeno.
      * @return array{number: int, prefix: string, resolution_id: int, kind: string}
      */
-    public function reserveForResolution(int $resolutionId, int $companyId, ?int $locationId = null): array
-    {
+    public function reserveForResolution(
+        int $resolutionId,
+        int $companyId,
+        ?int $locationId = null,
+        string $tabla = 'sale_invoices',
+    ): array {
         $resolution = Resolution::query()
             ->withoutGlobalScopes()
             ->where('id', $resolutionId)
@@ -178,7 +186,7 @@ class DocumentNumberer
 
         $kindLabel = $resolution->isPos() ? 'POS' : 'de facturación electrónica';
 
-        return DB::transaction(function () use ($resolution, $companyId, $kindLabel, $locationId) {
+        return DB::transaction(function () use ($resolution, $companyId, $kindLabel, $locationId, $tabla) {
             // Sin fila de asignación no hay nada que bloquear, así que el
             // candado va sobre (empresa, prefijo), que es justamente lo que
             // protege el índice único de sale_invoices.
@@ -216,8 +224,7 @@ class DocumentNumberer
                 $candidatos[] = (int) $asignaciones->max('current_consecutive');
             }
 
-            $maxUsado = SaleInvoice::query()
-                ->withoutGlobalScopes()
+            $maxUsado = DB::table($tabla)
                 ->where('company_id', $companyId)
                 ->where('prefix', $resolution->prefix)
                 ->max('number');
@@ -257,6 +264,80 @@ class DocumentNumberer
      * ¿La sede tiene una resolución activa de este tipo? Útil para la UI
      * (deshabilitar el selector, mostrar avisos) sin reservar nada.
      */
+    /**
+     * La resolución de la empresa para un tipo de documento global.
+     *
+     * Notas crédito, notas débito, documento soporte y nómina llevan un solo
+     * consecutivo para toda la empresa: la DIAN autoriza esos rangos a nombre
+     * del contribuyente, no de cada establecimiento. Buscarlas por sede es lo
+     * que dejaba las notas sin resolución y, más tarde, rechazadas.
+     *
+     * Si hay más de una vigente se prefiere la que todavía tiene rango
+     * disponible, y entre esas la más reciente. Tener dos activas del mismo tipo
+     * es raro y casi siempre significa que acaban de cargar el reemplazo de una
+     * que se está agotando; en ese caso seguir usando la vieja hasta que se
+     * acabe es justo lo que se espera.
+     */
+    public function resolucionGlobalDe(int $companyId, int $documentTypeId, string $tabla): ?Resolution
+    {
+        $candidatas = Resolution::query()
+            ->withoutGlobalScopes()
+            ->where('company_id', $companyId)
+            ->where('document_type_id', $documentTypeId)
+            ->where('active', true)
+            ->orderByDesc('date_from')
+            ->orderByDesc('id')
+            ->get();
+
+        if ($candidatas->isEmpty()) {
+            return null;
+        }
+
+        $conCupo = $candidatas->first(function (Resolution $resolucion) use ($companyId, $tabla) {
+            $maxUsado = DB::table($tabla)
+                ->where('company_id', $companyId)
+                ->where('prefix', $resolucion->prefix)
+                ->max('number');
+
+            $siguiente = $maxUsado !== null
+                ? (int) $maxUsado + 1
+                : (int) $resolucion->range_from;
+
+            return $siguiente <= (int) $resolucion->range_to;
+        });
+
+        // Si ninguna tiene cupo se devuelve una igual: que el error diga
+        // «se agotó el rango» es más útil que un silencioso «no hay resolución».
+        return $conCupo ?? $candidatas->first();
+    }
+
+    /**
+     * Reserva el consecutivo de un documento de numeración global.
+     *
+     * Devuelve null cuando la empresa no tiene resolución de ese tipo — es una
+     * situación normal en empresas que todavía no emiten ese documento
+     * electrónicamente, y en ese caso quien llama se queda con su número manual.
+     *
+     * @return array{number: int, prefix: string, resolution_id: int, kind: string}|null
+     */
+    public function reserveGlobal(int $companyId, int $documentTypeId, string $tabla): ?array
+    {
+        $resolucion = $this->resolucionGlobalDe($companyId, $documentTypeId, $tabla);
+
+        if (! $resolucion) {
+            return null;
+        }
+
+        // locationId null a propósito: estas resoluciones no se asignan a
+        // ninguna sede, así que tampoco hay que crearle una asignación.
+        return $this->reserveForResolution(
+            $resolucion->id,
+            $companyId,
+            locationId: null,
+            tabla: $tabla,
+        );
+    }
+
     public function hasResolution(int $locationId, string $kind, int $documentTypeId = 1): bool
     {
         $companyId = (int) Location::query()->where('id', $locationId)->value('company_id');

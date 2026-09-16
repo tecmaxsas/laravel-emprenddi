@@ -1473,13 +1473,22 @@ class DianSettings extends Page implements HasForms
                 ->content(fn () => $this->apiResponseBlock('tab4')),
 
             Forms\Components\Section::make('Asignar resolución a sede')
-                ->description('El consecutivo inicial es editable: por defecto arranca en "Rango desde", pero si la resolución ya fue usada antes puedes empezar desde un número distinto.')
+                ->description('Solo las resoluciones de facturación se asignan a una sede: la DIAN '
+                    .'autoriza esos rangos por establecimiento. Las de nota crédito, nota débito, '
+                    .'documento soporte y nómina no aparecen aquí porque su numeración es de toda '
+                    .'la empresa — con cargarlas arriba basta, se usan solas. El consecutivo '
+                    .'inicial es editable: por defecto arranca en "Rango desde", pero si la '
+                    .'resolución ya fue usada antes puedes empezar desde un número distinto.')
                 ->columns(3)
                 ->schema([
                     Forms\Components\Select::make('assign_resolution_id')
                         ->label('Resolución')
+                        // Ofrecer aquí una resolución de notas era la trampa: se
+                        // asignaba a una sede, parecía configurada, y el motor
+                        // —que la busca por empresa— seguía sin encontrarla.
                         ->options(fn () => Resolution::query()
                             ->where('company_id', auth()->user()->company_id)
+                            ->whereNotIn('document_type_id', Resolution::DOCUMENT_TYPES_GLOBALES)
                             ->orderBy('document_type_id')
                             ->get()
                             ->mapWithKeys(fn (Resolution $r) => [
@@ -1851,7 +1860,17 @@ class DianSettings extends Page implements HasForms
             ],
         );
 
-        $this->successNotif('Resolución guardada y registrada en DIAN', 'Asígnala a una o varias sedes para empezar a usarla.');
+        $esGlobal = in_array($payload['type_document_id'], Resolution::DOCUMENT_TYPES_GLOBALES, true);
+
+        $this->successNotif(
+            'Resolución guardada y registrada en DIAN',
+            $esGlobal
+                // Decirle que la asigne a una sede es lo que llevó a que las
+                // notas se emitieran sin resolución: la asignaba, la veía
+                // configurada, y el motor seguía sin encontrarla.
+                ? 'Su numeración es de toda la empresa, así que no hay que asignarla a ninguna sede. Ya se usa sola.'
+                : 'Asígnala a una o varias sedes para empezar a usarla.',
+        );
 
         // Limpiar campos de "nueva resolución" para permitir cargar otra
         $this->form->fill([
@@ -1887,6 +1906,19 @@ class DianSettings extends Page implements HasForms
 
         if (! $resolution) {
             $this->errorNotif('Resolución no encontrada');
+            return;
+        }
+
+        // El selector ya no las ofrece, pero el estado del formulario puede
+        // traer una elegida antes del cambio. Asignarla no fallaría: crearía una
+        // fila que nada lee, y la empresa quedaría creyendo que configuró algo.
+        if ($resolution->isGlobal()) {
+            $this->errorNotif(
+                'Esta resolución no se asigna a una sede',
+                "La numeración de {$resolution->document_type_name} es de toda la empresa. "
+                .'Con haberla cargado arriba es suficiente: ya se usa sola.',
+            );
+
             return;
         }
 

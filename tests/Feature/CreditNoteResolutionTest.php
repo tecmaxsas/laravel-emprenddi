@@ -1,0 +1,345 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Company;
+use App\Models\CreditDebitNote;
+use App\Models\Dian\Resolution;
+use App\Models\JournalEntry;
+use App\Models\Location;
+use App\Models\Scopes\CompanyScope;
+use App\Models\ThirdParty;
+use App\Models\User;
+use App\Services\Sales\CreditDebitNoteEngine;
+use App\Services\Sales\DocumentNumberer;
+use App\Support\CurrentCompany;
+use Illuminate\Support\Facades\DB;
+use RuntimeException;
+use Tests\TestCase;
+
+/**
+ * La resolución de notas crédito es de la empresa, no de una sede.
+ *
+ * La DIAN autoriza los rangos de **facturación** por establecimiento: cada punto
+ * de venta factura con el suyo, y por eso esas resoluciones se asignan a una
+ * sede. Las notas crédito y débito no funcionan así — son un solo consecutivo
+ * para toda la empresa, lo emita quien lo emita.
+ *
+ * El motor las buscaba por la sede. Como nadie asigna una resolución de notas a
+ * una sede, nunca la encontraba, salía en silencio y la nota se quedaba con su
+ * número manual («NC1») y sin resolución. El daño aparecía al enviarla, con un
+ * mensaje del proveedor que no se podía relacionar con la causa:
+ *
+ *   «La resolución no está configurada · number tiene que estar entre - »
+ *
+ * Usa la base de desarrollo y borra lo que crea en tearDown.
+ */
+class CreditNoteResolutionTest extends TestCase
+{
+    private Company $company;
+
+    private Location $sede;
+
+    private ThirdParty $cliente;
+
+    /** @var list<callable> */
+    private array $limpiar = [];
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $user = User::query()->whereNotNull('company_id')->orderBy('id')->firstOrFail();
+        $this->company = Company::findOrFail($user->company_id);
+        $this->actingAs($user);
+        app(CurrentCompany::class)->set($this->company);
+
+        $this->sede = Location::withoutGlobalScopes()
+            ->where('company_id', $this->company->id)->orderBy('id')->firstOrFail();
+
+        $this->cliente = ThirdParty::withoutGlobalScopes()->create([
+            'company_id' => $this->company->id,
+            'person_type' => 'natural',
+            'document_type' => 'cc',
+            'document_number' => 'ZZ'.random_int(100000, 999999),
+            'name' => 'ZZ CLIENTE RESOLUCION',
+            'is_customer' => true,
+            'active' => true,
+        ]);
+
+        $this->limpiar[] = fn () => ThirdParty::withoutGlobalScopes()
+            ->whereKey($this->cliente->id)->forceDelete();
+    }
+
+    protected function tearDown(): void
+    {
+        foreach (array_reverse($this->limpiar) as $fn) {
+            $fn();
+        }
+        $this->limpiar = [];
+
+        parent::tearDown();
+    }
+
+    /** La encuentra sin que nadie la haya asignado a una sede. */
+    public function test_la_resolucion_de_notas_se_encuentra_sin_asignarla_a_una_sede(): void
+    {
+        $resolucion = $this->resolucion(documentTypeId: 2, prefijo: 'ZZNC', desde: 990000001, hasta: 990001000);
+
+        $this->assertSame(0, DB::table('dian_location_resolutions')
+            ->where('dian_resolution_id', $resolucion->id)->count(),
+            'La prueba solo vale si de verdad no hay ninguna asignación.');
+
+        $encontrada = app(DocumentNumberer::class)
+            ->resolucionGlobalDe($this->company->id, 2, 'credit_debit_notes');
+
+        $this->assertNotNull($encontrada, 'Sin asignación a sede, igual tiene que encontrarla.');
+        $this->assertSame($resolucion->id, $encontrada->id);
+    }
+
+    /** Y numera desde el rango autorizado, no desde 1. */
+    public function test_la_nota_toma_el_consecutivo_de_la_resolucion(): void
+    {
+        $this->resolucion(documentTypeId: 2, prefijo: 'ZZNC', desde: 990000001, hasta: 990001000);
+
+        $nota = app(CreditDebitNoteEngine::class)->post($this->notaBorrador());
+
+        $this->assertSame('ZZNC', $nota->prefix);
+        $this->assertSame(990000001, (int) $nota->number,
+            'Debe arrancar en el inicio del rango autorizado, no en 1.');
+        $this->assertNotNull($nota->dian_resolution_id);
+    }
+
+    /** Dos notas seguidas no repiten número. */
+    public function test_dos_notas_no_repiten_consecutivo(): void
+    {
+        $this->resolucion(documentTypeId: 2, prefijo: 'ZZNC', desde: 990000001, hasta: 990001000);
+
+        $primera = app(CreditDebitNoteEngine::class)->post($this->notaBorrador());
+        $segunda = app(CreditDebitNoteEngine::class)->post($this->notaBorrador());
+
+        $this->assertSame(990000001, (int) $primera->number);
+        $this->assertSame(990000002, (int) $segunda->number,
+            'El consecutivo sale de las notas ya emitidas, no de un contador por sede.');
+    }
+
+    /** La nota débito usa su propia resolución, no la de crédito. */
+    public function test_la_nota_debito_no_toma_la_resolucion_de_credito(): void
+    {
+        $this->resolucion(documentTypeId: 2, prefijo: 'ZZNC', desde: 990000001, hasta: 990001000);
+        $this->resolucion(documentTypeId: 3, prefijo: 'ZZND', desde: 880000001, hasta: 880001000);
+
+        $debito = app(CreditDebitNoteEngine::class)
+            ->post($this->notaBorrador(tipo: CreditDebitNote::TYPE_DEBIT));
+
+        $this->assertSame('ZZND', $debito->prefix);
+        $this->assertSame(880000001, (int) $debito->number);
+    }
+
+    /**
+     * Sin resolución la nota sigue saliendo, con su número manual.
+     *
+     * Bloquearla sería peor: hay empresas que llevan notas para control interno
+     * sin transmitirlas. Lo que no puede pasar es que el usuario se entere solo
+     * cuando la DIAN la rechaza — de eso se encarga el aviso en pantalla.
+     */
+    public function test_sin_resolucion_la_nota_se_contabiliza_igual(): void
+    {
+        $nota = app(CreditDebitNoteEngine::class)->post($this->notaBorrador());
+
+        $this->assertSame(CreditDebitNote::STATUS_POSTED, $nota->status);
+        $this->assertNull($nota->dian_resolution_id);
+    }
+
+    // ----------------------------------------------------- el rescate
+
+    /** Una nota vieja sin resolución se puede renumerar. */
+    public function test_una_nota_sin_resolucion_se_puede_renumerar(): void
+    {
+        // Contabilizada antes de que existiera la resolución: queda en NC1.
+        $nota = app(CreditDebitNoteEngine::class)->post($this->notaBorrador());
+        $numeroViejo = $nota->fullNumber();
+        $this->assertNull($nota->dian_resolution_id);
+
+        $this->resolucion(documentTypeId: 2, prefijo: 'ZZNC', desde: 990000001, hasta: 990001000);
+
+        $rescatada = app(CreditDebitNoteEngine::class)->asignarResolucionDian($nota);
+
+        $this->assertSame('ZZNC', $rescatada->prefix);
+        $this->assertSame(990000001, (int) $rescatada->number);
+        $this->assertNotNull($rescatada->dian_resolution_id);
+        $this->assertNotSame($numeroViejo, $rescatada->fullNumber());
+    }
+
+    /** Y el asiento se va con ella: su referencia es el número que cambió. */
+    public function test_el_asiento_sigue_a_la_nota_renumerada(): void
+    {
+        $nota = app(CreditDebitNoteEngine::class)->post($this->notaBorrador());
+        $this->resolucion(documentTypeId: 2, prefijo: 'ZZNC', desde: 990000001, hasta: 990001000);
+
+        $rescatada = app(CreditDebitNoteEngine::class)->asignarResolucionDian($nota);
+
+        $asiento = JournalEntry::withoutGlobalScope(CompanyScope::class)
+            ->find($rescatada->journal_entry_id);
+
+        $this->assertSame($rescatada->fullNumber(), $asiento->reference,
+            'El libro quedaría apuntando a un documento que ya no existe.');
+    }
+
+    /** Sin resolución cargada, el rescate explica qué hacer. */
+    public function test_sin_resolucion_el_rescate_dice_que_hacer(): void
+    {
+        $nota = app(CreditDebitNoteEngine::class)->post($this->notaBorrador());
+
+        try {
+            app(CreditDebitNoteEngine::class)->asignarResolucionDian($nota);
+            $this->fail('Debió negarse: no hay resolución que asignar.');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('Configuración → DIAN', $e->getMessage());
+            $this->assertStringContainsString('no hay que asignarla', mb_strtolower($e->getMessage()),
+                'El mensaje tiene que desmentir lo que la gente asume: que va a una sede.');
+        }
+    }
+
+    /** Una nota que la DIAN ya aceptó no se renumera nunca. */
+    public function test_una_nota_aceptada_por_la_dian_no_se_renumera(): void
+    {
+        $this->resolucion(documentTypeId: 2, prefijo: 'ZZNC', desde: 990000001, hasta: 990001000);
+
+        $nota = app(CreditDebitNoteEngine::class)->post($this->notaBorrador());
+        $nota->update([
+            'dian_status' => CreditDebitNote::DIAN_ACCEPTED,
+            'dian_resolution_id' => null,
+        ]);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessageMatches('/ya aceptó/');
+
+        app(CreditDebitNoteEngine::class)->asignarResolucionDian($nota->fresh());
+    }
+
+    // ------------------------------------------------ la regla, en el modelo
+
+    /** Los cuatro tipos globales, y solo esos. */
+    public function test_solo_los_tipos_correctos_son_globales(): void
+    {
+        $globales = Resolution::DOCUMENT_TYPES_GLOBALES;
+
+        // Nota crédito, nota débito, documento soporte y nómina.
+        $this->assertContains(2, $globales);
+        $this->assertContains(3, $globales);
+        $this->assertContains(4, $globales);
+        $this->assertContains(5, $globales);
+
+        // La facturación sí es por establecimiento: la DIAN autoriza esos
+        // rangos por punto de venta.
+        $this->assertNotContains(1, $globales, 'La factura electrónica se asigna a la sede.');
+        $this->assertNotContains(6, $globales, 'La factura de exportación también.');
+    }
+
+    // --------------------------------------------------------- auxiliares
+
+    private function resolucion(int $documentTypeId, string $prefijo, int $desde, int $hasta): Resolution
+    {
+        $resolucion = Resolution::withoutGlobalScopes()->create([
+            'company_id' => $this->company->id,
+            'kind' => Resolution::KIND_ELECTRONIC,
+            'document_type_id' => $documentTypeId,
+            'document_type_name' => Resolution::DOCUMENT_TYPES[$documentTypeId],
+            'prefix' => $prefijo,
+            'resolution_number' => '18760000'.random_int(100, 999),
+            'range_from' => $desde,
+            'range_to' => $hasta,
+            'date_from' => now()->subMonth()->toDateString(),
+            'date_to' => now()->addYear()->toDateString(),
+            'active' => true,
+        ]);
+
+        $this->limpiar[] = function () use ($resolucion) {
+            DB::table('dian_location_resolutions')->where('dian_resolution_id', $resolucion->id)->delete();
+            DB::table('dian_resolutions')->where('id', $resolucion->id)->delete();
+        };
+
+        return $resolucion;
+    }
+
+    /**
+     * La factura que la nota referencia.
+     *
+     * Solo se necesita que exista: el asiento de la nota recorre las líneas de
+     * la nota, no las de la factura, así que no hace falta contabilizarla ni
+     * moverle inventario.
+     */
+    private function facturaReferenciada(): int
+    {
+        $id = DB::table('sale_invoices')->insertGetId([
+            'company_id' => $this->company->id,
+            'location_id' => $this->sede->id,
+            'third_party_id' => $this->cliente->id,
+            'prefix' => 'ZZRESF',
+            'number' => random_int(100000, 999999),
+            'invoice_kind' => 'electronic',
+            'date' => now()->toDateString(),
+            'currency' => 'COP',
+            'status' => 'posted',
+            'payment_status' => 'pendiente',
+            'subtotal' => 100000,
+            'total' => 100000,
+            'net_payable' => 100000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->limpiar[] = fn () => DB::table('sale_invoices')->where('id', $id)->delete();
+
+        return $id;
+    }
+
+    private function notaBorrador(string $tipo = CreditDebitNote::TYPE_CREDIT): CreditDebitNote
+    {
+        $nota = CreditDebitNote::withoutGlobalScopes()->create([
+            'company_id' => $this->company->id,
+            'location_id' => $this->sede->id,
+            'third_party_id' => $this->cliente->id,
+            'sale_invoice_id' => $this->facturaReferenciada(),
+            'type' => $tipo,
+            'prefix' => $tipo === CreditDebitNote::TYPE_CREDIT ? 'NC' : 'ND',
+            'number' => random_int(1, 99),
+            'date' => now()->toDateString(),
+            'reason_code' => 2,
+            'reason_description' => 'Prueba automatizada',
+            'affects_inventory' => false,
+            'currency' => 'COP',
+            'status' => CreditDebitNote::STATUS_DRAFT,
+            'subtotal' => 100000,
+            'total' => 100000,
+        ]);
+
+        DB::table('credit_debit_note_lines')->insert([
+            'credit_debit_note_id' => $nota->id,
+            'line_number' => 1,
+            'description' => 'Servicio devuelto',
+            'quantity' => 1,
+            'unit_price' => 100000,
+            'subtotal' => 100000,
+            'total' => 100000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->limpiar[] = function () use ($nota) {
+            $asientos = JournalEntry::withoutGlobalScope(CompanyScope::class)
+                ->where('company_id', $this->company->id)
+                ->where(fn ($q) => $q->where('reference', 'like', '%ZZNC%')
+                    ->orWhere('reference', 'like', '%ZZND%')
+                    ->orWhere('description', 'like', '%ZZ CLIENTE RESOLUCION%'))
+                ->pluck('id');
+            DB::table('journal_entry_lines')->whereIn('journal_entry_id', $asientos)->delete();
+            DB::table('journal_entries')->whereIn('id', $asientos)->delete();
+            DB::table('credit_debit_note_lines')->where('credit_debit_note_id', $nota->id)->delete();
+            DB::table('credit_debit_notes')->where('id', $nota->id)->delete();
+        };
+
+        return $nota->fresh(['lines']);
+    }
+}
