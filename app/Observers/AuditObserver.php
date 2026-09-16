@@ -123,7 +123,91 @@ class AuditObserver
             return abs((float) $a - (float) $b) < 0.000001;
         }
 
-        return (string) $a === (string) $b;
+        return $this->comparable($a) === $this->comparable($b);
+    }
+
+    /**
+     * Deja cualquier valor en algo que se pueda comparar como texto.
+     *
+     * Los dos lados de la comparación no vienen del mismo sitio: el anterior
+     * sale de `getOriginal()` y el nuevo de `getChanges()`, y Eloquent no
+     * siempre les aplica el mismo casteo. En un campo casteado a `array` —como
+     * la respuesta de la DIAN— uno llega como arreglo y el otro como el JSON
+     * crudo de la base.
+     *
+     * Hacer `(string)` sobre eso mataba la petición entera con «Array to string
+     * conversion», y como la bitácora se engancha a **todo** `update()`, el
+     * error aparecía en la operación que se estuviera haciendo —enviar una nota
+     * a la DIAN, por ejemplo— sin ninguna pista de que la auditoría tuviera algo
+     * que ver.
+     */
+    private function comparable(mixed $valor): string
+    {
+        if (is_string($valor)) {
+            // PostgreSQL reordena las claves de un `jsonb` al guardarlo, así que
+            // el texto que devuelve no coincide con el que genera PHP aunque el
+            // contenido sea idéntico. Sin normalizar, reenviar la misma
+            // respuesta de la DIAN aparecería como un cambio, y ese ruido es lo
+            // que hace que nadie lea la bitácora.
+            $decodificado = json_decode($valor, true);
+
+            return is_array($decodificado)
+                ? $this->jsonCanonico($decodificado)
+                : $valor;
+        }
+
+        if ($valor === null) {
+            return '';
+        }
+
+        if (is_bool($valor)) {
+            return $valor ? '1' : '0';
+        }
+
+        if (is_scalar($valor)) {
+            return (string) $valor;
+        }
+
+        if ($valor instanceof \DateTimeInterface) {
+            return $valor->format('Y-m-d H:i:s');
+        }
+
+        if ($valor instanceof \BackedEnum) {
+            return (string) $valor->value;
+        }
+
+        if (is_object($valor) && method_exists($valor, '__toString')) {
+            return (string) $valor;
+        }
+
+        // Arreglos y objetos sin representación de texto: el JSON sirve para
+        // comparar, que es lo único que se necesita aquí.
+        return is_array($valor)
+            ? $this->jsonCanonico($valor)
+            : (json_encode($valor, JSON_UNESCAPED_UNICODE) ?: '');
+    }
+
+    /**
+     * JSON con las claves ordenadas, para que dos estructuras iguales den el
+     * mismo texto sin importar en qué orden vinieron.
+     *
+     * @param  array<array-key, mixed>  $valor
+     */
+    private function jsonCanonico(array $valor): string
+    {
+        $ordenar = function (array $datos) use (&$ordenar): array {
+            ksort($datos);
+
+            foreach ($datos as $clave => $dato) {
+                if (is_array($dato)) {
+                    $datos[$clave] = $ordenar($dato);
+                }
+            }
+
+            return $datos;
+        };
+
+        return json_encode($ordenar($valor), JSON_UNESCAPED_UNICODE) ?: '';
     }
 
     private function recortar(mixed $valor): mixed
@@ -134,6 +218,13 @@ class AuditObserver
 
         if (is_array($valor)) {
             return $this->recortar(json_encode($valor, JSON_UNESCAPED_UNICODE));
+        }
+
+        // Un objeto se guardaría con toda su estructura interna —una fecha se
+        // vuelve `{"date":…,"timezone_type":3,…}`— y quien lee la bitácora no
+        // entiende nada. Se guarda como se lee.
+        if (is_object($valor)) {
+            return $this->recortar($this->comparable($valor));
         }
 
         return $valor;
