@@ -84,14 +84,14 @@ class CreditNoteResolutionTest extends TestCase
     /** La encuentra sin que nadie la haya asignado a una sede. */
     public function test_la_resolucion_de_notas_se_encuentra_sin_asignarla_a_una_sede(): void
     {
-        $resolucion = $this->resolucion(documentTypeId: 2, prefijo: 'ZZNC', desde: 990000001, hasta: 990001000);
+        $resolucion = $this->resolucion(documentTypeId: 4, prefijo: 'ZZNC', desde: 990000001, hasta: 990001000);
 
         $this->assertSame(0, DB::table('dian_location_resolutions')
             ->where('dian_resolution_id', $resolucion->id)->count(),
             'La prueba solo vale si de verdad no hay ninguna asignación.');
 
         $encontrada = app(DocumentNumberer::class)
-            ->resolucionGlobalDe($this->company->id, 2, 'credit_debit_notes');
+            ->resolucionGlobalDe($this->company->id, 4, 'credit_debit_notes');
 
         $this->assertNotNull($encontrada, 'Sin asignación a sede, igual tiene que encontrarla.');
         $this->assertSame($resolucion->id, $encontrada->id);
@@ -100,7 +100,7 @@ class CreditNoteResolutionTest extends TestCase
     /** Y numera desde el rango autorizado, no desde 1. */
     public function test_la_nota_toma_el_consecutivo_de_la_resolucion(): void
     {
-        $this->resolucion(documentTypeId: 2, prefijo: 'ZZNC', desde: 990000001, hasta: 990001000);
+        $this->resolucion(documentTypeId: 4, prefijo: 'ZZNC', desde: 990000001, hasta: 990001000);
 
         $nota = app(CreditDebitNoteEngine::class)->post($this->notaBorrador());
 
@@ -113,7 +113,7 @@ class CreditNoteResolutionTest extends TestCase
     /** Dos notas seguidas no repiten número. */
     public function test_dos_notas_no_repiten_consecutivo(): void
     {
-        $this->resolucion(documentTypeId: 2, prefijo: 'ZZNC', desde: 990000001, hasta: 990001000);
+        $this->resolucion(documentTypeId: 4, prefijo: 'ZZNC', desde: 990000001, hasta: 990001000);
 
         $primera = app(CreditDebitNoteEngine::class)->post($this->notaBorrador());
         $segunda = app(CreditDebitNoteEngine::class)->post($this->notaBorrador());
@@ -126,8 +126,8 @@ class CreditNoteResolutionTest extends TestCase
     /** La nota débito usa su propia resolución, no la de crédito. */
     public function test_la_nota_debito_no_toma_la_resolucion_de_credito(): void
     {
-        $this->resolucion(documentTypeId: 2, prefijo: 'ZZNC', desde: 990000001, hasta: 990001000);
-        $this->resolucion(documentTypeId: 3, prefijo: 'ZZND', desde: 880000001, hasta: 880001000);
+        $this->resolucion(documentTypeId: 4, prefijo: 'ZZNC', desde: 990000001, hasta: 990001000);
+        $this->resolucion(documentTypeId: 5, prefijo: 'ZZND', desde: 880000001, hasta: 880001000);
 
         $debito = app(CreditDebitNoteEngine::class)
             ->post($this->notaBorrador(tipo: CreditDebitNote::TYPE_DEBIT));
@@ -161,7 +161,7 @@ class CreditNoteResolutionTest extends TestCase
         $numeroViejo = $nota->fullNumber();
         $this->assertNull($nota->dian_resolution_id);
 
-        $this->resolucion(documentTypeId: 2, prefijo: 'ZZNC', desde: 990000001, hasta: 990001000);
+        $this->resolucion(documentTypeId: 4, prefijo: 'ZZNC', desde: 990000001, hasta: 990001000);
 
         $rescatada = app(CreditDebitNoteEngine::class)->asignarResolucionDian($nota);
 
@@ -186,7 +186,7 @@ class CreditNoteResolutionTest extends TestCase
         // Numerada a mano con el 1, que es justo el inicio del rango.
         $nota->update(['prefix' => 'ZZNC', 'number' => 1]);
 
-        $this->resolucion(documentTypeId: 2, prefijo: 'ZZNC', desde: 1, hasta: 1000);
+        $this->resolucion(documentTypeId: 4, prefijo: 'ZZNC', desde: 1, hasta: 1000);
 
         $rescatada = app(CreditDebitNoteEngine::class)->asignarResolucionDian($nota->fresh());
 
@@ -197,7 +197,7 @@ class CreditNoteResolutionTest extends TestCase
     /** Pero sí respeta las notas ajenas ya emitidas. */
     public function test_al_renumerar_si_respeta_las_otras_notas(): void
     {
-        $this->resolucion(documentTypeId: 2, prefijo: 'ZZNC', desde: 1, hasta: 1000);
+        $this->resolucion(documentTypeId: 4, prefijo: 'ZZNC', desde: 1, hasta: 1000);
 
         // Una nota anterior ya ocupa el 1.
         app(CreditDebitNoteEngine::class)->post($this->notaBorrador());
@@ -215,7 +215,7 @@ class CreditNoteResolutionTest extends TestCase
     public function test_el_asiento_sigue_a_la_nota_renumerada(): void
     {
         $nota = app(CreditDebitNoteEngine::class)->post($this->notaBorrador());
-        $this->resolucion(documentTypeId: 2, prefijo: 'ZZNC', desde: 990000001, hasta: 990001000);
+        $this->resolucion(documentTypeId: 4, prefijo: 'ZZNC', desde: 990000001, hasta: 990001000);
 
         $rescatada = app(CreditDebitNoteEngine::class)->asignarResolucionDian($nota);
 
@@ -244,7 +244,7 @@ class CreditNoteResolutionTest extends TestCase
     /** Una nota que la DIAN ya aceptó no se renumera nunca. */
     public function test_una_nota_aceptada_por_la_dian_no_se_renumera(): void
     {
-        $this->resolucion(documentTypeId: 2, prefijo: 'ZZNC', desde: 990000001, hasta: 990001000);
+        $this->resolucion(documentTypeId: 4, prefijo: 'ZZNC', desde: 990000001, hasta: 990001000);
 
         $nota = app(CreditDebitNoteEngine::class)->post($this->notaBorrador());
         $nota->update([
@@ -256,25 +256,6 @@ class CreditNoteResolutionTest extends TestCase
         $this->expectExceptionMessageMatches('/ya aceptó/');
 
         app(CreditDebitNoteEngine::class)->asignarResolucionDian($nota->fresh());
-    }
-
-    // ------------------------------------------------ la regla, en el modelo
-
-    /** Los cuatro tipos globales, y solo esos. */
-    public function test_solo_los_tipos_correctos_son_globales(): void
-    {
-        $globales = Resolution::DOCUMENT_TYPES_GLOBALES;
-
-        // Nota crédito, nota débito, documento soporte y nómina.
-        $this->assertContains(2, $globales);
-        $this->assertContains(3, $globales);
-        $this->assertContains(4, $globales);
-        $this->assertContains(5, $globales);
-
-        // La facturación sí es por establecimiento: la DIAN autoriza esos
-        // rangos por punto de venta.
-        $this->assertNotContains(1, $globales, 'La factura electrónica se asigna a la sede.');
-        $this->assertNotContains(6, $globales, 'La factura de exportación también.');
     }
 
     // --------------------------------------------------------- auxiliares

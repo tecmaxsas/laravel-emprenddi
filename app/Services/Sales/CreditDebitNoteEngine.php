@@ -52,9 +52,9 @@ class CreditDebitNoteEngine
         return DB::transaction(function () use ($note) {
             $this->recalculateTotals($note);
 
-            // 1. Consecutivo de la resolución de notas de la EMPRESA (NC=2,
-            //    ND=3). No se busca por sede: ver reserveDianNumberIfApplicable.
-            //    Sin resolución, la nota conserva su número manual.
+            // 1. Consecutivo de la resolución de notas de la EMPRESA. No se
+            //    busca por sede: ver reserveDianNumberIfApplicable. Sin
+            //    resolución, la nota conserva su número manual.
             $this->reserveDianNumberIfApplicable($note);
 
             // 2. Inventario solo en NC con flag affects_inventory (devolución física).
@@ -147,7 +147,7 @@ class CreditDebitNoteEngine
             throw new RuntimeException('Esta nota ya tiene resolución asignada.');
         }
 
-        $docTypeId = $note->isCredit() ? 2 : 3;
+        $docTypeId = $note->dianTypeDocumentId();
 
         return DB::transaction(function () use ($note, $docTypeId) {
             // Se excluye la propia nota del conteo: si no, se compara contra sí
@@ -241,8 +241,10 @@ class CreditDebitNoteEngine
      */
     protected function reserveDianNumberIfApplicable(CreditDebitNote $note): void
     {
-        // Tipo de documento DIAN: 2=Nota Crédito, 3=Nota Débito.
-        $docTypeId = $note->isCredit() ? 2 : 3;
+        // El mismo código DIAN con el que la nota se transmite. Tenerlo en un
+        // solo sitio es lo que impide que la resolución quede registrada bajo un
+        // tipo y el documento se envíe declarando otro.
+        $docTypeId = $note->dianTypeDocumentId();
 
         $reserva = $this->documentNumberer->reserveGlobal(
             $note->company_id,

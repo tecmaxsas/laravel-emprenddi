@@ -23,13 +23,30 @@ class Resolution extends Model
         self::KIND_POS => 'POS (sin transmisión a DIAN)',
     ];
 
+    /**
+     * Los códigos son **los de la DIAN**, no una numeración nuestra.
+     *
+     * Esto importa más de lo que parece: `document_type_id` viaja tal cual al
+     * proveedor tecnológico al registrar la resolución, y la nota o la factura
+     * se transmite con el código DIAN que le corresponde. Si las dos listas no
+     * coinciden, la resolución queda registrada allá bajo un tipo distinto del
+     * que el documento declara al enviarse.
+     *
+     * Eso fue exactamente lo que pasó. La lista era una numeración propia
+     * (1..6) donde solo el 1 coincidía por casualidad con la DIAN. Las facturas
+     * funcionaban; las notas crédito se registraban como tipo 2 —que para la
+     * DIAN es Factura de Exportación— y al enviar la nota con su tipo 4 el
+     * proveedor no encontraba ninguna resolución y respondía «La resolución no
+     * está configurada», con el rango vacío. Nada en ese mensaje apuntaba a un
+     * desajuste de catálogos.
+     */
     public const DOCUMENT_TYPES = [
         1 => 'Factura Electrónica',
-        2 => 'Nota Crédito',
-        3 => 'Nota Débito',
-        4 => 'Documento Soporte',
-        5 => 'Nómina Electrónica',
-        6 => 'Factura de Exportación',
+        2 => 'Factura de Exportación',
+        4 => 'Nota Crédito',
+        5 => 'Nota Débito',
+        9 => 'Nómina Electrónica',
+        11 => 'Documento Soporte',
     ];
 
     /**
@@ -47,7 +64,7 @@ class Resolution extends Model
      * respondía «La resolución no está configurada» y no había forma de
      * relacionar ese mensaje con una asignación que nadie sabía que hacía falta.
      */
-    public const DOCUMENT_TYPES_GLOBALES = [2, 3, 4, 5];
+    public const DOCUMENT_TYPES_GLOBALES = [4, 5, 9, 11];
 
     /** ¿Su numeración es de toda la empresa en vez de por sede? */
     public function isGlobal(): bool
