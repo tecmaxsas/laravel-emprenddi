@@ -214,6 +214,8 @@
                                 </div>
                             @endforeach
 
+                            @include('filament.app.pages.order-taking.partials.agregar-retencion')
+
                             <div style="display:flex; justify-content:space-between; padding:6px 0 2px; border-top:1px solid #e2e8f0; margin-top:6px;">
                                 <span style="font-weight:800; font-size:13px;">NETO A PAGAR</span>
                                 <span style="font-weight:900; font-size:16px; color:#15803d;">
@@ -222,15 +224,12 @@
                             </div>
                         </div>
                     @elseif ($customer)
-                        @php $configuradas = $customer->retentionTaxes()->where('is_active', true)->count(); @endphp
-                        @if ($configuradas > 0)
-                            <div style="margin-top:8px; padding-top:8px; border-top:1px dashed #cbd5e1;">
-                                <button type="button" wire:click="restoreRetentions"
-                                        style="width:100%; padding:6px; background:#fef3c7; color:#92400e; border:1px solid #fcd34d; border-radius:6px; font-weight:700; font-size:11.5px; cursor:pointer;">
-                                    ↺ Volver a aplicar las retenciones del cliente ({{ $configuradas }})
-                                </button>
-                            </div>
-                        @endif
+                        <div style="margin-top:8px; padding-top:8px; border-top:1px dashed #cbd5e1;">
+                            <span style="font-size:11px; font-weight:800; color:#94a3b8; text-transform:uppercase;">
+                                Retenciones
+                            </span>
+                            @include('filament.app.pages.order-taking.partials.agregar-retencion')
+                        </div>
                     @endif
                 </div>
             @endif

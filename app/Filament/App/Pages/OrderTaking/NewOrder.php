@@ -8,10 +8,12 @@ use App\Models\OrderTaking\Order;
 use App\Models\OrderTaking\OrderItem;
 use App\Models\OrderTaking\PriceList;
 use App\Models\OrderTaking\PriceListItem;
+use App\Models\Tax;
 use App\Models\ThirdParty;
 use App\Models\ThirdPartyBranch;
 use App\Services\OrderTaking\OrderEngine;
 use App\Support\ModuleGate;
+use App\Support\RetentionBase;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\Auth;
@@ -50,6 +52,9 @@ class NewOrder extends Page
      * Cada fila: ['tax_id', 'tax_code', 'tax_name', 'tax_type', 'base_amount', 'rate', 'amount']
      */
     public array $retentions = [];
+
+    /** El impuesto elegido en el selector de «agregar retencion». */
+    public ?int $retentionToAdd = null;
 
     public static function canAccess(): bool
     {
@@ -203,11 +208,24 @@ class NewOrder extends Page
      * recalculo. Se aplican solas para que nadie se olvide de ellas; el
      * vendedor puede quitarlas o corregir la base antes de guardar.
      */
+    /** El IVA del carrito: es la base de las retenciones de ReteIVA. */
+    public function getVatBaseProperty(): float
+    {
+        $iva = 0.0;
+
+        foreach ($this->cart as $c) {
+            $iva += (float) $c['quantity'] * (float) $c['tax_amount'];
+        }
+
+        return round($iva, 2);
+    }
+
     public function loadRetentionsForCustomer(): void
     {
         $this->retentions = app(OrderEngine::class)->suggestRetentionsFor(
             $this->selectedCustomer,
             $this->taxableBase,
+            $this->vatBase,
         );
     }
 
@@ -219,14 +237,19 @@ class NewOrder extends Page
     public function recomputeRetentionBases(): void
     {
         $base = $this->taxableBase;
+        $iva = $this->vatBase;
 
         foreach ($this->retentions as $i => $r) {
             if ((bool) ($r['base_edited'] ?? false)) {
                 continue;
             }
 
-            $this->retentions[$i]['base_amount'] = $base;
-            $this->retentions[$i]['amount'] = round($base * ((float) $r['rate'] / 100), 2);
+            // Cada una con la base de su tipo: una ReteIVA sobre el subtotal
+            // saldria multiplicada por varias veces su valor.
+            $suBase = max(0, RetentionBase::para($r['tax_type'] ?? null, $base, $iva));
+
+            $this->retentions[$i]['base_amount'] = $suBase;
+            $this->retentions[$i]['amount'] = round($suBase * ((float) $r['rate'] / 100), 2);
         }
     }
 
@@ -242,15 +265,105 @@ class NewOrder extends Page
         $this->loadRetentionsForCustomer();
     }
 
-    public function updateRetentionBase(int $i, float $base): void
+    public function updateRetentionBase(int $i, mixed $base): void
     {
         if (! isset($this->retentions[$i])) return;
 
-        $base = max(0, $base);
+        $base = max(0, $this->leerMonto($base));
         $this->retentions[$i]['base_amount'] = $base;
         $this->retentions[$i]['amount'] = round($base * ((float) $this->retentions[$i]['rate'] / 100), 2);
         // Marcada a mano: los recalculos por cambios del carrito ya no la pisan.
         $this->retentions[$i]['base_edited'] = true;
+    }
+
+    /**
+     * Lee un monto escrito a mano sin romperse ni falsearlo.
+     *
+     * El campo llega como texto del navegador y no siempre con punto decimal:
+     * en un equipo en espanol «70588,24» es lo normal, y `(float)` de PHP lo
+     * corta en 70588 —o peor, convierte «1.500.000» en 1.5—. Una base mal leida
+     * no falla: retiene de menos, y eso se descubre cuando el cliente reclama.
+     */
+    protected function leerMonto(mixed $valor): float
+    {
+        if (is_int($valor) || is_float($valor)) {
+            return (float) $valor;
+        }
+
+        $texto = preg_replace('/[^0-9.,-]/u', '', (string) $valor) ?? '';
+
+        if ($texto === '') {
+            return 0.0;
+        }
+
+        $puntos = substr_count($texto, '.');
+        $comas = substr_count($texto, ',');
+
+        if ($puntos > 0 && $comas > 0) {
+            // El ultimo separador es el decimal: «1.500,50» y «1,500.50» son el
+            // mismo numero en dos convenciones.
+            $decimal = strrpos($texto, '.') > strrpos($texto, ',') ? '.' : ',';
+            $texto = str_replace($decimal === '.' ? ',' : '.', '', $texto);
+            $texto = str_replace($decimal, '.', $texto);
+        } elseif ($puntos > 1 || $comas > 1) {
+            $texto = str_replace(['.', ','], '', $texto);
+        } elseif ($comas === 1) {
+            // Una sola coma solo puede ser decimal: el separador de miles nunca
+            // aparece una vez sola sin otro detras.
+            $texto = str_replace(',', '.', $texto);
+        }
+
+        return is_numeric($texto) ? (float) $texto : 0.0;
+    }
+
+    /**
+     * Agrega una retencion que el cliente no tenia configurada.
+     *
+     * Hace falta mas seguido de lo que parece: un pedido puntual que supera la
+     * base minima de retefuente, o un cliente que acaba de volverse agente
+     * retenedor y todavia no esta actualizado en su ficha.
+     */
+    public function addRetention(mixed $taxId): void
+    {
+        $taxId = (int) $taxId;
+
+        if (! $taxId) {
+            return;
+        }
+
+        if (collect($this->retentions)->contains('tax_id', $taxId)) {
+            Notification::make()->title('Esa retencion ya esta aplicada')->warning()->send();
+
+            return;
+        }
+
+        $tax = Tax::query()
+            ->where('company_id', Auth::user()?->company_id)
+            ->where('is_active', true)
+            ->find($taxId);
+
+        if (! $tax) {
+            return;
+        }
+
+        $this->retentions[] = app(OrderEngine::class)
+            ->filaDeRetencion($tax, $this->taxableBase, $this->vatBase);
+
+        $this->retentionToAdd = null;
+    }
+
+    /** Las retenciones que se pueden agregar: las de la empresa que no estan ya puestas. */
+    public function getAvailableRetentionsProperty()
+    {
+        $puestas = collect($this->retentions)->pluck('tax_id')->all();
+
+        return Tax::query()
+            ->where('company_id', Auth::user()?->company_id)
+            ->where('is_active', true)
+            ->whereIn('type', ['income_withholding', 'vat_withholding', 'ica_withholding'])
+            ->whereNotIn('id', $puestas)
+            ->orderBy('code')
+            ->get(['id', 'code', 'name', 'rate', 'type']);
     }
 
     public function getRetentionTotalProperty(): float

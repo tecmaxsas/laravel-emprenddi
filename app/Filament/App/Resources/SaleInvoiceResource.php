@@ -13,6 +13,7 @@ use App\Models\Product;
 use App\Models\SaleInvoice;
 use App\Models\Tax;
 use App\Models\ThirdParty;
+use App\Support\RetentionBase;
 use App\Models\User;
 use App\Support\Dian\DianInvoiceActions;
 use App\Support\ProductOptions;
@@ -477,39 +478,24 @@ class SaleInvoiceResource extends Resource
     }
 
     /**
-     * Recalcula el monto retenido = base × rate / 100.
-     */
-    /**
      * Base sugerida para una retencion, segun su tipo.
      *
-     * No es lo mismo para todas, y ahi es facil equivocarse:
+     * La regla vive en RetentionBase porque toma de pedidos la necesita igual, y
+     * ya se habia escrito dos veces: alli se aplicaba la misma base a todas las
+     * retenciones, asi que una ReteIVA salia multiplicada por varias veces su
+     * valor.
      *
-     *   - Retefuente y ReteICA se calculan sobre el subtotal ANTES de IVA,
-     *     descontando los descuentos.
-     *   - ReteIVA se calcula sobre el IVA, no sobre el subtotal. Aplicarle la
-     *     tarifa al subtotal multiplicaria la retencion por varias veces su
-     *     valor.
-     *
-     * Es una sugerencia, no una imposicion: el usuario puede ajustarla cuando
-     * la base gravable no sea toda la factura.
+     * Es una sugerencia, no una imposicion: el usuario puede ajustarla cuando la
+     * base gravable no sea toda la factura.
      *
      * @param  array<int, array<string, mixed>>|null  $lines
      */
     protected static function retentionBaseFor(?string $taxType, ?array $lines): float
     {
-        $lines = collect($lines ?? []);
-
-        if ($taxType === 'vat_withholding') {
-            return round($lines->sum(fn ($l) => (float) ($l['tax_amount'] ?? 0)), 2);
-        }
-
-        return round(
-            $lines->sum(fn ($l) => (float) ($l['subtotal'] ?? 0))
-            - $lines->sum(fn ($l) => (float) ($l['discount_amount'] ?? 0)),
-            2,
-        );
+        return RetentionBase::deLineas($taxType, $lines);
     }
 
+    /** Recalcula el monto retenido = base × rate / 100. */
     protected static function recomputeRetention(Forms\Set $set, Forms\Get $get): void
     {
         $base = (float) ($get('base_amount') ?? 0);

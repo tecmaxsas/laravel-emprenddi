@@ -11,6 +11,7 @@ use App\Models\OrderTaking\Payment;
 use App\Models\SaleInvoice;
 use App\Models\Tax;
 use App\Models\ThirdParty;
+use App\Support\RetentionBase;
 use App\Services\Sales\DocumentNumberer;
 use App\Services\Sales\SaleInvoiceEngine;
 use App\Support\PaymentAccountResolver;
@@ -97,29 +98,51 @@ class OrderEngine
      *
      * @return list<array{tax_id:int,tax_code:string,tax_name:string,tax_type:string,base_amount:float,rate:float,amount:float}>
      */
-    public function suggestRetentionsFor(?ThirdParty $customer, float $base): array
+    /**
+     * Las retenciones del cliente, ya calculadas.
+     *
+     * **La base depende del tipo.** Retefuente y ReteICA van sobre el subtotal
+     * antes de IVA; ReteIVA va sobre el IVA. Antes se le aplicaba a todas la
+     * misma base, así que una ReteIVA salía multiplicada por varias veces su
+     * valor —y eso nadie lo nota hasta que el cliente reclama que le retuvieron
+     * de más—.
+     *
+     * @param  float  $base  Subtotal neto (antes de IVA, menos descuentos).
+     * @param  float  $iva  IVA del pedido, para las retenciones que van sobre él.
+     */
+    public function suggestRetentionsFor(?ThirdParty $customer, float $base, float $iva = 0): array
     {
         if (! $customer) {
             return [];
         }
 
-        $base = max(0, round($base, 2));
-
         return $customer->retentionTaxes()
             ->where('is_active', true)
             ->orderBy('code')
             ->get()
-            ->map(fn (Tax $tax) => [
-                'tax_id' => (int) $tax->id,
-                'tax_code' => (string) $tax->code,
-                'tax_name' => (string) $tax->name,
-                'tax_type' => (string) $tax->type,
-                'base_amount' => $base,
-                'rate' => (float) $tax->rate,
-                'amount' => round($base * ((float) $tax->rate / 100), 2),
-            ])
+            ->map(fn (Tax $tax) => $this->filaDeRetencion($tax, $base, $iva))
             ->values()
             ->all();
+    }
+
+    /**
+     * Una fila de retención lista para la pantalla.
+     *
+     * @return array<string, mixed>
+     */
+    public function filaDeRetencion(Tax $tax, float $base, float $iva = 0): array
+    {
+        $baseDelTipo = max(0, RetentionBase::para((string) $tax->type, $base, $iva));
+
+        return [
+            'tax_id' => (int) $tax->id,
+            'tax_code' => (string) $tax->code,
+            'tax_name' => (string) $tax->name,
+            'tax_type' => (string) $tax->type,
+            'base_amount' => $baseDelTipo,
+            'rate' => (float) $tax->rate,
+            'amount' => round($baseDelTipo * ((float) $tax->rate / 100), 2),
+        ];
     }
 
     /**
