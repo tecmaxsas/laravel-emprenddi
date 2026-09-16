@@ -44,13 +44,44 @@
                         </select>
                     </div>
                 </div>
+                {{-- Sucursales: solo aparece si el cliente las tiene. Quien no las
+                     usa no ve nada nuevo en esta pantalla. --}}
+                @if ($this->branches->isNotEmpty())
+                    <div style="margin-top:10px;">
+                        <label style="font-size:11px; font-weight:700; color:#334155; text-transform:uppercase;">Sucursal de entrega *</label>
+                        <select wire:model.live="branchId"
+                                style="width:100%; padding:9px 10px; border:1px solid #cbd5e1; border-radius:8px; background:#fff; color:#0f172a; font-size:13px;">
+                            <option value="">— ¿A cuál sucursal? —</option>
+                            @foreach ($this->branches as $b)
+                                <option value="{{ $b->id }}">{{ $b->code ? $b->code . ' — ' : '' }}{{ $b->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                @endif
+
                 @if ($customer)
+                    @php $sucursal = $this->selectedBranch; @endphp
                     <div style="margin-top:10px; padding:10px 12px; background:#f8fafc; border-radius:8px; font-size:12.5px; color:#334155;">
                         <div><strong>{{ $customer->name }}</strong> · NIT {{ $customer->document_number }}</div>
-                        <div>{{ $customer->address ?? '—' }} · {{ $customer->city ?? '' }}</div>
-                        <div style="color:#64748b; font-size:11.5px;">
-                            {{ $customer->payment_terms ?? 'Sin condiciones' }} · {{ $customer->delivery_horario ?? '' }}
-                        </div>
+                        @if ($sucursal)
+                            {{-- La factura se emite al NIT; esto es a donde va la mercancia. --}}
+                            <div style="margin-top:4px; padding-top:4px; border-top:1px dashed #cbd5e1;">
+                                <strong>Entregar en:</strong> {{ $sucursal->name }}
+                                @if ($sucursal->code)
+                                    <span style="color:#64748b;">({{ $sucursal->code }})</span>
+                                @endif
+                            </div>
+                            <div>{{ $sucursal->fullAddress() ?: '—' }}</div>
+                            <div style="color:#64748b; font-size:11.5px;">
+                                {{ $sucursal->contact_person ? $sucursal->contact_person . ' · ' : '' }}{{ $sucursal->contact_phone ?? '' }}
+                                {{ $sucursal->delivery_horario ? ' · ' . $sucursal->delivery_horario : '' }}
+                            </div>
+                        @else
+                            <div>{{ $customer->address ?? '—' }} · {{ $customer->city ?? '' }}</div>
+                            <div style="color:#64748b; font-size:11.5px;">
+                                {{ $customer->payment_terms ?? 'Sin condiciones' }} · {{ $customer->delivery_horario ?? '' }}
+                            </div>
+                        @endif
                     </div>
                 @endif
 

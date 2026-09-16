@@ -9,6 +9,7 @@ use App\Models\OrderTaking\OrderItem;
 use App\Models\OrderTaking\PriceList;
 use App\Models\OrderTaking\PriceListItem;
 use App\Models\ThirdParty;
+use App\Models\ThirdPartyBranch;
 use App\Services\OrderTaking\OrderEngine;
 use App\Support\ModuleGate;
 use Filament\Notifications\Notification;
@@ -33,6 +34,7 @@ class NewOrder extends Page
     protected static string $view = 'filament.app.pages.order-taking.new-order';
 
     public ?int $customerId = null;
+    public ?int $branchId = null;
     public ?int $priceListId = null;
     public ?int $locationId = null;
     public ?string $orderDate = null;
@@ -100,15 +102,74 @@ class NewOrder extends Page
         return $this->customers->firstWhere('id', $this->customerId);
     }
 
-    public function updatedCustomerId(): void
+    /**
+     * Las sucursales del cliente elegido.
+     *
+     * Colección vacía para la inmensa mayoría de clientes, y entonces la
+     * pantalla no muestra nada nuevo: quien no usa sucursales no se entera de
+     * que existen.
+     */
+    public function getBranchesProperty()
     {
-        // Al elegir cliente, auto-asignar su lista de precios si tiene.
-        $customer = $this->selectedCustomer;
-        if ($customer && $customer->default_price_list_id) {
-            $this->priceListId = (int) $customer->default_price_list_id;
+        if (! $this->customerId) {
+            return collect();
         }
 
+        return ThirdPartyBranch::query()
+            ->where('company_id', Auth::user()?->company_id)
+            ->where('third_party_id', $this->customerId)
+            ->where('active', true)
+            ->orderBy('name')
+            ->get(['id', 'code', 'name', 'address', 'city', 'department',
+                   'contact_person', 'contact_phone', 'delivery_horario',
+                   'default_price_list_id', 'default_seller_user_id']);
+    }
+
+    public function getSelectedBranchProperty(): ?ThirdPartyBranch
+    {
+        if (! $this->branchId) return null;
+        return $this->branches->firstWhere('id', $this->branchId);
+    }
+
+    public function updatedCustomerId(): void
+    {
+        // La sucursal del cliente anterior no tiene nada que ver con el nuevo:
+        // dejarla puesta despacharia el pedido a la direccion equivocada.
+        $this->branchId = null;
+
+        // Si tiene una sola sucursal no hay nada que preguntar.
+        $sucursales = $this->branches;
+        if ($sucursales->count() === 1) {
+            $this->branchId = (int) $sucursales->first()->id;
+        }
+
+        $this->aplicarCondicionesComerciales();
         $this->loadRetentionsForCustomer();
+    }
+
+    public function updatedBranchId(): void
+    {
+        $this->aplicarCondicionesComerciales();
+    }
+
+    /**
+     * Lista de precios segun la sucursal, y si no, segun el cliente.
+     *
+     * La herencia se resuelve aqui y no en cada sitio: el pedido y la factura
+     * que sale de el tienen que usar la misma lista, y dos formas de deducirla
+     * es como terminan cobrando precios distintos por la misma venta.
+     */
+    protected function aplicarCondicionesComerciales(): void
+    {
+        $sucursal = $this->selectedBranch;
+        $customer = $this->selectedCustomer;
+
+        $lista = $sucursal?->default_price_list_id
+            ?? $customer?->default_price_list_id;
+
+        if ($lista) {
+            $this->priceListId = (int) $lista;
+        }
     }
 
     /**
@@ -322,6 +383,29 @@ class NewOrder extends Page
             return;
         }
 
+        // Un cliente con varias sucursales tiene que decir a cuál se despacha.
+        // Sin esto el pedido sale sin dirección de entrega y alguien lo descubre
+        // con el camión cargado.
+        $sucursales = $this->branches;
+
+        if ($sucursales->isNotEmpty() && ! $this->branchId) {
+            Notification::make()
+                ->title('Falta la sucursal')
+                ->body('Este cliente recibe en varias direcciones. Elige a cuál se entrega.')
+                ->warning()
+                ->send();
+
+            return;
+        }
+
+        // La sucursal elegida tiene que ser de este cliente: el selector la
+        // limpia al cambiar de cliente, pero el estado llega del navegador.
+        if ($this->branchId && ! $sucursales->contains('id', $this->branchId)) {
+            Notification::make()->title('La sucursal no es de este cliente')->danger()->send();
+
+            return;
+        }
+
         try {
             $order = DB::transaction(function () use ($companyId) {
                 $engine = app(OrderEngine::class);
@@ -332,6 +416,7 @@ class NewOrder extends Page
                     'prefix' => 'PED',
                     'number' => $number,
                     'third_party_id' => $this->customerId,
+                    'third_party_branch_id' => $this->branchId,
                     'price_list_id' => $this->priceListId,
                     'location_id' => $this->locationId,
                     'seller_user_id' => Auth::id(),

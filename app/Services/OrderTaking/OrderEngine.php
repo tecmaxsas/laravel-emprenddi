@@ -314,6 +314,9 @@ class OrderEngine
                 'company_id' => $order->company_id,
                 'location_id' => $order->location_id,
                 'third_party_id' => $order->third_party_id,
+                // La factura se emite al NIT del tercero; la sucursal viaja para
+                // saber a donde se entrego y poder abrir la cartera despues.
+                'third_party_branch_id' => $order->third_party_branch_id,
                 'prefix' => $doc['prefix'],
                 'number' => $doc['number'],
                 'invoice_kind' => $doc['kind'],

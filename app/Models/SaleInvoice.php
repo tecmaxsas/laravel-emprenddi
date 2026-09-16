@@ -64,6 +64,7 @@ class SaleInvoice extends Model
         'company_id',
         'location_id',
         'third_party_id',
+        'third_party_branch_id',
         'prefix',
         'number',
         'invoice_kind',
@@ -163,6 +164,18 @@ class SaleInvoice extends Model
     public function customer(): BelongsTo
     {
         return $this->belongsTo(ThirdParty::class, 'third_party_id');
+    }
+
+    /**
+     * La sucursal del cliente a la que se entregó, si la hay.
+     *
+     * No cambia a quién se factura —eso es el NIT del tercero y lo valida la
+     * DIAN—: dice a dónde va la mercancía y permite abrir la cartera por
+     * sucursal.
+     */
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(ThirdPartyBranch::class, 'third_party_branch_id');
     }
 
     public function lines(): HasMany

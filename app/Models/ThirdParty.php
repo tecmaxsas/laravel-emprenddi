@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class ThirdParty extends Model
@@ -142,6 +143,30 @@ class ThirdParty extends Model
     public function defaultSeller(): BelongsTo
     {
         return $this->belongsTo(User::class, 'default_seller_user_id');
+    }
+
+    /**
+     * Sus sucursales: mismas condiciones fiscales, distinta entrega.
+     *
+     * Un cliente con varios puntos factura todo bajo un NIT —el de este
+     * tercero— pero recibe en direcciones distintas y a veces con lista de
+     * precios o vendedor propios. Duplicar el tercero para eso partiría su
+     * cartera y su cupo de crédito en pedazos que no suman.
+     */
+    public function branches(): HasMany
+    {
+        return $this->hasMany(ThirdPartyBranch::class)->orderBy('name');
+    }
+
+    public function activeBranches(): HasMany
+    {
+        return $this->branches()->where('active', true);
+    }
+
+    /** ¿Vale la pena preguntar por sucursal al venderle? */
+    public function hasBranches(): bool
+    {
+        return $this->activeBranches()->exists();
     }
 
     /**

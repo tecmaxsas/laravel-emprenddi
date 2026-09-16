@@ -3,6 +3,7 @@
 namespace App\Filament\App\Resources;
 
 use App\Filament\App\Resources\ThirdPartyResource\Pages;
+use App\Filament\App\Resources\ThirdPartyResource\RelationManagers;
 use App\Filament\Concerns\ChecksPermission;
 use App\Models\Account;
 use App\Models\ThirdParty;
@@ -400,6 +401,13 @@ class ThirdPartyResource extends Resource
                         ->action(fn ($records) => $records->each->update(['active' => false])),
                 ]),
             ]);
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            RelationManagers\BranchesRelationManager::class,
+        ];
     }
 
     public static function getPages(): array

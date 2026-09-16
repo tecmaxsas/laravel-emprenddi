@@ -45,7 +45,7 @@ class Order extends Model
 
     protected $fillable = [
         'company_id', 'prefix', 'number',
-        'third_party_id', 'price_list_id', 'location_id',
+        'third_party_id', 'third_party_branch_id', 'price_list_id', 'location_id',
         'seller_user_id', 'created_by_user_id',
         'order_date', 'delivery_date_expected',
         'status', 'delivery_status', 'payment_status', 'sale_invoice_id',
@@ -71,6 +71,12 @@ class Order extends Model
     public function customer(): BelongsTo
     {
         return $this->belongsTo(ThirdParty::class, 'third_party_id');
+    }
+
+    /** La sucursal del cliente a la que se despacha, si la hay. */
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\ThirdPartyBranch::class, 'third_party_branch_id');
     }
 
     public function priceList(): BelongsTo
