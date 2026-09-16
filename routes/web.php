@@ -11,6 +11,7 @@ use App\Http\Controllers\App\ProductImportController;
 use App\Http\Controllers\App\ReportExportController;
 use App\Http\Controllers\App\ThirdPartyImportController;
 use App\Http\Controllers\DeliveryTrackController;
+use App\Http\Controllers\DianDocumentDownloadController;
 use App\Http\Controllers\KitchenTicketPrintController;
 use App\Http\Controllers\PosPrintController;
 use App\Http\Controllers\PublicCatalogController;
@@ -39,6 +40,15 @@ Route::middleware(['web', 'auth', SetActiveCompany::class])->group(function () {
     // Comprobante imprimible de garantía (constancia de recepción)
     Route::get('/app/warranties/{warranty}/print', [WarrantyPrintController::class, 'show'])
         ->name('warranties.print');
+
+    // PDF oficial con CUFE y QR. No lo genera Emprenddi: lo genera el proveedor
+    // tecnológico cuando la DIAN autoriza, así que se pide en el momento.
+    Route::get('/app/dian/credit-debit-notes/{note}/pdf',
+        [DianDocumentDownloadController::class, 'creditDebitNote'])
+        ->name('dian.credit_debit_note.pdf');
+    Route::get('/app/dian/sale-invoices/{invoice}/pdf',
+        [DianDocumentDownloadController::class, 'saleInvoice'])
+        ->name('dian.sale_invoice.pdf');
 
     // Firma de peticiones QZ Tray (impresión local).
     Route::get('/qz/certificate', [QzSigningController::class, 'certificate'])

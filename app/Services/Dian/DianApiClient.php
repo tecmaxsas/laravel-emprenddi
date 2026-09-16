@@ -226,6 +226,67 @@ class DianApiClient
         return $this->request('post', "/api/ubl2.1/invoice/{$testSetId}", $payload);
     }
 
+    /**
+     * Descarga un archivo ya generado de un documento emitido (PDF, XML o ZIP).
+     *
+     * El mismo endpoint sirve los tres formatos: lo que decide cuál es el
+     * nombre del archivo, no un parámetro. `DianDocumentDownloader` arma ese
+     * nombre.
+     *
+     * Ojo con dos cosas del API:
+     *  - Cuando el archivo existe, la respuesta es el binario, no JSON. Parsearlo
+     *    como JSON devuelve null y parece un error que no es.
+     *  - Cuando NO existe, responde 200 igual, con un JSON `success: false`. El
+     *    código HTTP no sirve para saber si salió bien.
+     *
+     * @return array{ok: bool, contents: ?string, error: ?string}
+     */
+    public function downloadFile(string $nit, string $filename): array
+    {
+        try {
+            $response = $this->client()->get("/api/ubl2.1/download/{$nit}/{$filename}");
+
+            $cuerpo = $response->body();
+
+            if (! $response->successful()) {
+                return [
+                    'ok' => false,
+                    'contents' => null,
+                    'error' => "El proveedor respondió HTTP {$response->status()}.",
+                ];
+            }
+
+            // Un JSON con success:false es «no lo encontré» disfrazado de 200.
+            $comoJson = json_decode($cuerpo, true);
+
+            if (is_array($comoJson) && ($comoJson['success'] ?? null) === false) {
+                return [
+                    'ok' => false,
+                    'contents' => null,
+                    'error' => $comoJson['message'] ?? 'El proveedor no encontró el archivo.',
+                ];
+            }
+
+            if ($cuerpo === '') {
+                return ['ok' => false, 'contents' => null, 'error' => 'El proveedor devolvió un archivo vacío.'];
+            }
+
+            return ['ok' => true, 'contents' => $cuerpo, 'error' => null];
+        } catch (\Throwable $e) {
+            Log::warning('DianApiClient download failed', [
+                'filename' => $filename,
+                'company_id' => $this->config->company_id,
+                'message' => $e->getMessage(),
+            ]);
+
+            return [
+                'ok' => false,
+                'contents' => null,
+                'error' => 'No fue posible conectarse a apidian.emprenddi.com: '.$e->getMessage(),
+            ];
+        }
+    }
+
     protected function client(bool $authenticated = true): PendingRequest
     {
         $baseUrl = $this->config->api_url ?: config('services.dian.api_url');

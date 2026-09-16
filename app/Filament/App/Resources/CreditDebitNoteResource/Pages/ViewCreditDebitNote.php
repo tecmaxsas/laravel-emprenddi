@@ -87,6 +87,17 @@ class ViewCreditDebitNote extends ViewRecord
                         Notification::make()->danger()->title('Error')->body($e->getMessage())->persistent()->send();
                     }
                 }),
+
+            // El PDF con CUFE y QR lo genera el proveedor al autorizar la DIAN;
+            // uno hecho aquí se parecería pero no sería el documento válido.
+            Actions\Action::make('downloadPdf')
+                ->label('Descargar PDF DIAN')
+                ->icon('heroicon-o-arrow-down-tray')
+                ->color('gray')
+                ->visible(fn (CreditDebitNote $r) => $r->dian_status === CreditDebitNote::DIAN_ACCEPTED
+                    && auth()->user()?->can('credit_debit_notes.view'))
+                ->url(fn (CreditDebitNote $r) => route('dian.credit_debit_note.pdf', ['note' => $r->id]))
+                ->openUrlInNewTab(),
         ];
     }
 

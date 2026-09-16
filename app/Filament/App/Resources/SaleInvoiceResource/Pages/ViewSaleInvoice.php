@@ -40,6 +40,17 @@ class ViewSaleInvoice extends ViewRecord
                 ->url(fn (SaleInvoice $record) => route('pos.print', ['invoice' => $record->id]))
                 ->openUrlInNewTab(),
 
+            // El ticket de arriba es el de la impresora; este es el documento
+            // oficial con CUFE y QR que genera el proveedor al autorizar la DIAN.
+            Actions\Action::make('downloadDianPdf')
+                ->label('PDF DIAN')
+                ->icon('heroicon-o-arrow-down-tray')
+                ->color('gray')
+                ->visible(fn (SaleInvoice $record) => $record->dian_status === SaleInvoice::DIAN_ACCEPTED
+                    && auth()->user()?->can('sales.view'))
+                ->url(fn (SaleInvoice $record) => route('dian.sale_invoice.pdf', ['invoice' => $record->id]))
+                ->openUrlInNewTab(),
+
             Actions\EditAction::make()
                 ->visible(fn (SaleInvoice $record) => $record->status === 'draft'),
 

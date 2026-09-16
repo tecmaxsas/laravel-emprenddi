@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\Accounting\FiscalPeriodGuard;
 use App\Traits\BelongsToCompany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,10 +12,12 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class JournalEntry extends Model
 {
-    use HasFactory, BelongsToCompany, SoftDeletes;
+    use BelongsToCompany, HasFactory, SoftDeletes;
 
     public const STATUS_DRAFT = 'draft';
+
     public const STATUS_POSTED = 'posted';
+
     public const STATUS_CANCELLED = 'cancelled';
 
     public const TYPES = [
@@ -31,6 +34,9 @@ class JournalEntry extends Model
         'reversal' => 'Reversión',
         'cogs' => 'Costo de ventas',
         'cogs_reversal' => 'Reversión costo de ventas',
+        'credit_note' => 'Nota crédito',
+        'debit_note' => 'Nota débito',
+        'general' => 'General',
     ];
 
     public const STATUSES = [
@@ -120,7 +126,7 @@ class JournalEntry extends Model
         // fiscal cerrado. Aplica también a updates (no se puede mover un
         // asiento a un mes cerrado).
         static::saving(function (JournalEntry $entry) {
-            \App\Services\Accounting\FiscalPeriodGuard::ensureOpen(
+            FiscalPeriodGuard::ensureOpen(
                 $entry->company_id,
                 $entry->date,
             );
