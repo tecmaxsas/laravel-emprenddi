@@ -13,6 +13,7 @@ use App\Models\Location;
 use App\Models\Product;
 use App\Models\PurchaseInvoice;
 use App\Models\SaleInvoice;
+use App\Services\Reports\AccountsReceivableAging;
 use App\Services\Reports\FinancialReportExporter;
 use App\Services\Reports\FinancialStatementsEngine;
 use App\Services\Reports\TabularReportExporter;
@@ -413,6 +414,76 @@ class ReportExportController extends Controller
                 columnTypes: ['string', 'string', 'string', 'string', 'string', 'string', 'number', 'number', 'number', 'string'],
             ),
             "cartera-{$asOf}.xlsx",
+            $this->xlsxHeaders(),
+        );
+    }
+
+    /**
+     * Cartera por edades, un renglón por cliente.
+     *
+     * Usa el mismo servicio que la pantalla a propósito: si cada uno calculara
+     * lo suyo, el Excel y lo que se ve terminarían discrepando, y un reporte de
+     * cartera que no cuadra consigo mismo no lo usa nadie.
+     */
+    public function accountsReceivableAging(Request $request): StreamedResponse
+    {
+        abort_unless($request->user()?->can('reports.accounts_receivable'), 403);
+
+        $asOf = $this->parseDate($request->query('as_of'), now()->toDateString());
+        $thirdPartyId = (int) $request->query('third_party_id') ?: null;
+        $soloVencida = filter_var($request->query('solo_vencida', '0'), FILTER_VALIDATE_BOOL);
+
+        $motor = app(AccountsReceivableAging::class);
+
+        $filas = $motor->porTercero(
+            companyId: (int) $request->user()->company_id,
+            corte: $asOf,
+            thirdPartyId: $thirdPartyId,
+        );
+
+        if ($soloVencida) {
+            $filas = $filas->filter(fn (array $f) => $f['dias_max'] > 0)->values();
+        }
+
+        $rows = $filas->map(fn (array $f) => [
+            $f['nombre'],
+            $f['documento'],
+            $f['telefono'],
+            $f['facturas'],
+            $f['vence_proxima'] ?? '',
+            $f['dias_max'],
+            $f['corriente'],
+            $f['d1_30'],
+            $f['d31_60'],
+            $f['d61_90'],
+            $f['d90_mas'],
+            $f['total'],
+        ]);
+
+        // La fila de totales va dentro del archivo: quien lo abre necesita el
+        // gran total sin tener que armar una fórmula.
+        $totales = $motor->totales($filas);
+
+        $rows->push([
+            'TOTAL ('.$filas->count().' clientes)', '', '', '', '', '',
+            $totales['corriente'], $totales['d1_30'], $totales['d31_60'],
+            $totales['d61_90'], $totales['d90_mas'], $totales['total'],
+        ]);
+
+        $subtitle = "Corte al: {$asOf}".($soloVencida ? ' · Solo con cartera vencida' : '');
+
+        return response()->streamDownload(
+            $this->tabular->stream(
+                title: 'Cartera por edades — por cliente',
+                subtitle: $subtitle,
+                companyName: $this->companyName(),
+                headers: ['Cliente', 'Documento', 'Teléfono', 'Facturas', 'Vence', 'Días mora',
+                    'Por vencer', '1 – 30', '31 – 60', '61 – 90', 'Más de 90', 'Total'],
+                rows: $rows,
+                columnTypes: ['string', 'string', 'string', 'number', 'string', 'number',
+                    'number', 'number', 'number', 'number', 'number', 'number'],
+            ),
+            "cartera-edades-{$asOf}.xlsx",
             $this->xlsxHeaders(),
         );
     }

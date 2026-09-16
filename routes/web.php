@@ -83,6 +83,9 @@ Route::middleware(['web', 'auth', SetActiveCompany::class])->group(function () {
     Route::get('/app/reports/export/accounts-receivable',
         [ReportExportController::class, 'accountsReceivable'])
         ->name('reports.export.accounts_receivable');
+    Route::get('/app/reports/export/accounts-receivable-aging',
+        [ReportExportController::class, 'accountsReceivableAging'])
+        ->name('reports.export.accounts_receivable_aging');
     Route::get('/app/reports/export/accounts-payable',
         [ReportExportController::class, 'accountsPayable'])
         ->name('reports.export.accounts_payable');
