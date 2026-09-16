@@ -13,6 +13,7 @@ use App\Support\AppointmentsSettings;
 use App\Support\CurrentCompany;
 use App\Support\ModuleGate;
 use Filament\Widgets\Widget;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -116,6 +117,33 @@ class DashboardOverviewWidget extends Widget
         };
     }
 
+    /**
+     * Punto de partida de toda consulta de facturas del escritorio.
+     *
+     * El escritorio consulta con `DB::table()` por velocidad —son una docena de
+     * agregados y no hace falta hidratar modelos—, pero eso significa que no
+     * pasa por Eloquent y **no hereda ninguno de los filtros automáticos**: ni
+     * el de empresa ni el de borrados.
+     *
+     * Lo de los borrados costó caro. Al poder borrar facturas POS, las borradas
+     * seguían sumando en «Ventas del mes» y en «Por cobrar»: el usuario veía una
+     * cartera que no existía y un consecutivo de facturas que no cuadraba con el
+     * listado. Siete de las nueve consultas no filtraban `deleted_at`.
+     *
+     * Por eso existe este método. Agregar el filtro a mano en cada consulta es
+     * exactamente como volvió a pasar: alguien escribe la décima y se olvida.
+     * Hay una prueba que falla si aparece un `DB::table` de facturas fuera de
+     * aquí.
+     */
+    protected function facturas(string $tabla, int $companyId, ?string $alias = null): Builder
+    {
+        $columna = fn (string $campo) => $alias ? "{$alias}.{$campo}" : $campo;
+
+        return DB::table($alias ? "{$tabla} as {$alias}" : $tabla)
+            ->where($columna('company_id'), $companyId)
+            ->whereNull($columna('deleted_at'));
+    }
+
     protected function salesData(int $companyId): array
     {
         $today = now()->startOfDay()->toDateString();
@@ -124,8 +152,7 @@ class DashboardOverviewWidget extends Widget
         $yesterdayEnd = now()->subDay()->endOfDay()->toDateString();
         $monthStart = now()->startOfMonth()->toDateString();
 
-        $base = fn () => DB::table('sale_invoices')
-            ->where('company_id', $companyId)
+        $base = fn () => $this->facturas('sale_invoices', $companyId)
             ->where('status', '!=', 'cancelled');
 
         $salesToday = (float) $base()->whereBetween('date', [$today, $todayEnd])->sum('total');
@@ -133,8 +160,7 @@ class DashboardOverviewWidget extends Widget
         $salesMonth = (float) $base()->where('date', '>=', $monthStart)->sum('total');
         $invoicesMonth = (int) $base()->where('date', '>=', $monthStart)->count();
 
-        $receivables = (float) DB::table('sale_invoices')
-            ->where('company_id', $companyId)
+        $receivables = (float) $this->facturas('sale_invoices', $companyId)
             ->where('status', '!=', 'cancelled')
             ->whereIn('payment_status', ['pendiente', 'parcial', 'vencido'])
             ->selectRaw('coalesce(sum(total - coalesce(paid_amount, 0)), 0) as b')
@@ -163,8 +189,7 @@ class DashboardOverviewWidget extends Widget
     {
         $from = now()->subDays(13)->toDateString();
 
-        $raw = DB::table('sale_invoices')
-            ->where('company_id', $companyId)
+        $raw = $this->facturas('sale_invoices', $companyId)
             ->where('status', '!=', 'cancelled')
             ->where('date', '>=', $from)
             ->groupBy('date')
@@ -188,21 +213,18 @@ class DashboardOverviewWidget extends Widget
     {
         $monthStart = now()->startOfMonth()->toDateString();
 
-        $purchasesMonth = (float) DB::table('purchase_invoices')
-            ->where('company_id', $companyId)
+        $purchasesMonth = (float) $this->facturas('purchase_invoices', $companyId)
             ->where('status', '!=', 'cancelled')
             ->where('date', '>=', $monthStart)
             ->sum('total');
 
-        $payables = (float) DB::table('purchase_invoices')
-            ->where('company_id', $companyId)
+        $payables = (float) $this->facturas('purchase_invoices', $companyId)
             ->where('status', '!=', 'cancelled')
             ->whereIn('payment_status', ['pendiente', 'parcial', 'vencido'])
             ->selectRaw('coalesce(sum(total - coalesce(paid_amount, 0)), 0) as b')
             ->value('b');
 
-        $dueSoon = (float) DB::table('purchase_invoices')
-            ->where('company_id', $companyId)
+        $dueSoon = (float) $this->facturas('purchase_invoices', $companyId)
             ->where('status', '!=', 'cancelled')
             ->whereIn('payment_status', ['pendiente', 'parcial', 'vencido'])
             ->whereNotNull('due_date')
@@ -319,16 +341,14 @@ class DashboardOverviewWidget extends Widget
         $queries = [];
 
         if ($canSales) {
-            $queries[] = DB::table('sale_invoices')
-                ->where('company_id', $companyId)
+            $queries[] = $this->facturas('sale_invoices', $companyId)
                 ->where('status', '!=', 'cancelled')
                 ->selectRaw("'sale' as kind, id, prefix, number, date, total, payment_status, coalesce(created_at, date) as sort_at")
                 ->orderByDesc('created_at')
                 ->limit(12);
         }
         if ($canPurchases) {
-            $queries[] = DB::table('purchase_invoices')
-                ->where('company_id', $companyId)
+            $queries[] = $this->facturas('purchase_invoices', $companyId)
                 ->where('status', '!=', 'cancelled')
                 ->selectRaw("'purchase' as kind, id, prefix, number, date, total, payment_status, coalesce(created_at, date) as sort_at")
                 ->orderByDesc('created_at')
@@ -391,11 +411,9 @@ class DashboardOverviewWidget extends Widget
         $hoy = now()->startOfDay();
         $limite = $hoy->copy()->addDays(self::VENTANA_POR_VENCER);
 
-        $filas = DB::table($tabla.' as f')
+        $filas = $this->facturas($tabla, $companyId, alias: 'f')
             ->leftJoin('third_parties as t', 't.id', '=', 'f.third_party_id')
-            ->where('f.company_id', $companyId)
             ->where('f.status', 'posted')
-            ->whereNull('f.deleted_at')
             ->whereNotNull('f.due_date')
             ->whereRaw('coalesce(f.net_payable, f.total) - coalesce(f.paid_amount, 0) > 0.01')
             ->where('f.due_date', '<=', $limite->toDateString())
@@ -425,10 +443,8 @@ class DashboardOverviewWidget extends Widget
         // Los totales se cuentan sobre TODO, no sobre las filas que se
         // muestran: si hay ochenta vencidas, el encabezado tiene que decir
         // ochenta aunque la tabla liste ocho.
-        $totales = DB::table($tabla)
-            ->where('company_id', $companyId)
+        $totales = $this->facturas($tabla, $companyId)
             ->where('status', 'posted')
-            ->whereNull('deleted_at')
             ->whereNotNull('due_date')
             ->whereRaw('coalesce(net_payable, total) - coalesce(paid_amount, 0) > 0.01')
             ->selectRaw('

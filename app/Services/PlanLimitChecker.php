@@ -45,11 +45,22 @@ class PlanLimitChecker
         return match ($key) {
             'max_locations' => $company->locations()->count(),
             'max_users' => $company->users()->count(),
-            'max_third_parties' => \App\Models\ThirdParty::withoutGlobalScopes()->where('company_id', $company->id)->count(),
-            'max_products' => \App\Models\Product::withoutGlobalScopes()->where('company_id', $company->id)->count(),
+            // `withoutGlobalScopes()` quita tambien el filtro de borrados, asi
+            // que sin el whereNull un producto o un tercero eliminado seguiria
+            // ocupando cupo del plan. El cliente pagaria por algo que ya borro y
+            // no tendria como darse cuenta.
+            'max_third_parties' => \App\Models\ThirdParty::withoutGlobalScopes()
+                ->where('company_id', $company->id)
+                ->whereNull('deleted_at')
+                ->count(),
+            'max_products' => \App\Models\Product::withoutGlobalScopes()
+                ->where('company_id', $company->id)
+                ->whereNull('deleted_at')
+                ->count(),
             // Se cuenta el mes en curso: el limite es por mes, no acumulado.
             'max_invoices_per_month' => \App\Models\SaleInvoice::withoutGlobalScopes()
                 ->where('company_id', $company->id)
+                ->whereNull('deleted_at')
                 ->whereBetween('date', [now()->startOfMonth(), now()->endOfMonth()])
                 ->count(),
             default => 0,

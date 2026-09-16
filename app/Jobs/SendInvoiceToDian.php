@@ -82,6 +82,14 @@ class SendInvoiceToDian implements ShouldBeUnique, ShouldQueue
         // aqui y no solo en quien despacha porque entre el encolado y la
         // ejecucion la factura pudo cambiar (anulada, ya aceptada, reenviada
         // a mano desde la vista de factura).
+        // Una factura borrada no se transmite. Hoy esto no llega a pasar porque
+        // solo se borran facturas POS y esas salen por la condicion de abajo,
+        // pero depender de esa coincidencia es fragil: el dia que se pueda
+        // borrar otra cosa, este job la mandaria a la DIAN.
+        if ($invoice->trashed()) {
+            return;
+        }
+
         if ($invoice->isPosInvoice() || $invoice->isDianAccepted() || ! $invoice->isPosted()) {
             return;
         }
