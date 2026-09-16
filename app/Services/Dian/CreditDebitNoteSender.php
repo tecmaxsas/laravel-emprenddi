@@ -73,7 +73,7 @@ class CreditDebitNoteSender
         if (isset($data['exception'])) {
             $note->update([
                 'dian_status' => CreditDebitNote::DIAN_REJECTED,
-                'dian_error_message' => 'Excepción: '.$data['exception'],
+                'dian_error_message' => 'Excepción: '.DianErrorReader::resumen((array) $data['exception']),
                 'dian_response' => $data,
             ]);
             return ['ok' => false, 'message' => 'Excepción del API', 'cufe' => null, 'status_code' => null];
@@ -119,17 +119,15 @@ class CreditDebitNoteSender
         return ['ok' => false, 'message' => $errorMsg, 'cufe' => $cufe, 'status_code' => $statusCode];
     }
 
+    /**
+     * Antes recorría un solo nivel y hacía `(string) $msg`. Cuando el proveedor
+     * anidaba un nivel más, ese elemento era un array y todo reventaba con
+     * «Array to string conversion»: el usuario perdía el mensaje real, que era
+     * justo lo que necesitaba para corregir el envío.
+     */
     protected function flattenErrors(array $errors): string
     {
-        $msgs = [];
-        foreach ($errors as $errorList) {
-            if (is_array($errorList)) {
-                foreach ($errorList as $msg) $msgs[] = (string) $msg;
-            } else {
-                $msgs[] = (string) $errorList;
-            }
-        }
-        return implode(' · ', $msgs);
+        return DianErrorReader::resumen($errors);
     }
 
     protected function extractDianError(array $dianResponse, string $statusCode): string
@@ -143,9 +141,14 @@ class CreditDebitNoteSender
 
         if (isset($special[$statusCode])) return $special[$statusCode];
 
-        $errorMsg = $dianResponse['ErrorMessage']['string'] ?? null;
-        if (is_array($errorMsg)) return implode(' · ', $errorMsg);
-        if (is_string($errorMsg)) return $errorMsg;
+        // DianErrorReader sabe leer las tres formas en que llega esto: string
+        // suelto, lista bajo `string`, y el bloque anidado que hacía reventar el
+        // implode con «Array to string conversion».
+        $reglas = DianErrorReader::reglas($dianResponse);
+
+        if ($reglas !== []) {
+            return implode(' · ', $reglas);
+        }
 
         return ($dianResponse['StatusDescription'] ?? '').' (código '.$statusCode.')';
     }

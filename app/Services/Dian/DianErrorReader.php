@@ -47,9 +47,34 @@ class DianErrorReader
         return array_values(array_unique($reglas));
     }
 
+    /**
+     * Aplana los errores de validación del proveedor a una sola línea.
+     *
+     * El bloque `errors` de apidian no tiene una forma fija. A veces es
+     * `{campo: ["mensaje"]}` como cualquier validación de Laravel, y a veces el
+     * proveedor mete otro nivel: `{campo: {sub: ["mensaje"]}}`. Los servicios
+     * recorrían un solo nivel y hacían `(string) $msg`, así que ese segundo
+     * nivel reventaba con «Array to string conversion» — y el usuario perdía el
+     * mensaje real, que era justamente lo que necesitaba para arreglar el envío.
+     *
+     * @param  array<array-key, mixed>  $errores
+     */
+    public static function resumen(array $errores): string
+    {
+        $textos = self::textos($errores);
+
+        return $textos === []
+            ? 'El proveedor reportó un error sin detalle.'
+            : implode(' · ', array_unique($textos));
+    }
+
     /** @return list<string> */
     private static function textos(mixed $contenido): array
     {
+        if (is_bool($contenido) || is_int($contenido) || is_float($contenido)) {
+            return self::esMotivo((string) $contenido) ? [(string) $contenido] : [];
+        }
+
         if (is_string($contenido)) {
             return self::esMotivo($contenido) ? [trim($contenido)] : [];
         }

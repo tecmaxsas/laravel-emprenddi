@@ -311,11 +311,20 @@ class DianApiClient
 
             $data = $response->json() ?? [];
 
+            // `message` no siempre es un string: el proveedor a veces manda una
+            // estructura ahí. Dejarlo pasar tal cual hacía que la pantalla
+            // reventara al mostrarlo, y el usuario perdía el motivo real.
+            $mensaje = $data['message'] ?? null;
+
+            if (is_array($mensaje)) {
+                $mensaje = DianErrorReader::resumen($mensaje);
+            }
+
             return [
                 'ok' => $response->successful(),
                 'status' => $response->status(),
                 'data' => $data,
-                'error' => $response->successful() ? null : ($data['message'] ?? "HTTP {$response->status()}"),
+                'error' => $response->successful() ? null : ($mensaje ?: "HTTP {$response->status()}"),
             ];
         } catch (\Throwable $e) {
             Log::warning('DianApiClient request failed', [
