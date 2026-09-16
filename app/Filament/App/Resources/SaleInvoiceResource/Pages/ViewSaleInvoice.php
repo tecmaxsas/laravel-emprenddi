@@ -12,6 +12,7 @@ use App\Services\Sales\CreditDebitNoteNumberer;
 use App\Services\Sales\SaleInvoiceDeleter;
 use App\Services\Sales\SaleInvoiceEngine;
 use App\Support\Dian\DianInvoiceActions;
+use App\Support\ErrorDeAccion;
 use App\Support\PosSettings;
 use Filament\Actions;
 use Filament\Forms\Components\Textarea;
@@ -81,12 +82,10 @@ class ViewSaleInvoice extends ViewRecord
                             ->send();
                         $this->refreshFormData(['status', 'payment_status', 'journal_entry_id', 'prefix', 'number']);
                     } catch (\Throwable $e) {
-                        Notification::make()
-                            ->danger()
-                            ->title('Error al contabilizar')
-                            ->body($e->getMessage())
-                            ->persistent()
-                            ->send();
+                        ErrorDeAccion::reportar($e, 'contabilizar la factura', [
+                            'factura_id' => $record->id,
+                            'numero' => $record->fullNumber(),
+                        ], titulo: 'Error al contabilizar');
                     }
                 }),
 
@@ -125,12 +124,10 @@ class ViewSaleInvoice extends ViewRecord
                         }
                         $this->refreshFormData(['dian_status', 'dian_status_code', 'cufe', 'qr_url', 'dian_error_message', 'dian_sent_at']);
                     } catch (\Throwable $e) {
-                        Notification::make()
-                            ->danger()
-                            ->title('Error al enviar a DIAN')
-                            ->body($e->getMessage())
-                            ->persistent()
-                            ->send();
+                        ErrorDeAccion::reportar($e, 'enviar la factura a la DIAN', [
+                            'factura_id' => $record->id,
+                            'numero' => $record->fullNumber(),
+                        ], titulo: 'Error al enviar a DIAN');
                     }
                 }),
 
@@ -180,12 +177,10 @@ class ViewSaleInvoice extends ViewRecord
                             ->send();
                         $this->refreshFormData(['status', 'payment_status']);
                     } catch (\Throwable $e) {
-                        Notification::make()
-                            ->danger()
-                            ->title('No se pudo anular')
-                            ->body($e->getMessage())
-                            ->persistent()
-                            ->send();
+                        ErrorDeAccion::reportar($e, 'anular la factura', [
+                            'factura_id' => $record->id,
+                            'numero' => $record->fullNumber(),
+                        ], titulo: 'No se pudo anular');
                     }
                 }),
 
@@ -239,12 +234,10 @@ class ViewSaleInvoice extends ViewRecord
 
                         return redirect(SaleInvoiceResource::getUrl('index'));
                     } catch (\Throwable $e) {
-                        Notification::make()
-                            ->danger()
-                            ->title('No se pudo borrar')
-                            ->body($e->getMessage())
-                            ->persistent()
-                            ->send();
+                        ErrorDeAccion::reportar($e, 'borrar la factura', [
+                            'factura_id' => $record->id,
+                            'numero' => $record->fullNumber(),
+                        ], titulo: 'No se pudo borrar');
                     }
                 }),
 

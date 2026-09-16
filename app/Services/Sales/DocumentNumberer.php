@@ -167,6 +167,7 @@ class DocumentNumberer
         int $companyId,
         ?int $locationId = null,
         string $tabla = 'sale_invoices',
+        ?int $excluirId = null,
     ): array {
         $resolution = Resolution::query()
             ->withoutGlobalScopes()
@@ -186,7 +187,7 @@ class DocumentNumberer
 
         $kindLabel = $resolution->isPos() ? 'POS' : 'de facturación electrónica';
 
-        return DB::transaction(function () use ($resolution, $companyId, $kindLabel, $locationId, $tabla) {
+        return DB::transaction(function () use ($resolution, $companyId, $kindLabel, $locationId, $tabla, $excluirId) {
             // Sin fila de asignación no hay nada que bloquear, así que el
             // candado va sobre (empresa, prefijo), que es justamente lo que
             // protege el índice único de sale_invoices.
@@ -224,9 +225,13 @@ class DocumentNumberer
                 $candidatos[] = (int) $asignaciones->max('current_consecutive');
             }
 
+            // Al renumerar un documento hay que descontarlo del conteo: si no,
+            // se compara contra si mismo y el «siguiente libre» sale uno mas
+            // arriba del que ya tenia. Una nota que era la 1 se volvia la 2.
             $maxUsado = DB::table($tabla)
                 ->where('company_id', $companyId)
                 ->where('prefix', $resolution->prefix)
+                ->when($excluirId, fn ($q) => $q->where('id', '!=', $excluirId))
                 ->max('number');
 
             if ($maxUsado !== null) {
@@ -278,8 +283,12 @@ class DocumentNumberer
      * que se está agotando; en ese caso seguir usando la vieja hasta que se
      * acabe es justo lo que se espera.
      */
-    public function resolucionGlobalDe(int $companyId, int $documentTypeId, string $tabla): ?Resolution
-    {
+    public function resolucionGlobalDe(
+        int $companyId,
+        int $documentTypeId,
+        string $tabla,
+        ?int $excluirId = null,
+    ): ?Resolution {
         $candidatas = Resolution::query()
             ->withoutGlobalScopes()
             ->where('company_id', $companyId)
@@ -293,10 +302,11 @@ class DocumentNumberer
             return null;
         }
 
-        $conCupo = $candidatas->first(function (Resolution $resolucion) use ($companyId, $tabla) {
+        $conCupo = $candidatas->first(function (Resolution $resolucion) use ($companyId, $tabla, $excluirId) {
             $maxUsado = DB::table($tabla)
                 ->where('company_id', $companyId)
                 ->where('prefix', $resolucion->prefix)
+                ->when($excluirId, fn ($q) => $q->where('id', '!=', $excluirId))
                 ->max('number');
 
             $siguiente = $maxUsado !== null
@@ -320,9 +330,13 @@ class DocumentNumberer
      *
      * @return array{number: int, prefix: string, resolution_id: int, kind: string}|null
      */
-    public function reserveGlobal(int $companyId, int $documentTypeId, string $tabla): ?array
-    {
-        $resolucion = $this->resolucionGlobalDe($companyId, $documentTypeId, $tabla);
+    public function reserveGlobal(
+        int $companyId,
+        int $documentTypeId,
+        string $tabla,
+        ?int $excluirId = null,
+    ): ?array {
+        $resolucion = $this->resolucionGlobalDe($companyId, $documentTypeId, $tabla, $excluirId);
 
         if (! $resolucion) {
             return null;
@@ -335,6 +349,7 @@ class DocumentNumberer
             $companyId,
             locationId: null,
             tabla: $tabla,
+            excluirId: $excluirId,
         );
     }
 

@@ -117,7 +117,7 @@ class DianInvoiceSender
 
         // Respuesta DIAN (caso normal)
         $dianResponse = $data['ResponseDian']['Envelope']['Body']['SendBillSyncResponse']['SendBillSyncResult'] ?? null;
-        $cufe = $data['cufe'] ?? null;
+        $cufe = DianErrorReader::texto($data['cufe'] ?? null) ?: null;
 
         if (! $dianResponse) {
             $invoice->update([
@@ -134,8 +134,8 @@ class DianInvoiceSender
             ];
         }
 
-        $statusCode = (string) ($dianResponse['StatusCode'] ?? '');
-        $statusDescription = (string) ($dianResponse['StatusDescription'] ?? '');
+        $statusCode = DianErrorReader::texto($dianResponse['StatusCode'] ?? null);
+        $statusDescription = DianErrorReader::texto($dianResponse['StatusDescription'] ?? null);
         $isValid = filter_var($dianResponse['IsValid'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
         if ($isValid && $cufe) {
@@ -213,6 +213,6 @@ class DianInvoiceSender
             return implode(' · ', $reglas);
         }
 
-        return ($dianResponse['StatusDescription'] ?? '').' (código '.$statusCode.')';
+        return DianErrorReader::texto($dianResponse['StatusDescription'] ?? null).' (código '.$statusCode.')';
     }
 }

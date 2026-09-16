@@ -68,6 +68,36 @@ class DianErrorReader
             : implode(' · ', array_unique($textos));
     }
 
+    /**
+     * Un valor cualquiera de la respuesta, como texto.
+     *
+     * Ningún campo del proveedor tiene tipo garantizado. `StatusCode`,
+     * `StatusDescription` y hasta el `cufe` llegan a veces como estructura en
+     * lugar de escalar —depende de cómo quedó la conversión de SOAP a JSON— y
+     * `(string) $valor` sobre eso mata la petición entera con «Array to string
+     * conversion», que es un mensaje que no le sirve a nadie.
+     */
+    public static function texto(mixed $valor): string
+    {
+        if (is_string($valor)) {
+            return $valor;
+        }
+
+        if ($valor === null || is_bool($valor)) {
+            return '';
+        }
+
+        if (is_int($valor) || is_float($valor)) {
+            return (string) $valor;
+        }
+
+        if (is_array($valor)) {
+            return implode(' · ', self::textos($valor));
+        }
+
+        return '';
+    }
+
     /** @return list<string> */
     private static function textos(mixed $contenido): array
     {

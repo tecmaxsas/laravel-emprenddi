@@ -7,6 +7,7 @@ use App\Filament\App\Resources\SaleInvoiceResource;
 use App\Models\CreditDebitNote;
 use App\Services\Dian\CreditDebitNoteSender;
 use App\Services\Sales\CreditDebitNoteEngine;
+use App\Support\ErrorDeAccion;
 use Filament\Actions;
 use Filament\Infolists;
 use Filament\Infolists\Infolist;
@@ -51,7 +52,7 @@ class ViewCreditDebitNote extends ViewRecord
                             ->send();
                         $this->refreshFormData(['status', 'journal_entry_id', 'prefix', 'number', 'dian_status']);
                     } catch (\Throwable $e) {
-                        Notification::make()->danger()->title('Error')->body($e->getMessage())->persistent()->send();
+                        ErrorDeAccion::reportar($e, 'contabilizar la nota', ['nota_id' => $r->id]);
                     }
                 }),
 
@@ -84,7 +85,11 @@ class ViewCreditDebitNote extends ViewRecord
                         }
                         $this->refreshFormData(['dian_status', 'dian_status_code', 'cufe', 'qr_url', 'dian_error_message']);
                     } catch (\Throwable $e) {
-                        Notification::make()->danger()->title('Error')->body($e->getMessage())->persistent()->send();
+                        ErrorDeAccion::reportar($e, 'enviar la nota a la DIAN', [
+                            'nota_id' => $r->id,
+                            'numero' => $r->fullNumber(),
+                            'resolucion_id' => $r->dian_resolution_id,
+                        ]);
                     }
                 }),
 
@@ -123,7 +128,8 @@ class ViewCreditDebitNote extends ViewRecord
 
                         $this->refreshFormData(['prefix', 'number', 'dian_resolution_id', 'dian_status', 'dian_error_message']);
                     } catch (\Throwable $e) {
-                        Notification::make()->danger()->title('No se pudo asignar')->body($e->getMessage())->persistent()->send();
+                        ErrorDeAccion::reportar($e, 'asignar resolución a la nota',
+                            ['nota_id' => $r->id], titulo: 'No se pudo asignar');
                     }
                 }),
 

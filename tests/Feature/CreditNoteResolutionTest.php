@@ -171,6 +171,46 @@ class CreditNoteResolutionTest extends TestCase
         $this->assertNotSame($numeroViejo, $rescatada->fullNumber());
     }
 
+    /**
+     * Al renumerar, la nota no se cuenta a sí misma.
+     *
+     * El siguiente número libre se deduce del más alto ya emitido con ese
+     * prefijo. Si la propia nota entra en ese conteo, su número hace que el
+     * «siguiente» sea uno más arriba: una NC1 se convertía en NC2 solo por
+     * rescatarla, y el usuario perdía el consecutivo que le correspondía.
+     */
+    public function test_al_renumerar_la_nota_no_se_cuenta_a_si_misma(): void
+    {
+        $nota = app(CreditDebitNoteEngine::class)->post($this->notaBorrador());
+
+        // Numerada a mano con el 1, que es justo el inicio del rango.
+        $nota->update(['prefix' => 'ZZNC', 'number' => 1]);
+
+        $this->resolucion(documentTypeId: 2, prefijo: 'ZZNC', desde: 1, hasta: 1000);
+
+        $rescatada = app(CreditDebitNoteEngine::class)->asignarResolucionDian($nota->fresh());
+
+        $this->assertSame(1, (int) $rescatada->number,
+            'Se contó a sí misma y se saltó al 2, perdiendo el consecutivo que le tocaba.');
+    }
+
+    /** Pero sí respeta las notas ajenas ya emitidas. */
+    public function test_al_renumerar_si_respeta_las_otras_notas(): void
+    {
+        $this->resolucion(documentTypeId: 2, prefijo: 'ZZNC', desde: 1, hasta: 1000);
+
+        // Una nota anterior ya ocupa el 1.
+        app(CreditDebitNoteEngine::class)->post($this->notaBorrador());
+
+        $segunda = app(CreditDebitNoteEngine::class)->post($this->notaBorrador());
+        $segunda->update(['dian_resolution_id' => null, 'prefix' => 'NC', 'number' => 99]);
+
+        $rescatada = app(CreditDebitNoteEngine::class)->asignarResolucionDian($segunda->fresh());
+
+        $this->assertSame(2, (int) $rescatada->number,
+            'El 1 ya estaba ocupado por otra nota: le toca el 2.');
+    }
+
     /** Y el asiento se va con ella: su referencia es el número que cambió. */
     public function test_el_asiento_sigue_a_la_nota_renumerada(): void
     {

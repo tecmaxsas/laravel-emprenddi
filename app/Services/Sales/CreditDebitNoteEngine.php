@@ -150,10 +150,14 @@ class CreditDebitNoteEngine
         $docTypeId = $note->isCredit() ? 2 : 3;
 
         return DB::transaction(function () use ($note, $docTypeId) {
+            // Se excluye la propia nota del conteo: si no, se compara contra sí
+            // misma y el «siguiente libre» sale uno más arriba del que ya tenía.
+            // Una nota que era la 1 se volvía la 2 al rescatarla.
             $reserva = $this->documentNumberer->reserveGlobal(
                 $note->company_id,
                 $docTypeId,
                 'credit_debit_notes',
+                excluirId: $note->id,
             );
 
             if (! $reserva) {
