@@ -40,6 +40,7 @@
                                 <th class="ag-left">Cliente</th>
                                 <th class="ag-left">Documento</th>
                                 <th class="ag-center">Fact.</th>
+                                <th class="ag-right">Saldo inicial</th>
                                 <th class="ag-center">Vence</th>
                                 <th class="ag-center">Mora</th>
                                 @foreach ($tramos as $tramo)
@@ -58,7 +59,8 @@
                                         @endif
                                     </td>
                                     <td class="ag-left ag-mono">{{ $fila['documento'] ?: '—' }}</td>
-                                    <td class="ag-center ag-mono">{{ $fila['facturas'] }}</td>
+                                    <td class="ag-center ag-mono">{{ $fila['facturas'] ?: '—' }}</td>
+                                    <td class="ag-right ag-mono ag-apertura">{{ $fmt($fila['apertura']) }}</td>
                                     <td class="ag-center ag-mono">{{ $fila['vence_proxima'] ?? '—' }}</td>
                                     <td class="ag-center">
                                         @if ($fila['dias_max'] > 0)
@@ -80,7 +82,7 @@
                         </tbody>
                         <tfoot>
                             <tr>
-                                <td class="ag-left" colspan="5">
+                                <td class="ag-left" colspan="6">
                                     {{ $filas->count() }} {{ $filas->count() === 1 ? 'cliente' : 'clientes' }}
                                 </td>
                                 @foreach ($tramos as $tramo)
@@ -132,6 +134,9 @@
         .ag-nombre { font-weight:600; white-space:normal; min-width:200px; }
         .ag-tel { display:block; font-size:11.5px; color:var(--ag-muted); font-weight:400; }
         .ag-col-total { font-weight:800; }
+        /* El saldo inicial ya está dentro de los tramos: se muestra aparte solo
+           para poder cuadrarlo contra lo importado, no como una suma adicional. */
+        .ag-apertura { color:var(--ag-muted); }
 
         /* Lo más vencido resalta: es lo que hay que cobrar primero. */
         .ag-tramo-d61_90 { color:#c2410c; }

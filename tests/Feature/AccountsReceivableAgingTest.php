@@ -227,6 +227,110 @@ class AccountsReceivableAgingTest extends TestCase
             'Los tramos tienen que repartir el total sin perder ni duplicar un peso.');
     }
 
+    // ------------------------------------------- saldos de apertura
+
+    /**
+     * Un cliente importado con saldo aparece aunque nunca se le haya facturado.
+     *
+     * Este era el hueco: el reporte solo miraba facturas, así que una empresa que
+     * llegó con su cartera importada no veía nada. Eran 229 clientes invisibles
+     * con plata pendiente.
+     */
+    public function test_un_cliente_solo_con_saldo_de_apertura_aparece(): void
+    {
+        $this->conSaldoInicial($this->cliente, 2500000, desdeHace: 200);
+
+        $fila = $this->filaDe($this->cliente);
+
+        $this->assertNotNull($fila, 'El cliente no tiene facturas, pero sí tiene deuda.');
+        $this->assertEqualsWithDelta(2500000, $fila['total'], 0.01);
+        $this->assertEqualsWithDelta(2500000, $fila['apertura'], 0.01);
+        $this->assertSame(0, $fila['facturas'], 'No tiene facturas: la columna debe decirlo.');
+    }
+
+    /** El saldo importado envejece por su propia fecha. */
+    public function test_el_saldo_de_apertura_envejece_por_su_fecha(): void
+    {
+        $this->conSaldoInicial($this->cliente, 900000, desdeHace: 200);
+        $this->conSaldoInicial($this->otroCliente, 500000, desdeHace: 15);
+
+        $this->assertEqualsWithDelta(900000, $this->filaDe($this->cliente)['d90_mas'], 0.01,
+            'Una deuda de hace 200 días no es cartera corriente.');
+
+        $this->assertEqualsWithDelta(500000, $this->filaDe($this->otroCliente)['d1_30'], 0.01);
+    }
+
+    /** Sin fecha, se trata como corriente y no como la deuda más vieja. */
+    public function test_un_saldo_sin_fecha_es_corriente(): void
+    {
+        $this->conSaldoInicial($this->cliente, 300000, desdeHace: null);
+
+        $fila = $this->filaDe($this->cliente);
+
+        $this->assertEqualsWithDelta(300000, $fila['corriente'], 0.01);
+        $this->assertSame(0, $fila['dias_max'],
+            'No saber desde cuándo debe no es lo mismo que saber que lleva años debiendo.');
+    }
+
+    /** El saldo importado y las facturas conviven en la misma fila. */
+    public function test_el_saldo_y_las_facturas_se_suman_en_la_misma_fila(): void
+    {
+        $this->conSaldoInicial($this->cliente, 1000000, desdeHace: 200);
+        $this->factura($this->cliente, saldo: 250000, venceHace: 10);
+
+        $fila = $this->filaDe($this->cliente);
+
+        $this->assertEqualsWithDelta(1250000, $fila['total'], 0.01,
+            'Dos filas para el mismo cliente harían llamar dos veces a cobrar.');
+        $this->assertEqualsWithDelta(1000000, $fila['d90_mas'], 0.01);
+        $this->assertEqualsWithDelta(250000, $fila['d1_30'], 0.01);
+        $this->assertSame(1, $fila['facturas']);
+        $this->assertSame(200, $fila['dias_max']);
+    }
+
+    /** Un saldo con fecha posterior al corte todavía no existía. */
+    public function test_el_corte_deja_fuera_un_saldo_posterior(): void
+    {
+        $this->conSaldoInicial($this->cliente, 400000, desdeHace: -30);
+
+        $this->assertNull($this->filaDe($this->cliente));
+    }
+
+    /** Un cliente sin saldo ni facturas no ocupa una fila. */
+    public function test_un_cliente_sin_deuda_no_aparece(): void
+    {
+        $this->conSaldoInicial($this->cliente, 0, desdeHace: 100);
+
+        $this->assertNull($this->filaDe($this->cliente),
+            'Doscientos clientes en cero vuelven inservible el informe.');
+    }
+
+    /** Los totales siguen cuadrando con el saldo de apertura adentro. */
+    public function test_los_totales_cuadran_con_saldos_de_apertura(): void
+    {
+        $motor = app(AccountsReceivableAging::class);
+
+        // La empresa de desarrollo ya tiene cartera propia, así que se mide el
+        // aumento y no el valor absoluto: una prueba atada al total de la base
+        // se rompe sola en cuanto alguien registra otra venta.
+        $antes = $motor->totales($motor->porTercero($this->company->id, $this->corte))['total'];
+
+        $this->conSaldoInicial($this->cliente, 1000000, desdeHace: 200);
+        $this->conSaldoInicial($this->otroCliente, 700000, desdeHace: 40);
+        $this->factura($this->cliente, saldo: 300000, venceHace: 10);
+
+        $filas = $motor->porTercero($this->company->id, $this->corte);
+        $totales = $motor->totales($filas);
+
+        $sumaTramos = collect(AccountsReceivableAging::TRAMOS)
+            ->sum(fn (array $t) => $totales[$t['clave']]);
+
+        $this->assertEqualsWithDelta($totales['total'], $sumaTramos, 0.01,
+            'Los tramos tienen que repartir el total sin perder ni duplicar un peso.');
+
+        $this->assertEqualsWithDelta(2000000, $totales['total'] - $antes, 0.01);
+    }
+
     // ------------------------------------------------- pantalla y Excel
 
     /**
@@ -247,10 +351,17 @@ class AccountsReceivableAgingTest extends TestCase
             ->assertSee('Más de 90');
     }
 
-    /** Sin cartera, lo dice en vez de mostrar una tabla vacía. */
+    /**
+     * Sin cartera, lo dice en vez de mostrar una tabla vacía.
+     *
+     * Se filtra por un cliente sin deuda porque la empresa de desarrollo sí
+     * tiene cartera: probarlo sobre el total dependería de que la base esté
+     * vacía, y eso deja de ser cierto el día que alguien registre una venta.
+     */
     public function test_sin_cartera_la_pantalla_lo_dice(): void
     {
         Livewire::test(AccountsReceivableAgingPage::class)
+            ->set('filters.third_party_id', $this->cliente->id)
             ->assertOk()
             ->assertSee('No hay cartera pendiente');
     }
@@ -330,6 +441,17 @@ class AccountsReceivableAgingTest extends TestCase
         $this->limpiar[] = fn () => DB::table('sale_invoices')->where('id', $factura->id)->delete();
 
         return $factura;
+    }
+
+    /** Deja al cliente con un saldo traído del sistema anterior. */
+    private function conSaldoInicial(ThirdParty $cliente, float $saldo, ?int $desdeHace): void
+    {
+        $cliente->update([
+            'opening_balance' => $saldo,
+            'opening_balance_date' => $desdeHace === null
+                ? null
+                : now()->subDays($desdeHace)->toDateString(),
+        ]);
     }
 
     private function crearCliente(string $nombre): ThirdParty

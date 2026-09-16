@@ -3,6 +3,7 @@
 namespace App\Services\Reports;
 
 use App\Models\SaleInvoice;
+use App\Models\ThirdParty;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 
@@ -72,6 +73,8 @@ class AccountsReceivableAging
             ->get();
 
         $porCliente = [];
+
+        $this->sumarSaldosDeApertura($porCliente, $companyId, $fechaCorte, $thirdPartyId);
 
         foreach ($facturas as $factura) {
             $saldo = round((float) $factura->balance, 2);
@@ -145,16 +148,100 @@ class AccountsReceivableAging
         return $totales;
     }
 
+    /**
+     * Mete en el reporte lo que cada cliente ya debía antes de Emprenddi.
+     *
+     * Sin esto el informe solo ve facturas, y una empresa que llegó con su
+     * cartera importada no ve nada: sus clientes tienen saldo pero ninguna
+     * factura emitida aquí todavía. Eran 229 clientes invisibles.
+     *
+     * Es cartera de pleno derecho — `CustomerCreditGuard` ya cuenta este saldo
+     * como deuda al validar el cupo de crédito— y envejece por su propia fecha,
+     * que suele ser vieja: casi todos caen en «Más de 90».
+     *
+     * @param  array<int, array<string, mixed>>  $porCliente
+     */
+    private function sumarSaldosDeApertura(
+        array &$porCliente,
+        int $companyId,
+        Carbon $corte,
+        ?int $thirdPartyId,
+    ): void {
+        $clientes = ThirdParty::query()
+            ->withoutGlobalScopes()
+            ->where('company_id', $companyId)
+            ->whereNull('deleted_at')
+            ->where('opening_balance', '>', 0)
+            ->when($thirdPartyId, fn ($q) => $q->where('id', $thirdPartyId))
+            ->get(['id', 'name', 'document_number', 'phone', 'email',
+                'opening_balance', 'opening_balance_date']);
+
+        foreach ($clientes as $cliente) {
+            // Un saldo con fecha posterior al corte todavía no existía.
+            if ($cliente->opening_balance_date
+                && $cliente->opening_balance_date->startOfDay()->gt($corte)) {
+                continue;
+            }
+
+            $saldo = round((float) $cliente->opening_balance, 2);
+
+            if ($saldo <= 0.009) {
+                continue;
+            }
+
+            $porCliente[$cliente->id] ??= $this->filaVaciaDe(
+                (int) $cliente->id,
+                $cliente->document_number,
+                $cliente->name,
+                $cliente->phone,
+                $cliente->email,
+            );
+
+            // Sin fecha se trata como corriente, igual que una factura sin
+            // vencimiento: no saber desde cuándo debe no es lo mismo que saber
+            // que lleva años debiendo.
+            $dias = $cliente->opening_balance_date
+                ? max(0, (int) $cliente->opening_balance_date->copy()->startOfDay()->diffInDays($corte, false))
+                : 0;
+
+            $porCliente[$cliente->id][$this->tramoPorDias($dias)] += $saldo;
+            $porCliente[$cliente->id]['apertura'] += $saldo;
+            $porCliente[$cliente->id]['total'] += $saldo;
+
+            if ($dias > $porCliente[$cliente->id]['dias_max']) {
+                $porCliente[$cliente->id]['dias_max'] = $dias;
+            }
+        }
+    }
+
     /** @return array<string, mixed> */
     private function filaVacia(SaleInvoice $factura): array
     {
+        return $this->filaVaciaDe(
+            (int) $factura->third_party_id,
+            $factura->customer?->document_number,
+            $factura->customer?->name,
+            $factura->customer?->phone,
+            $factura->customer?->email,
+        );
+    }
+
+    /** @return array<string, mixed> */
+    private function filaVaciaDe(
+        int $terceroId,
+        ?string $documento,
+        ?string $nombre,
+        ?string $telefono,
+        ?string $correo,
+    ): array {
         $fila = [
-            'third_party_id' => (int) $factura->third_party_id,
-            'documento' => $factura->customer?->document_number ?: '',
-            'nombre' => $factura->customer?->name ?: 'Sin cliente',
-            'telefono' => $factura->customer?->phone ?: '',
-            'correo' => $factura->customer?->email ?: '',
+            'third_party_id' => $terceroId,
+            'documento' => $documento ?: '',
+            'nombre' => $nombre ?: 'Sin cliente',
+            'telefono' => $telefono ?: '',
+            'correo' => $correo ?: '',
             'facturas' => 0,
+            'apertura' => 0.0,
             'dias_max' => 0,
             'vence_proxima' => null,
             'total' => 0.0,
@@ -188,8 +275,18 @@ class AccountsReceivableAging
 
     private function tramoDe(SaleInvoice $factura, Carbon $corte): string
     {
-        $dias = $this->diasVencidos($factura, $corte);
+        return $this->tramoPorDias($this->diasVencidos($factura, $corte));
+    }
 
+    /**
+     * El tramo que corresponde a una mora en días.
+     *
+     * Separado para que el saldo de apertura y las facturas usen exactamente el
+     * mismo criterio: dos formas de clasificar habrían terminado dando informes
+     * que no cuadran entre sí.
+     */
+    private function tramoPorDias(int $dias): string
+    {
         foreach (self::TRAMOS as $tramo) {
             if ($dias >= $tramo['desde'] && ($tramo['hasta'] === null || $dias <= $tramo['hasta'])) {
                 return $tramo['clave'];

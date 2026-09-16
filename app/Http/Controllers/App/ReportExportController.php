@@ -450,6 +450,7 @@ class ReportExportController extends Controller
             $f['documento'],
             $f['telefono'],
             $f['facturas'],
+            $f['apertura'],
             $f['vence_proxima'] ?? '',
             $f['dias_max'],
             $f['corriente'],
@@ -465,7 +466,8 @@ class ReportExportController extends Controller
         $totales = $motor->totales($filas);
 
         $rows->push([
-            'TOTAL ('.$filas->count().' clientes)', '', '', '', '', '',
+            'TOTAL ('.$filas->count().' clientes)', '', '',
+            $filas->sum('facturas'), $filas->sum('apertura'), '', '',
             $totales['corriente'], $totales['d1_30'], $totales['d31_60'],
             $totales['d61_90'], $totales['d90_mas'], $totales['total'],
         ]);
@@ -477,10 +479,12 @@ class ReportExportController extends Controller
                 title: 'Cartera por edades — por cliente',
                 subtitle: $subtitle,
                 companyName: $this->companyName(),
-                headers: ['Cliente', 'Documento', 'Teléfono', 'Facturas', 'Vence', 'Días mora',
+                headers: ['Cliente', 'Documento', 'Teléfono', 'Facturas', 'Saldo inicial',
+                    'Vence', 'Días mora',
                     'Por vencer', '1 – 30', '31 – 60', '61 – 90', 'Más de 90', 'Total'],
                 rows: $rows,
-                columnTypes: ['string', 'string', 'string', 'number', 'string', 'number',
+                columnTypes: ['string', 'string', 'string', 'number', 'number',
+                    'string', 'number',
                     'number', 'number', 'number', 'number', 'number', 'number'],
             ),
             "cartera-edades-{$asOf}.xlsx",
