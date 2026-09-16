@@ -46,7 +46,9 @@ class ThirdPartyImportEngine
             foreach ($sheet->getRowIterator() as $row) {
                 $rowNum++;
                 $cells = array_map(
-                    fn ($c) => is_object($c) && method_exists($c, 'getValue') ? $c->getValue() : $c,
+                    fn ($c) => $this->normalizarCelda(
+                        is_object($c) && method_exists($c, 'getValue') ? $c->getValue() : $c
+                    ),
                     $row->getCells(),
                 );
 
@@ -183,11 +185,9 @@ class ThirdPartyImportEngine
             'is_ica_withholder' => $this->coerceBool($data['is_ica_withholder'], false),
             'default_receivable_account_id' => $this->resolveAccountId($data['receivable_account_code'], $companyId),
             'default_payable_account_id' => $this->resolveAccountId($data['payable_account_code'], $companyId),
-            'credit_limit' => $data['credit_limit'] !== null && $data['credit_limit'] !== ''
-                ? (float) $data['credit_limit'] : 0,
+            'credit_limit' => $this->parseMoney($data['credit_limit']) ?? 0,
             'credit_days' => (int) ($data['credit_days'] ?: 0),
-            'opening_balance' => $data['opening_balance'] !== null && $data['opening_balance'] !== ''
-                ? (float) $data['opening_balance'] : 0,
+            'opening_balance' => $this->parseMoney($data['opening_balance']) ?? 0,
             'opening_balance_date' => ! empty($data['opening_balance_date'])
                 ? date('Y-m-d', strtotime((string) $data['opening_balance_date'])) : null,
             'payment_terms_days' => (int) ($data['payment_terms_days'] ?: 0),
@@ -282,8 +282,18 @@ class ThirdPartyImportEngine
 
         // Un saldo de apertura sin fecha deja el estado de cuenta abriendo
         // con una linea sin fecha, que no se puede ordenar ni explicar.
-        $saldo = $data['opening_balance'] ?? null;
-        if ($saldo !== null && $saldo !== '' && (float) $saldo != 0.0
+        // Un monto que no se puede leer no puede entrar como cero: se avisa. Un
+        // saldo de apertura equivocado no se nota hasta que el cliente reclama.
+        foreach (['opening_balance' => 'opening_balance', 'credit_limit' => 'credit_limit'] as $campo) {
+            $crudo = $data[$campo] ?? null;
+
+            if ($crudo !== null && $crudo !== '' && $this->parseMoney($crudo) === null) {
+                $errors[] = "{$campo} no es un monto válido (recibido: «{$crudo}»)";
+            }
+        }
+
+        $saldo = $this->parseMoney($data['opening_balance'] ?? null);
+        if ($saldo !== null && $saldo != 0.0
             && empty($data['opening_balance_date'])) {
             $errors[] = 'opening_balance_date es obligatoria cuando hay saldo de apertura';
         }
@@ -331,6 +341,105 @@ class ThirdPartyImportEngine
     }
 
     /* ------------------------------------------------------------------ */
+
+    /**
+     * Deja el valor de una celda en algo que el resto del motor pueda tratar
+     * como texto.
+     *
+     * Una celda con formato de fecha no llega como string: el lector devuelve un
+     * objeto de fecha. El motor después hacía `(string) $valor` sobre él y la
+     * importación entera moría con «Object of class DateTimeImmutable could not
+     * be converted to string» — sin decir qué fila ni qué columna, así que no
+     * había por dónde empezar a buscar.
+     *
+     * Se normaliza aquí, al leer, y no en cada sitio que use el valor: ya eran
+     * tres los puntos que lo casteaban, y el cuarto que alguien escriba mañana
+     * volvería a romperlo.
+     */
+    protected function normalizarCelda(mixed $valor): mixed
+    {
+        if ($valor instanceof \DateTimeInterface) {
+            return $valor->format('Y-m-d');
+        }
+
+        return $valor;
+    }
+
+    /**
+     * Lee un monto escrito como lo escribe la gente.
+     *
+     * Cuando la celda es numérica no hay nada que hacer. El problema es cuando
+     * es **texto**, que pasa cada vez que alguien pega datos de otro sistema:
+     * ahí `(float)` de PHP hace estropicios silenciosos, que son los peores.
+     *
+     *     (float) '1.500.000'    →  1.5
+     *     (float) '$ 2.196.000'  →  0.0
+     *
+     * Un saldo de apertura de dos millones entrando como cero no rompe nada en
+     * el momento: rompe el estado de cuenta del cliente semanas después, y para
+     * entonces nadie lo relaciona con la importación.
+     *
+     * Devuelve null si el texto no es un monto reconocible, para que la
+     * validación lo reporte en vez de meter un cero inventado.
+     */
+    protected function parseMoney(mixed $valor): ?float
+    {
+        if ($valor === null || $valor === '') {
+            return null;
+        }
+
+        if (is_int($valor) || is_float($valor)) {
+            return (float) $valor;
+        }
+
+        if (! is_string($valor)) {
+            return null;
+        }
+
+        $texto = trim($valor);
+
+        // Contabilidad escribe los negativos entre paréntesis.
+        $negativo = str_starts_with($texto, '-') || preg_match('/^\(.*\)$/', $texto) === 1;
+
+        // Fuera símbolos de moneda, espacios (incluido el duro que pega Excel)
+        // y cualquier adorno: solo interesan los dígitos y los separadores.
+        $texto = preg_replace('/[^0-9.,]/u', '', $texto) ?? '';
+
+        if ($texto === '') {
+            return null;
+        }
+
+        $puntos = substr_count($texto, '.');
+        $comas = substr_count($texto, ',');
+
+        if ($puntos > 0 && $comas > 0) {
+            // Con los dos presentes, el último es el decimal: «1.500,50» y
+            // «1,500.50» son el mismo número escrito en dos convenciones.
+            $decimal = strrpos($texto, '.') > strrpos($texto, ',') ? '.' : ',';
+            $miles = $decimal === '.' ? ',' : '.';
+            $texto = str_replace($miles, '', $texto);
+            $texto = str_replace($decimal, '.', $texto);
+        } elseif ($puntos > 1 || $comas > 1) {
+            // Repetido solo puede ser separador de miles: «1.500.000».
+            $texto = str_replace(['.', ','], '', $texto);
+        } elseif ($puntos === 1 || $comas === 1) {
+            $separador = $puntos === 1 ? '.' : ',';
+            $decimales = strlen(substr($texto, strrpos($texto, $separador) + 1));
+
+            // Tres dígitos detrás es agrupación de miles: en Colombia «1.500»
+            // son mil quinientos, no uno coma cinco. Con otra cantidad de
+            // dígitos es un decimal: «10,50», «1.5».
+            $texto = $decimales === 3
+                ? str_replace($separador, '', $texto)
+                : str_replace($separador, '.', $texto);
+        }
+
+        if (! is_numeric($texto)) {
+            return null;
+        }
+
+        return $negativo ? -abs((float) $texto) : (float) $texto;
+    }
 
     protected function rowToAssoc(array $headers, array $cells): array
     {
