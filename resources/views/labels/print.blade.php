@@ -45,11 +45,29 @@
     // codigo minusculo y media etiqueta en blanco.
     // 1 mm = 3.7795 px, y el codigo se lleva el 35% del alto util.
     $altoPx = $h * 3.7795;
-    $barcodeHeight = $mode === 'roll'
-        ? max(30, min(220, (int) round($altoPx * 0.35)))
-        : 28;
+    $barcodeHeight = max(26, min(220, (int) round($altoPx * 0.30)));
     $barcodeWidth = $mode === 'roll' ? 1.6 : 1.2;
-    $barcodeFont = $mode === 'roll' ? max(10, min(20, (int) round($altoPx * 0.07))) : 10;
+    $barcodeFont = max(8, min(20, (int) round($altoPx * 0.07)));
+
+    // Tamanos de letra proporcionales al alto de la etiqueta.
+    //
+    // Estaban fijos: 7pt la empresa, 8pt el nombre, 14pt el precio. Una
+    // etiqueta de 100 x 50 tiene cuatro veces el area de una de 50 x 25 y
+    // mostraba el mismo texto diminuto con el resto en blanco.
+    //
+    // 1 mm = 2.8346 pt. El piso de 7pt se mantiene: a 203 dpi —lo normal en
+    // estas impresoras— menos que eso no se alcanza a leer.
+    $pad = round(max(0.8, $h * 0.04), 1);   // el padding tambien escala: 2 mm
+    $util = max(6, $h - 2 * $pad);          // sobre una etiqueta de 25 son 4 mm
+    $pt = fn (float $fraccion, float $tope) => round(
+        max(7.0, min($tope, $util * $fraccion * 2.8346)), 1
+    );
+
+    $ptCompany = $pt(0.11, 14);
+    $ptName = $pt(0.15, 20);
+    $ptMeta = $pt(0.10, 12);
+    $ptCode = $pt(0.12, 14);
+    $ptPrice = $pt(0.22, 30);
 
     // Lo que NO se va a poder imprimir. Una etiqueta a la que le falta el
     // codigo de barras es una etiqueta inservible, y hasta ahora salia el
@@ -132,7 +150,7 @@
             width: {{ $w }}mm;
             height: {{ $h }}mm;
             border: 1px dashed #cbd5e1;
-            padding: 2mm;
+            padding: {{ $pad }}mm;
             display: flex; flex-direction: column;
             justify-content: space-between;
             overflow: hidden;
@@ -144,14 +162,23 @@
             .label { margin: 0 auto; box-shadow: 0 2px 6px rgba(0,0,0,.08); }
         @endif
 
-        .label .company { font-size: 7pt; color: #64748b; text-align: center; text-transform: uppercase; letter-spacing: .05em; line-height: 1.1; }
-        .label .name { font-weight: 700; font-size: 8pt; line-height: 1.15; word-break: break-word; text-align: center; }
-        .label .meta { font-size: 7pt; color: #475569; text-align: center; line-height: 1.15; }
-        .label .code { font-family: ui-monospace, monospace; font-size: 7.5pt; text-align: center; color: #334155; }
-        .label .price { font-weight: 900; font-size: {{ $mode === 'roll' ? '14pt' : '12pt' }}; text-align: center; color: #16a34a; line-height: 1; }
-        .label .barcode-wrap { display: flex; align-items: center; justify-content: center; overflow: hidden; }
-        .label .barcode-wrap svg { max-width: 100%; height: auto; }
-        .label .location { font-size: 7pt; color: #475569; text-align: center; font-style: italic; }
+        .label .company { font-size: {{ $ptCompany }}pt; color: #64748b; text-align: center; text-transform: uppercase; letter-spacing: .05em; line-height: 1.1; }
+        .label .name { font-weight: 700; font-size: {{ $ptName }}pt; line-height: 1.15; word-break: break-word; text-align: center; }
+        .label .meta { font-size: {{ $ptMeta }}pt; color: #475569; text-align: center; line-height: 1.15; }
+        .label .code { font-family: ui-monospace, monospace; font-size: {{ $ptCode }}pt; text-align: center; color: #334155; }
+        .label .price { font-weight: 900; font-size: {{ $ptPrice }}pt; text-align: center; color: #16a34a; line-height: 1; }
+
+        /* El codigo se queda con todo el alto que sobre: es lo unico de la
+           etiqueta que se puede estirar sin que estorbe, y cuanto mas grande
+           sea, menos le cuesta al lector. */
+        .label .barcode-wrap {
+            display: flex; align-items: center; justify-content: center;
+            overflow: hidden; flex: 1 1 auto; min-height: 0; width: 100%;
+        }
+        /* Sin forzar 100%: el tamano lo calcula JsBarcode para que quepa
+           entero. Estirar el SVG a la fuerza deforma el texto del codigo. */
+        .label .barcode-wrap svg { max-width: 100%; max-height: 100%; }
+        .label .location { font-size: {{ $ptMeta }}pt; color: #475569; text-align: center; font-style: italic; }
 
         /* Un dato que falta se dice, no se deja en blanco: quien pega la
            etiqueta tiene que enterarse de que ese producto esta incompleto. */
@@ -384,21 +411,56 @@
                 return; // sin auto-print: no se imprimen etiquetas sin codigo
             }
 
+            function dibujar(svg, value, anchoDeBarra, altoDeBarra) {
+                JsBarcode(svg, value, {
+                    format: type,
+                    width: anchoDeBarra,
+                    height: altoDeBarra,
+                    displayValue: true,
+                    fontSize: {{ $barcodeFont }},
+                    margin: 0,
+                    // Explicito y no por defecto: una barra gris la termica
+                    // la aproxima con puntos y el lector falla.
+                    lineColor: '#000000',
+                    background: '#ffffff',
+                });
+            }
+
             svgs.forEach(function (svg) {
                 const value = svg.dataset.value || '';
                 try {
-                    JsBarcode(svg, value, {
-                        format: type,
-                        width: width,
-                        height: height,
-                        displayValue: true,
-                        fontSize: {{ $barcodeFont }},
-                        margin: 0,
-                        // Explicito y no por defecto: una barra gris la termica
-                        // la aproxima con puntos y el lector falla.
-                        lineColor: '#000000',
-                        background: '#ffffff',
-                    });
+                    // Se mide ANTES de dibujar: con el svg todavia vacio, el
+                    // hueco que reporta el contenedor es exactamente el que
+                    // dejaron libre los demas campos de la etiqueta.
+                    const wrap = svg.parentNode;
+                    const anchoDisp = wrap.clientWidth;
+                    const altoDisp = wrap.clientHeight;
+
+                    // JsBarcode pone el numero debajo de las barras, y ese
+                    // texto tambien ocupa.
+                    const altoTexto = {{ $barcodeFont }} * 1.3 + 2;
+                    const altoBarras = altoDisp > 26
+                        ? Math.max(16, Math.floor(altoDisp - altoTexto))
+                        : height;
+
+                    dibujar(svg, value, width, altoBarras);
+
+                    // Ensancharlo hasta llenar la etiqueta.
+                    //
+                    // JsBarcode dibuja cada barra con un ancho fijo, asi que un
+                    // codigo corto —un SKU de dos digitos— sale ocupando un
+                    // tercio de la etiqueta y el resto queda en blanco.
+                    // Se redibuja con la barra mas ancha, que es un escalado
+                    // uniforme: las proporciones entre barras no cambian y el
+                    // lector lo sigue leyendo igual.
+                    const natural = parseFloat(svg.getAttribute('width')) || 0;
+
+                    if (anchoDisp > 0 && natural > 0) {
+                        const factor = Math.min(5, (anchoDisp * 0.98) / natural);
+                        if (factor > 1.05) {
+                            dibujar(svg, value, width * factor, altoBarras);
+                        }
+                    }
                 } catch (e) {
                     fallaron++;
                     // El formato exige algo que el valor no cumple —EAN-13 pide

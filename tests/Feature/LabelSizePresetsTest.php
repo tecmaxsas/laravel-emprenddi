@@ -256,6 +256,75 @@ class LabelSizePresetsTest extends TestCase
             'Un código más alto que la etiqueta se corta.');
     }
 
+    // ------------------------------------- el contenido llena la etiqueta
+
+    /**
+     * El texto crece con la etiqueta.
+     *
+     * Los tamaños estaban fijos en puntos —7pt la empresa, 14pt el precio—.
+     * Una etiqueta de 100 × 50 tiene cuatro veces el área de una de 50 × 25 y
+     * mostraba exactamente el mismo texto diminuto con el resto en blanco.
+     */
+    public function test_el_texto_crece_con_la_etiqueta(): void
+    {
+        $this->configurar(['print_mode' => 'roll', 'width_mm' => 50, 'height_mm' => 25]);
+        $chica = $this->tamanoDe($this->imprimir(), 'price');
+
+        $this->configurar(['print_mode' => 'roll', 'width_mm' => 100, 'height_mm' => 50]);
+        $grande = $this->tamanoDe($this->imprimir(), 'price');
+
+        $this->assertGreaterThan($chica, $grande,
+            'Una etiqueta del doble de alto tiene que mostrar el precio más grande.');
+    }
+
+    /** Y el padding también, que en una etiqueta chica se comía el espacio. */
+    public function test_el_margen_interno_escala(): void
+    {
+        $this->configurar(['print_mode' => 'roll', 'width_mm' => 50, 'height_mm' => 25]);
+
+        $html = $this->imprimir();
+
+        preg_match('/\.label \{[^}]*padding: ([\d.]+)mm/', $html, $m);
+
+        $this->assertNotEmpty($m, 'No se encontró el padding de la etiqueta.');
+        $this->assertLessThan(2, (float) $m[1],
+            '2 mm arriba y abajo son 4 de los 25 mm de la etiqueta: el 16%.');
+    }
+
+    /**
+     * El código de barras se ensancha hasta llenar la etiqueta.
+     *
+     * JsBarcode dibuja cada barra con un ancho fijo, así que un SKU de dos
+     * dígitos salía ocupando un tercio del ancho. Se redibuja con la barra más
+     * ancha: es un escalado uniforme, las proporciones entre barras no cambian
+     * y el lector lo sigue leyendo igual.
+     */
+    public function test_el_codigo_se_ensancha_hasta_llenar(): void
+    {
+        $this->configurar(['print_mode' => 'roll', 'width_mm' => 50, 'height_mm' => 25]);
+
+        $html = $this->imprimir();
+
+        $this->assertStringContainsString('const factor = Math.min(5, (anchoDisp * 0.98) / natural);', $html);
+        $this->assertStringContainsString('dibujar(svg, value, width * factor, altoBarras);', $html);
+    }
+
+    /**
+     * El SVG no se estira a la fuerza desde el CSS.
+     *
+     * `width: 100%; height: 100%` sobre el SVG lo deforma: el número que va
+     * debajo de las barras sale estirado. El tamaño lo calcula JsBarcode.
+     */
+    public function test_el_svg_no_se_deforma_desde_el_css(): void
+    {
+        $vista = file_get_contents(resource_path('views/labels/print.blade.php'));
+
+        $this->assertDoesNotMatchRegularExpression(
+            '/barcode-wrap svg \{[^}]*[^-]width: 100%/',
+            $vista,
+            'Estirar el SVG deforma el número del código.');
+    }
+
     // ------------------------------------------- rollos de varias columnas
 
     /**
@@ -436,6 +505,16 @@ class LabelSizePresetsTest extends TestCase
         return $this->get($ruta)->assertOk()->getContent();
     }
 
+    /** El tamaño de letra en puntos de un campo de la etiqueta. */
+    private function tamanoDe(string $html, string $campo): float
+    {
+        preg_match('/\.label \.'.$campo.' \{[^}]*font-size: ([\d.]+)pt/', $html, $m);
+
+        $this->assertNotEmpty($m, "No se encontró el tamaño de «{$campo}».");
+
+        return (float) $m[1];
+    }
+
     /** Un producto de la empresa sin precio de venta, creado para la prueba. */
     private function productoSinPrecio(): Product
     {
@@ -463,9 +542,16 @@ class LabelSizePresetsTest extends TestCase
         $this->company->update(['settings' => $settings]);
         app(CurrentCompany::class)->set($this->company->fresh());
 
+        // El controlador lee `Auth::user()->company`. El usuario que puso
+        // actingAs sobrevive entre peticiones del mismo test, asi que esa
+        // relacion queda memorizada con la configuracion vieja y el segundo
+        // `configurar()` de una prueba no tendria ningun efecto.
+        auth()->user()?->unsetRelation('company');
+
         $this->limpiar[] = function () use ($original) {
             $this->company->update(['settings' => $original]);
             app(CurrentCompany::class)->set($this->company->fresh());
+            auth()->user()?->unsetRelation('company');
         };
     }
 }
