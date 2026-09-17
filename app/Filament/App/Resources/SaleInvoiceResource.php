@@ -13,7 +13,9 @@ use App\Models\Product;
 use App\Models\SaleInvoice;
 use App\Models\Tax;
 use App\Models\ThirdParty;
+use App\Support\DianDvCalculator;
 use App\Support\RetentionBase;
+use App\Support\StockPreview;
 use App\Models\User;
 use App\Support\Dian\DianInvoiceActions;
 use App\Support\ProductOptions;
@@ -155,6 +157,7 @@ class SaleInvoiceResource extends Resource
                     Forms\Components\TextInput::make('number')
                         ->label('Número')
                         ->numeric()
+                        ->extraInputAttributes(['onwheel' => 'this.blur()'])
                         ->disabled()
                         ->dehydrated(false)
                         ->placeholder('Auto: de la resolución'),
@@ -180,6 +183,88 @@ class SaleInvoiceResource extends Resource
                         ->getOptionLabelUsing(fn ($value) => ThirdParty::find($value)
                             ? ThirdParty::find($value)->document_number.' — '.ThirdParty::find($value)->name
                             : null)
+                        // Crearlo aqui mismo. Lo contrario es perder la factura
+                        // a medio armar para ir a registrar al cliente, y
+                        // volver a empezar.
+                        ->createOptionForm([
+                            Forms\Components\Grid::make(2)->schema([
+                                Forms\Components\Select::make('document_type')
+                                    ->label('Tipo de documento')
+                                    ->options(ThirdParty::DOCUMENT_TYPES)
+                                    ->default('cc')
+                                    ->required()
+                                    ->native(false)
+                                    ->live(),
+
+                                Forms\Components\TextInput::make('document_number')
+                                    ->label('Numero de documento')
+                                    ->required()
+                                    ->maxLength(30)
+                                    ->live(onBlur: true)
+                                    ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
+                                        if ($get('document_type') === 'nit' && $state) {
+                                            $set('dv', DianDvCalculator::calculate((string) $state));
+                                        }
+                                    }),
+                            ]),
+
+                            Forms\Components\TextInput::make('name')
+                                ->label('Nombre o razon social')
+                                ->required()
+                                ->maxLength(200),
+
+                            Forms\Components\Grid::make(2)->schema([
+                                Forms\Components\TextInput::make('phone')
+                                    ->label('Telefono')
+                                    ->maxLength(30),
+
+                                Forms\Components\TextInput::make('email')
+                                    ->label('Correo')
+                                    ->email()
+                                    ->maxLength(150),
+                            ]),
+
+                            Forms\Components\TextInput::make('address')
+                                ->label('Direccion')
+                                ->maxLength(255),
+
+                            Forms\Components\Hidden::make('dv'),
+                        ])
+                        ->createOptionUsing(function (array $data): int {
+                            $companyId = (int) auth()->user()->company_id;
+
+                            // Si ya existe ese documento no se crea otro: el
+                            // indice unico lo impediria, pero un error crudo de
+                            // la base no le dice nada a quien esta facturando.
+                            $existente = ThirdParty::query()
+                                ->where('company_id', $companyId)
+                                ->where('document_type', $data['document_type'])
+                                ->where('document_number', $data['document_number'])
+                                ->first();
+
+                            if ($existente) {
+                                if (! $existente->is_customer) {
+                                    $existente->update(['is_customer' => true]);
+                                }
+
+                                Notification::make()
+                                    ->warning()
+                                    ->title('Ese documento ya existia')
+                                    ->body("Se uso el tercero ya registrado: {$existente->name}.")
+                                    ->send();
+
+                                return $existente->id;
+                            }
+
+                            return ThirdParty::create([
+                                ...$data,
+                                'company_id' => $companyId,
+                                'person_type' => $data['document_type'] === 'nit' ? 'juridica' : 'natural',
+                                'is_customer' => true,
+                                'active' => true,
+                            ])->id;
+                        })
+                        ->createOptionModalHeading('Nuevo cliente')
                         ->columnSpan(2),
 
                     Forms\Components\Select::make('seller_user_id')
@@ -214,6 +299,9 @@ class SaleInvoiceResource extends Resource
                             ->where('is_main', true)
                             ->value('id'))
                         ->native(false)
+                        // Reactiva porque el stock que se muestra en cada linea
+                        // depende de la sede que vende.
+                        ->live()
                         ->columnSpan(2),
 
                     Forms\Components\DatePicker::make('date')
@@ -225,6 +313,7 @@ class SaleInvoiceResource extends Resource
                     Forms\Components\TextInput::make('payment_terms_days')
                         ->label('Plazo pago (días)')
                         ->numeric()
+                        ->extraInputAttributes(['onwheel' => 'this.blur()'])
                         ->minValue(0)
                         ->default(0)
                         ->live(onBlur: true)
@@ -274,6 +363,94 @@ class SaleInvoiceResource extends Resource
                                     $set('cost_at_sale', (float) ($product->default_purchase_price ?? 0));
                                     $set('tax_id', $product->default_sale_tax_id);
                                 })
+                                // Crearlo desde aqui. Un producto que no existe
+                                // no puede obligar a abandonar la factura a
+                                // medio armar para ir a registrarlo.
+                                ->createOptionForm([
+                                    Forms\Components\Grid::make(2)->schema([
+                                        Forms\Components\TextInput::make('code')
+                                            ->label('Codigo / SKU')
+                                            ->required()
+                                            ->maxLength(60),
+
+                                        Forms\Components\Select::make('type')
+                                            ->label('Tipo')
+                                            ->options(Product::TYPES)
+                                            ->default('good')
+                                            ->required()
+                                            ->native(false)
+                                            ->live(),
+                                    ]),
+
+                                    Forms\Components\TextInput::make('name')
+                                        ->label('Nombre')
+                                        ->required()
+                                        ->maxLength(200),
+
+                                    Forms\Components\Grid::make(3)->schema([
+                                        Forms\Components\Select::make('unit_of_measure')
+                                            ->label('Unidad')
+                                            ->options(Product::COMMON_UNITS)
+                                            ->default('unit')
+                                            ->required()
+                                            ->native(false),
+
+                                        Forms\Components\TextInput::make('default_sale_price')
+                                            ->label('Precio de venta')
+                                            ->numeric()
+                                            ->minValue(0)
+                                            ->prefix('$')
+                                            ->default(0)
+                                            ->required()
+                                            ->extraInputAttributes(['onwheel' => 'this.blur()']),
+
+                                        Forms\Components\TextInput::make('default_purchase_price')
+                                            ->label('Costo')
+                                            ->numeric()
+                                            ->minValue(0)
+                                            ->prefix('$')
+                                            ->default(0)
+                                            ->extraInputAttributes(['onwheel' => 'this.blur()']),
+                                    ]),
+
+                                    Forms\Components\Select::make('default_sale_tax_id')
+                                        ->label('Impuesto de venta')
+                                        ->options(fn () => TaxOptions::taxes('sale'))
+                                        ->native(false)
+                                        ->placeholder('Sin impuesto'),
+
+                                    Forms\Components\Toggle::make('track_inventory')
+                                        ->label('Controla inventario')
+                                        ->helperText('Un servicio no lo controla. Un bien creado aqui '
+                                            .'arranca en cero: la entrada se registra por separado.')
+                                        ->default(fn (Forms\Get $get) => $get('type') !== 'service'),
+                                ])
+                                ->createOptionUsing(function (array $data): int {
+                                    $companyId = (int) auth()->user()->company_id;
+
+                                    $existente = Product::query()
+                                        ->where('company_id', $companyId)
+                                        ->where('code', $data['code'])
+                                        ->first();
+
+                                    if ($existente) {
+                                        Notification::make()
+                                            ->warning()
+                                            ->title('Ese codigo ya existia')
+                                            ->body("Se uso el producto ya registrado: {$existente->name}.")
+                                            ->send();
+
+                                        return $existente->id;
+                                    }
+
+                                    return Product::create([
+                                        ...$data,
+                                        'company_id' => $companyId,
+                                        'is_sellable' => true,
+                                        'active' => true,
+                                    ])->id;
+                                })
+                                ->createOptionModalHeading('Nuevo producto')
                                 ->columnSpan(['default' => 1, 'md' => 6, 'xl' => 5]),
 
                             Forms\Components\TextInput::make('description')
@@ -285,6 +462,7 @@ class SaleInvoiceResource extends Resource
                             Forms\Components\TextInput::make('quantity')
                                 ->label('Cant.')
                                 ->numeric()
+                                ->extraInputAttributes(['onwheel' => 'this.blur()'])
                                 ->minValue(0)
                                 ->default(1)
                                 ->required()
@@ -295,6 +473,7 @@ class SaleInvoiceResource extends Resource
                             Forms\Components\TextInput::make('unit_price')
                                 ->label('Precio unit.')
                                 ->numeric()
+                                ->extraInputAttributes(['onwheel' => 'this.blur()'])
                                 ->minValue(0)
                                 ->prefix('$')
                                 ->default(0)
@@ -306,6 +485,7 @@ class SaleInvoiceResource extends Resource
                             Forms\Components\TextInput::make('discount_percentage')
                                 ->label('Desc. %')
                                 ->numeric()
+                                ->extraInputAttributes(['onwheel' => 'this.blur()'])
                                 ->minValue(0)
                                 ->maxValue(100)
                                 ->default(0)
@@ -328,11 +508,26 @@ class SaleInvoiceResource extends Resource
                             Forms\Components\TextInput::make('total')
                                 ->label('Total')
                                 ->numeric()
+                                ->extraInputAttributes(['onwheel' => 'this.blur()'])
                                 ->prefix('$')
                                 ->disabled()
                                 ->dehydrated()
                                 ->default(0)
                                 ->columnSpan(['default' => 1, 'md' => 3, 'xl' => 2]),
+
+                            // Cuanto hay y cuanto va a quedar, mientras se
+                            // digita. Sin esto hay que irse a inventario y
+                            // volver, y la venta imposible se descubre con el
+                            // cliente esperando.
+                            Forms\Components\Placeholder::make('stock_preview')
+                                ->label('')
+                                ->content(fn (Forms\Get $get) => StockPreview::paraLinea(
+                                    $get('product_id') ? (int) $get('product_id') : null,
+                                    $get('../../location_id') ? (int) $get('../../location_id') : null,
+                                    (float) ($get('quantity') ?? 0),
+                                ))
+                                ->visible(fn (Forms\Get $get) => (bool) $get('product_id'))
+                                ->columnSpanFull(),
 
                             Forms\Components\Hidden::make('subtotal')->default(0),
                             Forms\Components\Hidden::make('discount_amount')->default(0),
@@ -396,6 +591,7 @@ class SaleInvoiceResource extends Resource
                             Forms\Components\TextInput::make('base_amount')
                                 ->label('Base (gravable)')
                                 ->numeric()
+                                ->extraInputAttributes(['onwheel' => 'this.blur()'])
                                 ->minValue(0)
                                 ->prefix('$')
                                 ->default(0)
@@ -408,6 +604,7 @@ class SaleInvoiceResource extends Resource
                             Forms\Components\TextInput::make('rate')
                                 ->label('%')
                                 ->numeric()
+                                ->extraInputAttributes(['onwheel' => 'this.blur()'])
                                 ->minValue(0)
                                 ->maxValue(100)
                                 ->step(0.0001)
@@ -419,6 +616,7 @@ class SaleInvoiceResource extends Resource
                             Forms\Components\TextInput::make('amount')
                                 ->label('Monto retenido')
                                 ->numeric()
+                                ->extraInputAttributes(['onwheel' => 'this.blur()'])
                                 ->prefix('$')
                                 ->disabled()
                                 ->dehydrated()

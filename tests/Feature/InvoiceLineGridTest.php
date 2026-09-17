@@ -67,7 +67,14 @@ class InvoiceLineGridTest extends TestCase
         foreach (self::RECURSOS as $recurso) {
             $codigo = file_get_contents(app_path("Filament/App/Resources/{$recurso}.php"));
             $inicio = strpos($codigo, "Repeater::make('lines')");
-            $region = substr($codigo, $inicio, 6000);
+
+            // Delimitado por el `->columns()` del propio repetidor, como en las
+            // demas pruebas de este archivo. Antes era una ventana fija de 6000
+            // caracteres y se rompio sola en cuanto el formulario crecio: la
+            // prueba fallaba sin que el ancho hubiera cambiado.
+            preg_match("/->columns\(\['default' => \d+, 'md' => \d+, 'xl' => (\d+)\]\)/",
+                substr($codigo, $inicio), $grilla);
+            $region = substr($codigo, $inicio, strpos($codigo, $grilla[0], $inicio) - $inicio);
 
             preg_match("/->label\('Cant\.'\).*?'xl' => (\d+)\]\)/s", $region, $cantidad);
 

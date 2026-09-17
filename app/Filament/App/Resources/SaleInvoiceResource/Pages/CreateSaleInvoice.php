@@ -5,6 +5,7 @@ namespace App\Filament\App\Resources\SaleInvoiceResource\Pages;
 use App\Filament\App\Resources\SaleInvoiceResource;
 use App\Models\Location;
 use App\Services\Sales\DocumentNumberer;
+use Filament\Actions;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
@@ -12,6 +13,42 @@ use Illuminate\Validation\ValidationException;
 class CreateSaleInvoice extends CreateRecord
 {
     protected static string $resource = SaleInvoiceResource::class;
+
+    /**
+     * Vista propia solo para avisar antes de salir.
+     *
+     * Perder una factura de veinte lineas a medio digitar por un clic en el menu
+     * es de las cosas que mas tiempo cuestan, y no hay forma de recuperarla.
+     */
+    protected static string $view = 'filament.app.pages.create-sale-invoice';
+
+    /**
+     * La factura nace en borrador, asi que «Crear» ya es guardar el progreso.
+     * Se renombra porque el boton no lo decia: quien no lo sabe cree que crear
+     * la factura es emitirla, y prefiere no tocarla hasta tenerla completa.
+     */
+    protected function getCreateFormAction(): Actions\Action
+    {
+        return parent::getCreateFormAction()
+            ->label('Guardar borrador')
+            ->icon('heroicon-o-bookmark-square');
+    }
+
+    protected function getCreateAnotherFormAction(): Actions\Action
+    {
+        return parent::getCreateAnotherFormAction()
+            ->label('Guardar y crear otra');
+    }
+
+    protected function getSubmitFormAction(): Actions\Action
+    {
+        return $this->getCreateFormAction();
+    }
+
+    protected function getCreatedNotificationTitle(): ?string
+    {
+        return 'Borrador guardado';
+    }
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
