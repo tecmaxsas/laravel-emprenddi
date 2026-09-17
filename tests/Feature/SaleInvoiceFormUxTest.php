@@ -134,6 +134,58 @@ class SaleInvoiceFormUxTest extends TestCase
         $this->assertStringContainsString('→', $html);
     }
 
+    /**
+     * La cantidad va con su unidad de medida.
+     *
+     * «10» a secas no dice si son diez unidades o diez kilos, y en un inventario
+     * esa diferencia decide si la venta se puede despachar.
+     */
+    public function test_muestra_la_unidad_de_medida(): void
+    {
+        $porKilo = $this->producto(unidad: 'kg');
+        $this->cargarStock($porKilo, 8);
+
+        $html = (string) StockPreview::paraLinea($porKilo->id, $this->sede->id, cantidad: 3);
+
+        $this->assertStringContainsString('kg', $html);
+    }
+
+    /**
+     * El nombre de la sede y el número no van en la misma línea.
+     *
+     * Las sedes se llaman cosas como «MUNDO ELECTRONICO CR 10 11 45». Pegados,
+     * nadie distingue el «10» de la carrera del «10» de las unidades: eso fue
+     * justo lo que pasó con la primera versión.
+     */
+    public function test_el_nombre_de_la_sede_no_se_mezcla_con_la_cantidad(): void
+    {
+        $producto = $this->producto();
+        $this->cargarStock($producto, 10);
+
+        $html = (string) StockPreview::paraLinea($producto->id, $this->sede->id, cantidad: 0);
+
+        // Cada dato en su propio contenedor: el nombre arriba, la cifra abajo.
+        $this->assertStringContainsString('sp-sede', $html);
+        $this->assertStringContainsString('sp-cifras', $html);
+
+        $this->assertStringNotContainsString(
+            '</div> 10',
+            $html,
+            'El nombre y la cantidad no pueden quedar pegados en el mismo renglón.',
+        );
+    }
+
+    /** Se distingue la sede desde la que se está vendiendo. */
+    public function test_se_ve_cual_es_la_sede_que_vende(): void
+    {
+        $producto = $this->producto();
+        $this->cargarStock($producto, 5);
+
+        $html = (string) StockPreview::paraLinea($producto->id, $this->sede->id, cantidad: 1);
+
+        $this->assertStringContainsString('vende aquí', $html);
+    }
+
     // --------------------------------------- 2 y 3. crear sin salir
 
     /** El selector de cliente permite crear uno nuevo. */
@@ -225,14 +277,14 @@ class SaleInvoiceFormUxTest extends TestCase
 
     // --------------------------------------------------------- auxiliares
 
-    private function producto(bool $controlaInventario = true): Product
+    private function producto(bool $controlaInventario = true, string $unidad = 'unit'): Product
     {
         $producto = Product::withoutGlobalScopes()->create([
             'company_id' => $this->company->id,
             'code' => 'ZZUX'.random_int(10000, 99999),
             'name' => 'ZZ Producto UX',
             'type' => $controlaInventario ? 'good' : 'service',
-            'unit_of_measure' => 'unit',
+            'unit_of_measure' => $unidad,
             'track_inventory' => $controlaInventario,
             'is_sellable' => true,
             'default_sale_price' => 10000,
