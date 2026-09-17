@@ -159,10 +159,24 @@ class PaymentMethodOptionsTest extends TestCase
         foreach ($this->archivosPhpDe(app_path('Filament')) as $ruta) {
             $contenido = file_get_contents($ruta);
 
-            // Solo `Payment::PAYMENT_METHODS`: `Employee::PAYMENT_METHODS` es
-            // otra cosa —como se le paga la nomina a un empleado— y no tiene
-            // nada que ver con las formas de cobro de la empresa.
-            if (preg_match('/->options\([^)]{0,120}\bPayment::PAYMENT_METHODS/s', $contenido)) {
+            // Dos formas de cometer el mismo error. La primera fue la que se
+            // corrigio: ofrecer la constante de fabrica.
+            //
+            // `Employee::PAYMENT_METHODS` es otra cosa —como se le paga la
+            // nomina a un empleado— y no tiene nada que ver con las formas de
+            // cobro, asi que se exige el `Payment::` delante.
+            $usaLaConstante = preg_match('/->options\([^)]{0,120}\bPayment::PAYMENT_METHODS/s', $contenido);
+
+            // La segunda es la que se escapo: escribir la lista a mano dentro
+            // del propio archivo. No menciona ninguna constante, asi que la
+            // busqueda anterior no la veia — y en gastos llevaba asi desde el
+            // principio.
+            $laEscribeAMano = preg_match(
+                "/->options\(\s*\[[^\]]{0,400}'cash'\s*=>\s*'Efectivo'/s",
+                $contenido,
+            );
+
+            if ($usaLaConstante || $laEscribeAMano) {
                 $culpables[] = str_replace(base_path().'/', '', $ruta);
             }
         }

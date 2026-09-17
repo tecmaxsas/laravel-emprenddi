@@ -5,6 +5,7 @@ namespace App\Filament\App\Resources\ExpenseResource\Pages;
 use App\Filament\App\Resources\ExpenseResource;
 use App\Models\Expense;
 use App\Services\Expenses\ExpenseEngine;
+use App\Support\PaymentMethodOptions;
 use Filament\Actions;
 use Filament\Forms;
 use Filament\Infolists;
@@ -149,15 +150,7 @@ class ViewExpense extends ViewRecord
                     Infolists\Components\TextEntry::make('total')->label('Total')->money('COP')->weight('bold'),
                     Infolists\Components\TextEntry::make('payment_method')
                         ->label('Método de pago')
-                        ->formatStateUsing(fn (string $state) => [
-                            'cash' => 'Efectivo',
-                            'bank_transfer' => 'Transferencia bancaria',
-                            'check' => 'Cheque',
-                            'credit_card' => 'Tarjeta de crédito',
-                            'debit_card' => 'Tarjeta débito',
-                            'electronic' => 'PSE / Pago electrónico',
-                            'other' => 'Otro',
-                        ][$state] ?? $state)
+                        ->formatStateUsing(fn (string $state) => PaymentMethodOptions::nombre($state))
                         ->badge(),
                     Infolists\Components\TextEntry::make('reference')
                         ->label('Referencia')

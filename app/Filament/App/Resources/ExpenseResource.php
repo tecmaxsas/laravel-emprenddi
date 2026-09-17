@@ -10,6 +10,7 @@ use App\Models\Expense;
 use App\Models\Location;
 use App\Models\Tax;
 use App\Models\ThirdParty;
+use App\Support\PaymentMethodOptions;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -240,15 +241,10 @@ class ExpenseResource extends Resource
                     Forms\Components\Select::make('payment_method')
                         ->label('Método de pago')
                         ->required()
-                        ->options([
-                            'cash' => 'Efectivo',
-                            'bank_transfer' => 'Transferencia bancaria',
-                            'check' => 'Cheque',
-                            'credit_card' => 'Tarjeta de crédito',
-                            'debit_card' => 'Tarjeta débito',
-                            'electronic' => 'PSE / Pago electrónico',
-                            'other' => 'Otro',
-                        ])
+                        // Los de la empresa, no los de fabrica: si el gasto se
+                        // pago por Nequi y solo aparece «Otro», el arqueo deja
+                        // de cuadrar contra el extracto.
+                        ->options(fn () => PaymentMethodOptions::para())
                         ->default('cash')
                         ->native(false)
                         ->columnSpan(2),
@@ -336,15 +332,7 @@ class ExpenseResource extends Resource
 
                 Tables\Columns\TextColumn::make('payment_method')
                     ->label('Pago')
-                    ->formatStateUsing(fn (string $state) => [
-                        'cash' => 'Efectivo',
-                        'bank_transfer' => 'Transferencia',
-                        'check' => 'Cheque',
-                        'credit_card' => 'T. Crédito',
-                        'debit_card' => 'T. Débito',
-                        'electronic' => 'PSE',
-                        'other' => 'Otro',
-                    ][$state] ?? $state)
+                    ->formatStateUsing(fn (string $state) => PaymentMethodOptions::nombre($state))
                     ->badge()
                     ->color('info'),
 
