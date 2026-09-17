@@ -1472,7 +1472,7 @@ class RestaurantPos extends Page
 
     public function getPaymentMethodOptionsProperty(): array
     {
-        return \App\Models\Payment::PAYMENT_METHODS;
+        return \App\Support\PaymentMethodOptions::para();
     }
 
     /**

@@ -2556,14 +2556,6 @@ class PosTerminal extends Page
      */
     public function getPaymentMethodsProperty(): array
     {
-        $methods = PaymentMethod::query()
-            ->where('company_id', auth()->user()?->company_id)
-            ->where('active', true)
-            ->orderBy('sort_order')
-            ->orderBy('name')
-            ->pluck('name', 'code')
-            ->all();
-
-        return $methods ?: Payment::PAYMENT_METHODS;
+        return \App\Support\PaymentMethodOptions::para();
     }
 }

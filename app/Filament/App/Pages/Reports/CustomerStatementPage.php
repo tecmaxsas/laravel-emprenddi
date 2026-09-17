@@ -330,7 +330,10 @@ class CustomerStatementPage extends Page implements HasActions, HasForms
                     ->required(),
                 Forms\Components\Select::make('payment_method')
                     ->label('Forma de pago')
-                    ->options(Payment::PAYMENT_METHODS)
+                    // Las de la empresa, no las de fabrica: si el cliente paga
+                    // por Nequi y solo aparece «Otro», el arqueo deja de cuadrar
+                    // contra el extracto.
+                    ->options(fn () => PaymentMethodOptions::para())
                     ->native(false)
                     ->required(),
                 Forms\Components\TextInput::make('reference')

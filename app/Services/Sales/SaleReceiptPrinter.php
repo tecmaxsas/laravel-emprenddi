@@ -172,7 +172,9 @@ class SaleReceiptPrinter
             $b->line('FORMA DE PAGO:');
             foreach ($payments as $p) {
                 $method = $p['payment_method'] ?? 'cash';
-                $label = \App\Models\Payment::PAYMENT_METHODS[$method] ?? ucfirst($method);
+                // El nombre que la empresa le puso: un metodo propio con codigo
+                // «nequi» salia asi, en crudo, en el tiquete del cliente.
+                $label = \App\Support\PaymentMethodOptions::nombre($method, $invoice->company_id);
                 $b->twoCols('  '.$label, '$'.number_format((float) ($p['amount'] ?? 0), 0, ',', '.'));
             }
             if ((float) ($invoice->paid_amount ?? 0) > 0) {

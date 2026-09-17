@@ -606,7 +606,7 @@ class SaleInvoiceEngine
         $company = Company::find($invoice->company_id);
         $number = $this->numberer->next($company, 'CI'); // CI = Comprobante de Ingreso
 
-        $methodLabel = Payment::PAYMENT_METHODS[$method] ?? $method;
+        $methodLabel = \App\Support\PaymentMethodOptions::nombre($method, $invoice->company_id);
 
         $entry = JournalEntry::create([
             'company_id' => $invoice->company_id,
