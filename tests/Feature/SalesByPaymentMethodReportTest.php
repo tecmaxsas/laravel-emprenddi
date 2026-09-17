@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Filament\App\Pages\Reports\SalesByPaymentMethodPage;
 use App\Models\Company;
+use App\Models\CustomerAdvance;
 use App\Models\Location;
 use App\Models\Payment;
 use App\Models\PaymentMethod;
@@ -166,6 +167,46 @@ class SalesByPaymentMethodReportTest extends TestCase
         $this->assertSame(25.0, $filas['credit_card']['participacion']);
     }
 
+    /**
+     * Un abono que vino de un anticipo muestra con qué pagó el cliente.
+     *
+     * Al aplicar un anticipo a una factura, el pago se guarda con el método
+     * `advance`. Eso describe el mecanismo contable —se cruza un pasivo contra
+     * la cartera— pero no responde la pregunta del reporte: el cliente no pagó
+     * «con un anticipo», pagó en efectivo o por transferencia el día que
+     * entregó esa plata.
+     *
+     * En producción esa fila «Anticipo del cliente» se tragó el 94% del
+     * recaudo y escondió justamente el dato que se buscaba.
+     */
+    public function test_un_anticipo_muestra_el_metodo_con_que_pago_el_cliente(): void
+    {
+        $factura = $this->facturaContabilizada();
+        $anticipo = $this->anticipo('bank_transfer', 50000);
+
+        $this->pago($factura, 'advance', 50000, null, $anticipo->id);
+
+        $filas = collect(SalesByPaymentMethod::filas($this->filtrosDeHoy()))->keyBy('codigo');
+
+        $this->assertArrayHasKey('bank_transfer', $filas->all(),
+            'El cliente pagó por transferencia; «anticipo» es el mecanismo, no el medio.');
+        $this->assertSame(50000.0, $filas['bank_transfer']['total']);
+        $this->assertArrayNotHasKey('advance', $filas->all());
+    }
+
+    /** Un pago marcado como anticipo pero sin anticipo detrás no se inventa nada. */
+    public function test_sin_anticipo_detras_se_queda_como_estaba(): void
+    {
+        $factura = $this->facturaContabilizada();
+
+        $this->pago($factura, 'advance', 30000);
+
+        $filas = collect(SalesByPaymentMethod::filas($this->filtrosDeHoy()))->keyBy('codigo');
+
+        $this->assertSame(30000.0, $filas['advance']['total'],
+            'Sin el anticipo no hay de dónde sacar el método real: inventarlo sería peor.');
+    }
+
     /** Sin pagos no revienta ni divide por cero. */
     public function test_un_periodo_sin_pagos_no_revienta(): void
     {
@@ -271,13 +312,19 @@ class SalesByPaymentMethodReportTest extends TestCase
         return $factura;
     }
 
-    private function pago(SaleInvoice $factura, string $metodo, float $monto, ?string $fecha = null): void
-    {
+    private function pago(
+        SaleInvoice $factura,
+        string $metodo,
+        float $monto,
+        ?string $fecha = null,
+        ?int $anticipoId = null,
+    ): void {
         $pago = Payment::withoutGlobalScopes()->create([
             'company_id' => $this->company->id,
             'paymentable_type' => SaleInvoice::class,
             'paymentable_id' => $factura->id,
             'third_party_id' => $factura->third_party_id,
+            'customer_advance_id' => $anticipoId,
             'date' => $fecha ?? now()->toDateString(),
             'amount' => $monto,
             'payment_method' => $metodo,
@@ -285,5 +332,25 @@ class SalesByPaymentMethodReportTest extends TestCase
         ]);
 
         $this->limpiar[] = fn () => DB::table('payments')->where('id', $pago->id)->delete();
+    }
+
+    private function anticipo(string $metodo, float $monto): CustomerAdvance
+    {
+        $tercero = ThirdParty::withoutGlobalScopes()
+            ->where('company_id', $this->company->id)->orderBy('id')->firstOrFail();
+
+        $anticipo = CustomerAdvance::withoutGlobalScopes()->create([
+            'company_id' => $this->company->id,
+            'third_party_id' => $tercero->id,
+            'date' => now()->toDateString(),
+            'amount' => $monto,
+            'applied_amount' => 0,
+            'payment_method' => $metodo,
+            'created_by_user_id' => $this->user->id,
+        ]);
+
+        $this->limpiar[] = fn () => DB::table('customer_advances')->where('id', $anticipo->id)->delete();
+
+        return $anticipo;
     }
 }

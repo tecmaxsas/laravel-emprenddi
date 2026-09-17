@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Models\Payment;
 use App\Models\SaleInvoice;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Cuánta plata entró por cada forma de pago.
@@ -26,6 +27,29 @@ use Illuminate\Database\Eloquent\Builder;
 class SalesByPaymentMethod
 {
     /**
+     * El método con el que el cliente pagó de verdad.
+     *
+     * Cuando se aplica un anticipo a una factura, el pago queda guardado con
+     * el método `advance`. Eso describe el mecanismo contable —se cruza un
+     * pasivo contra la cartera— pero no responde la pregunta del reporte: el
+     * cliente no pagó «con un anticipo», pagó en efectivo, por Nequi o con
+     * tarjeta el día que entregó esa plata.
+     *
+     * Sin esto el reporte mostraba una fila «Anticipo del cliente» que se
+     * tragaba el 94% del recaudo y escondía justamente el dato que se buscaba.
+     *
+     * El método real está en el anticipo, así que se va a buscar allá.
+     */
+    private const METODO_REAL = <<<'SQL'
+        CASE
+            WHEN payments.customer_advance_id IS NOT NULL
+             AND anticipos.payment_method IS NOT NULL
+            THEN anticipos.payment_method
+            ELSE payments.payment_method
+        END
+        SQL;
+
+    /**
      * Los pagos del período, ya sumados por método.
      *
      * Devuelve un Builder y no una colección porque la tabla de Filament
@@ -36,11 +60,11 @@ class SalesByPaymentMethod
     public static function agrupado(array $filtros): Builder
     {
         return self::base($filtros)
-            ->groupBy('payments.payment_method')
+            ->groupBy(DB::raw(self::METODO_REAL))
             // `MIN(id)` no significa nada por si mismo: es la llave que Filament
             // le exige a cada fila para poder renderizar la tabla.
             ->selectRaw('MIN(payments.id) as id')
-            ->selectRaw('payments.payment_method as payment_method')
+            ->selectRaw(self::METODO_REAL.' as payment_method')
             ->selectRaw('COUNT(*) as operaciones')
             ->selectRaw('SUM(payments.amount) as total');
     }
@@ -98,13 +122,16 @@ class SalesByPaymentMethod
             ->select('id');
 
         return Payment::query()
-            ->where('paymentable_type', SaleInvoice::class)
-            ->whereIn('paymentable_id', $facturas)
+            // Para poder leer con que pago el cliente cuando el abono vino de
+            // un anticipo. Es LEFT porque la mayoria de los pagos no lo son.
+            ->leftJoin('customer_advances as anticipos', 'anticipos.id', '=', 'payments.customer_advance_id')
+            ->where('payments.paymentable_type', SaleInvoice::class)
+            ->whereIn('payments.paymentable_id', $facturas)
             ->whereDate('payments.date', '>=', $desde)
             ->whereDate('payments.date', '<=', $hasta)
             ->when(
                 $filtros['created_by_user_id'] ?? null,
-                fn (Builder $q, $usuario) => $q->where('created_by_user_id', $usuario),
+                fn (Builder $q, $usuario) => $q->where('payments.created_by_user_id', $usuario),
             );
     }
 }

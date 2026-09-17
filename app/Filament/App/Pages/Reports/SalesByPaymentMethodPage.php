@@ -85,7 +85,7 @@ class SalesByPaymentMethodPage extends Page implements HasForms, HasTable
     {
         return $form->schema([
             Forms\Components\Section::make('Filtros')
-                ->description('Cuenta los pagos aplicados a facturas de venta según la fecha en que se recibió el pago. Una venta a crédito aparece el día que el cliente paga, no el día que se facturó.')
+                ->description('Cuenta los pagos aplicados a facturas de venta según la fecha del pago: una venta a crédito aparece el día que el cliente paga, no el día que se facturó. Cuando el abono viene de un anticipo, se muestra con el método con que el cliente entregó esa plata. Un anticipo que todavía no se ha aplicado a ninguna factura no aparece aquí.')
                 ->columns(4)
                 ->schema([
                     Forms\Components\DatePicker::make('from')->label('Desde')->required()->live(),
