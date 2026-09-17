@@ -17,6 +17,8 @@ use App\Services\Reports\AccountsReceivableAging;
 use App\Services\Reports\FinancialReportExporter;
 use App\Services\Reports\FinancialStatementsEngine;
 use App\Services\Reports\TabularReportExporter;
+use App\Support\SalesByPaymentMethod;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -49,7 +51,7 @@ class ReportExportController extends Controller
 
         return response()->streamDownload(
             $this->exporter->streamIncomeStatement($data, $name),
-            'estado-resultados-' . $from . '-a-' . $to . '.xlsx',
+            'estado-resultados-'.$from.'-a-'.$to.'.xlsx',
             $this->xlsxHeaders(),
         );
     }
@@ -66,7 +68,7 @@ class ReportExportController extends Controller
 
         return response()->streamDownload(
             $this->exporter->streamBalanceSheet($data, $name),
-            'balance-general-' . $asOf . '.xlsx',
+            'balance-general-'.$asOf.'.xlsx',
             $this->xlsxHeaders(),
         );
     }
@@ -80,7 +82,7 @@ class ReportExportController extends Controller
 
         // Reusar el calculo del page (mismos thresholds/labels) para que el
         // archivo refleje exactamente lo que el usuario ve en pantalla.
-        $page = new FinancialIndicatorsPage();
+        $page = new FinancialIndicatorsPage;
         $reflection = new \ReflectionClass($page);
 
         $companyId = Auth::user()->company_id;
@@ -93,7 +95,7 @@ class ReportExportController extends Controller
 
         return response()->streamDownload(
             $this->exporter->streamIndicators($indicators, $this->companyName(), $from, $to),
-            'indicadores-financieros-' . $from . '-a-' . $to . '.xlsx',
+            'indicadores-financieros-'.$from.'-a-'.$to.'.xlsx',
             $this->xlsxHeaders(),
         );
     }
@@ -130,7 +132,7 @@ class ReportExportController extends Controller
                 (float) $e->total_credit,
             ]);
 
-        $subtitle = "Período: {$from} a {$to}".($type ? " · Tipo: ".(JournalEntry::TYPES[$type] ?? $type) : '');
+        $subtitle = "Período: {$from} a {$to}".($type ? ' · Tipo: '.(JournalEntry::TYPES[$type] ?? $type) : '');
 
         return response()->streamDownload(
             $this->tabular->stream(
@@ -270,9 +272,9 @@ class ReportExportController extends Controller
         if ($onlyWithMovements) {
             $query->where(function (Builder $q) {
                 $q->where(DB::raw('COALESCE(per.pd, 0)'), '>', 0)
-                  ->orWhere(DB::raw('COALESCE(per.pc, 0)'), '>', 0)
-                  ->orWhere(DB::raw('COALESCE(ini.id, 0)'), '>', 0)
-                  ->orWhere(DB::raw('COALESCE(ini.ic, 0)'), '>', 0);
+                    ->orWhere(DB::raw('COALESCE(per.pc, 0)'), '>', 0)
+                    ->orWhere(DB::raw('COALESCE(ini.id, 0)'), '>', 0)
+                    ->orWhere(DB::raw('COALESCE(ini.ic, 0)'), '>', 0);
             });
         }
 
@@ -313,8 +315,8 @@ class ReportExportController extends Controller
         $to = $this->parseDate($request->query('to'), now()->endOfMonth()->toDateString());
         $types = array_filter(explode(',', (string) $request->query('types', '')));
 
-        $product = \App\Models\Product::find($productId);
-        $location = \App\Models\Location::find($locationId);
+        $product = Product::find($productId);
+        $location = Location::find($locationId);
         abort_if(! $product || ! $location, 404);
 
         $rows = InventoryMovement::query()
@@ -385,9 +387,10 @@ class ReportExportController extends Controller
             ->map(function (SaleInvoice $i) use ($asOf) {
                 $daysOverdue = null;
                 if ($i->due_date) {
-                    $diff = $i->due_date->diffInDays(\Carbon\Carbon::parse($asOf), false);
+                    $diff = $i->due_date->diffInDays(Carbon::parse($asOf), false);
                     $daysOverdue = $diff > 0 ? (int) $diff : 0;
                 }
+
                 return [
                     $i->fullNumber(),
                     $i->customer?->name ?: '',
@@ -516,9 +519,10 @@ class ReportExportController extends Controller
             ->map(function (PurchaseInvoice $i) use ($asOf) {
                 $daysOverdue = null;
                 if ($i->due_date) {
-                    $diff = $i->due_date->diffInDays(\Carbon\Carbon::parse($asOf), false);
+                    $diff = $i->due_date->diffInDays(Carbon::parse($asOf), false);
                     $daysOverdue = $diff > 0 ? (int) $diff : 0;
                 }
+
                 return [
                     $i->fullNumber(),
                     $i->supplier_invoice_number ?: '',
@@ -639,7 +643,10 @@ class ReportExportController extends Controller
 
         $rows = $products
             ->filter(function (Product $p) use ($matrix, $onlyWithStock) {
-                if (! $onlyWithStock) return true;
+                if (! $onlyWithStock) {
+                    return true;
+                }
+
                 return ! empty(array_filter($matrix[$p->id] ?? [], fn ($v) => $v > 0));
             })
             ->map(function (Product $p) use ($matrix, $locations) {
@@ -655,6 +662,7 @@ class ReportExportController extends Controller
                     $total += $bal;
                 }
                 $row[] = $total;
+
                 return $row;
             });
 
@@ -679,6 +687,49 @@ class ReportExportController extends Controller
                 columnTypes: $types,
             ),
             'stock-por-sede-'.now()->format('Y-m-d').'.xlsx',
+            $this->xlsxHeaders(),
+        );
+    }
+
+    /**
+     * Ventas por método de pago.
+     *
+     * Las filas salen del mismo helper que alimenta la pantalla, para que el
+     * Excel y lo que el usuario ve no puedan decir cosas distintas.
+     */
+    public function salesByPaymentMethod(Request $request): StreamedResponse
+    {
+        abort_unless($request->user()?->can('reports.sales'), 403);
+
+        $from = $this->parseDate($request->query('from'), now()->startOfMonth()->toDateString());
+        $to = $this->parseDate($request->query('to'), now()->endOfMonth()->toDateString());
+
+        $filtros = [
+            'from' => $from,
+            'to' => $to,
+            'location_id' => (int) $request->query('location_id') ?: null,
+            'created_by_user_id' => (int) $request->query('created_by_user_id') ?: null,
+        ];
+
+        $rows = collect(SalesByPaymentMethod::filas($filtros))
+            ->map(fn (array $f) => [
+                $f['metodo'],
+                $f['codigo'],
+                $f['operaciones'],
+                $f['total'],
+                $f['participacion'],
+            ]);
+
+        return response()->streamDownload(
+            $this->tabular->stream(
+                title: 'Ventas por Método de Pago',
+                subtitle: "Por fecha de pago — {$from} a {$to}",
+                companyName: $this->companyName(),
+                headers: ['Método de pago', 'Código', 'N° de pagos', 'Total recaudado', '% del total'],
+                rows: $rows,
+                columnTypes: ['string', 'string', 'number', 'number', 'number'],
+            ),
+            "ventas-por-metodo-de-pago-{$from}-a-{$to}.xlsx",
             $this->xlsxHeaders(),
         );
     }
@@ -738,7 +789,7 @@ class ReportExportController extends Controller
     protected function parseDate(?string $value, string $fallback): string
     {
         try {
-            return $value ? \Carbon\Carbon::parse($value)->toDateString() : $fallback;
+            return $value ? Carbon::parse($value)->toDateString() : $fallback;
         } catch (\Throwable $e) {
             return $fallback;
         }
