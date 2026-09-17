@@ -54,11 +54,17 @@ class StockPreview
      * El bloque de stock para una línea de venta.
      *
      * @param  int|null  $productId  El producto de la línea.
-     * @param  int|null  $locationId  La sede desde la que se vende.
+     * @param  int|null  $locationId  La sede que vende o que recibe.
      * @param  float  $cantidad  Lo que lleva la línea.
+     * @param  bool  $entra  `true` en una compra, que suma; `false` en una
+     *                       venta, que resta.
      */
-    public static function paraLinea(?int $productId, ?int $locationId, float $cantidad = 0): ?HtmlString
-    {
+    public static function paraLinea(
+        ?int $productId,
+        ?int $locationId,
+        float $cantidad = 0,
+        bool $entra = false,
+    ): ?HtmlString {
         if (! $productId) {
             return null;
         }
@@ -101,12 +107,15 @@ class StockPreview
                 continue;
             }
 
+            $movimiento = $entra ? $cantidad : -$cantidad;
+
             $tarjetas[] = self::tarjeta(
                 $sede->name,
                 $actual,
-                $esLaQueVende ? $actual - $cantidad : $actual,
+                $esLaQueVende ? $actual + $movimiento : $actual,
                 $esLaQueVende,
                 $unidad,
+                $entra,
             );
         }
 
@@ -131,6 +140,7 @@ class StockPreview
         float $despues,
         bool $esLaQueVende,
         string $unidad,
+        bool $entra = false,
     ): string {
         $clase = match (true) {
             $despues < -0.001 => 'sp-negativo',
@@ -166,7 +176,7 @@ class StockPreview
             $esLaQueVende ? ' sp-vende' : '',
             e($sede),
             e($sede),
-            $esLaQueVende ? ' <span class="sp-aqui">vende aquí</span>' : '',
+            $esLaQueVende ? ' <span class="sp-aqui">'.($entra ? 'entra aquí' : 'vende aquí').'</span>' : '',
             $cifras,
         );
     }

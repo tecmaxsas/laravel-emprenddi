@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Filament\App\Resources\PurchaseInvoiceResource\Pages\CreatePurchaseInvoice;
 use App\Filament\App\Resources\SaleInvoiceResource\Pages\CreateSaleInvoice;
+use App\Models\CashRegisterSession;
 use App\Models\Company;
 use App\Models\Location;
 use App\Models\Product;
@@ -300,7 +302,110 @@ class SaleInvoiceFormUxTest extends TestCase
         Livewire::test(CreateSaleInvoice::class)->assertOk();
     }
 
+    // ------------------------------------------ lo mismo en compras
+
+    /**
+     * En una compra el stock **sube**.
+     *
+     * Es la misma pregunta con el signo cambiado: al recibir mercancia uno
+     * quiere confirmar con cuanto queda la sede, no con cuanto quedaba antes.
+     */
+    public function test_en_una_compra_el_stock_sube(): void
+    {
+        $producto = $this->producto();
+        $this->cargarStock($producto, 12);
+
+        $html = (string) StockPreview::paraLinea(
+            $producto->id, $this->sede->id, cantidad: 5, entra: true,
+        );
+
+        $this->assertStringContainsString('17', $html, 'Recibir 5 sobre 12 deja 17.');
+        $this->assertStringContainsString('entra aquí', $html,
+            'En una compra la sede recibe, no vende.');
+    }
+
+    /** Y una compra nunca deja el saldo en rojo. */
+    public function test_una_compra_no_deja_el_stock_negativo(): void
+    {
+        $producto = $this->producto();
+        $this->cargarStock($producto, 1);
+
+        $html = (string) StockPreview::paraLinea(
+            $producto->id, $this->sede->id, cantidad: 100, entra: true,
+        );
+
+        // Sin el bloque de estilos: ahi `sp-negativo` aparece siempre como
+        // regla CSS, y buscarlo en el HTML completo no prueba nada.
+        $tarjetas = preg_replace('/<style>.*/s', '', $html);
+
+        $this->assertStringNotContainsString('sp-negativo', $tarjetas);
+        $this->assertStringContainsString('101', $tarjetas);
+    }
+
+    /** La factura de compra tiene las mismas comodidades que la de venta. */
+    public function test_la_factura_de_compra_tiene_las_mismas_mejoras(): void
+    {
+        $fuente = file_get_contents(
+            app_path('Filament/App/Resources/PurchaseInvoiceResource.php')
+        );
+
+        $this->assertStringContainsString('createOptionModalHeading(\'Nuevo proveedor\')', $fuente,
+            'Sin esto hay que abandonar la factura para registrar al proveedor.');
+
+        $this->assertStringContainsString('createOptionModalHeading(\'Nuevo producto\')', $fuente);
+
+        $this->assertStringContainsString('StockPreview::paraLinea', $fuente,
+            'Falta ver cuanto stock queda al recibir la mercancia.');
+
+        $numericos = substr_count($fuente, '->numeric()');
+        $protegidos = substr_count($fuente, 'onwheel');
+
+        $this->assertSame($numericos, $protegidos,
+            "Hay {$numericos} campos numericos y solo {$protegidos} protegidos del scroll.");
+    }
+
+    /**
+     * Y tambien se puede guardar y avisa antes de salir.
+     *
+     * Registrar una compra exige caja abierta —es una regla de negocio que ya
+     * existia—, asi que la prueba abre una: sin ella la pantalla redirige y no
+     * se estaria midiendo nada.
+     */
+    public function test_la_pantalla_de_compra_guarda_y_avisa(): void
+    {
+        $this->abrirCaja();
+
+        $html = Livewire::test(CreatePurchaseInvoice::class)->assertOk()->html();
+
+        $this->assertStringContainsString('wire:submit="create"', $html,
+            'Sin el <form> el formulario no se envia a ninguna parte.');
+        $this->assertStringContainsString('type="submit"', $html,
+            'La pantalla quedo sin boton de guardar.');
+        $this->assertStringContainsString('Guardar borrador', $html);
+
+        $metodo = new \ReflectionMethod(CreatePurchaseInvoice::class, 'hasUnsavedDataChangesAlert');
+        $metodo->setAccessible(true);
+
+        $this->assertTrue($metodo->invoke(new CreatePurchaseInvoice));
+    }
+
     // --------------------------------------------------------- auxiliares
+
+    /** Deja una caja abierta mientras dure la prueba. */
+    private function abrirCaja(): void
+    {
+        $turno = CashRegisterSession::withoutGlobalScopes()->create([
+            'company_id' => $this->company->id,
+            'location_id' => $this->sede->id,
+            'cashier_user_id' => auth()->id(),
+            'status' => CashRegisterSession::STATUS_OPEN,
+            'opened_at' => now(),
+            'opening_amount' => 0,
+        ]);
+
+        $this->limpiar[] = fn () => DB::table('cash_register_sessions')
+            ->where('id', $turno->id)->delete();
+    }
 
     private function producto(bool $controlaInventario = true, string $unidad = 'unit'): Product
     {

@@ -4,8 +4,10 @@ namespace App\Filament\App\Resources\PurchaseInvoiceResource\Pages;
 
 use App\Filament\App\Resources\PurchaseInvoiceResource;
 use App\Models\Company;
+use App\Models\PurchaseInvoice;
 use App\Services\Purchases\PurchaseInvoiceNumberer;
 use App\Support\CashSessionGate;
+use Filament\Actions;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Support\Facades\Auth;
@@ -13,6 +15,55 @@ use Illuminate\Support\Facades\Auth;
 class CreatePurchaseInvoice extends CreateRecord
 {
     protected static string $resource = PurchaseInvoiceResource::class;
+
+    /**
+     * Vista propia solo para avisar antes de salir.
+     *
+     * Es una copia de la de Filament con el aviso agregado. Copiar solo el
+     * formulario y olvidar el `<form>` y los botones es exactamente lo que dejo
+     * la pantalla de ventas sin forma de guardar.
+     */
+    protected static string $view = 'filament.app.pages.create-purchase-invoice';
+
+    /**
+     * La factura nace en borrador, asi que «Crear» ya es guardar el progreso.
+     * Se renombra porque el boton no lo decia: quien no lo sabe cree que crear
+     * la factura es contabilizarla, y prefiere no tocarla hasta tenerla
+     * completa.
+     */
+    protected function getCreateFormAction(): Actions\Action
+    {
+        return parent::getCreateFormAction()
+            ->label('Guardar borrador')
+            ->icon('heroicon-o-bookmark-square');
+    }
+
+    protected function getCreateAnotherFormAction(): Actions\Action
+    {
+        return parent::getCreateAnotherFormAction()
+            ->label('Guardar y crear otra');
+    }
+
+    protected function getSubmitFormAction(): Actions\Action
+    {
+        return $this->getCreateFormAction();
+    }
+
+    protected function getCreatedNotificationTitle(): ?string
+    {
+        return 'Borrador guardado';
+    }
+
+    /**
+     * Preguntar antes de salir con la factura a medio armar.
+     *
+     * Es el guardian de Filament: compara un hash de los datos del formulario
+     * contra el que se guardo al montar, asi que sabe de verdad si algo cambio.
+     */
+    protected function hasUnsavedDataChangesAlert(): bool
+    {
+        return true;
+    }
 
     /**
      * Bloquea la creación de compras si el operador no tiene caja abierta.
@@ -30,6 +81,7 @@ class CreatePurchaseInvoice extends CreateRecord
                 ->send();
 
             $this->redirect(PurchaseInvoiceResource::getUrl('index'));
+
             return;
         }
 
@@ -41,7 +93,7 @@ class CreatePurchaseInvoice extends CreateRecord
         $session = CashSessionGate::requireOpenSession();
 
         $data['company_id'] = Auth::user()->company_id;
-        $data['kind'] = \App\Models\PurchaseInvoice::KIND_INVOICE;
+        $data['kind'] = PurchaseInvoice::KIND_INVOICE;
         $data['cash_register_session_id'] = $session->id;
         $data['created_by_user_id'] = Auth::id();
         $data['status'] = 'draft';
