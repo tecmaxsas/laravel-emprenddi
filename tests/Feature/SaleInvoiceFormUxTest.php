@@ -237,24 +237,49 @@ class SaleInvoiceFormUxTest extends TestCase
 
     // ---------------------------------------------- 5. salir sin perder
 
-    /** La pantalla avisa antes de irse con cambios sin guardar. */
+    /**
+     * La pantalla pregunta antes de irse con cambios sin guardar.
+     *
+     * Se usa el guardián de Filament, que compara un hash de los datos del
+     * formulario: sabe de verdad si algo cambió, a diferencia de una versión
+     * casera que marca «sucio» con cualquier tecla y pregunta también cuando el
+     * usuario escribió y borró.
+     */
     public function test_avisa_antes_de_salir_con_cambios_sin_guardar(): void
     {
+        $metodo = new \ReflectionMethod(CreateSaleInvoice::class, 'hasUnsavedDataChangesAlert');
+        $metodo->setAccessible(true);
+
+        $this->assertTrue($metodo->invoke(new CreateSaleInvoice),
+            'Sin esto, un clic en el menú se lleva veinte líneas ya digitadas.');
+
         $vista = file_get_contents(
             resource_path('views/filament/app/pages/create-sale-invoice.blade.php')
         );
 
-        $this->assertStringContainsString('beforeunload', $vista,
-            'Sin esto, un clic en el menú se lleva veinte líneas ya digitadas.');
-        $this->assertStringContainsString('sucio', $vista);
+        $this->assertStringContainsString('unsaved-data-changes-alert', $vista,
+            'La vista propia tiene que incluir el guardián de Filament.');
     }
 
-    /** Y el botón dice que guarda un borrador, porque eso es lo que hace. */
-    public function test_el_boton_dice_que_guarda_un_borrador(): void
+    /**
+     * La pantalla se puede guardar.
+     *
+     * No basta con buscar el texto del botón: al escribir una vista propia me
+     * dejé fuera el `<form>` y los botones, y la pantalla quedó sin forma de
+     * guardar. Se comprueba el formulario y el botón de envío, que es lo que de
+     * verdad falta cuando esto se rompe.
+     */
+    public function test_la_pantalla_tiene_boton_para_guardar(): void
     {
-        Livewire::test(CreateSaleInvoice::class)
-            ->assertOk()
-            ->assertSee('Guardar borrador');
+        $html = Livewire::test(CreateSaleInvoice::class)->assertOk()->html();
+
+        $this->assertStringContainsString('wire:submit="create"', $html,
+            'Sin el <form> el formulario no se envía a ninguna parte.');
+
+        $this->assertStringContainsString('type="submit"', $html,
+            'La pantalla quedó sin botón de guardar.');
+
+        $this->assertStringContainsString('Guardar borrador', $html);
     }
 
     /** La factura creada nace en borrador, no emitida. */

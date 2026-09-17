@@ -1,58 +1,52 @@
 {{--
-    Crear factura de venta, con guardián de salida.
+    Crear factura de venta.
 
-    Perder una factura de veinte líneas a medio digitar por un clic en el menú es
-    de las cosas que más tiempo cuestan, y no hay forma de recuperarla.
+    Es una copia de la vista de Filament (`resources/pages/create-record`) con un
+    solo agregado: el aviso visible de cambios sin guardar. Todo lo demas —el
+    `<form>`, los botones, el guardian de navegacion— va tal cual, porque
+    quitarlo es exactamente lo que dejo la pantalla sin boton de guardar.
 
-    El navegador **no permite** personalizar ese diálogo: por seguridad solo deja
-    mostrar el suyo, con su propio texto y sus botones de «Salir» / «Cancelar».
-    No se le puede meter un botón de «guardar borrador». Por eso el guardado va
-    aquí, visible en la pantalla, y el diálogo solo sirve para frenar la salida y
-    dar la oportunidad de usarlo.
+    El guardian es el de Filament, no uno propio: compara un hash de los datos
+    del formulario contra el que se guardo al montar, asi que sabe de verdad si
+    algo cambio. Una version casera que marca «sucio» con cualquier tecla
+    pregunta tambien cuando el usuario escribio y borro.
 --}}
-<x-filament-panels::page>
+<x-filament-panels::page
+    @class([
+        'fi-resource-create-record-page',
+        'fi-resource-'.str_replace('/', '-', $this->getResource()::getSlug()),
+    ])
+>
+    {{-- El aviso se dibuja aparte del formulario: adentro quedaria dentro del
+         <form> y cualquier cambio en su marcado afectaria al envio. --}}
     <div
-        x-data="{
-            sucio: false,
-
-            marcar() {
-                this.sucio = true;
-            },
-
-            limpiar() {
-                this.sucio = false;
-            },
-        }"
-        x-on:input="marcar()"
-        x-on:change="marcar()"
-        {{-- Al enviar el formulario ya no hay nada que perder. --}}
-        x-on:submit.window="limpiar()"
-        x-on:form-submitted.window="limpiar()"
-        x-init="
-            window.addEventListener('beforeunload', (e) => {
-                if (! sucio) return;
-
-                // El texto lo decide el navegador; asignar returnValue es lo
-                // unico que activa el dialogo.
-                e.preventDefault();
-                e.returnValue = '';
-            });
-        "
+        x-data="{ sucio: false }"
+        x-on:input.window="sucio = true"
+        x-on:form-submitted.window="sucio = false"
     >
-        <div
-            x-show="sucio"
-            x-cloak
-            class="csi-aviso"
-        >
+        <div x-show="sucio" x-cloak class="csi-aviso">
             <span class="csi-punto"></span>
             <span>
                 Tienes cambios sin guardar. Si sales ahora se pierden —
                 <strong>Guardar borrador</strong> los conserva y puedes seguir después.
             </span>
         </div>
-
-        {{ $this->form }}
     </div>
+
+    <x-filament-panels::form
+        id="form"
+        :wire:key="$this->getId().'.forms.'.$this->getFormStatePath()"
+        wire:submit="create"
+    >
+        {{ $this->form }}
+
+        <x-filament-panels::form.actions
+            :actions="$this->getCachedFormActions()"
+            :full-width="$this->hasFullWidthFormActions()"
+        />
+    </x-filament-panels::form>
+
+    <x-filament-panels::page.unsaved-data-changes-alert />
 
     <style>
         [x-cloak] { display: none !important; }

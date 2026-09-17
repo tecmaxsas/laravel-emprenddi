@@ -50,6 +50,22 @@ class CreateSaleInvoice extends CreateRecord
         return 'Borrador guardado';
     }
 
+    /**
+     * Preguntar antes de salir con la factura a medio armar.
+     *
+     * Es el guardian de Filament, no uno propio: compara un hash de los datos
+     * del formulario contra el que se guardo al montar la pantalla, asi que
+     * sabe de verdad si algo cambio. Una version casera que marca «sucio» con
+     * cualquier tecla pregunta tambien cuando el usuario escribio y borro.
+     *
+     * Se activa solo aqui y no en todo el panel: una factura de veinte lineas
+     * es lo que duele perder, no un formulario de tres campos.
+     */
+    protected function hasUnsavedDataChangesAlert(): bool
+    {
+        return true;
+    }
+
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         $companyId = (int) Auth::user()->company_id;
