@@ -109,7 +109,10 @@ class SalesByPeriodPage extends Page implements HasForms, HasTable
                     ->when($this->filters['seller_user_id'] ?? null, fn (Builder $q, $v) => $q->where('seller_user_id', $v))
                     ->with(['customer:id,name,document_number', 'location:id,name', 'seller:id,name']);
             })
-            ->defaultSort('date', 'desc')
+            ->defaultSort(fn (Builder $query) => $query
+                ->orderByDesc('date')
+                ->orderByDesc('number')
+                ->orderByDesc('id'))
             ->defaultPaginationPageOption(50)
             ->columns([
                 Tables\Columns\TextColumn::make('full_number')

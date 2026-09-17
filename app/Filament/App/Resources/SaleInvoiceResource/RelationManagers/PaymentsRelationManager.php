@@ -12,6 +12,7 @@ use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class PaymentsRelationManager extends RelationManager
 {
@@ -114,7 +115,12 @@ class PaymentsRelationManager extends RelationManager
     {
         return $table
             ->recordTitleAttribute('reference')
-            ->defaultSort('date', 'desc')
+            // `date` no lleva hora: sin desempate las filas del mismo dia salen
+            // en el orden que quiera la base. Aqui no hay consecutivo, asi que
+            // el `id` hace de orden de registro.
+            ->defaultSort(fn (Builder $query) => $query
+                ->orderByDesc('date')
+                ->orderByDesc('id'))
             ->columns([
                 Tables\Columns\TextColumn::make('date')->label('Fecha')->date('Y-m-d'),
                 Tables\Columns\TextColumn::make('amount')->label('Monto')->money('COP')->weight('semibold')->alignEnd(),

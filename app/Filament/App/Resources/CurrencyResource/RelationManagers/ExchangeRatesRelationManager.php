@@ -9,6 +9,7 @@ use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 
 class ExchangeRatesRelationManager extends RelationManager
@@ -55,7 +56,12 @@ class ExchangeRatesRelationManager extends RelationManager
     {
         return $table
             ->recordTitleAttribute('date')
-            ->defaultSort('date', 'desc')
+            // `date` no lleva hora: sin desempate las filas del mismo dia salen
+            // en el orden que quiera la base. Aqui no hay consecutivo, asi que
+            // el `id` hace de orden de registro.
+            ->defaultSort(fn (Builder $query) => $query
+                ->orderByDesc('date')
+                ->orderByDesc('id'))
             ->columns([
                 Tables\Columns\TextColumn::make('date')->label('Fecha')->date('Y-m-d')->sortable(),
                 Tables\Columns\TextColumn::make('rate')->label('Tasa')->numeric(decimalPlaces: 4)->alignEnd(),

@@ -537,7 +537,15 @@ class SaleInvoiceResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            ->defaultSort('date', 'desc')
+            // `date` es una fecha sin hora: sin desempate, dentro del mismo dia
+            // PostgreSQL devuelve las filas en el orden que quiera, y el listado
+            // sale con los consecutivos revueltos. El `id` cierra el empate
+            // cuando dos documentos comparten fecha y numero, que pasa con
+            // prefijos distintos.
+            ->defaultSort(fn (Builder $query) => $query
+                ->orderByDesc('date')
+                ->orderByDesc('number')
+                ->orderByDesc('id'))
             ->columns([
                 Tables\Columns\TextColumn::make('full_number')
                     ->label('Número')

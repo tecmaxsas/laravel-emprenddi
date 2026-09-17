@@ -325,7 +325,10 @@ class SupportDocumentResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            ->defaultSort('date', 'desc')
+            ->defaultSort(fn (Builder $query) => $query
+                ->orderByDesc('date')
+                ->orderByDesc('number')
+                ->orderByDesc('id'))
             ->columns([
                 Tables\Columns\TextColumn::make('full_number')
                     ->label('Número')

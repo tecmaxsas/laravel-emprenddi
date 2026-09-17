@@ -94,7 +94,13 @@ class JournalBookPage extends Page implements HasForms, HasTable
                 ->when($this->filters['to'] ?? null, fn (Builder $q, $d) => $q->whereDate('date', '<=', $d))
                 ->when($this->filters['type'] ?? null, fn (Builder $q, $t) => $q->where('type', $t))
                 ->with(['thirdParty']))
-            ->defaultSort('date')
+            // El libro diario se lee en orden cronologico, y dentro de un dia
+            // por consecutivo: sin desempate los asientos del mismo dia salen
+            // barajados y el libro deja de poder auditarse.
+            ->defaultSort(fn (Builder $query) => $query
+                ->orderBy('date')
+                ->orderBy('number')
+                ->orderBy('id'))
             ->columns([
                 Tables\Columns\TextColumn::make('date')->label('Fecha')->date('Y-m-d')->sortable(),
                 Tables\Columns\TextColumn::make('full_number')

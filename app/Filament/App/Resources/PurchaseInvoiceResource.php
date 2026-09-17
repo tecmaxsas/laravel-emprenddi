@@ -466,7 +466,13 @@ class PurchaseInvoiceResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            ->defaultSort('date', 'desc')
+            // `date` es una fecha sin hora: sin desempate, dentro del mismo dia
+            // la base devuelve las filas en el orden que quiera y el listado sale
+            // con los consecutivos revueltos.
+            ->defaultSort(fn (Builder $query) => $query
+                ->orderByDesc('date')
+                ->orderByDesc('number')
+                ->orderByDesc('id'))
             ->columns([
                 Tables\Columns\TextColumn::make('full_number')
                     ->label('Número')
