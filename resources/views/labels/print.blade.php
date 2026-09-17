@@ -140,11 +140,13 @@
             .label .location { font-weight: 600; }
             .label .location { font-style: normal; }
 
-            /* El codigo de barras, negro y sin suavizado: un borde difuminado
-               es lo que hace que el lector tenga que intentarlo tres veces. */
+            /* El codigo de barras, sin suavizado: un borde difuminado es lo que
+               hace que el lector tenga que intentarlo tres veces.
+               NO se le fuerza el color aqui. JsBarcode dibuja un rectangulo de
+               FONDO ademas de las barras, y pintar todos los `rect` de negro
+               tapaba el codigo entero con un bloque solido. El color va en las
+               opciones de JsBarcode, que sabe cual rectangulo es cual. */
             .label .barcode-wrap svg { shape-rendering: crispEdges; }
-            .label .barcode-wrap svg rect { fill: #000 !important; }
-            .label .barcode-wrap svg text { fill: #000 !important; font-weight: 700; }
 
             @if ($mode === 'sheet')
                 .sheet { box-shadow: none; padding: 0; margin: 0; max-width: none; }

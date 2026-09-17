@@ -197,6 +197,28 @@ class LabelSizePresetsTest extends TestCase
     }
 
     /**
+     * El color del código no se fuerza desde el CSS.
+     *
+     * JsBarcode dibuja un rectángulo de **fondo** además de las barras. Una
+     * regla que pinte todos los `rect` de negro tapa el código entero con un
+     * bloque sólido — y eso fue exactamente lo que pasó al intentar oscurecer la
+     * impresión: el código desapareció y salió un cuadro negro.
+     *
+     * El color va en las opciones de JsBarcode, que sí sabe cuál rectángulo es
+     * cuál.
+     */
+    public function test_el_css_no_pinta_el_fondo_del_codigo(): void
+    {
+        $vista = file_get_contents(resource_path('views/labels/print.blade.php'));
+
+        $this->assertDoesNotMatchRegularExpression(
+            '/barcode-wrap svg rect\s*\{[^}]*fill/',
+            $vista,
+            'Pintar todos los `rect` tapa el código de barras con un bloque negro.',
+        );
+    }
+
+    /**
      * Ningún texto de la etiqueta baja de 7pt.
      *
      * A 203 dpi —lo normal en estas impresoras— 6pt son unos diecisiete
