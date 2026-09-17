@@ -98,6 +98,8 @@ class Settings extends Page implements HasForms
             'labels_width_mm' => (int) data_get($settings, 'labels.width_mm', 50),
             'labels_height_mm' => (int) data_get($settings, 'labels.height_mm', 30),
             'labels_show_currency_symbol' => (bool) data_get($settings, 'labels.show_currency_symbol', true),
+            'labels_roll_across' => (int) data_get($settings, 'labels.roll_across', 1),
+            'labels_roll_gap_mm' => (int) data_get($settings, 'labels.roll_gap_mm', 0),
 
             // POS settings (settings.pos.*)
             'pos_default_invoice_kind' => (string) data_get($settings, 'pos.default_invoice_kind', 'pos'),
@@ -434,6 +436,40 @@ class Settings extends Page implements HasForms
                                 ))
                                 ->helperText('Tamaños comunes térmica: 20, 25, 30, 40, 50.'),
 
+                            // Los rollos no vienen siempre de una sola columna.
+                            // El de 50 × 25 se consigue mucho en presentacion
+                            // de dos a lo ancho, y mandando una etiqueta por
+                            // pagina sale la de la izquierda y la de la derecha
+                            // en blanco: se bota la mitad del rollo.
+                            Forms\Components\TextInput::make('labels_roll_across')
+                                ->label('Etiquetas a lo ancho del rollo')
+                                ->numeric()->minValue(1)->maxValue(4)->default(1)
+                                ->live(onBlur: true)
+                                ->visible(fn (Forms\Get $get) => $get('labels_print_mode') === 'roll')
+                                ->helperText('Mira el rollo: si trae dos etiquetas una al lado de la otra, pon 2. La mayoría trae 1.'),
+
+                            Forms\Components\TextInput::make('labels_roll_gap_mm')
+                                ->label('Separación entre etiquetas (mm)')
+                                ->numeric()->minValue(0)->maxValue(20)->default(0)
+                                ->visible(fn (Forms\Get $get) => $get('labels_print_mode') === 'roll'
+                                    && (int) $get('labels_roll_across') > 1)
+                                ->helperText('El espacio troquelado que queda entre una etiqueta y la de al lado. Si no estás seguro, mídelo con una regla.'),
+
+                            Forms\Components\Placeholder::make('roll_width_hint')
+                                ->label('')
+                                ->columnSpanFull()
+                                ->visible(fn (Forms\Get $get) => $get('labels_print_mode') === 'roll'
+                                    && (int) $get('labels_roll_across') > 1)
+                                ->content(fn (Forms\Get $get) => new HtmlString(
+                                    '<div style="font-size:13px;color:#334155;">El papel tiene que medir <strong>'
+                                    .LabelsSettings::anchoDePagina(
+                                        (int) $get('labels_width_mm'),
+                                        (int) $get('labels_roll_across'),
+                                        (int) $get('labels_roll_gap_mm'),
+                                    )
+                                    .' mm de ancho</strong> en el driver de la impresora — el rollo completo, no una etiqueta sola.</div>'
+                                )),
+
                             Forms\Components\Toggle::make('labels_show_currency_symbol')
                                 ->label('Mostrar símbolo $ en el precio')
                                 ->default(true)
@@ -595,6 +631,15 @@ class Settings extends Page implements HasForms
             'width_mm' => max(20, min(250, (int) ($state['labels_width_mm'] ?? 50))),
             'height_mm' => max(10, min(200, (int) ($state['labels_height_mm'] ?? 30))),
             'show_currency_symbol' => (bool) ($state['labels_show_currency_symbol'] ?? true),
+            // Solo tiene sentido en rollo. En hoja el numero por fila ya lo
+            // define columns_per_sheet y tener dos valores para lo mismo es
+            // como se desincronizan las cosas.
+            'roll_across' => $labelsPrintMode === 'roll'
+                ? max(1, min(4, (int) ($state['labels_roll_across'] ?? 1)))
+                : 1,
+            'roll_gap_mm' => $labelsPrintMode === 'roll'
+                ? max(0, min(20, (int) ($state['labels_roll_gap_mm'] ?? 0)))
+                : 0,
         ]);
 
         $settings['discounts'] = array_merge($settings['discounts'] ?? [], [

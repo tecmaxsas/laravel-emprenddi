@@ -8,6 +8,15 @@
     $mode = $config['print_mode'] ?? 'sheet'; // sheet | roll
     $currency = $company->currency ?? 'COP';
 
+    // Cuantas etiquetas trae el rollo una al lado de la otra. El de 50 × 25 se
+    // consigue mucho de dos a lo ancho; mandando una etiqueta por pagina salia
+    // la de la izquierda y la de la derecha en blanco.
+    $across = $mode === 'roll' ? max(1, (int) ($config['roll_across'] ?? 1)) : 1;
+    $gap = $mode === 'roll' ? max(0, (int) ($config['roll_gap_mm'] ?? 0)) : 0;
+
+    // La pagina en modo rollo no mide una etiqueta: mide el rollo entero.
+    $pageW = \App\Support\LabelsSettings::anchoDePagina($w, $across, $gap);
+
     // Expandir cada item en $qty etiquetas identicas
     $labels = [];
     foreach ($items as $entry) {
@@ -28,9 +37,41 @@
         return $showCurrency ? '$ '.$formatted : $formatted;
     };
 
-    // Barcode height: mas espacio en rollo, mas compacto en hoja
-    $barcodeHeight = $mode === 'roll' ? max(28, min(60, (int) ($h * 0.5))) : 28;
+    // Alto del codigo de barras.
+    //
+    // Antes se calculaba como `$h * 0.5` tratando los milimetros como si
+    // fueran pixeles: en una etiqueta de 50 mm de alto daba 25 px, que sobre
+    // una pagina de 189 px son 7 mm. De ahi que la etiqueta saliera con el
+    // codigo minusculo y media etiqueta en blanco.
+    // 1 mm = 3.7795 px, y el codigo se lleva el 35% del alto util.
+    $altoPx = $h * 3.7795;
+    $barcodeHeight = $mode === 'roll'
+        ? max(30, min(220, (int) round($altoPx * 0.35)))
+        : 28;
     $barcodeWidth = $mode === 'roll' ? 1.6 : 1.2;
+    $barcodeFont = $mode === 'roll' ? max(10, min(20, (int) round($altoPx * 0.07))) : 10;
+
+    // Lo que NO se va a poder imprimir. Una etiqueta a la que le falta el
+    // codigo de barras es una etiqueta inservible, y hasta ahora salia el
+    // hueco en blanco sin explicacion.
+    $sinCodigo = 0;
+    $sinPrecio = 0;
+    foreach ($labels as $l) {
+        if (in_array('barcode', $fields, true) && trim((string) $l['barcode_value']) === '') {
+            $sinCodigo++;
+        }
+        // La columna es NOT NULL, asi que un producto sin precio cargado no
+        // llega en null: llega en cero. Una etiqueta de estante que diga «$ 0»
+        // es peor que una que avise.
+        if (in_array('price', $fields, true) && (float) ($l['product']->default_sale_price ?? 0) <= 0) {
+            $sinPrecio++;
+        }
+    }
+    $hayFaltantes = $sinCodigo > 0 || $sinPrecio > 0;
+
+    // En rollo las etiquetas se agrupan en filas del ancho del rollo; cada fila
+    // es una pagina. En hoja la grilla CSS ya se encarga.
+    $filas = $mode === 'roll' ? array_chunk($labels, $across, true) : [$labels];
 @endphp
 <!DOCTYPE html>
 <html lang="es">
@@ -76,8 +117,14 @@
         @else
         /* ============ MODO ROLL (impresora térmica) ============ */
             .sheet {
-                max-width: {{ $w * 3 }}mm; margin: 0 auto; background: transparent;
+                max-width: {{ max($pageW, 60) * 3 }}mm; margin: 0 auto; background: transparent;
                 display: flex; flex-direction: column; gap: 8px;
+            }
+            /* Una fila = el ancho del rollo = una página. */
+            .fila {
+                display: flex; justify-content: flex-start; align-items: flex-start;
+                width: {{ $pageW }}mm; margin: 0 auto;
+                gap: {{ $gap }}mm;
             }
         @endif
 
@@ -106,6 +153,24 @@
         .label .barcode-wrap svg { max-width: 100%; height: auto; }
         .label .location { font-size: 7pt; color: #475569; text-align: center; font-style: italic; }
 
+        /* Un dato que falta se dice, no se deja en blanco: quien pega la
+           etiqueta tiene que enterarse de que ese producto esta incompleto. */
+        .label .falta {
+            font-size: 7pt; text-align: center; color: #b91c1c;
+            border: 1px dashed currentColor; border-radius: 3px; padding: 1mm 0;
+        }
+
+        .toolbar .aviso {
+            background: #fef2f2; color: #7f1d1d; border-color: #dc2626;
+        }
+        .toolbar details { margin-top: 6px; font-size: 11.5px; color: #334155; }
+        .toolbar details summary { cursor: pointer; font-weight: 700; }
+        .toolbar details table { border-collapse: collapse; margin-top: 6px; background: #fff; }
+        .toolbar details th, .toolbar details td {
+            border: 1px solid #e2e8f0; padding: 3px 8px; text-align: left; font-size: 11px;
+        }
+        .toolbar details td.vacio { color: #b91c1c; font-weight: 700; }
+
         @media print {
             body { background: #fff; padding: 0; }
             .toolbar { display: none; }
@@ -129,6 +194,7 @@
             .label .meta,
             .label .code,
             .label .price,
+            .label .falta,
             .label .location { color: #000 !important; }
 
             /* Mas cuerpo. A 203 dpi —lo normal en estas impresoras— un trazo
@@ -152,21 +218,28 @@
                 .sheet { box-shadow: none; padding: 0; margin: 0; max-width: none; }
                 @page { size: A4; margin: 5mm; }
             @else
-                /* MODO ROLL: cada etiqueta es UNA pagina con dimensiones
-                   exactas y margen 0. El driver de la impresora termica
-                   ya define el ancho del rollo — asi 1 etiqueta = 1 page
-                   sin corte ni escala. */
-                @page { size: {{ $w }}mm {{ $h }}mm; margin: 0; }
-                html, body { width: {{ $w }}mm; }
+                /* MODO ROLL: una FILA del rollo es una pagina, con margen 0.
+                   Normalmente la fila es una sola etiqueta, pero hay rollos
+                   que traen 2 —o mas— a lo ancho: ahi la pagina mide el rollo
+                   entero y el corte avanza una fila, no una etiqueta. */
+                @page { size: {{ $pageW }}mm {{ $h }}mm; margin: 0; }
+                html, body { width: {{ $pageW }}mm; }
                 .sheet { display: block; max-width: none; margin: 0; padding: 0; gap: 0; }
-                .label {
+                .fila {
                     page-break-after: always;
                     break-after: page;
                     margin: 0;
+                    width: {{ $pageW }}mm;
+                    height: {{ $h }}mm;
+                    gap: {{ $gap }}mm;
+                }
+                .fila:last-child { page-break-after: auto; break-after: auto; }
+                .label {
+                    margin: 0;
                     width: {{ $w }}mm;
                     height: {{ $h }}mm;
+                    flex: 0 0 {{ $w }}mm;
                 }
-                .label:last-child { page-break-after: auto; break-after: auto; }
             @endif
         }
     </style>
@@ -175,20 +248,69 @@
     <div class="toolbar">
         <div>
             <h1>🏷️ Etiquetas listas para imprimir <span class="mode-badge">{{ $mode === 'roll' ? 'ROLLO' : 'HOJA A4' }}</span></h1>
-            <div class="info">{{ count($labels) }} etiqueta(s) · {{ $w }}×{{ $h }} mm · {{ $mode === 'sheet' ? "{$cols} por fila" : '1 por página' }} · {{ $barcodeType }}</div>
+            <div class="info">{{ count($labels) }} etiqueta(s) · {{ $w }}×{{ $h }} mm · {{ $mode === 'sheet' ? "{$cols} por fila" : "{$across} por fila del rollo" }} · {{ $barcodeType }}</div>
             @if ($mode === 'roll')
                 <div class="tip" style="margin-top:6px;">
                     <strong>💡 Modo Rollo:</strong> en el diálogo de impresión selecciona tu impresora de etiquetas
                     (Zebra, Brother QL, etc.), <strong>NO cambies el tamaño ni los márgenes</strong>,
-                    y desactiva "Ajustar a página" / "Fit to page". Cada etiqueta se envía como una página de {{ $w }}×{{ $h }} mm.
+                    y desactiva "Ajustar a página" / "Fit to page".
+                    @if ($across > 1)
+                        Tu rollo trae <strong>{{ $across }} etiquetas a lo ancho</strong>, así que cada página
+                        es una <strong>fila completa de {{ $pageW }}×{{ $h }} mm</strong> — ese es el tamaño de papel
+                        que tiene que estar definido en el driver, no {{ $w }}×{{ $h }}.
+                    @else
+                        Cada etiqueta se envía como una página de {{ $w }}×{{ $h }} mm.
+                    @endif
                 </div>
             @endif
+
+            @if ($hayFaltantes)
+                <div class="tip aviso" style="margin-top:6px;">
+                    <strong>⚠️ Hay datos que no se van a poder imprimir.</strong>
+                    @if ($sinCodigo)
+                        {{ $sinCodigo }} etiqueta(s) sin código de barras —el producto no tiene ni código de barras ni SKU—.
+                    @endif
+                    @if ($sinPrecio)
+                        {{ $sinPrecio }} etiqueta(s) sin precio —el producto no tiene precio de venta cargado—.
+                    @endif
+                    Complétalo en la ficha del producto y vuelve a imprimir.
+                    <em>No se abrió el diálogo de impresión solo: revisa y dale a Imprimir cuando quieras.</em>
+                </div>
+            @endif
+
+            {{-- Que se pueda ver exactamente con que datos se armo cada
+                 etiqueta. Un hueco en blanco no dice nada; esta tabla si. --}}
+            <details>
+                <summary>Ver los datos con que se arma cada etiqueta</summary>
+                <div style="margin-top:4px;">
+                    Campos activos: <strong>{{ implode(', ', array_map(fn ($f) => \App\Support\LabelsSettings::AVAILABLE_FIELDS[$f] ?? $f, $fields)) ?: '(ninguno)' }}</strong>
+                </div>
+                <table>
+                    <tr><th>#</th><th>Producto</th><th>SKU</th><th>Código de barras</th><th>Precio</th></tr>
+                    @foreach (array_slice($labels, 0, 10) as $i => $l)
+                        @php $lp = $l['product']; @endphp
+                        <tr>
+                            <td>{{ $i + 1 }}</td>
+                            <td>{{ $lp->name }}</td>
+                            <td class="{{ ($lp->code ?? '') === '' ? 'vacio' : '' }}">{{ $lp->code ?: 'vacío' }}</td>
+                            <td class="{{ trim((string) $l['barcode_value']) === '' ? 'vacio' : '' }}">{{ $l['barcode_value'] ?: 'vacío' }}</td>
+                            <td class="{{ (float) ($lp->default_sale_price ?? 0) <= 0 ? 'vacio' : '' }}">{{ (float) ($lp->default_sale_price ?? 0) <= 0 ? 'sin precio' : $fmtPrice($lp->default_sale_price) }}</td>
+                        </tr>
+                    @endforeach
+                </table>
+                @if (count($labels) > 10)
+                    <div style="margin-top:4px;">… y {{ count($labels) - 10 }} más.</div>
+                @endif
+                <div id="bc-estado" style="margin-top:6px;"></div>
+            </details>
         </div>
         <button onclick="window.print()">🖨️ Imprimir</button>
     </div>
 
     <div class="sheet">
-        @foreach ($labels as $idx => $label)
+        @foreach ($filas as $fila)
+        @if ($mode === 'roll') <div class="fila"> @endif
+        @foreach ($fila as $idx => $label)
             @php $p = $label['product']; @endphp
             <div class="label">
                 @if (in_array('company_name', $fields, true))
@@ -212,19 +334,29 @@
                 @endif
 
                 @if (in_array('barcode', $fields, true))
-                    <div class="barcode-wrap">
-                        <svg id="bc-{{ $idx }}" data-value="{{ $label['barcode_value'] }}"></svg>
-                    </div>
+                    @if (trim((string) $label['barcode_value']) !== '')
+                        <div class="barcode-wrap">
+                            <svg id="bc-{{ $idx }}" data-value="{{ $label['barcode_value'] }}"></svg>
+                        </div>
+                    @else
+                        <div class="falta">Este producto no tiene código de barras ni SKU</div>
+                    @endif
                 @endif
 
                 @if (in_array('price', $fields, true))
-                    <div class="price">{{ $fmtPrice($p->default_sale_price) }}</div>
+                    @if ((float) ($p->default_sale_price ?? 0) > 0)
+                        <div class="price">{{ $fmtPrice($p->default_sale_price) }}</div>
+                    @else
+                        <div class="falta">Este producto no tiene precio de venta</div>
+                    @endif
                 @endif
 
                 @if (in_array('location', $fields, true))
                     <div class="location">{{ $p->physical_location ?? '' }}</div>
                 @endif
             </div>
+        @endforeach
+        @if ($mode === 'roll') </div> @endif
         @endforeach
     </div>
 
@@ -233,16 +365,34 @@
             const type = @json($barcodeType);
             const height = {{ $barcodeHeight }};
             const width = {{ $barcodeWidth }};
-            document.querySelectorAll('.barcode-wrap svg').forEach(function (svg) {
+            const estado = document.getElementById('bc-estado');
+            const svgs = document.querySelectorAll('.barcode-wrap svg');
+            let fallaron = 0;
+
+            // JsBarcode viene de un CDN. Si la tienda esta sin internet o la red
+            // lo bloquea, antes salia la etiqueta con el hueco en blanco y nadie
+            // se enteraba hasta despues de pegarla en la mercancia.
+            if (svgs.length && typeof JsBarcode === 'undefined') {
+                svgs.forEach(function (svg) {
+                    svg.outerHTML = '<div class="falta">No se pudo cargar el generador de códigos de barras (sin conexión)</div>';
+                });
+                if (estado) {
+                    estado.innerHTML = '<strong style="color:#b91c1c;">JsBarcode no cargó.</strong> '
+                        + 'El navegador no pudo bajar la librería del código de barras. '
+                        + 'Revisa la conexión a internet de este equipo.';
+                }
+                return; // sin auto-print: no se imprimen etiquetas sin codigo
+            }
+
+            svgs.forEach(function (svg) {
                 const value = svg.dataset.value || '';
-                if (!value) return;
                 try {
                     JsBarcode(svg, value, {
                         format: type,
                         width: width,
                         height: height,
                         displayValue: true,
-                        fontSize: 10,
+                        fontSize: {{ $barcodeFont }},
                         margin: 0,
                         // Explicito y no por defecto: una barra gris la termica
                         // la aproxima con puntos y el lector falla.
@@ -250,9 +400,25 @@
                         background: '#ffffff',
                     });
                 } catch (e) {
-                    svg.outerHTML = '<span style="font-size:8pt;color:#dc2626;">Código inválido: ' + value + '</span>';
+                    fallaron++;
+                    // El formato exige algo que el valor no cumple —EAN-13 pide
+                    // 12 digitos, por ejemplo— y hay que decir cual es cual.
+                    svg.outerHTML = '<div class="falta">«' + value + '» no es un '
+                        + type + ' válido</div>';
                 }
             });
+
+            if (estado) {
+                estado.innerHTML = fallaron
+                    ? '<strong style="color:#b91c1c;">' + fallaron + ' código(s) rechazados por el formato ' + type + '.</strong> '
+                      + 'CODE128 acepta cualquier texto; EAN-13 exige exactamente 12 dígitos.'
+                    : svgs.length + ' código(s) de barras generados en formato ' + type + '.';
+            }
+
+            // Si hay algo que no se pudo imprimir, no se abre el dialogo solo:
+            // que el usuario lo vea antes de gastar rollo.
+            if (fallaron || {{ $hayFaltantes ? 'true' : 'false' }}) return;
+
             // Auto-print 500ms tras cargar (da tiempo a JsBarcode)
             setTimeout(function () { window.print(); }, 500);
         })();

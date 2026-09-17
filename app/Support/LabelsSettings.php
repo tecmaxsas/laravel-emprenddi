@@ -124,7 +124,33 @@ class LabelsSettings
             'columns_per_sheet' => (int) data_get($settings, 'labels.columns_per_sheet', 3),
             'show_currency_symbol' => (bool) data_get($settings, 'labels.show_currency_symbol', true),
             'print_mode' => (string) data_get($settings, 'labels.print_mode', 'sheet'),
+            'roll_across' => max(1, min(4, (int) data_get($settings, 'labels.roll_across', 1))),
+            'roll_gap_mm' => max(0, min(20, (int) data_get($settings, 'labels.roll_gap_mm', 0))),
         ];
+    }
+
+    /**
+     * Cuántas etiquetas trae el rollo una al lado de la otra.
+     *
+     * Los rollos no vienen siempre de una sola columna: los de 50 × 25 se
+     * consiguen mucho en presentación de dos a lo ancho. Mandando una etiqueta
+     * por página se imprime la de la izquierda y la de la derecha sale en
+     * blanco — se desperdicia la mitad del rollo.
+     */
+    public static function rollAcross(?Company $company = null): int
+    {
+        return self::config($company)['roll_across'];
+    }
+
+    /**
+     * El ancho de la página en modo rollo.
+     *
+     * No es el ancho de una etiqueta: es el del rollo completo, que son N
+     * etiquetas más la separación troquelada entre ellas.
+     */
+    public static function anchoDePagina(int $ancho, int $across, int $separacion): int
+    {
+        return $ancho * $across + $separacion * max(0, $across - 1);
     }
 
     public static function fields(?Company $company = null): array

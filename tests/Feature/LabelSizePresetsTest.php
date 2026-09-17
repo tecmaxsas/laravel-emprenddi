@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\User;
 use App\Support\CurrentCompany;
 use App\Support\LabelsSettings;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
@@ -219,6 +220,187 @@ class LabelSizePresetsTest extends TestCase
     }
 
     /**
+     * El código de barras ocupa una parte real de la etiqueta.
+     *
+     * El alto se calculaba como `alto_mm * 0.5` tratando los milímetros como
+     * si fueran píxeles: en una etiqueta de 50 mm daba 25 px, que sobre una
+     * página de 189 px son 7 mm. Salía un código diminuto con media etiqueta
+     * en blanco.
+     */
+    public function test_el_codigo_de_barras_ocupa_la_etiqueta(): void
+    {
+        $this->configurar(['print_mode' => 'roll', 'width_mm' => 100, 'height_mm' => 50]);
+
+        $html = $this->imprimir();
+
+        preg_match('/const height = (\d+);/', $html, $m);
+
+        $this->assertNotEmpty($m, 'No se encontró el alto del código de barras.');
+
+        // 50 mm son ~189 px; el codigo se lleva el 35%.
+        $this->assertGreaterThanOrEqual(50, (int) $m[1],
+            'Con 25 px sobre una página de 189 px el código sale minúsculo.');
+    }
+
+    /** Y en una etiqueta pequeña no se desborda. */
+    public function test_en_la_etiqueta_chica_el_codigo_no_se_desborda(): void
+    {
+        $this->configurar(['print_mode' => 'roll', 'width_mm' => 50, 'height_mm' => 25]);
+
+        $html = $this->imprimir();
+
+        preg_match('/const height = (\d+);/', $html, $m);
+
+        // 25 mm son ~94 px: el codigo no puede pedir mas que la etiqueta.
+        $this->assertLessThan(94, (int) $m[1],
+            'Un código más alto que la etiqueta se corta.');
+    }
+
+    // ------------------------------------------- rollos de varias columnas
+
+    /**
+     * Un rollo de dos etiquetas a lo ancho imprime las dos.
+     *
+     * El de 50 × 25 se consigue mucho en presentación de dos columnas.
+     * Mandando una etiqueta por página salía la de la izquierda impresa y la de
+     * la derecha en blanco: se botaba la mitad del rollo y no había manera de
+     * configurarlo.
+     */
+    public function test_el_rollo_de_dos_columnas_usa_las_dos(): void
+    {
+        $this->configurar([
+            'print_mode' => 'roll', 'width_mm' => 50, 'height_mm' => 25,
+            'roll_across' => 2, 'roll_gap_mm' => 2,
+        ]);
+
+        $html = $this->imprimir();
+
+        // 50 + 2 + 50 = 102 mm de rollo, no 50.
+        $this->assertStringContainsString('@page { size: 102mm 25mm; margin: 0; }', $html,
+            'La página en rollo mide la FILA, no una etiqueta.');
+    }
+
+    /** El salto de página es por fila, no por etiqueta. */
+    public function test_el_salto_de_pagina_es_por_fila(): void
+    {
+        $this->configurar([
+            'print_mode' => 'roll', 'width_mm' => 50, 'height_mm' => 25,
+            'roll_across' => 2, 'roll_gap_mm' => 0,
+        ]);
+
+        $html = $this->imprimir();
+
+        $this->assertMatchesRegularExpression('/\.fila \{[^}]*page-break-after: always/', $html,
+            'Si cada etiqueta salta de página, la de la derecha nunca se usa.');
+    }
+
+    /** Un rollo normal de una columna sigue igual que siempre. */
+    public function test_el_rollo_de_una_columna_no_cambia(): void
+    {
+        $this->configurar([
+            'print_mode' => 'roll', 'width_mm' => 50, 'height_mm' => 25,
+            'roll_across' => 1,
+        ]);
+
+        $this->assertStringContainsString('@page { size: 50mm 25mm; margin: 0; }', $this->imprimir(),
+            'La mayoría de los rollos son de una sola columna y no se pueden romper.');
+    }
+
+    /** El ancho de la fila cuenta la separación troquelada. */
+    public function test_el_ancho_de_la_fila_cuenta_la_separacion(): void
+    {
+        $this->assertSame(50, LabelsSettings::anchoDePagina(50, 1, 3),
+            'Con una sola columna no hay separación que contar.');
+        $this->assertSame(102, LabelsSettings::anchoDePagina(50, 2, 2));
+        $this->assertSame(156, LabelsSettings::anchoDePagina(50, 3, 3));
+    }
+
+    /** En modo hoja el ajuste del rollo no aplica. */
+    public function test_en_modo_hoja_el_ajuste_del_rollo_no_aplica(): void
+    {
+        $this->configurar([
+            'print_mode' => 'sheet', 'width_mm' => 50, 'height_mm' => 25,
+            'roll_across' => 2,
+        ]);
+
+        $html = $this->imprimir();
+
+        $this->assertStringContainsString('@page { size: A4;', $html);
+        $this->assertStringNotContainsString('class="fila"', $html,
+            'La grilla de la hoja ya reparte las etiquetas por fila.');
+    }
+
+    // ------------------------------------------- lo que falta se dice
+
+    /**
+     * Un producto sin precio lo dice, no imprime «$ 0».
+     *
+     * La columna `default_sale_price` es NOT NULL, así que un producto sin
+     * precio cargado no llega en null: llega en cero. Una etiqueta de estante
+     * que diga «$ 0» se pega igual y el problema aparece en la caja.
+     */
+    public function test_un_producto_sin_precio_lo_dice(): void
+    {
+        $this->configurar([
+            'print_mode' => 'roll', 'width_mm' => 100, 'height_mm' => 50,
+            'fields' => ['name', 'code', 'barcode', 'price'],
+        ]);
+
+        $producto = $this->productoSinPrecio();
+
+        $html = $this->get(route('labels.print', ['products' => $producto->id.':1']))
+            ->assertOk()->getContent();
+
+        $this->assertStringContainsString('no tiene precio de venta', $html,
+            'Un hueco en blanco no le dice al usuario qué arreglar.');
+    }
+
+    /** Y el aviso frena la impresión automática. */
+    public function test_con_datos_faltantes_no_se_imprime_solo(): void
+    {
+        $this->configurar([
+            'print_mode' => 'roll', 'width_mm' => 100, 'height_mm' => 50,
+            'fields' => ['name', 'code', 'barcode', 'price'],
+        ]);
+
+        $producto = $this->productoSinPrecio();
+
+        $html = $this->get(route('labels.print', ['products' => $producto->id.':1']))
+            ->assertOk()->getContent();
+
+        $this->assertMatchesRegularExpression('/if \(fallaron \|\| true\) return;/', $html,
+            'Imprimir solo etiquetas incompletas gasta el rollo del cliente.');
+    }
+
+    /** Con todo completo sí se imprime solo, como siempre. */
+    public function test_con_todo_completo_sigue_imprimiendo_solo(): void
+    {
+        $this->configurar(['print_mode' => 'roll', 'width_mm' => 100, 'height_mm' => 50]);
+
+        $html = $this->get(route('labels.print', ['preview' => 1]))
+            ->assertOk()->getContent();
+
+        $this->assertStringContainsString('if (fallaron || false) return;', $html);
+        $this->assertStringContainsString('window.print()', $html);
+    }
+
+    /**
+     * Si JsBarcode no carga, la etiqueta lo dice.
+     *
+     * Viene de un CDN. Una tienda sin internet imprimía el rollo entero con el
+     * hueco en blanco y se enteraba al pasar el lector.
+     */
+    public function test_si_no_carga_jsbarcode_la_etiqueta_lo_dice(): void
+    {
+        $this->configurar(['print_mode' => 'roll', 'width_mm' => 100, 'height_mm' => 50]);
+
+        $html = $this->imprimir();
+
+        $this->assertStringContainsString("typeof JsBarcode === 'undefined'", $html);
+        $this->assertStringContainsString('No se pudo cargar el generador', $html);
+    }
+
+    /**
      * Ningún texto de la etiqueta baja de 7pt.
      *
      * A 203 dpi —lo normal en estas impresoras— 6pt son unos diecisiete
@@ -252,6 +434,22 @@ class LabelSizePresetsTest extends TestCase
             : route('labels.print', ['preview' => 1]);
 
         return $this->get($ruta)->assertOk()->getContent();
+    }
+
+    /** Un producto de la empresa sin precio de venta, creado para la prueba. */
+    private function productoSinPrecio(): Product
+    {
+        $producto = Product::withoutGlobalScopes()->create([
+            'company_id' => $this->company->id,
+            'code' => 'ZZ-SIN-PRECIO',
+            'name' => 'ZZ producto sin precio',
+            'default_sale_price' => 0,
+            'active' => true,
+        ]);
+
+        $this->limpiar[] = fn () => DB::table('products')->where('id', $producto->id)->delete();
+
+        return $producto;
     }
 
     /** @param  array<string, mixed>  $labels */
