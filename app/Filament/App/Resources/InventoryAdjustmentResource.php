@@ -9,6 +9,7 @@ use App\Models\InventoryAdjustment;
 use App\Models\Location;
 use App\Models\Product;
 use App\Services\Inventory\InventoryEngine;
+use App\Support\ModuleGate;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -93,7 +94,12 @@ class InventoryAdjustmentResource extends Resource
 
                     Forms\Components\Select::make('counterpart_account_id')
                         ->label('Cuenta contraparte')
-                        ->required()
+                        // Una empresa sin contabilidad no lleva libros: preguntarle
+                        // contra que cuenta del PUC va una merma no significa nada.
+                        // El asiento se genera igual y la cuenta se resuelve por
+                        // debajo — ver CreateInventoryAdjustment.
+                        ->visible(fn () => ModuleGate::active(ModuleGate::ACCOUNTING))
+                        ->required(fn () => ModuleGate::active(ModuleGate::ACCOUNTING))
                         ->searchable()
                         ->live()
                         ->helperText(fn (Forms\Get $get) => $get('direction') === 'in'

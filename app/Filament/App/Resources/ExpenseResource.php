@@ -10,6 +10,7 @@ use App\Models\Expense;
 use App\Models\Location;
 use App\Models\Tax;
 use App\Models\ThirdParty;
+use App\Support\ModuleGate;
 use App\Support\PaymentMethodOptions;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -121,6 +122,11 @@ class ExpenseResource extends Resource
 
             Forms\Components\Section::make('Imputación contable')
                 ->description('Cuenta donde se registra el gasto (DR) y la cuenta de donde sale el dinero (CR).')
+                // Una empresa sin contabilidad no lleva libros ni tiene contador:
+                // preguntarle en que cuenta del PUC va el arriendo no significa
+                // nada para ella. El asiento se genera igual y las cuentas se
+                // resuelven por debajo — ver CreateExpense.
+                ->visible(fn () => ModuleGate::active(ModuleGate::ACCOUNTING))
                 ->columns(2)
                 ->schema([
                     Forms\Components\Select::make('expense_account_id')
