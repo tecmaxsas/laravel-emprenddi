@@ -40,13 +40,51 @@ class LabelsSettings
         'ITF14' => 'ITF-14 (cajas / GTIN)',
     ];
 
+    /**
+     * Tamaños de rollo que se consiguen en el mercado colombiano.
+     *
+     * Están para que nadie tenga que medir su etiqueta con una regla ni
+     * adivinar los milímetros: se elige el rollo que compró y los campos se
+     * llenan solos. «Personalizado» queda para los raros.
+     *
+     * El orden va del más usado al menos: 50 × 25 es el de precio de estante y
+     * 100 × 50 el de caja y despacho, que son los dos que aparecen en casi
+     * todas las papelerías.
+     */
     public const SIZE_PRESETS = [
-        '50x30' => '50 × 30 mm (estándar de estante)',
-        '40x20' => '40 × 20 mm (pequeña)',
-        '60x40' => '60 × 40 mm (grande, con precio destacado)',
-        '80x50' => '80 × 50 mm (envío / caja)',
-        'custom' => 'Personalizado',
+        '50x25' => '50 × 25 mm — precio de estante (el más común)',
+        '100x50' => '100 × 50 mm — caja y despacho',
+        '50x30' => '50 × 30 mm — estante, un poco más alta',
+        '40x20' => '40 × 20 mm — pequeña, joyería y accesorios',
+        '60x40' => '60 × 40 mm — con precio destacado',
+        '80x50' => '80 × 50 mm — envío',
+        '100x150' => '100 × 150 mm — guía de transportadora',
+        'custom' => 'Personalizado (escribo los milímetros)',
     ];
+
+    /**
+     * El ancho y alto de un preset.
+     *
+     * @return array{0: int, 1: int}|null
+     */
+    public static function medidasDelPreset(string $preset): ?array
+    {
+        if (! isset(self::SIZE_PRESETS[$preset]) || $preset === 'custom') {
+            return null;
+        }
+
+        [$ancho, $alto] = explode('x', $preset);
+
+        return [(int) $ancho, (int) $alto];
+    }
+
+    /** El preset que corresponde a unas medidas, o «custom» si no hay ninguno. */
+    public static function presetDeMedidas(int $ancho, int $alto): string
+    {
+        $clave = "{$ancho}x{$alto}";
+
+        return isset(self::SIZE_PRESETS[$clave]) ? $clave : 'custom';
+    }
 
     /**
      * Modo de impresión:
@@ -65,7 +103,10 @@ class LabelsSettings
     public static function enabled(?Company $company = null): bool
     {
         $company ??= self::currentCompany();
-        if (! $company) return false;
+        if (! $company) {
+            return false;
+        }
+
         return (bool) data_get($company->settings, 'labels.enabled', false);
     }
 
@@ -73,6 +114,7 @@ class LabelsSettings
     {
         $company ??= self::currentCompany();
         $settings = $company?->settings ?? [];
+
         return [
             'enabled' => (bool) data_get($settings, 'labels.enabled', false),
             'fields' => (array) data_get($settings, 'labels.fields', self::DEFAULT_FIELDS),
@@ -93,6 +135,7 @@ class LabelsSettings
     public static function dimensions(?Company $company = null): array
     {
         $c = self::config($company);
+
         return ['width' => $c['width_mm'], 'height' => $c['height_mm']];
     }
 
@@ -109,6 +152,7 @@ class LabelsSettings
     protected static function currentCompany(): ?Company
     {
         $companyId = Auth::user()?->company_id;
+
         return $companyId ? Company::find($companyId) : null;
     }
 }

@@ -97,14 +97,14 @@
             .label { margin: 0 auto; box-shadow: 0 2px 6px rgba(0,0,0,.08); }
         @endif
 
-        .label .company { font-size: 6pt; color: #64748b; text-align: center; text-transform: uppercase; letter-spacing: .05em; line-height: 1.1; }
+        .label .company { font-size: 7pt; color: #64748b; text-align: center; text-transform: uppercase; letter-spacing: .05em; line-height: 1.1; }
         .label .name { font-weight: 700; font-size: 8pt; line-height: 1.15; word-break: break-word; text-align: center; }
-        .label .meta { font-size: 6.5pt; color: #475569; text-align: center; line-height: 1.15; }
-        .label .code { font-family: ui-monospace, monospace; font-size: 7pt; text-align: center; color: #334155; }
+        .label .meta { font-size: 7pt; color: #475569; text-align: center; line-height: 1.15; }
+        .label .code { font-family: ui-monospace, monospace; font-size: 7.5pt; text-align: center; color: #334155; }
         .label .price { font-weight: 900; font-size: {{ $mode === 'roll' ? '14pt' : '12pt' }}; text-align: center; color: #16a34a; line-height: 1; }
         .label .barcode-wrap { display: flex; align-items: center; justify-content: center; overflow: hidden; }
         .label .barcode-wrap svg { max-width: 100%; height: auto; }
-        .label .location { font-size: 6.5pt; color: #475569; text-align: center; font-style: italic; }
+        .label .location { font-size: 7pt; color: #475569; text-align: center; font-style: italic; }
 
         @media print {
             body { background: #fff; padding: 0; }
@@ -112,8 +112,39 @@
             .label { border: 0; box-shadow: none; }
 
             /* Fuerza que los colores impriman tal cual (algunos browsers los
-               omiten en modo economico) — clave para etiquetas con color. */
+               omiten en modo economico). */
             * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+            /* TODO EN NEGRO PURO.
+               Una impresora termica es monocroma: no tiene tinta, quema puntos.
+               Un gris como #64748b no lo puede hacer, asi que lo aproxima con un
+               patron de puntos disperso y el texto sale desvaido —justo lo que
+               pasaba con el nombre de la empresa y el SKU—. El precio en verde
+               era peor todavia.
+               Y el !important es necesario: sin el, las reglas de arriba ganan
+               por especificidad. */
+            .label,
+            .label .company,
+            .label .name,
+            .label .meta,
+            .label .code,
+            .label .price,
+            .label .location { color: #000 !important; }
+
+            /* Mas cuerpo. A 203 dpi —lo normal en estas impresoras— un trazo
+               fino se pierde entre punto y punto. Lo que en pantalla se ve
+               elegante, impreso se ve roto. */
+            .label .company { font-weight: 700; letter-spacing: .02em; }
+            .label .meta,
+            .label .code,
+            .label .location { font-weight: 600; }
+            .label .location { font-style: normal; }
+
+            /* El codigo de barras, negro y sin suavizado: un borde difuminado
+               es lo que hace que el lector tenga que intentarlo tres veces. */
+            .label .barcode-wrap svg { shape-rendering: crispEdges; }
+            .label .barcode-wrap svg rect { fill: #000 !important; }
+            .label .barcode-wrap svg text { fill: #000 !important; font-weight: 700; }
 
             @if ($mode === 'sheet')
                 .sheet { box-shadow: none; padding: 0; margin: 0; max-width: none; }
@@ -211,6 +242,10 @@
                         displayValue: true,
                         fontSize: 10,
                         margin: 0,
+                        // Explicito y no por defecto: una barra gris la termica
+                        // la aproxima con puntos y el lector falla.
+                        lineColor: '#000000',
+                        background: '#ffffff',
                     });
                 } catch (e) {
                     svg.outerHTML = '<span style="font-size:8pt;color:#dc2626;">Código inválido: ' + value + '</span>';

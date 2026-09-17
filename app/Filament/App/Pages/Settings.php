@@ -91,6 +91,10 @@ class Settings extends Page implements HasForms
             'labels_fields' => (array) data_get($settings, 'labels.fields', LabelsSettings::DEFAULT_FIELDS),
             'labels_barcode_type' => (string) data_get($settings, 'labels.barcode_type', 'CODE128'),
             'labels_columns_per_sheet' => (int) data_get($settings, 'labels.columns_per_sheet', 3),
+            'labels_size_preset' => LabelsSettings::presetDeMedidas(
+                (int) data_get($settings, 'labels.width_mm', 50),
+                (int) data_get($settings, 'labels.height_mm', 30),
+            ),
             'labels_width_mm' => (int) data_get($settings, 'labels.width_mm', 50),
             'labels_height_mm' => (int) data_get($settings, 'labels.height_mm', 30),
             'labels_show_currency_symbol' => (bool) data_get($settings, 'labels.show_currency_symbol', true),
@@ -379,14 +383,55 @@ class Settings extends Page implements HasForms
                                     ? 'Ignorado en modo rollo: siempre 1 por página.'
                                     : ''),
 
+                            // Elegir el rollo que se compro en vez de medirlo
+                            // con una regla. La lista existia en el codigo desde
+                            // el principio y no estaba conectada a nada.
+                            Forms\Components\Select::make('labels_size_preset')
+                                ->label('Tamaño de la etiqueta')
+                                ->options(LabelsSettings::SIZE_PRESETS)
+                                ->native(false)
+                                ->live()
+                                ->afterStateUpdated(function ($state, Forms\Set $set) {
+                                    $medidas = LabelsSettings::medidasDelPreset((string) $state);
+
+                                    if (! $medidas) {
+                                        return;
+                                    }
+
+                                    [$ancho, $alto] = $medidas;
+                                    $set('labels_width_mm', $ancho);
+                                    $set('labels_height_mm', $alto);
+                                })
+                                ->helperText('Elige el rollo que compraste y las medidas se llenan solas.')
+                                ->columnSpan(2),
+
                             Forms\Components\TextInput::make('labels_width_mm')
                                 ->label('Ancho (mm)')
-                                ->numeric()->minValue(20)->maxValue(200)->default(50)
+                                ->numeric()->minValue(20)->maxValue(250)->default(50)
+                                ->live(onBlur: true)
+                                // Escribir una medida a mano cambia el selector a
+                                // «Personalizado»: dejarlo diciendo «50 × 25»
+                                // cuando dice 47 es peor que no mostrarlo.
+                                ->afterStateUpdated(fn ($state, Forms\Set $set, Forms\Get $get) => $set(
+                                    'labels_size_preset',
+                                    LabelsSettings::presetDeMedidas(
+                                        (int) $state,
+                                        (int) $get('labels_height_mm'),
+                                    ),
+                                ))
                                 ->helperText('Tamaños comunes térmica: 40, 50, 60, 80, 100.'),
 
                             Forms\Components\TextInput::make('labels_height_mm')
                                 ->label('Alto (mm)')
-                                ->numeric()->minValue(10)->maxValue(150)->default(30)
+                                ->numeric()->minValue(10)->maxValue(200)->default(30)
+                                ->live(onBlur: true)
+                                ->afterStateUpdated(fn ($state, Forms\Set $set, Forms\Get $get) => $set(
+                                    'labels_size_preset',
+                                    LabelsSettings::presetDeMedidas(
+                                        (int) $get('labels_width_mm'),
+                                        (int) $state,
+                                    ),
+                                ))
                                 ->helperText('Tamaños comunes térmica: 20, 25, 30, 40, 50.'),
 
                             Forms\Components\Toggle::make('labels_show_currency_symbol')
@@ -545,8 +590,10 @@ class Settings extends Page implements HasForms
             'fields' => array_values((array) ($state['labels_fields'] ?? LabelsSettings::DEFAULT_FIELDS)),
             'barcode_type' => (string) ($state['labels_barcode_type'] ?? 'CODE128'),
             'columns_per_sheet' => max(1, min(10, (int) ($state['labels_columns_per_sheet'] ?? 3))),
-            'width_mm' => max(20, min(200, (int) ($state['labels_width_mm'] ?? 50))),
-            'height_mm' => max(10, min(150, (int) ($state['labels_height_mm'] ?? 30))),
+            // Los topes van con los del formulario: recortar aqui a 150 dejaba
+            // fuera la guia de transportadora de 100 × 150 sin decir nada.
+            'width_mm' => max(20, min(250, (int) ($state['labels_width_mm'] ?? 50))),
+            'height_mm' => max(10, min(200, (int) ($state['labels_height_mm'] ?? 30))),
             'show_currency_symbol' => (bool) ($state['labels_show_currency_symbol'] ?? true),
         ]);
 
