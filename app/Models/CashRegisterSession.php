@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\PaymentMethodOptions;
 use App\Traits\BelongsToCompany;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -12,6 +13,7 @@ class CashRegisterSession extends Model
     use BelongsToCompany;
 
     public const STATUS_OPEN = 'open';
+
     public const STATUS_CLOSED = 'closed';
 
     protected $fillable = [
@@ -120,7 +122,7 @@ class CashRegisterSession extends Model
                 $method = $pay->payment_method;
                 $amount = (float) $pay->amount;
                 $breakdown[$method] = ($breakdown[$method] ?? 0) + $amount;
-                if ($method === 'cash') {
+                if (PaymentMethodOptions::esEfectivo($method, $this->company_id)) {
                     $cashReceived += $amount;
                 }
             }

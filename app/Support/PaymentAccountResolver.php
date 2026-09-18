@@ -48,7 +48,11 @@ class PaymentAccountResolver
 
         // 2. Heuristica por naturaleza del metodo: el efectivo entra a caja,
         //    lo demas a bancos.
-        $prefijo = $method === 'cash' ? '1105' : '1110';
+        //
+        // Se mira el TIPO del metodo, no su codigo. Un «Efectivo domicilios»
+        // creado por la empresa tiene tipo `cash` pero otro codigo, y con la
+        // comparacion literal su plata se contabilizaba en bancos.
+        $prefijo = PaymentMethodOptions::esEfectivo($method, $companyId) ? '1105' : '1110';
 
         $porPrefijo = self::firstMovementAccount($companyId, $prefijo);
 

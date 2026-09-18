@@ -8,12 +8,14 @@ use App\Models\Company;
 use App\Models\CustomerAdvance;
 use App\Models\Location;
 use App\Models\Payment;
+use App\Models\PaymentMethod;
 use App\Models\SaleInvoice;
 use App\Models\ThirdParty;
 use App\Models\User;
 use App\Services\Cash\CashSessionSummary;
 use App\Services\Sales\SaleInvoiceEngine;
 use App\Support\CurrentCompany;
+use App\Support\PaymentMethodOptions;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
@@ -188,6 +190,61 @@ class CashSessionAdvancesTest extends TestCase
             'Esa plata entró en otro turno y ya se contó allá.');
     }
 
+    // ------------------------------------------- métodos propios de la empresa
+
+    /**
+     * Un método de efectivo propio de la empresa cuenta como efectivo.
+     *
+     * El sistema respondía «¿esto es efectivo?» comparando el código contra
+     * el literal `cash`. Sirve para el método que trae de fábrica, pero una
+     * empresa puede crear el suyo —«Caja 2», «Efectivo domicilios»— con otro
+     * código y tipo `cash`. Esa plata está en el cajón y no entraba en
+     * «Esperado en caja»: el cajero aparecía sobrando al arquear.
+     *
+     * La naturaleza del método está en su **tipo**; el código es solo un
+     * identificador.
+     */
+    public function test_un_efectivo_propio_de_la_empresa_cuenta_como_efectivo(): void
+    {
+        $apertura = (float) $this->turno->opening_amount;
+
+        $this->metodoPropio('zz_efectivo_2', 'Efectivo Caja 2', 'cash');
+        $this->anticipo('zz_efectivo_2', 350000);
+
+        $resumen = app(CashSessionSummary::class)->compute($this->turno->fresh());
+
+        $this->assertSame(round($apertura + 350000, 2), $resumen['expected_cash'],
+            'El tipo del método dice que es efectivo: esa plata está en el cajón.');
+    }
+
+    /** Y uno propio que NO es efectivo sigue sin tocar el cajón. */
+    public function test_un_metodo_propio_que_no_es_efectivo_no_toca_el_cajon(): void
+    {
+        $apertura = (float) $this->turno->opening_amount;
+
+        $this->metodoPropio('zz_nequi', 'Nequi ZZ', 'electronic');
+        $this->anticipo('zz_nequi', 700000);
+
+        $resumen = app(CashSessionSummary::class)->compute($this->turno->fresh());
+
+        $this->assertSame($apertura, $resumen['expected_cash'],
+            'Nequi no pone billetes en el cajón por más que sea el método más usado.');
+        $this->assertSame(700000.0, $resumen['sales']['by_method']['zz_nequi'] ?? null);
+    }
+
+    /** Un código que no corresponde a ningún método configurado no revienta. */
+    public function test_un_codigo_desconocido_cae_en_la_regla_de_antes(): void
+    {
+        $apertura = (float) $this->turno->opening_amount;
+
+        $this->anticipo('cash', 40000);
+
+        $resumen = app(CashSessionSummary::class)->compute($this->turno->fresh());
+
+        $this->assertSame(round($apertura + 40000, 2), $resumen['expected_cash'],
+            'Sin método configurado queda la comparación de siempre, que es lo único que hay.');
+    }
+
     // ------------------------------------------- abonos de facturas viejas
 
     /**
@@ -311,6 +368,25 @@ class CashSessionAdvancesTest extends TestCase
         $this->limpiar[] = fn () => DB::table('customer_advances')->where('id', $anticipo->id)->delete();
 
         return $anticipo;
+    }
+
+    private function metodoPropio(string $codigo, string $nombre, string $tipo): void
+    {
+        $metodo = PaymentMethod::withoutGlobalScopes()->create([
+            'company_id' => $this->company->id,
+            'code' => $codigo,
+            'name' => $nombre,
+            'type' => $tipo,
+            'active' => true,
+            'sort_order' => 99,
+        ]);
+
+        PaymentMethodOptions::olvidarCache();
+
+        $this->limpiar[] = function () use ($metodo) {
+            DB::table('payment_methods')->where('id', $metodo->id)->delete();
+            PaymentMethodOptions::olvidarCache();
+        };
     }
 
     private function tercero(): ThirdParty

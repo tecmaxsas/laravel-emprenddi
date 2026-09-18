@@ -8,6 +8,7 @@ use App\Models\Expense;
 use App\Models\Payment;
 use App\Models\PurchaseInvoice;
 use App\Models\SaleInvoice;
+use App\Support\PaymentMethodOptions;
 
 /**
  * Resumen en vivo de una sesión de caja: ingresos (pagos de ventas
@@ -94,7 +95,7 @@ class CashSessionSummary
             ->whereNull('customer_advance_id')
             ->get(['amount', 'payment_method', 'paymentable_id']);
 
-        $resumen = $this->groupPayments($payments);
+        $resumen = $this->groupPayments($payments, $session->company_id);
 
         return $this->sumarAnticipos($resumen, $session);
     }
@@ -125,7 +126,7 @@ class CashSessionSummary
                 ($resumen['by_method'][$metodo] ?? 0) + $monto, 2
             );
 
-            if ($metodo === 'cash') {
+            if (PaymentMethodOptions::esEfectivo($metodo, $session->company_id)) {
                 $resumen['cash'] = round($resumen['cash'] + $monto, 2);
             }
         }
@@ -146,7 +147,7 @@ class CashSessionSummary
             ->where('paymentable_type', PurchaseInvoice::class)
             ->get(['amount', 'payment_method', 'paymentable_id']);
 
-        return $this->groupPayments($payments);
+        return $this->groupPayments($payments, $session->company_id);
     }
 
     /**
@@ -167,7 +168,7 @@ class CashSessionSummary
             $method = $e->payment_method;
             $amount = (float) $e->total;
             $byMethod[$method] = ($byMethod[$method] ?? 0) + $amount;
-            if ($method === 'cash') {
+            if (PaymentMethodOptions::esEfectivo($method, $session->company_id)) {
                 $cash += $amount;
             }
         }
@@ -183,7 +184,7 @@ class CashSessionSummary
     /**
      * Forma común: dado un Collection de Payment, agrupa por método y suma.
      */
-    protected function groupPayments($payments): array
+    protected function groupPayments($payments, ?int $companyId = null): array
     {
         $byMethod = [];
         $cash = 0.0;
@@ -193,7 +194,7 @@ class CashSessionSummary
             $method = $p->payment_method;
             $amount = (float) $p->amount;
             $byMethod[$method] = ($byMethod[$method] ?? 0) + $amount;
-            if ($method === 'cash') {
+            if (PaymentMethodOptions::esEfectivo($method, $companyId)) {
                 $cash += $amount;
             }
             $docs[$p->paymentable_id] = true;

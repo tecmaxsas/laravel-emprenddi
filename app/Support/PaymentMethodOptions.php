@@ -88,9 +88,54 @@ class PaymentMethodOptions
         return Payment::PAYMENT_METHODS[$codigo] ?? ucfirst($codigo);
     }
 
+    /**
+     * Los tipos ya resueltos, por empresa.
+     *
+     * @var array<int, array<string, string>>
+     */
+    private static array $tipos = [];
+
+    /**
+     * Si ese método es efectivo, o sea plata que queda en el cajón.
+     *
+     * Parece una pregunta trivial y no lo es: el sistema la respondía
+     * comparando el código contra el literal `'cash'`. Eso funciona para el
+     * método que trae el sistema, pero una empresa puede crear el suyo —«Caja
+     * 2», «Efectivo domicilios»— con otro código y tipo `cash`. Con la
+     * comparación literal, ese dinero no entraba en «Esperado en caja» y el
+     * cajero aparecía sobrando al arquear.
+     *
+     * La respuesta está en el **tipo** del método, que es lo que describe su
+     * naturaleza; el código es solo un identificador. Si el método no está
+     * configurado —una empresa recién creada, o un código viejo que ya no
+     * existe— se cae a la comparación de antes, que es lo único que queda.
+     */
+    public static function esEfectivo(?string $codigo, ?int $companyId = null): bool
+    {
+        if (! $codigo) {
+            return false;
+        }
+
+        $companyId ??= Auth::user()?->company_id;
+
+        if ($companyId) {
+            self::$tipos[$companyId] ??= PaymentMethod::query()
+                ->where('company_id', $companyId)
+                ->pluck('type', 'code')
+                ->all();
+
+            if (isset(self::$tipos[$companyId][$codigo])) {
+                return self::$tipos[$companyId][$codigo] === 'cash';
+            }
+        }
+
+        return $codigo === 'cash';
+    }
+
     /** Para las pruebas, que cambian métodos entre casos. */
     public static function olvidarCache(): void
     {
         self::$cache = [];
+        self::$tipos = [];
     }
 }
