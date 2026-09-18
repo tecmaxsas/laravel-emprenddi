@@ -7,6 +7,7 @@ use App\Filament\Concerns\ChecksPermission;
 use App\Models\Account;
 use App\Models\CostCenter;
 use App\Models\Expense;
+use App\Models\ExpenseCategory;
 use App\Models\Location;
 use App\Models\Tax;
 use App\Models\ThirdParty;
@@ -23,9 +24,15 @@ class ExpenseResource extends Resource
 {
     use ChecksPermission;
 
-    protected static function viewPermission(): string { return 'expenses.view'; }
+    protected static function viewPermission(): string
+    {
+        return 'expenses.view';
+    }
 
-    protected static function managePermission(): string { return 'expenses.create'; }
+    protected static function managePermission(): string
+    {
+        return 'expenses.create';
+    }
 
     protected static ?string $model = Expense::class;
 
@@ -88,6 +95,53 @@ class ExpenseResource extends Resource
                         ->placeholder('Ej. Café para la oficina')
                         ->columnSpan(2),
 
+                    // En que se le fue la plata al negocio. La cuenta contable
+                    // responde la pregunta fiscal; esta responde la del dueño,
+                    // y una empresa sin contabilidad solo tiene esta.
+                    Forms\Components\Select::make('expense_category_id')
+                        ->label('Categoría')
+                        ->options(fn () => ExpenseCategory::opciones())
+                        ->searchable()
+                        ->preload()
+                        ->native(false)
+                        ->placeholder('Sin categoría')
+                        ->helperText('Para saber después en qué se está yendo la plata.')
+                        // Si la categoria trae cuenta por defecto, se deja la
+                        // imputacion resuelta sin que nadie tenga que saberse
+                        // el PUC. No pisa una cuenta ya elegida a mano.
+                        ->live()
+                        ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
+                            if (! $state || $get('expense_account_id')) {
+                                return;
+                            }
+
+                            $cuenta = ExpenseCategory::query()->find($state)?->default_expense_account_id;
+
+                            if ($cuenta) {
+                                $set('expense_account_id', $cuenta);
+                            }
+                        })
+                        // Crearla sin salirse del gasto que se esta
+                        // registrando: mandar al usuario a otra pantalla es
+                        // como se pierde lo que llevaba escrito.
+                        ->createOptionForm([
+                            Forms\Components\TextInput::make('name')
+                                ->label('Nombre de la categoría')
+                                ->required()
+                                ->maxLength(120),
+                            Forms\Components\TextInput::make('description')
+                                ->label('Descripción (opcional)')
+                                ->maxLength(255),
+                        ])
+                        ->createOptionUsing(fn (array $data) => ExpenseCategory::create([
+                            'company_id' => auth()->user()?->company_id,
+                            'name' => $data['name'],
+                            'description' => $data['description'] ?? null,
+                            'sort_order' => 999,
+                            'active' => true,
+                        ])->id)
+                        ->columnSpan(2),
+
                     Forms\Components\Select::make('third_party_id')
                         ->label('Proveedor (opcional)')
                         ->searchable()
@@ -96,7 +150,7 @@ class ExpenseResource extends Resource
                             ->where('active', true)
                             ->where(function ($q) use ($search) {
                                 $q->where('document_number', 'ilike', "%{$search}%")
-                                  ->orWhere('name', 'ilike', "%{$search}%");
+                                    ->orWhere('name', 'ilike', "%{$search}%");
                             })
                             ->orderBy('name')
                             ->limit(30)
@@ -140,7 +194,7 @@ class ExpenseResource extends Resource
                             ->where('active', true)
                             ->where(function ($q) use ($search) {
                                 $q->where('code', 'ilike', "%{$search}%")
-                                  ->orWhere('name', 'ilike', "%{$search}%");
+                                    ->orWhere('name', 'ilike', "%{$search}%");
                             })
                             ->orderBy('code')
                             ->limit(30)
@@ -160,7 +214,7 @@ class ExpenseResource extends Resource
                             ->where('accepts_movements', true)
                             ->where(function ($q) use ($search) {
                                 $q->where('code', 'ilike', "%{$search}%")
-                                  ->orWhere('name', 'ilike', "%{$search}%");
+                                    ->orWhere('name', 'ilike', "%{$search}%");
                             })
                             ->orderBy('code')
                             ->limit(30)
@@ -183,7 +237,7 @@ class ExpenseResource extends Resource
                             ->where('code', 'like', '11%')
                             ->where(function ($q) use ($search) {
                                 $q->where('code', 'ilike', "%{$search}%")
-                                  ->orWhere('name', 'ilike', "%{$search}%");
+                                    ->orWhere('name', 'ilike', "%{$search}%");
                             })
                             ->orderBy('code')
                             ->limit(30)
@@ -217,7 +271,7 @@ class ExpenseResource extends Resource
                             ->whereIn('applies_to', ['purchase', 'both'])
                             ->where(function ($q) use ($search) {
                                 $q->where('code', 'ilike', "%{$search}%")
-                                  ->orWhere('name', 'ilike', "%{$search}%");
+                                    ->orWhere('name', 'ilike', "%{$search}%");
                             })
                             ->limit(20)
                             ->get()
@@ -320,6 +374,13 @@ class ExpenseResource extends Resource
                     ->wrap()
                     ->limit(60),
 
+                Tables\Columns\TextColumn::make('category.name')
+                    ->label('Categoría')
+                    ->badge()
+                    ->color('gray')
+                    ->placeholder('Sin categoría')
+                    ->sortable(),
+
                 Tables\Columns\TextColumn::make('supplier.name')
                     ->label('Proveedor')
                     ->placeholder('—')
@@ -354,6 +415,11 @@ class ExpenseResource extends Resource
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')->label('Estado')->options(Expense::STATUSES),
+                Tables\Filters\SelectFilter::make('expense_category_id')
+                    ->label('Categoría')
+                    ->options(fn () => ExpenseCategory::opciones())
+                    ->searchable()
+                    ->preload(),
                 Tables\Filters\Filter::make('date')
                     ->form([
                         Forms\Components\DatePicker::make('from')->label('Desde'),

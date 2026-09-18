@@ -17,6 +17,7 @@ use App\Services\Reports\AccountsReceivableAging;
 use App\Services\Reports\FinancialReportExporter;
 use App\Services\Reports\FinancialStatementsEngine;
 use App\Services\Reports\TabularReportExporter;
+use App\Support\ExpensesByCategory;
 use App\Support\SalesByPaymentMethod;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -730,6 +731,52 @@ class ReportExportController extends Controller
                 columnTypes: ['string', 'string', 'number', 'number', 'number'],
             ),
             "ventas-por-metodo-de-pago-{$from}-a-{$to}.xlsx",
+            $this->xlsxHeaders(),
+        );
+    }
+
+    /**
+     * Gastos por categoría.
+     *
+     * Las filas salen del mismo helper que alimenta la pantalla, para que el
+     * Excel y lo que el usuario ve no puedan decir cosas distintas.
+     */
+    public function expensesByCategory(Request $request): StreamedResponse
+    {
+        abort_unless($request->user()?->can('expenses.view'), 403);
+
+        $from = $this->parseDate($request->query('from'), now()->startOfMonth()->toDateString());
+        $to = $this->parseDate($request->query('to'), now()->endOfMonth()->toDateString());
+
+        $categoria = $request->query('expense_category_id');
+
+        $filtros = [
+            'from' => $from,
+            'to' => $to,
+            'location_id' => (int) $request->query('location_id') ?: null,
+            'expense_category_id' => $categoria === 'sin_categoria'
+                ? 'sin_categoria'
+                : ((int) $categoria ?: null),
+        ];
+
+        $rows = collect(ExpensesByCategory::filas($filtros))
+            ->map(fn (array $f) => [
+                $f['categoria'],
+                $f['movimientos'],
+                $f['total'],
+                $f['participacion'],
+            ]);
+
+        return response()->streamDownload(
+            $this->tabular->stream(
+                title: 'Gastos por Categoría',
+                subtitle: "Gastos contabilizados — {$from} a {$to}",
+                companyName: $this->companyName(),
+                headers: ['Categoría', 'N° de gastos', 'Total gastado', '% del total'],
+                rows: $rows,
+                columnTypes: ['string', 'number', 'number', 'number'],
+            ),
+            "gastos-por-categoria-{$from}-a-{$to}.xlsx",
             $this->xlsxHeaders(),
         );
     }

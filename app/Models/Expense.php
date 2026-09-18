@@ -11,10 +11,12 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Expense extends Model
 {
-    use HasFactory, BelongsToCompany, SoftDeletes;
+    use BelongsToCompany, HasFactory, SoftDeletes;
 
     public const STATUS_DRAFT = 'draft';
+
     public const STATUS_POSTED = 'posted';
+
     public const STATUS_CANCELLED = 'cancelled';
 
     public const STATUSES = [
@@ -30,6 +32,7 @@ class Expense extends Model
         'third_party_id',
         'expense_account_id',
         'cost_center_id',
+        'expense_category_id',
         'payment_account_id',
         'prefix',
         'number',
@@ -83,6 +86,17 @@ class Expense extends Model
     public function expenseAccount(): BelongsTo
     {
         return $this->belongsTo(Account::class, 'expense_account_id');
+    }
+
+    /**
+     * En que se le fue la plata al negocio.
+     *
+     * Distinta de la cuenta contable: esa es la clasificacion fiscal, esta es
+     * la del negocio. Varias categorias pueden ir a la misma cuenta del PUC.
+     */
+    public function category(): BelongsTo
+    {
+        return $this->belongsTo(ExpenseCategory::class, 'expense_category_id');
     }
 
     public function costCenter(): BelongsTo

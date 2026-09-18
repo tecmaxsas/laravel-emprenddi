@@ -30,7 +30,7 @@ use Illuminate\Support\Facades\Log;
  * Devuelve un mapa con cuántos registros creó cada provisioner para
  * que el comando artisan pueda mostrar un resumen útil.
  *
- * @return array{puc:int, taxes:int, currencies:int, payment_methods:int, location:int, consumer_final:int, invoice_templates:int}
+ * @return array{puc:int, taxes:int, currencies:int, payment_methods:int, expense_categories:int, location:int, consumer_final:int, invoice_templates:int}
  */
 class CompanyOnboarding
 {
@@ -41,6 +41,7 @@ class CompanyOnboarding
             'taxes' => 0,
             'currencies' => 0,
             'payment_methods' => 0,
+            'expense_categories' => 0,
             'location' => 0,
             'consumer_final' => 0,
             'invoice_templates' => 0,
@@ -52,6 +53,7 @@ class CompanyOnboarding
             $summary['taxes'] = app(TaxesProvisioner::class)->provision($company);
             $summary['currencies'] = app(CurrencyProvisioner::class)->provision($company);
             $summary['payment_methods'] = app(PaymentMethodProvisioner::class)->provision($company);
+            $summary['expense_categories'] = app(ExpenseCategoryProvisioner::class)->provision($company);
             $summary['location'] = app(DefaultLocationProvisioner::class)->provision($company);
             $summary['consumer_final'] = app(ConsumerFinalProvisioner::class)->provision($company);
             $summary['invoice_templates'] = app(InvoiceTemplateProvisioner::class)->provision($company);

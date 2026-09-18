@@ -95,6 +95,9 @@ Route::middleware(['web', 'auth', SetActiveCompany::class])->group(function () {
     Route::get('/app/reports/export/sales-by-payment-method',
         [ReportExportController::class, 'salesByPaymentMethod'])
         ->name('reports.export.sales_by_payment_method');
+    Route::get('/app/reports/export/expenses-by-category',
+        [ReportExportController::class, 'expensesByCategory'])
+        ->name('reports.export.expenses_by_category');
     Route::get('/app/reports/export/stock-by-location',
         [ReportExportController::class, 'stockByLocation'])
         ->name('reports.export.stock_by_location');
