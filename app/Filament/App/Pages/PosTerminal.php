@@ -9,7 +9,6 @@ use App\Models\Company;
 use App\Models\GiftCard;
 use App\Models\Location;
 use App\Models\Payment;
-use App\Models\PaymentMethod;
 use App\Models\Product;
 use App\Models\ProductSerial;
 use App\Models\Promotion;
@@ -35,6 +34,7 @@ use App\Services\Sales\SaleInvoiceNumberer;
 use App\Services\Sales\SaleReceiptPrinter;
 use App\Support\GiftCardsSettings;
 use App\Support\PaymentAccountResolver;
+use App\Support\PaymentMethodOptions;
 use App\Support\PosDestination;
 use App\Support\PromotionsSettings;
 use App\Support\SerialsSettings;
@@ -1748,7 +1748,7 @@ class PosTerminal extends Page
         $resultado['existed']
             ? Notification::make()->warning()
                 ->title('Ese documento ya estaba registrado')
-                ->body("Se seleccionó {$cliente->name}.")->send()
+                ->body(trim("Se seleccionó {$cliente->name}. ".($resultado['note'] ?? '')))->send()
             : Notification::make()->success()
                 ->title("Cliente {$cliente->name} creado")->send();
     }
@@ -2556,6 +2556,6 @@ class PosTerminal extends Page
      */
     public function getPaymentMethodsProperty(): array
     {
-        return \App\Support\PaymentMethodOptions::para();
+        return PaymentMethodOptions::para();
     }
 }

@@ -4,23 +4,28 @@ namespace App\Filament\App\Pages\Parking;
 
 use App\Models\Account;
 use App\Models\CashRegisterSession;
+use App\Models\Location;
 use App\Models\Parking\ParkingLot;
-use App\Models\Parking\ParkingMembership;
 use App\Models\Parking\ParkingSession;
 use App\Models\Parking\ParkingSpace;
 use App\Models\Parking\VehicleType;
 use App\Models\PaymentMethod;
 use App\Models\Product;
+use App\Models\SaleInvoice;
 use App\Models\Tax;
 use App\Models\ThirdParty;
+use App\Services\Cash\CashSessionCloser;
+use App\Services\Cash\CashSessionSummary;
 use App\Services\Parking\ParkingBillingEngine;
 use App\Services\Parking\ParkingProductProvisioner;
 use App\Services\Parking\ParkingSessionEngine;
+use App\Services\Sales\QuickCustomer;
 use App\Support\ClockFormat;
 use App\Support\ModuleGate;
 use App\Support\PaymentAccountResolver;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Illuminate\Support\Collection;
 
 /**
  * Terminal unificado de parqueadero estilo POS.
@@ -41,10 +46,15 @@ use Filament\Pages\Page;
 class ParkingTerminal extends Page
 {
     protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+
     protected static ?string $navigationLabel = 'Terminal';
+
     protected static ?string $navigationGroup = 'Parqueadero';
+
     protected static ?int $navigationSort = 1;
+
     protected static ?string $slug = 'parking';
+
     protected static ?string $title = 'Terminal de Parqueadero';
 
     protected static string $view = 'filament.app.pages.parking.terminal';
@@ -57,25 +67,35 @@ class ParkingTerminal extends Page
     public string $mode = 'idle';
 
     public ?int $selectedSpaceId = null;
+
     public ?int $activeSessionId = null;
 
     public array $entryForm = [];
+
     public array $exitForm = [];
+
     public ?array $quote = null;
+
     public ?int $printTicketId = null;
 
     /** Items adicionales agregados a la salida (productos/servicios) */
     public array $exitExtras = [];
+
     public string $extraSearch = '';
 
     /** Cierre de caja: modal + inputs */
     public bool $showCloseSessionModal = false;
+
     public float $closingCounted = 0.0;
+
     public string $closingNotes = '';
 
     public static function canAccess(): bool
     {
-        if (! ModuleGate::active('parking')) return false;
+        if (! ModuleGate::active('parking')) {
+            return false;
+        }
+
         return (bool) auth()->user()?->can('parking.use');
     }
 
@@ -92,7 +112,7 @@ class ParkingTerminal extends Page
     }
 
     /* ------------------------------------------------------------------ */
-    /*  Properties computadas para la vista                                */
+    /*  Properties computadas para la vista */
     /* ------------------------------------------------------------------ */
 
     public function getLotsProperty()
@@ -124,7 +144,9 @@ class ParkingTerminal extends Page
 
     public function getSpacesByZoneProperty(): array
     {
-        if (! $this->parkingLotId) return [];
+        if (! $this->parkingLotId) {
+            return [];
+        }
 
         // Orden natural: "M-2" antes de "M-10" (SQL ORDER BY seria lexicografico
         // y pondria M-10 antes de M-2 porque compara caracter por caracter).
@@ -139,6 +161,7 @@ class ParkingTerminal extends Page
                 if ($zoneA !== $zoneB) {
                     return strcmp($zoneA, $zoneB);
                 }
+
                 return strnatcasecmp((string) $a->code, (string) $b->code);
             })
             ->values();
@@ -150,7 +173,10 @@ class ParkingTerminal extends Page
 
     public function getActiveWithoutSpaceProperty()
     {
-        if (! $this->parkingLotId) return collect();
+        if (! $this->parkingLotId) {
+            return collect();
+        }
+
         return ParkingSession::query()
             ->where('company_id', auth()->user()?->company_id)
             ->where('parking_lot_id', $this->parkingLotId)
@@ -174,6 +200,7 @@ class ParkingTerminal extends Page
             ->pluck('c', 'status')
             ->all();
         $total = array_sum($counts);
+
         return [
             'total' => $total,
             'free' => (int) ($counts[ParkingSpace::STATUS_FREE] ?? 0),
@@ -195,8 +222,11 @@ class ParkingTerminal extends Page
     public function getSessionTotalsProperty(): ?array
     {
         $session = $this->openCashSession;
-        if (! $session) return null;
-        return app(\App\Services\Cash\CashSessionSummary::class)->compute($session);
+        if (! $session) {
+            return null;
+        }
+
+        return app(CashSessionSummary::class)->compute($session);
     }
 
     public function openCloseSessionModal(): void
@@ -204,6 +234,7 @@ class ParkingTerminal extends Page
         $session = $this->openCashSession;
         if (! $session) {
             Notification::make()->title('No hay caja abierta')->danger()->send();
+
             return;
         }
         $this->closingCounted = 0.0;
@@ -221,15 +252,17 @@ class ParkingTerminal extends Page
         $session = $this->openCashSession;
         if (! $session) {
             Notification::make()->title('No hay caja abierta')->danger()->send();
+
             return;
         }
         if (! auth()->user()->can('pos.cash_close')) {
             Notification::make()->title('Sin permiso para cerrar caja')->danger()->send();
+
             return;
         }
 
         try {
-            $result = app(\App\Services\Cash\CashSessionCloser::class)->close(
+            $result = app(CashSessionCloser::class)->close(
                 $session,
                 (float) ($this->closingCounted ?? 0),
                 $this->closingNotes,
@@ -239,6 +272,7 @@ class ParkingTerminal extends Page
                 ->title('No se pudo cerrar la caja')
                 ->body($e->getMessage())
                 ->danger()->persistent()->send();
+
             return;
         }
 
@@ -260,6 +294,7 @@ class ParkingTerminal extends Page
 
         if ($blindClose) {
             Notification::make()->title('Caja cerrada')->success()->send();
+
             return;
         }
 
@@ -286,7 +321,10 @@ class ParkingTerminal extends Page
 
     public function getActiveSessionProperty(): ?ParkingSession
     {
-        if (! $this->activeSessionId) return null;
+        if (! $this->activeSessionId) {
+            return null;
+        }
+
         return ParkingSession::query()
             ->where('company_id', auth()->user()?->company_id)
             ->with(['vehicleType:id,name', 'parkingLot:id,name', 'parkingMembership:id,name,end_date'])
@@ -301,7 +339,10 @@ class ParkingTerminal extends Page
             ->where('active', true)
             ->orderBy('name')
             ->pluck('name', 'code')->all();
-        if (! empty($configured)) return $configured;
+        if (! empty($configured)) {
+            return $configured;
+        }
+
         return [
             'cash' => 'Efectivo',
             'card' => 'Tarjeta',
@@ -313,6 +354,7 @@ class ParkingTerminal extends Page
     public function getAccountOptionsProperty(): array
     {
         $companyId = auth()->user()?->company_id;
+
         return Account::query()
             ->where('company_id', $companyId)
             ->where('accepts_movements', true)->where('active', true)
@@ -325,7 +367,7 @@ class ParkingTerminal extends Page
     }
 
     /* ------------------------------------------------------------------ */
-    /*  Reset helpers                                                      */
+    /*  Reset helpers */
     /* ------------------------------------------------------------------ */
 
     protected function resetEntryForm(): void
@@ -342,15 +384,19 @@ class ParkingTerminal extends Page
     }
 
     /* ------------------------------------------------------------------ */
-    /*  Extras (productos/servicios adicionales)                           */
+    /*  Extras (productos/servicios adicionales) */
     /* ------------------------------------------------------------------ */
 
     public function getProductSearchResultsProperty()
     {
         $q = trim($this->extraSearch);
-        if (strlen($q) < 2) return collect();
+        if (strlen($q) < 2) {
+            return collect();
+        }
         $companyId = (int) (auth()->user()?->company_id ?? 0);
-        if (! $companyId) return collect();
+        if (! $companyId) {
+            return collect();
+        }
 
         return Product::query()
             ->where('company_id', $companyId)  // defense in depth — no confiar solo en el scope
@@ -372,6 +418,7 @@ class ParkingTerminal extends Page
             if ((int) $extra['product_id'] === $productId) {
                 $this->exitExtras[$i]['quantity']++;
                 $this->extraSearch = '';
+
                 return;
             }
         }
@@ -381,7 +428,9 @@ class ParkingTerminal extends Page
             ->where('id', $productId)
             ->where('company_id', auth()->user()?->company_id)
             ->first();
-        if (! $product) return;
+        if (! $product) {
+            return;
+        }
         $tax = $product->default_sale_tax_id
             ? Tax::query()
                 ->where('company_id', auth()->user()?->company_id)
@@ -402,14 +451,18 @@ class ParkingTerminal extends Page
 
     public function removeExtra(int $index): void
     {
-        if (! isset($this->exitExtras[$index])) return;
+        if (! isset($this->exitExtras[$index])) {
+            return;
+        }
         unset($this->exitExtras[$index]);
         $this->exitExtras = array_values($this->exitExtras);
     }
 
     public function adjustExtraQty(int $index, int $delta): void
     {
-        if (! isset($this->exitExtras[$index])) return;
+        if (! isset($this->exitExtras[$index])) {
+            return;
+        }
         $new = max(1, (int) $this->exitExtras[$index]['quantity'] + $delta);
         $this->exitExtras[$index]['quantity'] = $new;
     }
@@ -425,6 +478,7 @@ class ParkingTerminal extends Page
     public function getGrandTotalProperty(): float
     {
         $parking = (float) ($this->quote['amount'] ?? 0);
+
         return round($parking + $this->extrasTotal, 2);
     }
 
@@ -447,7 +501,7 @@ class ParkingTerminal extends Page
     }
 
     /* ------------------------------------------------------------------ */
-    /*  Acciones del operario                                              */
+    /*  Acciones del operario */
     /* ------------------------------------------------------------------ */
 
     public function changeLot(int $lotId): void
@@ -468,7 +522,9 @@ class ParkingTerminal extends Page
             ->where('id', $spaceId)
             ->where('parking_lot_id', $this->parkingLotId)
             ->first();
-        if (! $space) return;
+        if (! $space) {
+            return;
+        }
 
         $this->selectedSpaceId = $space->id;
 
@@ -477,6 +533,7 @@ class ParkingTerminal extends Page
             $this->resetEntryForm();
             $this->activeSessionId = null;
             $this->quote = null;
+
             return;
         }
 
@@ -491,9 +548,11 @@ class ParkingTerminal extends Page
                 $this->notify('warning', 'Espacio en estado inconsistente',
                     'El espacio está marcado como ocupado pero no hay sesión activa. Anula o ajusta el estado desde Espacios.');
                 $this->selectedSpaceId = null;
+
                 return;
             }
             $this->openExitFor($session->id);
+
             return;
         }
 
@@ -515,7 +574,9 @@ class ParkingTerminal extends Page
         $session = ParkingSession::query()
             ->where('company_id', auth()->user()?->company_id)
             ->find($sessionId);
-        if (! $session) return;
+        if (! $session) {
+            return;
+        }
         $this->parkingLotId = $session->parking_lot_id;
         $this->activeSessionId = $session->id;
         $this->selectedSpaceId = $session->parking_space_id;
@@ -533,7 +594,9 @@ class ParkingTerminal extends Page
     {
         $input = trim($this->scanInput);
         $this->scanInput = '';
-        if ($input === '') return;
+        if ($input === '') {
+            return;
+        }
 
         $companyId = auth()->user()?->company_id;
 
@@ -545,10 +608,12 @@ class ParkingTerminal extends Page
                 ->first();
             if ($session) {
                 $this->openExitFor($session->id);
+
                 return;
             }
             $this->notify('warning', 'Ticket no encontrado',
                 "No hay sesión activa para el ticket {$input}.");
+
             return;
         }
 
@@ -561,6 +626,7 @@ class ParkingTerminal extends Page
             ->first();
         if ($session) {
             $this->openExitFor($session->id);
+
             return;
         }
         $this->notify('warning', 'Sin sesión activa', "No hay sesión activa para '{$plate}'.");
@@ -568,7 +634,9 @@ class ParkingTerminal extends Page
 
     public function refreshQuote(): void
     {
-        if (! $this->activeSessionId) return;
+        if (! $this->activeSessionId) {
+            return;
+        }
         $session = ParkingSession::query()
             ->where('company_id', auth()->user()?->company_id)
             ->find($this->activeSessionId);
@@ -579,7 +647,9 @@ class ParkingTerminal extends Page
 
     public function registerEntry(): void
     {
-        if ($this->mode !== 'entry') return;
+        if ($this->mode !== 'entry') {
+            return;
+        }
 
         try {
             $session = app(ParkingSessionEngine::class)->checkIn([
@@ -621,7 +691,9 @@ class ParkingTerminal extends Page
     public function processExit(): void
     {
         $session = $this->activeSession;
-        if (! $session) return;
+        if (! $session) {
+            return;
+        }
 
         try {
             $closed = app(ParkingSessionEngine::class)->checkOut($session);
@@ -651,7 +723,9 @@ class ParkingTerminal extends Page
     public function processLostTicket(): void
     {
         $session = $this->activeSession;
-        if (! $session) return;
+        if (! $session) {
+            return;
+        }
 
         try {
             $closed = app(ParkingSessionEngine::class)->lostTicket($session);
@@ -680,10 +754,13 @@ class ParkingTerminal extends Page
     public function cancelSession(): void
     {
         $session = $this->activeSession;
-        if (! $session) return;
+        if (! $session) {
+            return;
+        }
         $reason = trim((string) ($this->exitForm['cancel_reason'] ?? ''));
         if ($reason === '') {
             $this->notify('warning', 'Motivo requerido', 'Indica el motivo de la anulación.');
+
             return;
         }
         try {
@@ -695,7 +772,7 @@ class ParkingTerminal extends Page
         }
     }
 
-    protected function maybeIssueInvoice(ParkingSession $closed): ?\App\Models\SaleInvoice
+    protected function maybeIssueInvoice(ParkingSession $closed): ?SaleInvoice
     {
         $parkingCharge = $closed->parking_membership_id ? 0 : (float) $closed->amount;
         $extrasTotal = $this->extrasTotal;
@@ -744,14 +821,17 @@ class ParkingTerminal extends Page
 
     public function searchCustomer(string $query): array
     {
-        if (strlen(trim($query)) < 2) return [];
+        if (strlen(trim($query)) < 2) {
+            return [];
+        }
         $companyId = auth()->user()?->company_id;
+
         return ThirdParty::query()
             ->where('company_id', $companyId)
             ->where('is_customer', true)
             ->where(function ($q) use ($query) {
                 $q->where('name', 'ilike', "%{$query}%")
-                  ->orWhere('document_number', 'ilike', "%{$query}%");
+                    ->orWhere('document_number', 'ilike', "%{$query}%");
             })
             ->orderBy('name')->limit(8)->get(['id', 'name', 'document_number'])
             ->map(fn ($c) => [
@@ -764,7 +844,9 @@ class ParkingTerminal extends Page
     protected function notify(string $type, string $title, ?string $body = null): void
     {
         $n = Notification::make()->title($title);
-        if ($body) $n->body($body);
+        if ($body) {
+            $n->body($body);
+        }
         match ($type) {
             'success' => $n->success(),
             'danger' => $n->danger()->persistent(),
@@ -795,10 +877,10 @@ class ParkingTerminal extends Page
 
     public string $newCustomerAddress = '';
 
-    /** @return \Illuminate\Support\Collection<int, \App\Models\ThirdParty> */
+    /** @return Collection<int, ThirdParty> */
     public function getCustomerMatchesProperty()
     {
-        return app(\App\Services\Sales\QuickCustomer::class)->search(
+        return app(QuickCustomer::class)->search(
             (int) auth()->user()?->company_id,
             $this->customerSearch,
         );
@@ -823,12 +905,12 @@ class ParkingTerminal extends Page
 
     public function selectCustomer(int $thirdPartyId): void
     {
-        $cliente = \App\Models\ThirdParty::query()
+        $cliente = ThirdParty::query()
             ->where('company_id', auth()->user()?->company_id)
             ->find($thirdPartyId);
 
         if (! $cliente) {
-            \Filament\Notifications\Notification::make()->danger()
+            Notification::make()->danger()
                 ->title('Ese cliente ya no existe')->send();
 
             return;
@@ -849,7 +931,7 @@ class ParkingTerminal extends Page
     public function createCustomer(): void
     {
         try {
-            $resultado = app(\App\Services\Sales\QuickCustomer::class)->create(
+            $resultado = app(QuickCustomer::class)->create(
                 (int) auth()->user()?->company_id,
                 [
                     'name' => $this->newCustomerName,
@@ -861,7 +943,7 @@ class ParkingTerminal extends Page
                 ],
             );
         } catch (\RuntimeException $e) {
-            \Filament\Notifications\Notification::make()->danger()
+            Notification::make()->danger()
                 ->title('No se pudo crear el cliente')->body($e->getMessage())->send();
 
             return;
@@ -873,10 +955,10 @@ class ParkingTerminal extends Page
         $this->closeCustomerModal();
 
         $resultado['existed']
-            ? \Filament\Notifications\Notification::make()->warning()
+            ? Notification::make()->warning()
                 ->title('Ese documento ya estaba registrado')
-                ->body("Se seleccionó {$cliente->name}.")->send()
-            : \Filament\Notifications\Notification::make()->success()
+                ->body(trim("Se seleccionó {$cliente->name}. ".($resultado['note'] ?? '')))->send()
+            : Notification::make()->success()
                 ->title("Cliente {$cliente->name} creado")->send();
     }
 
@@ -902,13 +984,13 @@ class ParkingTerminal extends Page
     public function openCashModal(): void
     {
         if ($this->openCashSession) {
-            \Filament\Notifications\Notification::make()->warning()
+            Notification::make()->warning()
                 ->title('Ya tienes un turno abierto')->send();
 
             return;
         }
 
-        $this->openingLocationId = \App\Models\Location::query()
+        $this->openingLocationId = Location::query()
             ->where('company_id', auth()->user()?->company_id)
             ->where('active', true)
             ->orderByDesc('is_main')
@@ -927,7 +1009,7 @@ class ParkingTerminal extends Page
     /** @return array<int, string> */
     public function getOpeningLocationsProperty(): array
     {
-        return \App\Models\Location::query()
+        return Location::query()
             ->where('company_id', auth()->user()?->company_id)
             ->where('active', true)
             ->orderByDesc('is_main')
@@ -939,14 +1021,14 @@ class ParkingTerminal extends Page
     public function openCashRegister(): void
     {
         if ($this->openCashSession) {
-            \Filament\Notifications\Notification::make()->warning()
+            Notification::make()->warning()
                 ->title('Ya tienes un turno abierto')->send();
 
             return;
         }
 
         if (! $this->openingLocationId) {
-            \Filament\Notifications\Notification::make()->danger()
+            Notification::make()->danger()
                 ->title('Selecciona la sede')->send();
 
             return;
@@ -967,7 +1049,7 @@ class ParkingTerminal extends Page
         $this->openCashModalOpen = false;
         $this->openingNotes = '';
 
-        \Filament\Notifications\Notification::make()->success()
+        Notification::make()->success()
             ->title('Caja abierta')
             ->body('Sede '.$sesion->location?->name.'. Base: $'.number_format($base, 0, ',', '.'))
             ->send();

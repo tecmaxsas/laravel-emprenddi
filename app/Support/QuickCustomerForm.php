@@ -81,7 +81,7 @@ class QuickCustomerForm
         if ($resultado['existed']) {
             Notification::make()->warning()
                 ->title('Ese documento ya estaba registrado')
-                ->body('Se seleccionó '.$resultado['customer']->name.'.')
+                ->body(trim('Se seleccionó '.$resultado['customer']->name.'. '.($resultado['note'] ?? '')))
                 ->send();
         }
 

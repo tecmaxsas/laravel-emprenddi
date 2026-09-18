@@ -3,9 +3,13 @@
 namespace App\Filament\App\Pages\Restaurant;
 
 use App\Models\Account;
+use App\Models\CashRegisterSession;
 use App\Models\Category;
+use App\Models\Company;
+use App\Models\GiftCard;
 use App\Models\Location;
 use App\Models\Product;
+use App\Models\Promotion;
 use App\Models\Restaurant\Modifier;
 use App\Models\Restaurant\Order;
 use App\Models\Restaurant\OrderItem;
@@ -13,14 +17,28 @@ use App\Models\Restaurant\Reservation;
 use App\Models\Restaurant\ServiceZone;
 use App\Models\Restaurant\Table;
 use App\Models\ThirdParty;
+use App\Services\Cash\CashSessionSummary;
+use App\Services\GiftCards\GiftCardEngine;
+use App\Services\GiftCards\GiftCardProductProvisioner;
+use App\Services\Promotions\CartContext;
+use App\Services\Promotions\CartLine;
+use App\Services\Promotions\PromotionEngine;
+use App\Services\Promotions\PromotionResult;
+use App\Services\Restaurant\BrowserPrintQueue;
 use App\Services\Restaurant\DeliveryCustomerRegistrar;
-use App\Services\Sales\QuickCustomer;
 use App\Services\Restaurant\RestaurantOrderEngine;
+use App\Services\Sales\QuickCustomer;
 use App\Support\AccountantContext;
+use App\Support\CashSessionGate;
+use App\Support\GiftCardsSettings;
 use App\Support\ModuleGate;
 use App\Support\PaymentAccountResolver;
+use App\Support\PaymentMethodOptions;
+use App\Support\PromotionsSettings;
+use App\Support\RestaurantSettings;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 
 /**
@@ -51,9 +69,13 @@ class RestaurantPos extends Page
     protected static string $view = 'filament.app.pages.restaurant.pos';
 
     public ?int $locationId = null;
+
     public ?int $activeZoneId = null;
+
     public ?int $activeOrderId = null;
+
     public ?int $activeCategoryId = null;
+
     public string $productSearch = '';
 
     // Curso "actual" al agregar items: 1=entrada, 2=principal, 3=postre, 4=bebida
@@ -61,62 +83,93 @@ class RestaurantPos extends Page
 
     // Estado del modal de modificadores
     public ?int $modifierProductId = null;
+
     public array $modifierSelections = [];       // [groupId => [modifierId, ...]] (multi) | [groupId => modifierId] (single)
+
     public string $modifierItemNote = '';
 
     // Estado del modal mitad y mitad
     public bool $halfModalOpen = false;
+
     public ?int $halfAProductId = null;
+
     public ?int $halfBProductId = null;
+
     public string $halfNote = '';
 
     // Caja registradora
     public string $openCajaAmount = '0';
+
     public bool $closeCajaModalOpen = false;
+
     public string $closeCajaCounted = '0';
+
     public string $closeCajaNotes = '';
 
     // Transferir / juntar mesas
     public bool $transferModalOpen = false;
+
     public ?int $transferTargetTableId = null;
 
     public bool $mergeModalOpen = false;
+
     public ?int $mergeTargetOrderId = null;
 
     // Modal "nueva para llevar"
     public bool $takeawayModalOpen = false;
+
     public string $takeawayCustomerName = '';
 
     // Modal "nuevo domicilio"
     public bool $deliveryModalOpen = false;
+
     public string $deliveryCustomerName = '';
+
     public string $deliveryCustomerPhone = '';
+
     public string $deliveryCustomerDocument = '';
+
     /** Busqueda de un cliente ya registrado, para no volver a dictarlo todo. */
     public string $deliveryCustomerSearch = '';
+
     public string $deliveryAddress = '';
+
     public string $deliveryAddressNotes = '';
+
     public string $deliveryFee = '0';
 
     // Cobro / facturación
     public string $customTipAmount = '';        // input manual de propina ($)
+
     public string $splitMode = 'none';          // 'none' | 'by_item'
+
     public bool $billingModalOpen = false;
+
     // Multi-pago: por cada tab un array de pagos
     // [tabKey => [['method' => 'cash', 'account_id' => 5, 'amount' => '50000.00'], ...]]
     public array $billingPayments = [];
+
     public string $billingReference = '';
+
     public string $billingInvoiceKind = 'pos';  // pos | electronic
 
     /** Cliente elegido al cobrar. Null = consumidor final. */
     public ?int $billingCustomerId = null;
+
     public bool $billingCustomerModalOpen = false;
+
     public string $billingCustomerSearch = '';
+
     public string $newCustomerName = '';
+
     public string $newCustomerDocumentType = 'cc';
+
     public string $newCustomerDocument = '';
+
     public string $newCustomerEmail = '';
+
     public string $newCustomerPhone = '';
+
     public string $newCustomerAddress = '';
 
     // ----------------------------------------------------------------
@@ -125,9 +178,11 @@ class RestaurantPos extends Page
     // Codigo de cupon ingresado manualmente. Si esta vacio, solo se aplican
     // promociones automaticas (sin codigo).
     public string $couponCode = '';
+
     // Log de promociones aplicadas a la orden actual.
     // Cada item: ['promotion_id', 'name', 'code', 'discount']
     public array $appliedPromotions = [];
+
     // Total descontado por promociones — se distribuye proporcionalmente
     // entre las lineas de cada tab al facturar.
     public float $promotionsDiscountAmount = 0.0;
@@ -137,6 +192,7 @@ class RestaurantPos extends Page
     // ----------------------------------------------------------------
     // Codigo en validacion (input del cajero)
     public string $giftCardCodeInput = '';
+
     // Gift cards aplicadas como medio de pago a la orden actual.
     // Cada item: ['gift_card_id', 'code', 'amount', 'available_balance']
     public array $appliedGiftCards = [];
@@ -144,15 +200,24 @@ class RestaurantPos extends Page
     // Modal de emision: cuando el cajero agrega el producto especial 'GIFTCARD'
     // a la orden, se abre este modal para capturar monto y destinatario.
     public bool $showGiftCardEmissionModal = false;
+
     public ?float $giftCardEmissionAmount = null;
+
     public string $giftCardEmissionRecipientName = '';
+
     public string $giftCardEmissionRecipientEmail = '';
+
     public string $giftCardEmissionSenderName = '';
 
     public static function canAccess(): bool
     {
-        if (! ModuleGate::active('restaurant')) return false;
-        if (! AccountantContext::ready()) return false;
+        if (! ModuleGate::active('restaurant')) {
+            return false;
+        }
+        if (! AccountantContext::ready()) {
+            return false;
+        }
+
         return (bool) Auth::user()?->can('restaurant.use');
     }
 
@@ -164,14 +229,14 @@ class RestaurantPos extends Page
             ->where('active', true)
             ->where('is_main', true)
             ->value('id') ?? Location::query()
-                ->where('company_id', $companyId)
-                ->where('active', true)
-                ->value('id');
+            ->where('company_id', $companyId)
+            ->where('active', true)
+            ->value('id');
 
         // Tipo de factura por defecto desde settings.pos.default_invoice_kind.
         // Empresas que solo facturan electronicamente lo dejan en 'electronic'
         // para no tener que cambiar el tipo en cada cobro.
-        $settings = \App\Models\Company::find(auth()->user()->company_id)?->settings ?? [];
+        $settings = Company::find(auth()->user()->company_id)?->settings ?? [];
         $defaultKind = data_get($settings, 'pos.default_invoice_kind', 'pos');
         $this->billingInvoiceKind = in_array($defaultKind, ['pos', 'electronic'], true)
             ? $defaultKind
@@ -184,9 +249,9 @@ class RestaurantPos extends Page
      * Sesión de caja abierta del usuario actual (o null). El POS no opera
      * sin caja abierta — la vista muestra el panel de apertura.
      */
-    public function getCashSessionProperty(): ?\App\Models\CashRegisterSession
+    public function getCashSessionProperty(): ?CashRegisterSession
     {
-        return \App\Support\CashSessionGate::currentOpenSession();
+        return CashSessionGate::currentOpenSession();
     }
 
     /**
@@ -195,25 +260,28 @@ class RestaurantPos extends Page
     public function getCashSummaryProperty(): ?array
     {
         $s = $this->cashSession;
-        return $s ? app(\App\Services\Cash\CashSessionSummary::class)->compute($s) : null;
+
+        return $s ? app(CashSessionSummary::class)->compute($s) : null;
     }
 
     public function openCaja(): void
     {
         if ($this->cashSession) {
             Notification::make()->title('Ya tienes una caja abierta')->warning()->send();
+
             return;
         }
         if (! $this->locationId) {
             Notification::make()->title('Selecciona una sede')->danger()->send();
+
             return;
         }
 
-        \App\Models\CashRegisterSession::create([
+        CashRegisterSession::create([
             'company_id' => Auth::user()->company_id,
             'location_id' => $this->locationId,
             'cashier_user_id' => Auth::id(),
-            'status' => \App\Models\CashRegisterSession::STATUS_OPEN,
+            'status' => CashRegisterSession::STATUS_OPEN,
             'opened_at' => now(),
             'opening_amount' => max(0, (float) $this->openCajaAmount),
             'opening_notes' => null,
@@ -226,7 +294,9 @@ class RestaurantPos extends Page
 
     public function openCloseCajaModal(): void
     {
-        if (! $this->cashSession) return;
+        if (! $this->cashSession) {
+            return;
+        }
         $this->closeCajaCounted = '0';
         $this->closeCajaNotes = '';
         $this->closeCajaModalOpen = true;
@@ -240,10 +310,13 @@ class RestaurantPos extends Page
     public function closeCaja(): void
     {
         $session = $this->cashSession;
-        if (! $session) return;
+        if (! $session) {
+            return;
+        }
 
         if (! Auth::user()?->can('pos.cash_close')) {
             Notification::make()->title('Sin permiso para cerrar caja')->danger()->send();
+
             return;
         }
 
@@ -261,16 +334,17 @@ class RestaurantPos extends Page
                 ->title('Hay órdenes abiertas')
                 ->body("Cobra o cancela las {$openOrders} órdenes activas antes de cerrar caja.")
                 ->danger()->send();
+
             return;
         }
 
-        $summary = app(\App\Services\Cash\CashSessionSummary::class)->compute($session);
+        $summary = app(CashSessionSummary::class)->compute($session);
         $counted = (float) $this->closeCajaCounted;
         $expected = (float) $summary['expected_cash'];
         $difference = round($counted - $expected, 2);
 
         $session->update([
-            'status' => \App\Models\CashRegisterSession::STATUS_CLOSED,
+            'status' => CashRegisterSession::STATUS_CLOSED,
             'closed_at' => now(),
             'closed_by_user_id' => Auth::id(),
             'closing_expected' => $expected,
@@ -328,7 +402,10 @@ class RestaurantPos extends Page
 
     public function getActiveOrderProperty(): ?Order
     {
-        if (! $this->activeOrderId) return null;
+        if (! $this->activeOrderId) {
+            return null;
+        }
+
         return Order::query()
             ->where('company_id', auth()->user()?->company_id)
             ->with(['items.product', 'table', 'zone', 'server'])
@@ -355,8 +432,8 @@ class RestaurantPos extends Page
                 $s = trim($this->productSearch);
                 $q->where(function ($x) use ($s) {
                     $x->where('name', 'ilike', "%{$s}%")
-                      ->orWhere('code', 'ilike', "%{$s}%")
-                      ->orWhere('barcode', 'ilike', "%{$s}%");
+                        ->orWhere('code', 'ilike', "%{$s}%")
+                        ->orWhere('barcode', 'ilike', "%{$s}%");
                 });
             })
             ->orderBy('name')
@@ -369,12 +446,15 @@ class RestaurantPos extends Page
     public function selectTable(int $tableId): void
     {
         $table = Table::query()->where('company_id', auth()->user()?->company_id)->find($tableId);
-        if (! $table) return;
+        if (! $table) {
+            return;
+        }
 
         $order = $table->activeOrder();
 
         if ($order) {
             $this->activeOrderId = $order->id;
+
             return;
         }
 
@@ -420,22 +500,27 @@ class RestaurantPos extends Page
     public function addProduct(int $productId): void
     {
         $order = $this->activeOrder;
-        if (! $order) return;
+        if (! $order) {
+            return;
+        }
 
         $product = Product::query()->where('company_id', auth()->user()?->company_id)->find($productId);
-        if (! $product) return;
+        if (! $product) {
+            return;
+        }
 
         // Si es el producto especial 'Tarjeta Regalo', abrir modal de emision
         // en vez de agregar como producto normal. Al confirmar el modal, se
         // agrega al order con metadata para que confirmBilling() lo emita
         // como gift card real despues de facturar.
-        if (\App\Services\GiftCards\GiftCardProductProvisioner::isGiftCardProduct($product)) {
-            if (! \App\Support\GiftCardsSettings::moduleActive()) {
+        if (GiftCardProductProvisioner::isGiftCardProduct($product)) {
+            if (! GiftCardsSettings::moduleActive()) {
                 Notification::make()
                     ->title('Gift Cards no esta activo')
                     ->body('Activalo en Configuraciones → Gift Cards para vender tarjetas regalo.')
                     ->warning()
                     ->send();
+
                 return;
             }
             $this->giftCardEmissionAmount = null;
@@ -443,13 +528,14 @@ class RestaurantPos extends Page
             $this->giftCardEmissionRecipientEmail = '';
             $this->giftCardEmissionSenderName = '';
             $this->showGiftCardEmissionModal = true;
+
             return;
         }
 
         // Si el producto tiene grupos de modificadores Y la feature 'modifiers'
         // está activa en la empresa, abrir el modal en vez de agregar directo.
         // Si está OFF, agrega como si no tuviera modificadores.
-        if (\App\Support\RestaurantSettings::isEnabled('modifiers')
+        if (RestaurantSettings::isEnabled('modifiers')
             && $product->modifierGroups()->where('active', true)->exists()) {
             $this->modifierProductId = $productId;
             $this->modifierSelections = [];
@@ -469,6 +555,7 @@ class RestaurantPos extends Page
                     $this->modifierSelections[$group->id] = [];
                 }
             }
+
             return;
         }
 
@@ -498,7 +585,9 @@ class RestaurantPos extends Page
 
     public function setCurrentCourse(int $course): void
     {
-        if (! array_key_exists($course, OrderItem::COURSES)) return;
+        if (! array_key_exists($course, OrderItem::COURSES)) {
+            return;
+        }
         $this->currentCourse = $course;
     }
 
@@ -512,13 +601,16 @@ class RestaurantPos extends Page
         // que si esta filtrado por company. Un itemId de otra empresa
         // no encontrara match aqui.
         $item = $this->activeOrder?->items()->find($itemId);
-        if (! $item) return;
+        if (! $item) {
+            return;
+        }
         if ($item->kitchen_status !== OrderItem::KS_PENDING) {
             Notification::make()
                 ->title('No se puede cambiar')
                 ->body('El item ya fue enviado a cocina.')
                 ->warning()
                 ->send();
+
             return;
         }
         $courses = array_keys(OrderItem::COURSES);
@@ -529,7 +621,10 @@ class RestaurantPos extends Page
 
     public function getModifierProductProperty(): ?Product
     {
-        if (! $this->modifierProductId) return null;
+        if (! $this->modifierProductId) {
+            return null;
+        }
+
         return Product::query()
             ->where('company_id', auth()->user()?->company_id)
             ->with(['modifierGroups.modifiers' => fn ($q) => $q->where('active', true)])
@@ -552,6 +647,7 @@ class RestaurantPos extends Page
         $product = $this->modifierProduct;
         if (! $order || ! $product) {
             $this->cancelModifiers();
+
             return;
         }
 
@@ -566,14 +662,17 @@ class RestaurantPos extends Page
 
             if ($group->required && $count < max(1, $group->min_select)) {
                 Notification::make()->title('Falta elegir')->body("'{$group->name}' requiere al menos ".max(1, $group->min_select).' opción.')->danger()->send();
+
                 return;
             }
             if ($count < $group->min_select) {
                 Notification::make()->title('Mínimo no cumplido')->body("'{$group->name}' requiere al menos {$group->min_select}.")->danger()->send();
+
                 return;
             }
             if ($group->max_select > 0 && $count > $group->max_select) {
                 Notification::make()->title('Máximo excedido')->body("'{$group->name}' permite máximo {$group->max_select}.")->danger()->send();
+
                 return;
             }
             $selectedIds = array_merge($selectedIds, $ids);
@@ -621,7 +720,9 @@ class RestaurantPos extends Page
 
     public function openHalfModal(): void
     {
-        if (! $this->activeOrder) return;
+        if (! $this->activeOrder) {
+            return;
+        }
         $this->halfModalOpen = true;
         $this->halfAProductId = null;
         $this->halfBProductId = null;
@@ -642,11 +743,15 @@ class RestaurantPos extends Page
      */
     public function getHalfBOptionsProperty()
     {
-        if (! $this->halfAProductId) return collect();
+        if (! $this->halfAProductId) {
+            return collect();
+        }
 
         $companyId = auth()->user()?->company_id;
         $a = Product::query()->where('company_id', $companyId)->find($this->halfAProductId);
-        if (! $a || ! $a->category_id) return collect();
+        if (! $a || ! $a->category_id) {
+            return collect();
+        }
 
         return Product::query()
             ->where('company_id', $companyId)
@@ -674,15 +779,19 @@ class RestaurantPos extends Page
 
     public function getHalfPreviewProperty(): ?array
     {
-        if (! $this->halfAProductId || ! $this->halfBProductId) return null;
+        if (! $this->halfAProductId || ! $this->halfBProductId) {
+            return null;
+        }
 
         $companyId = auth()->user()?->company_id;
         $a = Product::query()->where('company_id', $companyId)->find($this->halfAProductId);
         $b = Product::query()->where('company_id', $companyId)->find($this->halfBProductId);
-        if (! $a || ! $b) return null;
+        if (! $a || ! $b) {
+            return null;
+        }
 
         $location = $this->activeOrder?->location_id
-            ? \App\Models\Location::query()->where('company_id', $companyId)->find($this->activeOrder->location_id)
+            ? Location::query()->where('company_id', $companyId)->find($this->activeOrder->location_id)
             : null;
         $priceA = (float) $a->priceForLocation($location);
         $priceB = (float) $b->priceForLocation($location);
@@ -700,9 +809,14 @@ class RestaurantPos extends Page
     public function confirmHalfAndHalf(): void
     {
         $order = $this->activeOrder;
-        if (! $order) { $this->closeHalfModal(); return; }
+        if (! $order) {
+            $this->closeHalfModal();
+
+            return;
+        }
         if (! $this->halfAProductId || ! $this->halfBProductId) {
             Notification::make()->title('Faltan mitades')->body('Debes elegir las 2 mitades.')->danger()->send();
+
             return;
         }
 
@@ -711,6 +825,7 @@ class RestaurantPos extends Page
         $b = Product::query()->where('company_id', $companyId)->find($this->halfBProductId);
         if (! $a || ! $b) {
             Notification::make()->title('Productos invalidos')->danger()->send();
+
             return;
         }
 
@@ -740,7 +855,9 @@ class RestaurantPos extends Page
 
     public function openTransferModal(): void
     {
-        if (! $this->activeOrder) return;
+        if (! $this->activeOrder) {
+            return;
+        }
         $this->transferModalOpen = true;
         $this->transferTargetTableId = null;
     }
@@ -757,7 +874,9 @@ class RestaurantPos extends Page
     public function getTransferTablesProperty()
     {
         $order = $this->activeOrder;
-        if (! $order) return collect();
+        if (! $order) {
+            return collect();
+        }
 
         return Table::query()
             ->where('company_id', auth()->user()?->company_id)
@@ -776,12 +895,14 @@ class RestaurantPos extends Page
         $order = $this->activeOrder;
         if (! $order || ! $this->transferTargetTableId) {
             Notification::make()->title('Selecciona una mesa')->danger()->send();
+
             return;
         }
 
         $newTable = Table::query()->where('company_id', auth()->user()?->company_id)->find($this->transferTargetTableId);
         if (! $newTable) {
             Notification::make()->title('Mesa invalida')->danger()->send();
+
             return;
         }
 
@@ -803,7 +924,9 @@ class RestaurantPos extends Page
 
     public function openMergeModal(): void
     {
-        if (! $this->activeOrder) return;
+        if (! $this->activeOrder) {
+            return;
+        }
         $this->mergeModalOpen = true;
         $this->mergeTargetOrderId = null;
     }
@@ -820,7 +943,9 @@ class RestaurantPos extends Page
     public function getMergeOrdersProperty()
     {
         $order = $this->activeOrder;
-        if (! $order) return collect();
+        if (! $order) {
+            return collect();
+        }
 
         return Order::query()
             ->where('company_id', auth()->user()?->company_id)
@@ -837,12 +962,14 @@ class RestaurantPos extends Page
         $order = $this->activeOrder;
         if (! $order || ! $this->mergeTargetOrderId) {
             Notification::make()->title('Selecciona una orden')->danger()->send();
+
             return;
         }
 
         $secondary = Order::query()->where('company_id', auth()->user()?->company_id)->find($this->mergeTargetOrderId);
         if (! $secondary) {
             Notification::make()->title('Orden invalida')->danger()->send();
+
             return;
         }
 
@@ -866,6 +993,7 @@ class RestaurantPos extends Page
     {
         if (! $this->locationId) {
             Notification::make()->title('Selecciona una sede primero')->danger()->send();
+
             return;
         }
         $this->takeawayModalOpen = true;
@@ -880,11 +1008,14 @@ class RestaurantPos extends Page
 
     public function createTakeaway(): void
     {
-        if (! $this->locationId) return;
+        if (! $this->locationId) {
+            return;
+        }
 
         $location = Location::query()->where('company_id', auth()->user()?->company_id)->find($this->locationId);
         if (! $location) {
             Notification::make()->title('Sede inválida')->danger()->send();
+
             return;
         }
 
@@ -911,7 +1042,9 @@ class RestaurantPos extends Page
     public function setServiceMode(string $mode): void
     {
         $order = $this->activeOrder;
-        if (! $order) return;
+        if (! $order) {
+            return;
+        }
         try {
             app(RestaurantOrderEngine::class)->setServiceMode($order, $mode);
             Notification::make()
@@ -930,6 +1063,7 @@ class RestaurantPos extends Page
     {
         if (! $this->locationId) {
             Notification::make()->title('Selecciona una sede primero')->danger()->send();
+
             return;
         }
         $this->deliveryModalOpen = true;
@@ -949,11 +1083,14 @@ class RestaurantPos extends Page
 
     public function createDelivery(): void
     {
-        if (! $this->locationId) return;
+        if (! $this->locationId) {
+            return;
+        }
 
         $location = Location::query()->where('company_id', auth()->user()?->company_id)->find($this->locationId);
         if (! $location) {
             Notification::make()->title('Sede inválida')->danger()->send();
+
             return;
         }
 
@@ -961,6 +1098,7 @@ class RestaurantPos extends Page
         $address = trim($this->deliveryAddress);
         if ($name === '' || $address === '') {
             Notification::make()->title('Faltan datos')->body('Nombre y dirección son obligatorios.')->danger()->send();
+
             return;
         }
 
@@ -993,7 +1131,7 @@ class RestaurantPos extends Page
     /**
      * Clientes que coinciden con lo que se esta escribiendo en el buscador.
      *
-     * @return \Illuminate\Support\Collection<int, \App\Models\ThirdParty>
+     * @return Collection<int, ThirdParty>
      */
     public function getDeliveryCustomerMatchesProperty()
     {
@@ -1033,7 +1171,9 @@ class RestaurantPos extends Page
      */
     public function getDeliveryOrdersProperty()
     {
-        if (! $this->locationId) return collect();
+        if (! $this->locationId) {
+            return collect();
+        }
 
         return Order::query()
             ->where('company_id', auth()->user()?->company_id)
@@ -1052,7 +1192,9 @@ class RestaurantPos extends Page
      */
     public function getTakeawayOrdersProperty()
     {
-        if (! $this->locationId) return collect();
+        if (! $this->locationId) {
+            return collect();
+        }
 
         return Order::query()
             ->where('company_id', auth()->user()?->company_id)
@@ -1072,9 +1214,12 @@ class RestaurantPos extends Page
      */
     public function getUpcomingReservationsProperty()
     {
-        if (! $this->locationId) return collect();
+        if (! $this->locationId) {
+            return collect();
+        }
 
         $now = now();
+
         return Reservation::query()
             ->where('company_id', auth()->user()?->company_id)
             ->where('location_id', $this->locationId)
@@ -1096,9 +1241,12 @@ class RestaurantPos extends Page
     {
         $companyId = auth()->user()?->company_id;
         $reservation = Reservation::query()->where('company_id', $companyId)->find($reservationId);
-        if (! $reservation) return;
+        if (! $reservation) {
+            return;
+        }
         if (! $reservation->isActive()) {
             Notification::make()->title('Reserva no activa')->warning()->send();
+
             return;
         }
 
@@ -1113,12 +1261,14 @@ class RestaurantPos extends Page
                 ->body("{$reservation->customer_name} llegó. Asigna mesa manualmente.")
                 ->success()
                 ->send();
+
             return;
         }
 
         $table = Table::query()->where('company_id', $companyId)->find($reservation->table_id);
         if (! $table) {
             Notification::make()->title('Mesa de la reserva ya no existe')->danger()->send();
+
             return;
         }
 
@@ -1136,6 +1286,7 @@ class RestaurantPos extends Page
                 ->body("Vinculada a orden existente {$existing->fullNumber()}.")
                 ->info()
                 ->send();
+
             return;
         }
 
@@ -1173,7 +1324,9 @@ class RestaurantPos extends Page
     public function markReservationNoShow(int $reservationId): void
     {
         $reservation = Reservation::query()->where('company_id', auth()->user()?->company_id)->find($reservationId);
-        if (! $reservation || ! $reservation->isActive()) return;
+        if (! $reservation || ! $reservation->isActive()) {
+            return;
+        }
         $reservation->update([
             'status' => Reservation::STATUS_NO_SHOW,
             'cancelled_at' => now(),
@@ -1186,7 +1339,9 @@ class RestaurantPos extends Page
     public function applyTipPercent(int $percentage): void
     {
         $order = $this->activeOrder;
-        if (! $order) return;
+        if (! $order) {
+            return;
+        }
         try {
             app(RestaurantOrderEngine::class)->setTip($order, (float) $percentage);
             $this->customTipAmount = '';
@@ -1198,10 +1353,13 @@ class RestaurantPos extends Page
     public function applyCustomTip(): void
     {
         $order = $this->activeOrder;
-        if (! $order) return;
+        if (! $order) {
+            return;
+        }
         $amount = (float) str_replace(['.', ','], ['', '.'], $this->customTipAmount);
         if ($amount < 0) {
             Notification::make()->title('Monto inválido')->danger()->send();
+
             return;
         }
         try {
@@ -1213,7 +1371,9 @@ class RestaurantPos extends Page
 
     public function setSplitMode(string $mode): void
     {
-        if (! in_array($mode, ['none', 'by_item'], true)) return;
+        if (! in_array($mode, ['none', 'by_item'], true)) {
+            return;
+        }
         $this->splitMode = $mode;
         // Si vuelven a 'none', limpiar etiquetas de todos los items
         if ($mode === 'none' && $this->activeOrder) {
@@ -1228,9 +1388,13 @@ class RestaurantPos extends Page
     public function assignItemTab(int $itemId, string $tab): void
     {
         $item = $this->activeOrder?->items()->find($itemId);
-        if (! $item) return;
+        if (! $item) {
+            return;
+        }
         $clean = trim($tab);
-        if ($clean === '') return;
+        if ($clean === '') {
+            return;
+        }
         // Solo aceptar A-Z, 1-9 mayúsculas para mantenerlo simple
         $clean = strtoupper(substr($clean, 0, 5));
         app(RestaurantOrderEngine::class)->setItemTab($item, $clean);
@@ -1239,7 +1403,9 @@ class RestaurantPos extends Page
     public function unassignItemTab(int $itemId): void
     {
         $item = $this->activeOrder?->items()->find($itemId);
-        if (! $item) return;
+        if (! $item) {
+            return;
+        }
         app(RestaurantOrderEngine::class)->setItemTab($item, null);
     }
 
@@ -1266,7 +1432,7 @@ class RestaurantPos extends Page
     }
 
     /**
-     * @return \Illuminate\Support\Collection<int, ThirdParty>
+     * @return Collection<int, ThirdParty>
      */
     public function getBillingCustomerMatchesProperty()
     {
@@ -1344,7 +1510,7 @@ class RestaurantPos extends Page
         $resultado['existed']
             ? Notification::make()->warning()
                 ->title('Ese documento ya estaba registrado')
-                ->body("Se seleccionó {$cliente->name}.")->send()
+                ->body(trim("Se seleccionó {$cliente->name}. ".($resultado['note'] ?? '')))->send()
             : Notification::make()->success()
                 ->title("Cliente {$cliente->name} creado")->send();
     }
@@ -1376,7 +1542,9 @@ class RestaurantPos extends Page
     public function getBillingTabsProperty(): array
     {
         $order = $this->activeOrder;
-        if (! $order) return [];
+        if (! $order) {
+            return [];
+        }
 
         $items = $order->items->reject(fn ($i) => $i->kitchen_status === OrderItem::KS_CANCELLED);
         $orderSubtotal = (float) $items->sum('subtotal');
@@ -1393,6 +1561,7 @@ class RestaurantPos extends Page
             // Payable = total - promos - gift cards (lo que cubre con efectivo/tarjeta)
             $afterPromos = max(0, $totalSum - $promoDiscount);
             $payable = max(0, $afterPromos - $giftCardsCovered);
+
             return [[
                 'key' => 'main',
                 'label' => null,
@@ -1467,12 +1636,13 @@ class RestaurantPos extends Page
             $tab['grand_total'] = $tab['payable_amount'] + $tab['tip_share'];
         }
         unset($tab);
+
         return $tabs;
     }
 
     public function getPaymentMethodOptionsProperty(): array
     {
-        return \App\Support\PaymentMethodOptions::para();
+        return PaymentMethodOptions::para();
     }
 
     /**
@@ -1487,7 +1657,7 @@ class RestaurantPos extends Page
             ->where('active', true)
             ->where(function ($q) {
                 $q->where('code', 'like', '11%')   // disponible
-                  ->orWhere('code', 'like', '1305%'); // CxC
+                    ->orWhere('code', 'like', '1305%'); // CxC
             })
             ->orderBy('code')
             ->get(['id', 'code', 'name']);
@@ -1505,11 +1675,14 @@ class RestaurantPos extends Page
     public function openBillingModal(): void
     {
         $order = $this->activeOrder;
-        if (! $order) return;
+        if (! $order) {
+            return;
+        }
 
         $tabs = $this->billingTabs;
         if (empty($tabs)) {
             Notification::make()->title('Nada para cobrar')->warning()->send();
+
             return;
         }
 
@@ -1521,6 +1694,7 @@ class RestaurantPos extends Page
                         ->title('Hay items sin asignar')
                         ->body('Asigna una etiqueta (A, B, …) a cada item antes de cobrar.')
                         ->danger()->send();
+
                     return;
                 }
             }
@@ -1556,7 +1730,9 @@ class RestaurantPos extends Page
     {
         $tabs = $this->billingTabs;
         $tab = collect($tabs)->firstWhere('key', $tabKey);
-        if (! $tab) return;
+        if (! $tab) {
+            return;
+        }
 
         $current = collect($this->billingPayments[$tabKey] ?? [])
             ->sum(fn ($p) => (float) ($p['amount'] ?? 0));
@@ -1572,9 +1748,13 @@ class RestaurantPos extends Page
 
     public function removePaymentLine(string $tabKey, int $index): void
     {
-        if (! isset($this->billingPayments[$tabKey][$index])) return;
+        if (! isset($this->billingPayments[$tabKey][$index])) {
+            return;
+        }
         // No permitir borrar el ultimo pago — debe quedar al menos uno
-        if (count($this->billingPayments[$tabKey]) <= 1) return;
+        if (count($this->billingPayments[$tabKey]) <= 1) {
+            return;
+        }
 
         unset($this->billingPayments[$tabKey][$index]);
         $this->billingPayments[$tabKey] = array_values($this->billingPayments[$tabKey]);
@@ -1585,7 +1765,9 @@ class RestaurantPos extends Page
      */
     public function onPaymentMethodChange(string $tabKey, int $index, string $method): void
     {
-        if (! isset($this->billingPayments[$tabKey][$index])) return;
+        if (! isset($this->billingPayments[$tabKey][$index])) {
+            return;
+        }
         $account = $this->defaultCashAccountId($method);
         if ($account) {
             $this->billingPayments[$tabKey][$index]['account_id'] = $account;
@@ -1595,10 +1777,14 @@ class RestaurantPos extends Page
     public function confirmBilling(): void
     {
         $order = $this->activeOrder;
-        if (! $order) return;
+        if (! $order) {
+            return;
+        }
 
         $tabs = $this->billingTabs;
-        if (empty($tabs)) return;
+        if (empty($tabs)) {
+            return;
+        }
 
         // Distribuir el descuento por promociones entre los tabs ANTES de
         // validar los pagos: el cajero debe cubrir el invoice_total MENOS
@@ -1618,21 +1804,25 @@ class RestaurantPos extends Page
                     ->title('Sin pagos')
                     ->body('Tab '.($t['label'] ?? 'principal').' no tiene ningún pago.')
                     ->danger()->send();
+
                 return;
             }
             $sum = 0;
             foreach ($payments as $p) {
                 if (empty($p['method'])) {
                     Notification::make()->title('Falta método')->body('Una línea de pago no tiene método.')->danger()->send();
+
                     return;
                 }
                 if (empty($p['account_id'])) {
                     Notification::make()->title('Falta cuenta')->body('Una línea de pago no tiene cuenta contable.')->danger()->send();
+
                     return;
                 }
                 $amount = (float) ($p['amount'] ?? 0);
                 if ($amount <= 0) {
                     Notification::make()->title('Monto inválido')->body('Hay una línea de pago con monto 0.')->danger()->send();
+
                     return;
                 }
                 $sum += $amount;
@@ -1648,15 +1838,20 @@ class RestaurantPos extends Page
             if (abs($diff) > 0.01) {
                 $tabName = $t['label'] ?: 'principal';
                 $hintParts = [];
-                if ($extraDiscount > 0) $hintParts[] = '$' . number_format($extraDiscount, 0, ',', '.') . ' promos';
-                if ($giftCardCovered > 0) $hintParts[] = '$' . number_format($giftCardCovered, 0, ',', '.') . ' gift cards';
+                if ($extraDiscount > 0) {
+                    $hintParts[] = '$'.number_format($extraDiscount, 0, ',', '.').' promos';
+                }
+                if ($giftCardCovered > 0) {
+                    $hintParts[] = '$'.number_format($giftCardCovered, 0, ',', '.').' gift cards';
+                }
                 $hint = ! empty($hintParts)
-                    ? ' (descontando ' . implode(' + ', $hintParts) . ')'
+                    ? ' (descontando '.implode(' + ', $hintParts).')'
                     : '';
                 Notification::make()
                     ->title('Pagos no cuadran')
-                    ->body("Tab {$tabName}: faltan o sobran $".number_format(abs($diff), 0, ',', '.')." (objetivo: $".number_format($target, 0, ',', '.')."{$hint})")
+                    ->body("Tab {$tabName}: faltan o sobran $".number_format(abs($diff), 0, ',', '.').' (objetivo: $'.number_format($target, 0, ',', '.')."{$hint})")
                     ->danger()->send();
+
                 return;
             }
         }
@@ -1710,13 +1905,17 @@ class RestaurantPos extends Page
             // 1. REDIMIR gift cards aplicadas — descuenta saldo y registra
             //    transaccion en el ledger. bill() ya creo el Payment con
             //    method='gift_card', aqui consolidamos la mutacion del modelo.
-            $gcEngine = app(\App\Services\GiftCards\GiftCardEngine::class);
+            $gcEngine = app(GiftCardEngine::class);
             $firstInvoice = $invoices[0] ?? null;
             foreach ($this->appliedGiftCards as $applied) {
-                $card = \App\Models\GiftCard::query()->where('company_id', auth()->user()?->company_id)->find($applied['gift_card_id']);
-                if (! $card) continue;
+                $card = GiftCard::query()->where('company_id', auth()->user()?->company_id)->find($applied['gift_card_id']);
+                if (! $card) {
+                    continue;
+                }
                 $amount = (float) $applied['amount'];
-                if ($amount <= 0) continue;
+                if ($amount <= 0) {
+                    continue;
+                }
                 try {
                     $gcEngine->redeem($card, $amount, $firstInvoice?->id, Auth::id());
                 } catch (\Throwable $e) {
@@ -1734,9 +1933,13 @@ class RestaurantPos extends Page
             $issuedGiftCards = [];
             foreach ($order->fresh('items')->items as $item) {
                 $notes = $item->notes;
-                if (! $notes) continue;
+                if (! $notes) {
+                    continue;
+                }
                 $parsed = is_string($notes) ? json_decode($notes, true) : $notes;
-                if (! is_array($parsed) || empty($parsed['_gift_card_emission'])) continue;
+                if (! is_array($parsed) || empty($parsed['_gift_card_emission'])) {
+                    continue;
+                }
 
                 $meta = $parsed['_gift_card_emission'];
                 try {
@@ -1762,13 +1965,15 @@ class RestaurantPos extends Page
 
             // 3. Registrar uso de promociones (reportes + max_uses_per_customer)
             if (! empty($this->appliedPromotions) && $firstInvoice) {
-                $promoEngine = app(\App\Services\Promotions\PromotionEngine::class);
-                $result = new \App\Services\Promotions\PromotionResult(
+                $promoEngine = app(PromotionEngine::class);
+                $result = new PromotionResult(
                     $this->buildOrderCartContext($order, $this->couponCode),
                 );
                 foreach ($this->appliedPromotions as $a) {
-                    $p = \App\Models\Promotion::query()->where('company_id', auth()->user()?->company_id)->find($a['promotion_id']);
-                    if ($p) $result->registerApplied($p, (float) $a['discount']);
+                    $p = Promotion::query()->where('company_id', auth()->user()?->company_id)->find($a['promotion_id']);
+                    if ($p) {
+                        $result->registerApplied($p, (float) $a['discount']);
+                    }
                 }
                 $promoEngine->recordUsages($result, $firstInvoice->id, Auth::id());
             }
@@ -1818,7 +2023,9 @@ class RestaurantPos extends Page
     protected function distributeGiftCardsAcrossTabs(array $tabs, array $promoShares): array
     {
         $byTab = [];
-        if (empty($this->appliedGiftCards) || empty($tabs)) return $byTab;
+        if (empty($this->appliedGiftCards) || empty($tabs)) {
+            return $byTab;
+        }
 
         // Calcular payable post-promos de cada tab
         $payables = [];
@@ -1829,7 +2036,9 @@ class RestaurantPos extends Page
             $payables[$t['key']] = $payable;
             $totalPayable += $payable;
         }
-        if ($totalPayable <= 0) return $byTab;
+        if ($totalPayable <= 0) {
+            return $byTab;
+        }
 
         // Caso simple: 1 tab — todas las gift cards van ahi
         if (count($tabs) === 1) {
@@ -1839,6 +2048,7 @@ class RestaurantPos extends Page
                 'code' => $g['code'],
                 'amount' => round((float) $g['amount'], 2),
             ], $this->appliedGiftCards);
+
             return $byTab;
         }
 
@@ -1854,7 +2064,9 @@ class RestaurantPos extends Page
                     $share = round($gcAmount * ($tabPayable / $totalPayable), 2);
                     $distributed += $share;
                 }
-                if ($share <= 0) continue;
+                if ($share <= 0) {
+                    continue;
+                }
                 $byTab[$tabKey][] = [
                     'gift_card_id' => $g['gift_card_id'],
                     'code' => $g['code'],
@@ -1862,13 +2074,16 @@ class RestaurantPos extends Page
                 ];
             }
         }
+
         return $byTab;
     }
 
     public function increaseQty(int $itemId): void
     {
         $item = $this->activeOrder?->items()->find($itemId);
-        if (! $item) return;
+        if (! $item) {
+            return;
+        }
         try {
             app(RestaurantOrderEngine::class)->updateItemQuantity($item, (float) $item->quantity + 1);
         } catch (\Throwable $e) {
@@ -1879,7 +2094,9 @@ class RestaurantPos extends Page
     public function decreaseQty(int $itemId): void
     {
         $item = $this->activeOrder?->items()->find($itemId);
-        if (! $item) return;
+        if (! $item) {
+            return;
+        }
         $newQty = (float) $item->quantity - 1;
         try {
             app(RestaurantOrderEngine::class)->updateItemQuantity($item, $newQty);
@@ -1891,7 +2108,9 @@ class RestaurantPos extends Page
     public function cancelItem(int $itemId): void
     {
         $item = $this->activeOrder?->items()->find($itemId);
-        if (! $item) return;
+        if (! $item) {
+            return;
+        }
         app(RestaurantOrderEngine::class)->cancelItem($item, 'Cancelado por mesero');
         Notification::make()->title('Item cancelado')->warning()->send();
     }
@@ -1902,7 +2121,7 @@ class RestaurantPos extends Page
      */
     protected function flushBrowserPrintJobs(): void
     {
-        $jobs = app(\App\Services\Restaurant\BrowserPrintQueue::class)->flush();
+        $jobs = app(BrowserPrintQueue::class)->flush();
         if (! empty($jobs)) {
             $this->dispatch('qz-print-jobs', jobs: $jobs);
         }
@@ -1914,7 +2133,9 @@ class RestaurantPos extends Page
     public function sendToKitchen(?int $course = null): void
     {
         $order = $this->activeOrder;
-        if (! $order) return;
+        if (! $order) {
+            return;
+        }
 
         try {
             $tickets = app(RestaurantOrderEngine::class)->sendPendingToKitchen($order, $course);
@@ -1958,12 +2179,15 @@ class RestaurantPos extends Page
     public function cancelOrder(): void
     {
         $order = $this->activeOrder;
-        if (! $order) return;
+        if (! $order) {
+            return;
+        }
         if (! Auth::user()?->can('restaurant.order.cancel')) {
             Notification::make()
                 ->title('Sin permiso')
                 ->body('No tienes permiso para cancelar órdenes. Pide al administrador.')
                 ->danger()->send();
+
             return;
         }
 
@@ -1984,12 +2208,15 @@ class RestaurantPos extends Page
     public function closeOrder(): void
     {
         $order = $this->activeOrder;
-        if (! $order) return;
+        if (! $order) {
+            return;
+        }
         if (! Auth::user()?->can('restaurant.order.close_without_invoice')) {
             Notification::make()
                 ->title('Sin permiso')
                 ->body('No tienes permiso para cerrar sin facturar. Pide al administrador.')
                 ->danger()->send();
+
             return;
         }
 
@@ -2021,9 +2248,10 @@ class RestaurantPos extends Page
      */
     public function evaluatePromotions(): void
     {
-        if (! \App\Support\PromotionsSettings::moduleActive()) {
+        if (! PromotionsSettings::moduleActive()) {
             $this->appliedPromotions = [];
             $this->promotionsDiscountAmount = 0.0;
+
             return;
         }
 
@@ -2031,12 +2259,13 @@ class RestaurantPos extends Page
         if (! $order) {
             $this->appliedPromotions = [];
             $this->promotionsDiscountAmount = 0.0;
+
             return;
         }
 
         $context = $this->buildOrderCartContext($order, $this->couponCode);
-        /** @var \App\Services\Promotions\PromotionEngine $engine */
-        $engine = app(\App\Services\Promotions\PromotionEngine::class);
+        /** @var PromotionEngine $engine */
+        $engine = app(PromotionEngine::class);
         $result = $engine->evaluate($context);
 
         $this->promotionsDiscountAmount = $result->totalDiscount();
@@ -2053,6 +2282,7 @@ class RestaurantPos extends Page
         $code = trim($this->couponCode);
         if ($code === '') {
             Notification::make()->title('Ingresa un código de cupón')->warning()->send();
+
             return;
         }
 
@@ -2070,12 +2300,13 @@ class RestaurantPos extends Page
                 ->body("El código '{$code}' no existe, está vencido, no cumple las condiciones o ya alcanzó su límite.")
                 ->danger()
                 ->send();
+
             return;
         }
 
         Notification::make()
             ->title('Cupón aplicado')
-            ->body('Descuento total: $' . number_format($this->promotionsDiscountAmount, 0, ',', '.'))
+            ->body('Descuento total: $'.number_format($this->promotionsDiscountAmount, 0, ',', '.'))
             ->success()
             ->send();
     }
@@ -2091,20 +2322,22 @@ class RestaurantPos extends Page
      * Construye un CartContext a partir de la orden activa para pasar al
      * PromotionEngine. Modo servicio: dine_in (mesa), takeaway o delivery.
      */
-    protected function buildOrderCartContext(\App\Models\Restaurant\Order $order, ?string $couponCode = null): \App\Services\Promotions\CartContext
+    protected function buildOrderCartContext(Order $order, ?string $couponCode = null): CartContext
     {
         $order->loadMissing(['items.product:id,category_id,code']);
 
         $lines = [];
         foreach ($order->items as $idx => $item) {
-            if ($item->kitchen_status === \App\Models\Restaurant\OrderItem::KS_CANCELLED) {
+            if ($item->kitchen_status === OrderItem::KS_CANCELLED) {
                 continue;
             }
             $productId = (int) $item->product_id;
-            if ($productId <= 0) continue;
+            if ($productId <= 0) {
+                continue;
+            }
 
             $product = $item->product;
-            $lines[$idx] = new \App\Services\Promotions\CartLine(
+            $lines[$idx] = new CartLine(
                 productId: $productId,
                 categoryId: $product?->category_id,
                 quantity: (int) $item->quantity,
@@ -2122,7 +2355,7 @@ class RestaurantPos extends Page
             default => 'dine_in',
         };
 
-        return new \App\Services\Promotions\CartContext(
+        return new CartContext(
             lines: $lines,
             customerId: null, // Restaurant no asocia cliente a la orden por default
             serviceMode: $serviceMode,
@@ -2137,10 +2370,14 @@ class RestaurantPos extends Page
     protected function distributePromotionsAcrossTabs(array $tabs): array
     {
         $totalDiscount = (float) $this->promotionsDiscountAmount;
-        if ($totalDiscount <= 0 || empty($tabs)) return [];
+        if ($totalDiscount <= 0 || empty($tabs)) {
+            return [];
+        }
 
         $totalAllTabs = (float) array_sum(array_map(fn ($t) => (float) $t['invoice_total'], $tabs));
-        if ($totalAllTabs <= 0) return [];
+        if ($totalAllTabs <= 0) {
+            return [];
+        }
 
         $effective = min($totalDiscount, $totalAllTabs);
         $shares = [];
@@ -2155,6 +2392,7 @@ class RestaurantPos extends Page
                 $distributed += $share;
             }
         }
+
         return $shares;
     }
 
@@ -2168,14 +2406,16 @@ class RestaurantPos extends Page
      */
     public function applyGiftCard(): void
     {
-        if (! \App\Support\GiftCardsSettings::moduleActive()) {
+        if (! GiftCardsSettings::moduleActive()) {
             Notification::make()->title('Gift Cards no esta activo')->warning()->send();
+
             return;
         }
 
         $code = trim($this->giftCardCodeInput);
         if ($code === '') {
             Notification::make()->title('Ingresa un codigo de gift card')->warning()->send();
+
             return;
         }
 
@@ -2184,11 +2424,12 @@ class RestaurantPos extends Page
             if (strcasecmp($existing['code'], $code) === 0) {
                 Notification::make()->title('Gift card ya aplicada')->warning()->send();
                 $this->giftCardCodeInput = '';
+
                 return;
             }
         }
 
-        $engine = app(\App\Services\GiftCards\GiftCardEngine::class);
+        $engine = app(GiftCardEngine::class);
         $card = $engine->findRedeemable($code);
         if (! $card) {
             Notification::make()
@@ -2196,6 +2437,7 @@ class RestaurantPos extends Page
                 ->body('La tarjeta no existe, esta anulada, sin saldo o expirada.')
                 ->danger()
                 ->send();
+
             return;
         }
 
@@ -2213,6 +2455,7 @@ class RestaurantPos extends Page
                 ->body('La orden ya esta totalmente cubierta. Quita una gift card antes de agregar otra.')
                 ->warning()
                 ->send();
+
             return;
         }
 
@@ -2227,15 +2470,17 @@ class RestaurantPos extends Page
 
         Notification::make()
             ->title("Gift card {$card->code} aplicada")
-            ->body('Saldo: $' . number_format($balance, 0, ',', '.')
-                . ' · Se redime: $' . number_format($amountToRedeem, 0, ',', '.'))
+            ->body('Saldo: $'.number_format($balance, 0, ',', '.')
+                .' · Se redime: $'.number_format($amountToRedeem, 0, ',', '.'))
             ->success()
             ->send();
     }
 
     public function removeAppliedGiftCard(int $index): void
     {
-        if (! isset($this->appliedGiftCards[$index])) return;
+        if (! isset($this->appliedGiftCards[$index])) {
+            return;
+        }
         unset($this->appliedGiftCards[$index]);
         $this->appliedGiftCards = array_values($this->appliedGiftCards);
     }
@@ -2251,15 +2496,19 @@ class RestaurantPos extends Page
         $amount = (float) ($this->giftCardEmissionAmount ?? 0);
         if ($amount <= 0) {
             Notification::make()->title('Ingresa un monto valido')->danger()->send();
+
             return;
         }
 
         $order = $this->activeOrder;
-        if (! $order) return;
+        if (! $order) {
+            return;
+        }
 
-        $product = \App\Services\GiftCards\GiftCardProductProvisioner::find(Auth::user()->company_id);
+        $product = GiftCardProductProvisioner::find(Auth::user()->company_id);
         if (! $product) {
             Notification::make()->title('Producto "Tarjeta Regalo" no encontrado. Activa el modulo en Configuraciones.')->danger()->send();
+
             return;
         }
 
@@ -2270,7 +2519,7 @@ class RestaurantPos extends Page
             $item = $order->items()->create([
                 'company_id' => $order->company_id,
                 'product_id' => $product->id,
-                'description' => 'Tarjeta Regalo $' . number_format($amount, 0, ',', '.'),
+                'description' => 'Tarjeta Regalo $'.number_format($amount, 0, ',', '.'),
                 'quantity' => 1,
                 'unit_price' => $amount,
                 'tax_id' => null,
@@ -2280,7 +2529,7 @@ class RestaurantPos extends Page
                 'total' => $amount,
                 'modifier_total' => 0,
                 'course' => 1,
-                'kitchen_status' => \App\Models\Restaurant\OrderItem::KS_SERVED,
+                'kitchen_status' => OrderItem::KS_SERVED,
                 'sent_to_kitchen_at' => now(),
                 'notes' => json_encode([
                     '_gift_card_emission' => [
