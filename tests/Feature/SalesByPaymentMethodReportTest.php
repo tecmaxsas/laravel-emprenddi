@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Filament\App\Pages\Reports\SalesByPaymentMethodPage;
+use App\Models\CashRegisterSession;
 use App\Models\Company;
 use App\Models\CustomerAdvance;
 use App\Models\Location;
@@ -11,6 +12,7 @@ use App\Models\PaymentMethod;
 use App\Models\SaleInvoice;
 use App\Models\ThirdParty;
 use App\Models\User;
+use App\Services\Cash\CashSessionSummary;
 use App\Support\CurrentCompany;
 use App\Support\PaymentMethodOptions;
 use App\Support\SalesByPaymentMethod;
@@ -168,43 +170,71 @@ class SalesByPaymentMethodReportTest extends TestCase
     }
 
     /**
-     * Un abono que vino de un anticipo muestra con qué pagó el cliente.
+     * Un anticipo recibido cuenta como plata que entró.
      *
-     * Al aplicar un anticipo a una factura, el pago se guarda con el método
-     * `advance`. Eso describe el mecanismo contable —se cruza un pasivo contra
-     * la cartera— pero no responde la pregunta del reporte: el cliente no pagó
-     * «con un anticipo», pagó en efectivo o por transferencia el día que
-     * entregó esa plata.
-     *
-     * En producción esa fila «Anticipo del cliente» se tragó el 94% del
-     * recaudo y escondió justamente el dato que se buscaba.
+     * La primera versión contaba solo lo aplicado a facturas. A un negocio que
+     * trabaja con anticipos le mostraba $2.290.200 mientras la caja del mismo
+     * período decía $8.315.200: dos pantallas del mismo sistema respondiendo
+     * distinto a la misma pregunta.
      */
-    public function test_un_anticipo_muestra_el_metodo_con_que_pago_el_cliente(): void
+    public function test_un_anticipo_recibido_cuenta(): void
     {
-        $factura = $this->facturaContabilizada();
-        $anticipo = $this->anticipo('bank_transfer', 50000);
-
-        $this->pago($factura, 'advance', 50000, null, $anticipo->id);
+        $this->anticipo('bank_transfer', 500000);
 
         $filas = collect(SalesByPaymentMethod::filas($this->filtrosDeHoy()))->keyBy('codigo');
 
-        $this->assertArrayHasKey('bank_transfer', $filas->all(),
-            'El cliente pagó por transferencia; «anticipo» es el mecanismo, no el medio.');
-        $this->assertSame(50000.0, $filas['bank_transfer']['total']);
-        $this->assertArrayNotHasKey('advance', $filas->all());
+        $this->assertSame(500000.0, $filas['bank_transfer']['total'] ?? null,
+            'Esa plata entró, aunque todavía no pague ninguna factura.');
     }
 
-    /** Un pago marcado como anticipo pero sin anticipo detrás no se inventa nada. */
-    public function test_sin_anticipo_detras_se_queda_como_estaba(): void
+    /**
+     * Aplicar un anticipo a una factura no lo cuenta dos veces.
+     *
+     * Esa operación cruza el pasivo del anticipo contra la cartera: no mueve
+     * dinero. El día que entró ya se contó.
+     */
+    public function test_aplicar_un_anticipo_no_suma_otra_vez(): void
     {
         $factura = $this->facturaContabilizada();
+        $anticipo = $this->anticipo('cash', 300000);
 
-        $this->pago($factura, 'advance', 30000);
+        $this->pago($factura, 'advance', 300000, null, $anticipo->id);
+
+        $this->assertSame(300000.0, SalesByPaymentMethod::total($this->filtrosDeHoy()),
+            'Los 300.000 entraron una sola vez.');
+    }
+
+    /** Un anticipo sin método guardado se agrupa aparte, no se le inventa uno. */
+    public function test_un_anticipo_sin_metodo_se_agrupa_en_otro(): void
+    {
+        $this->anticipo(null, 150000);
 
         $filas = collect(SalesByPaymentMethod::filas($this->filtrosDeHoy()))->keyBy('codigo');
 
-        $this->assertSame(30000.0, $filas['advance']['total'],
-            'Sin el anticipo no hay de dónde sacar el método real: inventarlo sería peor.');
+        $this->assertSame(150000.0, $filas['other']['total'] ?? null);
+    }
+
+    /**
+     * El reporte cuadra con el cierre de caja del mismo período.
+     *
+     * Es la razón de ser de todo esto. Si las dos pantallas responden distinto
+     * a «cuánta plata entró», el usuario no sabe cuál creer y las dos pierden
+     * su valor.
+     */
+    public function test_cuadra_con_el_cierre_de_caja(): void
+    {
+        $turno = $this->abrirCaja();
+
+        $factura = $this->facturaContabilizada();
+        $this->pago($factura, 'cash', 120000, null, null, $turno->id);
+        $this->anticipo('cash', 400000, $turno->id);
+        $this->anticipo('bank_transfer', 250000, $turno->id);
+
+        $caja = app(CashSessionSummary::class)->compute($turno->fresh());
+        $reporte = SalesByPaymentMethod::total($this->filtrosDeHoy());
+
+        $this->assertSame(round($caja['sales']['total'], 2), round($reporte, 2),
+            'Las dos pantallas responden la misma pregunta: tienen que dar lo mismo.');
     }
 
     /** Sin pagos no revienta ni divide por cero. */
@@ -318,6 +348,7 @@ class SalesByPaymentMethodReportTest extends TestCase
         float $monto,
         ?string $fecha = null,
         ?int $anticipoId = null,
+        ?int $turnoId = null,
     ): void {
         $pago = Payment::withoutGlobalScopes()->create([
             'company_id' => $this->company->id,
@@ -325,6 +356,7 @@ class SalesByPaymentMethodReportTest extends TestCase
             'paymentable_id' => $factura->id,
             'third_party_id' => $factura->third_party_id,
             'customer_advance_id' => $anticipoId,
+            'cash_register_session_id' => $turnoId,
             'date' => $fecha ?? now()->toDateString(),
             'amount' => $monto,
             'payment_method' => $metodo,
@@ -334,7 +366,26 @@ class SalesByPaymentMethodReportTest extends TestCase
         $this->limpiar[] = fn () => DB::table('payments')->where('id', $pago->id)->delete();
     }
 
-    private function anticipo(string $metodo, float $monto): CustomerAdvance
+    private function abrirCaja(): CashRegisterSession
+    {
+        $sede = Location::withoutGlobalScopes()
+            ->where('company_id', $this->company->id)->orderBy('id')->firstOrFail();
+
+        $turno = CashRegisterSession::withoutGlobalScopes()->create([
+            'company_id' => $this->company->id,
+            'location_id' => $sede->id,
+            'cashier_user_id' => $this->user->id,
+            'status' => CashRegisterSession::STATUS_OPEN,
+            'opened_at' => now()->subHour(),
+            'opening_amount' => 0,
+        ]);
+
+        $this->limpiar[] = fn () => DB::table('cash_register_sessions')->where('id', $turno->id)->delete();
+
+        return $turno;
+    }
+
+    private function anticipo(?string $metodo, float $monto, ?int $turnoId = null): CustomerAdvance
     {
         $tercero = ThirdParty::withoutGlobalScopes()
             ->where('company_id', $this->company->id)->orderBy('id')->firstOrFail();
@@ -342,6 +393,7 @@ class SalesByPaymentMethodReportTest extends TestCase
         $anticipo = CustomerAdvance::withoutGlobalScopes()->create([
             'company_id' => $this->company->id,
             'third_party_id' => $tercero->id,
+            'cash_register_session_id' => $turnoId,
             'date' => now()->toDateString(),
             'amount' => $monto,
             'applied_amount' => 0,

@@ -85,7 +85,7 @@ class SalesByPaymentMethodPage extends Page implements HasForms, HasTable
     {
         return $form->schema([
             Forms\Components\Section::make('Filtros')
-                ->description('Cuenta los pagos aplicados a facturas de venta según la fecha del pago: una venta a crédito aparece el día que el cliente paga, no el día que se facturó. Cuando el abono viene de un anticipo, se muestra con el método con que el cliente entregó esa plata. Un anticipo que todavía no se ha aplicado a ninguna factura no aparece aquí.')
+                ->description('Cuenta la plata que entró: los cobros de facturas de venta y los anticipos recibidos, cada uno el día que entró y con el método con que el cliente pagó. La aplicación de un anticipo a una factura no se cuenta otra vez, porque esa operación no mueve dinero. Es el mismo criterio del cierre de caja, así que los dos totales tienen que coincidir. Al filtrar por sede, los anticipos se atribuyen por el turno de caja en que se recibieron.')
                 ->columns(4)
                 ->schema([
                     Forms\Components\DatePicker::make('from')->label('Desde')->required()->live(),

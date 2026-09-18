@@ -5,6 +5,8 @@ namespace App\Support;
 use App\Models\Payment;
 use App\Models\SaleInvoice;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -16,73 +18,76 @@ use Illuminate\Support\Facades\DB;
  * deja de cuadrar contra lo que el usuario ve en pantalla —sin que nada falle,
  * que es lo peor que puede pasar con un número—.
  *
- * Dos decisiones que conviene tener presentes al leer los totales:
+ * QUÉ CUENTA, Y POR QUÉ
  *
- *  - Se cuenta por **fecha del pago**, no por la de la factura. Una venta a
- *    crédito entra el día que el cliente paga, que es cuando la plata existe.
- *    Por fecha de factura el reporte no cuadraría nunca contra el arqueo.
- *  - Solo cuentan los pagos de facturas de venta **contabilizadas**. Un
- *    borrador o una factura anulada no representa plata recibida.
+ * Cuenta **la plata que entró**, que son dos cosas:
+ *
+ *   1. Los cobros aplicados a facturas de venta, por la fecha del cobro.
+ *   2. Los anticipos recibidos, por su fecha y con el método con el que el
+ *      cliente los entregó.
+ *
+ * Y excluye a propósito una tercera: **la aplicación de un anticipo a una
+ * factura**. Esa operación cruza el pasivo del anticipo contra la cartera y no
+ * mueve dinero; contarla sería sumar dos veces la misma plata.
+ *
+ * Es exactamente el mismo criterio del cierre de caja. No es un detalle: la
+ * primera versión de este reporte contaba solo lo aplicado a facturas, así que
+ * a un negocio que trabaja con anticipos le mostraba $2.290.200 mientras la
+ * caja del mismo período decía $8.315.200. Dos pantallas del mismo sistema
+ * respondiendo distinto a la misma pregunta.
+ *
+ * Y va por **fecha del cobro**, no de la factura: una venta a crédito entra el
+ * día que el cliente paga. Por fecha de factura el total no cuadraría nunca
+ * contra el arqueo ni contra el extracto del banco.
+ *
+ * Solo cuentan los cobros de facturas **contabilizadas**: un borrador o una
+ * factura anulada no representa plata recibida.
  */
 class SalesByPaymentMethod
 {
     /**
-     * El método con el que el cliente pagó de verdad.
-     *
-     * Cuando se aplica un anticipo a una factura, el pago queda guardado con
-     * el método `advance`. Eso describe el mecanismo contable —se cruza un
-     * pasivo contra la cartera— pero no responde la pregunta del reporte: el
-     * cliente no pagó «con un anticipo», pagó en efectivo, por Nequi o con
-     * tarjeta el día que entregó esa plata.
-     *
-     * Sin esto el reporte mostraba una fila «Anticipo del cliente» que se
-     * tragaba el 94% del recaudo y escondía justamente el dato que se buscaba.
-     *
-     * El método real está en el anticipo, así que se va a buscar allá.
-     */
-    private const METODO_REAL = <<<'SQL'
-        CASE
-            WHEN payments.customer_advance_id IS NOT NULL
-             AND anticipos.payment_method IS NOT NULL
-            THEN anticipos.payment_method
-            ELSE payments.payment_method
-        END
-        SQL;
-
-    /**
-     * Los pagos del período, ya sumados por método.
+     * Los movimientos del período, ya sumados por método.
      *
      * Devuelve un Builder y no una colección porque la tabla de Filament
-     * necesita poder ordenarlo y paginarlo.
+     * necesita poder ordenarlo.
      *
      * @param  array<string, mixed>  $filtros
      */
     public static function agrupado(array $filtros): Builder
     {
-        return self::base($filtros)
-            ->groupBy(DB::raw(self::METODO_REAL))
-            // `MIN(id)` no significa nada por si mismo: es la llave que Filament
-            // le exige a cada fila para poder renderizar la tabla.
-            ->selectRaw('MIN(payments.id) as id')
-            ->selectRaw(self::METODO_REAL.' as payment_method')
+        // `withoutGlobalScopes()` es obligatorio aquí y no es un descuido: la
+        // consulta va contra una subconsulta con alias, y los scopes califican
+        // sus columnas con el nombre real de la tabla —`payments.company_id`,
+        // `payments.deleted_at`—, que en ese alias no existen. La empresa y el
+        // borrado lógico se filtran dentro de cada rama de la unión.
+        return Payment::query()
+            ->withoutGlobalScopes()
+            ->fromSub(self::union($filtros), 'movimientos')
+            ->groupBy('movimientos.payment_method')
+            ->selectRaw('MIN(movimientos.clave) as id')
+            ->selectRaw('movimientos.payment_method as payment_method')
             ->selectRaw('COUNT(*) as operaciones')
-            ->selectRaw('SUM(payments.amount) as total');
+            ->selectRaw('SUM(movimientos.amount) as total');
     }
 
     /** @param  array<string, mixed>  $filtros */
     public static function total(array $filtros): float
     {
-        return (float) self::base($filtros)->sum('payments.amount');
+        return (float) DB::query()
+            ->fromSub(self::union($filtros), 'movimientos')
+            ->sum('amount');
     }
 
     /** @param  array<string, mixed>  $filtros */
     public static function operaciones(array $filtros): int
     {
-        return (int) self::base($filtros)->count();
+        return (int) DB::query()
+            ->fromSub(self::union($filtros), 'movimientos')
+            ->count();
     }
 
     /**
-     * Lo mismo pero como array plano, para el Excel.
+     * Lo mismo como array plano, para el Excel.
      *
      * @param  array<string, mixed>  $filtros
      * @return list<array{metodo: string, codigo: string, operaciones: int, total: float, participacion: float}>
@@ -104,34 +109,105 @@ class SalesByPaymentMethod
             ->all();
     }
 
-    /** @param  array<string, mixed>  $filtros */
-    private static function base(array $filtros): Builder
+    /**
+     * Las dos fuentes de plata, una debajo de la otra.
+     *
+     * @param  array<string, mixed>  $filtros
+     */
+    private static function union(array $filtros): QueryBuilder
     {
-        $desde = $filtros['from'] ?? now()->startOfMonth()->toDateString();
-        $hasta = $filtros['to'] ?? now()->endOfMonth()->toDateString();
+        return self::cobros($filtros)->unionAll(self::anticipos($filtros));
+    }
 
-        // Se filtra por subconsulta y no por join: `SaleInvoice` trae su propio
-        // scope de empresa, asi que la sede se restringe sin arrastrar las
-        // columnas de la factura ni arriesgar un `company_id` ambiguo.
-        $facturas = SaleInvoice::query()
+    /**
+     * Cobros aplicados a facturas de venta.
+     *
+     * @param  array<string, mixed>  $filtros
+     */
+    private static function cobros(array $filtros): QueryBuilder
+    {
+        [$desde, $hasta, $companyId] = self::parametros($filtros);
+
+        $facturas = DB::table('sale_invoices')
+            ->select('id')
+            ->where('company_id', $companyId)
+            ->whereNull('deleted_at')
             ->where('status', SaleInvoice::STATUS_POSTED)
             ->when(
                 $filtros['location_id'] ?? null,
-                fn (Builder $q, $sede) => $q->where('location_id', $sede),
-            )
-            ->select('id');
+                fn ($q, $sede) => $q->where('location_id', $sede),
+            );
 
-        return Payment::query()
-            // Para poder leer con que pago el cliente cuando el abono vino de
-            // un anticipo. Es LEFT porque la mayoria de los pagos no lo son.
-            ->leftJoin('customer_advances as anticipos', 'anticipos.id', '=', 'payments.customer_advance_id')
+        return DB::table('payments')
+            // La clave no significa nada: es lo único que Filament exige para
+            // poder pintar cada fila. Par para los cobros e impar para los
+            // anticipos, porque los ids de las dos tablas se repiten entre sí.
+            ->selectRaw('payments.id * 2 as clave')
+            ->selectRaw('payments.payment_method as payment_method')
+            ->selectRaw('payments.amount as amount')
+            ->where('payments.company_id', $companyId)
+            ->whereNull('payments.deleted_at')
             ->where('payments.paymentable_type', SaleInvoice::class)
             ->whereIn('payments.paymentable_id', $facturas)
+            // La aplicación de un anticipo no mueve dinero: esa plata ya se
+            // contó el día que el cliente la entregó.
+            ->whereNull('payments.customer_advance_id')
             ->whereDate('payments.date', '>=', $desde)
             ->whereDate('payments.date', '<=', $hasta)
             ->when(
                 $filtros['created_by_user_id'] ?? null,
-                fn (Builder $q, $usuario) => $q->where('payments.created_by_user_id', $usuario),
+                fn ($q, $usuario) => $q->where('payments.created_by_user_id', $usuario),
             );
+    }
+
+    /**
+     * Anticipos recibidos.
+     *
+     * Es plata que entró aunque todavía no pague ninguna factura. Un anticipo
+     * sin método guardado se agrupa como «Otro» en vez de suponerle uno.
+     *
+     * La sede sale del turno de caja en que se recibió, que es el único sitio
+     * donde un anticipo la tiene. Los que no tienen turno —los registrados
+     * antes de que el sistema lo guardara— quedan fuera al filtrar por sede.
+     *
+     * @param  array<string, mixed>  $filtros
+     */
+    private static function anticipos(array $filtros): QueryBuilder
+    {
+        [$desde, $hasta, $companyId] = self::parametros($filtros);
+
+        $consulta = DB::table('customer_advances')
+            ->selectRaw('customer_advances.id * 2 + 1 as clave')
+            ->selectRaw("COALESCE(NULLIF(customer_advances.payment_method, ''), 'other') as payment_method")
+            ->selectRaw('customer_advances.amount as amount')
+            ->where('customer_advances.company_id', $companyId)
+            ->whereDate('customer_advances.date', '>=', $desde)
+            ->whereDate('customer_advances.date', '<=', $hasta)
+            ->when(
+                $filtros['created_by_user_id'] ?? null,
+                fn ($q, $usuario) => $q->where('customer_advances.created_by_user_id', $usuario),
+            );
+
+        if ($sede = ($filtros['location_id'] ?? null)) {
+            $consulta->whereIn(
+                'customer_advances.cash_register_session_id',
+                DB::table('cash_register_sessions')->select('id')->where('location_id', $sede),
+            );
+        }
+
+        return $consulta;
+    }
+
+    /**
+     * @param  array<string, mixed>  $filtros
+     * @return array{0: string, 1: string, 2: int}
+     */
+    private static function parametros(array $filtros): array
+    {
+        return [
+            $filtros['from'] ?? now()->startOfMonth()->toDateString(),
+            $filtros['to'] ?? now()->endOfMonth()->toDateString(),
+            (int) ($filtros['company_id'] ?? Auth::user()?->company_id),
+        ];
     }
 }
