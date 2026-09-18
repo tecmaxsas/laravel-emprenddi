@@ -238,21 +238,7 @@ class SaleInvoiceEngine
             );
 
             // 2. Payment record — atado a la caja que está abierta AHORA.
-            //
-            // Antes heredaba la sesión de la factura. Para una venta del POS da
-            // igual, porque la factura y su pago nacen en el mismo turno; pero
-            // para un abono no: un cliente que viene hoy a pagar una factura de
-            // la semana pasada entregaba su plata y el cobro aterrizaba en un
-            // turno ya cerrado. Y si la factura se hizo por fuera del POS —sin
-            // sesión— el pago no aparecía en ninguna caja, aunque el cajero
-            // hubiera recibido los billetes.
-            //
-            // Es la misma regla que ya usaba compras: la plata entra al cajón
-            // que está abierto cuando se recibe, no al de la factura.
-            //
-            // Si no hay ninguna caja abierta —un administrador registrando un
-            // cobro por transferencia, por ejemplo— se conserva lo de antes
-            // para no perder la referencia del documento.
+            // La regla, y el porqué, viven en CashSessionGate::receivingSessionId().
             $payment = Payment::create([
                 'company_id' => $invoice->company_id,
                 'paymentable_type' => SaleInvoice::class,
@@ -262,8 +248,9 @@ class SaleInvoiceEngine
                 'amount' => $amount,
                 'payment_method' => $data['payment_method'],
                 'account_id' => $cashAccountId,
-                'cash_register_session_id' => CashSessionGate::currentOpenSession()?->id
-                    ?? $invoice->cash_register_session_id,
+                'cash_register_session_id' => CashSessionGate::receivingSessionId(
+                    $invoice->cash_register_session_id,
+                ),
                 'reference' => $data['reference'] ?? null,
                 'description' => $data['description'] ?? null,
                 'journal_entry_id' => $entry->id,

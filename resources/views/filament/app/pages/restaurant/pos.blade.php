@@ -95,15 +95,15 @@
 
     @php $cashSession = $this->cashSession; @endphp
 
-    @if (! $cashSession)
+    @if (! $cashSession && $this->handlesCash)
         {{-- ===================================================== --}}
-        {{-- SIN CAJA ABIERTA — bloquea el POS hasta abrir caja     --}}
+        {{-- SIN CAJA ABIERTA — solo frena a quien cobra; el mesero entra  --}}
         {{-- ===================================================== --}}
         <div style="max-width:460px; margin:48px auto; background:#ffffff; border:1px solid #e5e7eb; border-radius:16px; padding:32px; text-align:center; box-shadow:0 4px 16px rgba(0,0,0,0.06);">
             <div style="font-size:52px; margin-bottom:10px;">🔒</div>
             <h2 style="font-size:21px; font-weight:800; color:#111827; margin:0 0 6px;">Caja cerrada</h2>
             <p style="font-size:14px; color:#6b7280; margin:0 0 22px; line-height:1.5;">
-                Para tomar pedidos y cobrar necesitas abrir una caja registradora.
+                Para cobrar necesitas abrir tu caja registradora.
             </p>
             <div style="text-align:left;">
                 <label style="font-size:11px; font-weight:700; color:#374151; text-transform:uppercase; letter-spacing:0.5px; display:block; margin-bottom:6px;">
@@ -122,8 +122,9 @@
         </div>
     @else
         {{-- ===================================================== --}}
-        {{-- CAJA ABIERTA — strip de detalles + cerrar caja         --}}
+        {{-- Franja de caja (solo si tiene) + el POS                --}}
         {{-- ===================================================== --}}
+        @if ($cashSession && $this->handlesCash)
         @php $cashSummary = $this->cashSummary; @endphp
         <div class="rpos-card" style="margin-bottom:14px; display:flex; flex-wrap:wrap; gap:14px 20px; align-items:center;">
             <div>
@@ -151,6 +152,7 @@
                 🔒 Cerrar caja
             </button>
         </div>
+        @endif
 
     <div class="{{ $order ? 'rpos-grid-split' : 'rpos-grid' }}">
         {{-- =================================================== --}}

@@ -40,6 +40,28 @@ class CashSessionGate
     }
 
     /**
+     * Turno al que entra la plata que se está recibiendo AHORA.
+     *
+     * La regla es una sola y vale para ventas, compras, gastos y restaurante:
+     * el dinero entra al cajón que está abierto cuando se recibe, no al del
+     * documento. El documento puede haber nacido ayer, en otro turno o fuera
+     * del POS; quien responde por los billetes es quien los tiene en la mano.
+     *
+     * Vivía duplicada en cada motor y por eso llegó a divergir: la factura de
+     * una orden de restaurante se quedaba con la caja del mesero que tomó el
+     * pedido en la tablet, mientras el pago ya usaba la del cajero que cobró.
+     * Una sola función para que no puedan volver a separarse.
+     *
+     * $fallback es el turno del documento: se conserva solo si quien registra
+     * no tiene caja abierta —un administrador cobrando una transferencia
+     * desde su escritorio— para no perder la referencia.
+     */
+    public static function receivingSessionId(?int $fallback = null): ?int
+    {
+        return self::currentOpenSession()?->id ?? $fallback;
+    }
+
+    /**
      * Devuelve la sesión abierta o lanza una excepción con mensaje legible.
      * Útil dentro de engines / actions que NO deben proceder sin caja.
      */

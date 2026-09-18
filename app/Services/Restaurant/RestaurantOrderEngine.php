@@ -23,7 +23,7 @@ use RuntimeException;
 
 /**
  * Motor de órdenes de restaurante:
- *  - open(): abre cuenta sobre mesa (o delivery/takeaway), exige caja
+ *  - open(): abre cuenta sobre mesa (o delivery/takeaway), sin exigir caja
  *  - addItem(): agrega producto con tax + ruteo a impresora
  *  - sendToKitchen(): genera KitchenTicket por impresora y marca items
  *    como 'sent' (impresión física la hace Iter 21d con ESC/POS)
@@ -58,14 +58,18 @@ class RestaurantOrderEngine
             throw new RuntimeException('Esta mesa está inactiva.');
         }
 
-        $session = CashSessionGate::requireOpenSession();
+        // Tomar el pedido no mueve plata: no exige caja. Antes sí, y como la
+        // orden quedaba sellada con el turno de quien la abría, el mesero
+        // terminaba con una caja a su nombre que ni siquiera podía cerrar.
+        // Quien cobra sí necesita la suya — eso lo exige bill().
+        $session = CashSessionGate::currentOpenSession();
         $company = Company::find($table->company_id);
 
         return DB::transaction(function () use ($table, $serverUserId, $guests, $session, $company) {
             $order = Order::create([
                 'company_id' => $table->company_id,
                 'location_id' => $table->location_id,
-                'cash_register_session_id' => $session->id,
+                'cash_register_session_id' => $session?->id,
                 'table_id' => $table->id,
                 'zone_id' => $table->zone_id,
                 'is_delivery' => false,
@@ -98,14 +102,15 @@ class RestaurantOrderEngine
             throw new RuntimeException('La sede está inactiva.');
         }
 
-        $session = CashSessionGate::requireOpenSession();
+        // Sin caja: tomar el pedido no mueve plata (ver openTableOrder).
+        $session = CashSessionGate::currentOpenSession();
         $company = Company::find($location->company_id);
 
         return DB::transaction(function () use ($location, $guests, $session, $company, $customerName) {
             return Order::create([
                 'company_id' => $location->company_id,
                 'location_id' => $location->id,
-                'cash_register_session_id' => $session->id,
+                'cash_register_session_id' => $session?->id,
                 'table_id' => null,
                 'zone_id' => null,
                 'is_delivery' => false,
@@ -148,7 +153,8 @@ class RestaurantOrderEngine
             throw new RuntimeException('Dirección de entrega requerida.');
         }
 
-        $session = CashSessionGate::requireOpenSession();
+        // Sin caja: tomar el pedido no mueve plata (ver openTableOrder).
+        $session = CashSessionGate::currentOpenSession();
         $company = Company::find($location->company_id);
 
         // El cliente queda guardado como tercero para que la proxima vez se
@@ -179,7 +185,7 @@ class RestaurantOrderEngine
                 'company_id' => $location->company_id,
                 'location_id' => $location->id,
                 'third_party_id' => $cliente?->id,
-                'cash_register_session_id' => $session->id,
+                'cash_register_session_id' => $session?->id,
                 'table_id' => null,
                 'zone_id' => null,
                 'is_delivery' => true,
@@ -919,6 +925,12 @@ class RestaurantOrderEngine
             throw new RuntimeException('No hay tabs para facturar.');
         }
 
+        // Cobrar es recibir plata, así que exige caja propia abierta. Abrir la
+        // orden no la exige —el mesero que la toma en la tablet no maneja
+        // dinero—, y por eso el turno se resuelve aquí y no allá: responde por
+        // los billetes quien los recibe.
+        $billingSession = CashSessionGate::requireOpenSession();
+
         $order->load('items');
         $activeItems = $order->items->reject(fn ($i) => $i->kitchen_status === OrderItem::KS_CANCELLED);
 
@@ -957,7 +969,7 @@ class RestaurantOrderEngine
         $receiptJobs = [];
 
         $invoices = DB::transaction(function () use (
-            $order, $tabs, $activeItems, $orderSubtotal, $orderTip,
+            $order, $tabs, $activeItems, $orderSubtotal, $orderTip, $billingSession,
             $invoiceEngine, $documentNumberer, $thirdPartyId, $invoiceKind, &$receiptJobs
         ) {
             $invoices = [];
@@ -1000,7 +1012,10 @@ class RestaurantOrderEngine
                     'payment_status' => 'pendiente',
                     'created_by_user_id' => Auth::id(),
                     'seller_user_id' => $order->server_user_id ?? Auth::id(),
-                    'cash_register_session_id' => $order->cash_register_session_id,
+                    // La caja del que cobra, no la de la orden. Heredarla de la
+                    // orden mandaba la venta a la caja del mesero que la tomó
+                    // en la tablet, y el arqueo del cajero salía corto por ahí.
+                    'cash_register_session_id' => $billingSession->id,
                     // Informativa: no suma al total ni al net_payable (la
                     // propina no es ingreso). Sirve para declararla a DIAN
                     // como cargo y para que la grafica cuadre con lo cobrado.

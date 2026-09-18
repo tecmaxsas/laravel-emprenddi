@@ -102,7 +102,7 @@ class RestaurantPos extends Page
 
     public bool $closeCajaModalOpen = false;
 
-    public string $closeCajaCounted = '0';
+    public string $closeCajaCounted = '';
 
     public string $closeCajaNotes = '';
 
@@ -255,6 +255,20 @@ class RestaurantPos extends Page
     }
 
     /**
+     * ¿Este usuario maneja dinero?
+     *
+     * El que cobra necesita su caja abierta: responde por el efectivo del
+     * cajón. El mesero que solo toma pedidos en la tablet, no —obligarlo le
+     * creaba una caja a su nombre que ni siquiera tenía permiso para cerrar, y
+     * ahí fue a parar la plata que cobró el cajero—. `pos.cash_close` es
+     * justamente lo que ya separaba un rol del otro.
+     */
+    public function getHandlesCashProperty(): bool
+    {
+        return (bool) Auth::user()?->can('pos.cash_close');
+    }
+
+    /**
      * Resumen de la sesión (ventas, egresos, efectivo esperado).
      */
     public function getCashSummaryProperty(): ?array
@@ -297,7 +311,7 @@ class RestaurantPos extends Page
         if (! $this->cashSession) {
             return;
         }
-        $this->closeCajaCounted = '0';
+        $this->closeCajaCounted = '';
         $this->closeCajaNotes = '';
         $this->closeCajaModalOpen = true;
     }
@@ -333,6 +347,18 @@ class RestaurantPos extends Page
             Notification::make()
                 ->title('Hay órdenes abiertas')
                 ->body("Cobra o cancela las {$openOrders} órdenes activas antes de cerrar caja.")
+                ->danger()->send();
+
+            return;
+        }
+
+        // Contar el cajón ES el arqueo. El campo arrancaba en 0, así que un
+        // clic de más cerraba la caja «contando» cero y dejaba diferencias de
+        // cientos de miles que no eran faltantes: era un dato que nadie digitó.
+        if (trim($this->closeCajaCounted) === '' || ! is_numeric($this->closeCajaCounted)) {
+            Notification::make()
+                ->title('Falta el efectivo contado')
+                ->body('Cuenta el dinero del cajón y escribe el monto. Si de verdad quedó en cero, escribe 0.')
                 ->danger()->send();
 
             return;

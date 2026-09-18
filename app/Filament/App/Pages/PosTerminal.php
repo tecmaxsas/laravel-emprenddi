@@ -95,7 +95,7 @@ class PosTerminal extends Page
     public string $openingNotes = '';
 
     // Cierre de caja
-    public ?float $closingCounted = 0.0;
+    public ?float $closingCounted = null;
 
     public string $closingNotes = '';
 
@@ -2326,7 +2326,7 @@ class PosTerminal extends Page
             return;
         }
 
-        $this->closingCounted = 0.0;
+        $this->closingCounted = null;
         $this->closingNotes = '';
         $this->showCloseSessionModal = true;
     }
@@ -2356,9 +2356,22 @@ class PosTerminal extends Page
             return;
         }
 
+        // Contar el cajón ES el arqueo. Arrancando en 0, un clic de más
+        // cerraba la caja «contando» cero y la diferencia que quedaba
+        // registrada no era un faltante: era un dato que nadie digitó.
+        if ($this->closingCounted === null) {
+            Notification::make()
+                ->title('Falta el efectivo contado')
+                ->body('Cuenta el dinero del cajón y escribe el monto. Si de verdad quedó en cero, escribe 0.')
+                ->danger()
+                ->send();
+
+            return;
+        }
+
         $result = app(CashSessionCloser::class)->close(
             $session,
-            (float) ($this->closingCounted ?? 0),
+            (float) $this->closingCounted,
             $this->closingNotes,
         );
 
