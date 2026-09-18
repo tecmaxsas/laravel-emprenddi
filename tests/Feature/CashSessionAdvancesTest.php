@@ -12,6 +12,7 @@ use App\Models\SaleInvoice;
 use App\Models\ThirdParty;
 use App\Models\User;
 use App\Services\Cash\CashSessionSummary;
+use App\Services\Sales\SaleInvoiceEngine;
 use App\Support\CurrentCompany;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -185,6 +186,95 @@ class CashSessionAdvancesTest extends TestCase
 
         $this->assertSame($apertura, $resumen['expected_cash'],
             'Esa plata entró en otro turno y ya se contó allá.');
+    }
+
+    // ------------------------------------------- abonos de facturas viejas
+
+    /**
+     * Un abono de hoy entra a la caja de hoy, no a la de la factura.
+     *
+     * El pago heredaba la sesión de la factura. Para una venta del POS da
+     * igual —la factura y su pago nacen en el mismo turno—, pero un cliente
+     * que viene hoy a pagar una factura de la semana pasada entregaba su plata
+     * y el cobro aterrizaba en un turno ya cerrado. El cajero recibía los
+     * billetes y el arqueo no los pedía.
+     */
+    public function test_un_abono_de_hoy_entra_a_la_caja_de_hoy(): void
+    {
+        $apertura = (float) $this->turno->opening_amount;
+
+        // Una factura de otro turno, ya cerrado.
+        $viejo = $this->abrirCaja();
+        $viejo->update(['status' => CashRegisterSession::STATUS_CLOSED, 'closed_at' => now()]);
+
+        $factura = $this->facturaContabilizada();
+        $factura->update(['cash_register_session_id' => $viejo->id]);
+
+        app(SaleInvoiceEngine::class)->addPayment($factura->fresh(), [
+            'date' => now()->toDateString(),
+            'amount' => 250000,
+            'payment_method' => 'cash',
+            'account_id' => $this->cuentaDeCaja(),
+        ]);
+
+        $this->limpiar[] = fn () => DB::table('payments')
+            ->where('paymentable_id', $factura->id)->delete();
+
+        $resumen = app(CashSessionSummary::class)->compute($this->turno->fresh());
+
+        $this->assertSame(round($apertura + 250000, 2), $resumen['expected_cash'],
+            'El cliente entregó ese efectivo hoy: está en el cajón de hoy.');
+    }
+
+    /**
+     * Y un abono sobre una factura que nunca pasó por el POS también.
+     *
+     * Una factura hecha desde el listado no tiene sesión de caja. Su pago
+     * quedaba con `cash_register_session_id` en null y no aparecía en ninguna
+     * caja, aunque el cajero hubiera recibido los billetes.
+     */
+    public function test_un_abono_de_una_factura_sin_caja_tambien_entra(): void
+    {
+        $apertura = (float) $this->turno->opening_amount;
+
+        $factura = $this->facturaContabilizada();
+        $factura->update(['cash_register_session_id' => null]);
+
+        app(SaleInvoiceEngine::class)->addPayment($factura->fresh(), [
+            'date' => now()->toDateString(),
+            'amount' => 180000,
+            'payment_method' => 'cash',
+            'account_id' => $this->cuentaDeCaja(),
+        ]);
+
+        $this->limpiar[] = fn () => DB::table('payments')
+            ->where('paymentable_id', $factura->id)->delete();
+
+        $resumen = app(CashSessionSummary::class)->compute($this->turno->fresh());
+
+        $this->assertSame(round($apertura + 180000, 2), $resumen['expected_cash'],
+            'Facturar por fuera del POS no vuelve invisible la plata que entra.');
+    }
+
+    /** Y el desglose lo muestra con su método. */
+    public function test_el_abono_aparece_con_su_metodo_en_el_desglose(): void
+    {
+        $factura = $this->facturaContabilizada();
+        $factura->update(['cash_register_session_id' => null]);
+
+        app(SaleInvoiceEngine::class)->addPayment($factura->fresh(), [
+            'date' => now()->toDateString(),
+            'amount' => 90000,
+            'payment_method' => 'bank_transfer',
+            'account_id' => $this->cuentaDeCaja(),
+        ]);
+
+        $this->limpiar[] = fn () => DB::table('payments')
+            ->where('paymentable_id', $factura->id)->delete();
+
+        $resumen = app(CashSessionSummary::class)->compute($this->turno->fresh());
+
+        $this->assertSame(90000.0, $resumen['sales']['by_method']['bank_transfer'] ?? null);
     }
 
     // --------------------------------------------------------- auxiliares

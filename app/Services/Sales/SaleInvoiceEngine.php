@@ -14,7 +14,9 @@ use App\Services\Accounting\JournalEntryNumberer;
 use App\Services\Commissions\CommissionEngine;
 use App\Services\Inventory\InventoryEngine;
 use App\Services\Invoicing\GlobalDiscount;
+use App\Support\CashSessionGate;
 use App\Support\CommissionsSettings;
+use App\Support\PaymentMethodOptions;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -235,8 +237,22 @@ class SaleInvoiceEngine
                 $data['reference'] ?? null,
             );
 
-            // 2. Payment record — hereda la sesión de caja del invoice
-            // para que el cierre de caja agregue este ingreso al turno correcto.
+            // 2. Payment record — atado a la caja que está abierta AHORA.
+            //
+            // Antes heredaba la sesión de la factura. Para una venta del POS da
+            // igual, porque la factura y su pago nacen en el mismo turno; pero
+            // para un abono no: un cliente que viene hoy a pagar una factura de
+            // la semana pasada entregaba su plata y el cobro aterrizaba en un
+            // turno ya cerrado. Y si la factura se hizo por fuera del POS —sin
+            // sesión— el pago no aparecía en ninguna caja, aunque el cajero
+            // hubiera recibido los billetes.
+            //
+            // Es la misma regla que ya usaba compras: la plata entra al cajón
+            // que está abierto cuando se recibe, no al de la factura.
+            //
+            // Si no hay ninguna caja abierta —un administrador registrando un
+            // cobro por transferencia, por ejemplo— se conserva lo de antes
+            // para no perder la referencia del documento.
             $payment = Payment::create([
                 'company_id' => $invoice->company_id,
                 'paymentable_type' => SaleInvoice::class,
@@ -246,7 +262,8 @@ class SaleInvoiceEngine
                 'amount' => $amount,
                 'payment_method' => $data['payment_method'],
                 'account_id' => $cashAccountId,
-                'cash_register_session_id' => $invoice->cash_register_session_id,
+                'cash_register_session_id' => CashSessionGate::currentOpenSession()?->id
+                    ?? $invoice->cash_register_session_id,
                 'reference' => $data['reference'] ?? null,
                 'description' => $data['description'] ?? null,
                 'journal_entry_id' => $entry->id,
@@ -606,7 +623,7 @@ class SaleInvoiceEngine
         $company = Company::find($invoice->company_id);
         $number = $this->numberer->next($company, 'CI'); // CI = Comprobante de Ingreso
 
-        $methodLabel = \App\Support\PaymentMethodOptions::nombre($method, $invoice->company_id);
+        $methodLabel = PaymentMethodOptions::nombre($method, $invoice->company_id);
 
         $entry = JournalEntry::create([
             'company_id' => $invoice->company_id,
