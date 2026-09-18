@@ -151,7 +151,9 @@ if [ "$NEEDS_FILAMENT_ASSETS" = true ]; then
     $COMPOSE exec -T app php artisan filament:assets
 fi
 
-# ---- Permisos (siempre, son rápidos) ----------------------------------------
+# ---- Permisos, primera pasada -----------------------------------------------
+# Antes de tocar la base y las cachés, para que composer/npm no dejen nada
+# inaccesible. La pasada que de verdad importa es la de después de las cachés.
 $COMPOSE exec -T app chmod -R 775 storage bootstrap/cache || true
 $COMPOSE exec -T app chown -R www-data:www-data storage bootstrap/cache || true
 
@@ -186,6 +188,22 @@ $COMPOSE exec -T app php artisan event:cache
 if [ "$NEEDS_FILAMENT_ASSETS" = true ] || [ "$FORCE_ALL" = true ]; then
     $COMPOSE exec -T app php artisan filament:optimize
 fi
+
+# ---- Permisos, segunda pasada (LA IMPORTANTE) -------------------------------
+# Los artisan de arriba corren como root dentro del contenedor y dejan los
+# archivos que escriben —config.php, routes.php, las vistas compiladas— con
+# dueño root. PHP-FPM atiende como www-data.
+#
+# Mientras `view:cache` alcance a compilar TODAS las vistas no se nota, porque
+# en tiempo de petición solo hay que leerlas. Pero basta una que quede sin
+# compilar para que Blade intente escribirla, no pueda, y `tempnam()` se caiga
+# al directorio temporal del sistema: error 500 en esa pantalla.
+#
+# Paso el 18/09/2026 y dejo el POS abajo. El chown estaba, pero antes de las
+# cachés, que es justo cuando deja de servir.
+echo "==> Devolviendo permisos a www-data (después de las cachés)..."
+$COMPOSE exec -T app chown -R www-data:www-data storage bootstrap/cache
+$COMPOSE exec -T app chmod -R ug+rwX storage bootstrap/cache
 
 # ---- Workers + app restart --------------------------------------------------
 # queue:restart hace que workers terminen su job actual y reinicien tomando
