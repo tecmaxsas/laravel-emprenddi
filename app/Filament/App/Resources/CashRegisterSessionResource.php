@@ -5,18 +5,26 @@ namespace App\Filament\App\Resources;
 use App\Filament\App\Resources\CashRegisterSessionResource\Pages;
 use App\Filament\Concerns\ChecksPermission;
 use App\Models\CashRegisterSession;
+use App\Support\PaymentMethodOptions;
+use Filament\Infolists;
+use Filament\Infolists\Infolist;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Filament\Infolists;
-use Filament\Infolists\Infolist;
 
 class CashRegisterSessionResource extends Resource
 {
     use ChecksPermission;
 
-    protected static function viewPermission(): string { return 'pos.cash_close'; }
-    protected static function managePermission(): string { return 'pos.cash_close'; }
+    protected static function viewPermission(): string
+    {
+        return 'pos.cash_close';
+    }
+
+    protected static function managePermission(): string
+    {
+        return 'pos.cash_close';
+    }
 
     protected static ?string $model = CashRegisterSession::class;
 
@@ -118,7 +126,15 @@ class CashRegisterSessionResource extends Resource
                     Infolists\Components\KeyValueEntry::make('payment_breakdown')
                         ->label('')
                         ->keyLabel('Método')
-                        ->valueLabel('Monto'),
+                        ->valueLabel('Monto')
+                        // El desglose se guarda por codigo. Mostrarlo tal cual
+                        // hace que un metodo propio de la empresa salga como
+                        // «zz_nequi» en vez de «Nequi».
+                        ->state(fn (CashRegisterSession $r) => collect($r->payment_breakdown ?? [])
+                            ->mapWithKeys(fn ($monto, $codigo) => [
+                                PaymentMethodOptions::nombre((string) $codigo) => $monto,
+                            ])
+                            ->all()),
                 ]),
 
             Infolists\Components\Section::make('Notas')
@@ -138,7 +154,18 @@ class CashRegisterSessionResource extends Resource
         ];
     }
 
-    public static function canCreate(): bool { return false; }
-    public static function canEdit($record): bool { return false; }
-    public static function canDelete($record): bool { return false; }
+    public static function canCreate(): bool
+    {
+        return false;
+    }
+
+    public static function canEdit($record): bool
+    {
+        return false;
+    }
+
+    public static function canDelete($record): bool
+    {
+        return false;
+    }
 }

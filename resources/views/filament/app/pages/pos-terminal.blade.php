@@ -1406,7 +1406,7 @@
                             <div style="display:flex; flex-direction:column; gap:4px;">
                                 @foreach ($sessionTotals['sales']['by_method'] as $method => $amount)
                                     <div class="pos-modal-card" style="display:flex; justify-content:space-between; padding:8px 12px;">
-                                        <span style="font-size:14px;">{{ \App\Models\Payment::PAYMENT_METHODS[$method] ?? $method }}</span>
+                                        <span style="font-size:14px;">{{ \App\Support\PaymentMethodOptions::nombre($method) }}</span>
                                         <span style="font-size:14px; font-weight:600; color:rgb(5,150,105);">+${{ number_format($amount, 0, ',', '.') }}</span>
                                     </div>
                                 @endforeach
@@ -1430,7 +1430,7 @@
                             <div style="display:flex; flex-direction:column; gap:4px;">
                                 @foreach ($egresosMerged as $method => $amount)
                                     <div class="pos-modal-card" style="display:flex; justify-content:space-between; padding:8px 12px;">
-                                        <span style="font-size:14px;">{{ \App\Models\Payment::PAYMENT_METHODS[$method] ?? $method }}</span>
+                                        <span style="font-size:14px;">{{ \App\Support\PaymentMethodOptions::nombre($method) }}</span>
                                         <span style="font-size:14px; font-weight:600; color:rgb(220,38,38);">−${{ number_format($amount, 0, ',', '.') }}</span>
                                     </div>
                                 @endforeach

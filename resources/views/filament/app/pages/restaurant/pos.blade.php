@@ -1903,7 +1903,7 @@
 
                 <div style="padding:18px 22px; color:#111827; display:flex; flex-direction:column; gap:12px;">
                     @if ($cs)
-                        @php $pmLabels = \App\Models\Payment::PAYMENT_METHODS; @endphp
+                        @php $pmLabels = \App\Support\PaymentMethodOptions::para(); @endphp
                         <div style="background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px; padding:12px; font-size:13px; display:flex; flex-direction:column; gap:5px;">
                             {{-- Apertura --}}
                             <div style="display:flex; justify-content:space-between;">

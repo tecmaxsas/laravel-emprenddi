@@ -3,6 +3,7 @@
 namespace App\Services\Cash;
 
 use App\Models\CashRegisterSession;
+use App\Models\CustomerAdvance;
 use App\Models\Expense;
 use App\Models\Payment;
 use App\Models\PurchaseInvoice;
@@ -67,17 +68,72 @@ class CashSessionSummary
     }
 
     /**
-     * Pagos RECIBIDOS de facturas de venta en esta sesión.
-     * Agrupa por método. El "cash" entra a la caja física.
+     * Plata RECIBIDA en esta sesión. Agrupa por método; el efectivo entra a
+     * la caja física.
+     *
+     * Son dos cosas que se suman:
+     *
+     *  1. Los pagos de facturas de venta hechos en la sesión.
+     *  2. Los anticipos recibidos en la sesión, con el método con el que el
+     *     cliente entregó esa plata.
+     *
+     * Y se excluye a propósito una tercera: **la aplicación de un anticipo a
+     * una factura**. Esa operación no mueve dinero —cruza el pasivo del
+     * anticipo contra la cartera—, así que contarla sería contar dos veces la
+     * misma plata: una cuando entró y otra cuando pagó la factura.
+     *
+     * Antes esas aplicaciones aparecían como «Anticipo del cliente» y se
+     * comían el desglose entero, mientras el efectivo real del anticipo no
+     * entraba en «Esperado en caja» por ningún lado.
      */
     protected function summarizeSalePayments(CashRegisterSession $session): array
     {
         $payments = Payment::query()
             ->where('cash_register_session_id', $session->id)
             ->where('paymentable_type', SaleInvoice::class)
+            ->whereNull('customer_advance_id')
             ->get(['amount', 'payment_method', 'paymentable_id']);
 
-        return $this->groupPayments($payments);
+        $resumen = $this->groupPayments($payments);
+
+        return $this->sumarAnticipos($resumen, $session);
+    }
+
+    /**
+     * Los anticipos recibidos en esta sesión.
+     *
+     * Es plata que entró de verdad al turno aunque todavía no pague ninguna
+     * factura, así que cuenta para el arqueo igual que cualquier cobro.
+     *
+     * @param  array{count:int, total:float, by_method:array<string,float>, cash:float}  $resumen
+     * @return array{count:int, total:float, by_method:array<string,float>, cash:float}
+     */
+    protected function sumarAnticipos(array $resumen, CashRegisterSession $session): array
+    {
+        $anticipos = CustomerAdvance::query()
+            ->where('cash_register_session_id', $session->id)
+            ->get(['amount', 'payment_method']);
+
+        foreach ($anticipos as $anticipo) {
+            // Un anticipo viejo puede no tener metodo guardado. Se agrupa
+            // aparte en vez de sumarlo a efectivo: darlo por efectivo cuando
+            // no se sabe descuadra el arqueo en la direccion peligrosa.
+            $metodo = $anticipo->payment_method ?: 'other';
+            $monto = (float) $anticipo->amount;
+
+            $resumen['by_method'][$metodo] = round(
+                ($resumen['by_method'][$metodo] ?? 0) + $monto, 2
+            );
+
+            if ($metodo === 'cash') {
+                $resumen['cash'] = round($resumen['cash'] + $monto, 2);
+            }
+        }
+
+        $resumen['count'] += $anticipos->count();
+        $resumen['total'] = round(array_sum($resumen['by_method']), 2);
+
+        return $resumen;
     }
 
     /**

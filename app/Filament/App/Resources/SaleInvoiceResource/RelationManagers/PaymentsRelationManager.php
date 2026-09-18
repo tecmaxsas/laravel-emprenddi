@@ -6,6 +6,7 @@ use App\Models\Account;
 use App\Models\Payment;
 use App\Models\PaymentMethod;
 use App\Services\Sales\SaleInvoiceEngine;
+use App\Support\PaymentMethodOptions;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -13,6 +14,7 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 class PaymentsRelationManager extends RelationManager
 {
@@ -24,7 +26,7 @@ class PaymentsRelationManager extends RelationManager
 
     protected static ?string $pluralModelLabel = 'Pagos recibidos';
 
-    public static function canViewForRecord(\Illuminate\Database\Eloquent\Model $ownerRecord, string $pageClass): bool
+    public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
     {
         return $ownerRecord->isPosted();
     }
@@ -87,7 +89,7 @@ class PaymentsRelationManager extends RelationManager
                     ->where('code', 'like', '11%')
                     ->where(function ($q) use ($search) {
                         $q->where('code', 'like', "%{$search}%")
-                          ->orWhere('name', 'ilike', "%{$search}%");
+                            ->orWhere('name', 'ilike', "%{$search}%");
                     })
                     ->orderBy('code')
                     ->limit(20)
@@ -126,7 +128,7 @@ class PaymentsRelationManager extends RelationManager
                 Tables\Columns\TextColumn::make('amount')->label('Monto')->money('COP')->weight('semibold')->alignEnd(),
                 Tables\Columns\TextColumn::make('payment_method')
                     ->label('Método')
-                    ->formatStateUsing(fn (string $state) => Payment::PAYMENT_METHODS[$state] ?? $state)
+                    ->formatStateUsing(fn (string $state) => PaymentMethodOptions::nombre($state))
                     ->badge(),
                 Tables\Columns\TextColumn::make('account.code')->label('Cta.')->fontFamily('mono'),
                 Tables\Columns\TextColumn::make('reference')->label('Ref.')->placeholder('—'),

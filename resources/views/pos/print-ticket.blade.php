@@ -254,7 +254,7 @@
             <div class="sep"></div>
             @foreach ($invoice->payments as $pay)
                 <div class="row">
-                    <span>{{ \App\Models\Payment::PAYMENT_METHODS[$pay->payment_method] ?? $pay->payment_method }}</span>
+                    <span>{{ \App\Support\PaymentMethodOptions::nombre($pay->payment_method) }}</span>
                     <span>${{ number_format((float) $pay->amount, 0, ',', '.') }}</span>
                 </div>
             @endforeach

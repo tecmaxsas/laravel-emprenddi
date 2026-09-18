@@ -6,6 +6,7 @@ use App\Models\Account;
 use App\Models\CustomerAdvance;
 use App\Models\SaleInvoice;
 use App\Models\ThirdParty;
+use App\Support\CashSessionGate;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -50,6 +51,14 @@ class CustomerAdvanceService
                 'applied_amount' => 0,
                 'payment_method' => $data['payment_method'] ?? null,
                 'account_id' => $data['account_id'] ?? null,
+                // La caja en la que se recibio esa plata.
+                //
+                // La columna existia y nunca se llenaba, asi que un anticipo
+                // cobrado en efectivo era invisible para el cierre: no entraba
+                // en «Esperado en caja» y el cajero aparecia sobrando al
+                // arquear. Sin esto no hay forma de saber en que turno entro.
+                'cash_register_session_id' => $data['cash_register_session_id']
+                    ?? CashSessionGate::currentOpenSession()?->id,
                 'reference' => $data['reference'] ?? null,
                 'notes' => $data['notes'] ?? null,
                 'created_by_user_id' => auth()->id(),
