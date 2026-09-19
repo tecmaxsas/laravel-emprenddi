@@ -7,45 +7,48 @@ use Carbon\Carbon;
 use Tests\TestCase;
 
 /**
- * Las horas del parqueadero, en formato de 12 horas.
+ * Las horas del parqueadero salen del formato que eligió la empresa.
  *
  * Mostraban «18:15» y el operario tenía que traducirlo mentalmente cada vez. En
  * Colombia la hora se lee de 12 horas: con «6:15 pm» un cajero no se equivoca,
  * con «18:15» a veces sí — y en un parqueadero la hora de entrada es lo que
- * decide cuánto se cobra.
+ * decide cuánto se cobra. Por eso 12 horas es el valor por defecto, y estas
+ * pruebas lo comprueban sin empresa autenticada.
  *
- * La segunda prueba es la que de verdad protege el cambio: un `H:i` vuelve a
- * colarse con el primer copiar-pegar de otra pantalla, y nadie lo nota hasta
- * que un cliente reclama.
+ * Que una empresa pueda preferir 24 horas no cambia nada aquí: lo que no puede
+ * volver a pasar es que una pantalla se escriba el formato a mano, porque
+ * entonces esa pantalla ignora la preferencia. Eso es lo que revisa la última
+ * prueba, y es la que de verdad protege el cambio: un `H:i` vuelve a colarse
+ * con el primer copiar-pegar y nadie lo nota hasta que un cliente reclama.
  */
 class ParkingClockFormatTest extends TestCase
 {
-    /** Los cuatro formatos dicen la hora como la lee la gente. */
-    public function test_los_formatos_son_de_doce_horas(): void
+    /** Sin preferencia guardada, los cuatro formatos son de 12 horas. */
+    public function test_los_formatos_son_de_doce_horas_por_defecto(): void
     {
         $tarde = Carbon::parse('2026-09-15 18:15:42');
         $manana = Carbon::parse('2026-09-15 06:15:42');
 
-        $this->assertSame('6:15 pm', $tarde->format(ClockFormat::TIME));
-        $this->assertSame('06:15 pm', $tarde->format(ClockFormat::TIME_PADDED));
-        $this->assertSame('15/09/2026 06:15 pm', $tarde->format(ClockFormat::DATETIME));
-        $this->assertSame('15/09/2026 06:15:42 pm', $tarde->format(ClockFormat::DATETIME_SECONDS));
+        $this->assertSame('6:15 pm', $tarde->format(ClockFormat::time()));
+        $this->assertSame('06:15 pm', $tarde->format(ClockFormat::timePadded()));
+        $this->assertSame('15/09/2026 06:15 pm', $tarde->format(ClockFormat::datetime()));
+        $this->assertSame('15/09/2026 06:15:42 pm', $tarde->format(ClockFormat::datetimeSeconds()));
 
         // La mañana y la tarde tienen que distinguirse: es justo lo que el
         // formato militar resolvía y el de 12 horas puede perder si falta el
         // sufijo.
-        $this->assertSame('6:15 am', $manana->format(ClockFormat::TIME));
+        $this->assertSame('6:15 am', $manana->format(ClockFormat::time()));
         $this->assertNotSame(
-            $manana->format(ClockFormat::DATETIME),
-            $tarde->format(ClockFormat::DATETIME),
+            $manana->format(ClockFormat::datetime()),
+            $tarde->format(ClockFormat::datetime()),
         );
     }
 
     /** La medianoche y el mediodía son donde el formato de 12 horas se rompe. */
     public function test_medianoche_y_mediodia_no_se_confunden(): void
     {
-        $this->assertSame('12:00 am', Carbon::parse('2026-09-15 00:00')->format(ClockFormat::TIME));
-        $this->assertSame('12:00 pm', Carbon::parse('2026-09-15 12:00')->format(ClockFormat::TIME));
+        $this->assertSame('12:00 am', Carbon::parse('2026-09-15 00:00')->format(ClockFormat::time()));
+        $this->assertSame('12:00 pm', Carbon::parse('2026-09-15 12:00')->format(ClockFormat::time()));
     }
 
     /**
@@ -80,7 +83,7 @@ class ParkingClockFormatTest extends TestCase
         }
 
         $this->assertSame([], $culpables,
-            "Estos archivos del parqueadero volvieron a mostrar hora de 24 horas:\n"
+            "Estos archivos se escribieron el formato a mano e ignoran la preferencia de la empresa:\n"
             .implode("\n", $culpables));
     }
 

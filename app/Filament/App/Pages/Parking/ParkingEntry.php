@@ -157,7 +157,7 @@ class ParkingEntry extends Page implements HasForms
 
             Notification::make()
                 ->title("Entrada registrada · {$session->plate}")
-                ->body("Hora: {$session->entry_at->format(ClockFormat::DATETIME_SECONDS)}")
+                ->body("Hora: {$session->entry_at->format(ClockFormat::datetimeSeconds())}")
                 ->success()
                 ->send();
 

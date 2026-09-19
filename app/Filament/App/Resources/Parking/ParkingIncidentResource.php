@@ -85,7 +85,7 @@ class ParkingIncidentResource extends Resource
                             ->where('plate', 'ilike', "%{$search}%")
                             ->orderByDesc('entry_at')->limit(20)->get()
                             ->mapWithKeys(fn (ParkingSession $s) => [
-                                $s->id => "#{$s->id} · {$s->plate} · ".$s->entry_at?->format(ClockFormat::DATETIME),
+                                $s->id => "#{$s->id} · {$s->plate} · ".$s->entry_at?->format(ClockFormat::datetime()),
                             ])
                             ->all())
                         ->getOptionLabelUsing(fn ($v) => optional(ParkingSession::find($v))->plate)
@@ -136,7 +136,7 @@ class ParkingIncidentResource extends Resource
     public static function table(Table $table): Table
     {
         return $table->defaultSort('created_at', 'desc')->columns([
-            Tables\Columns\TextColumn::make('created_at')->label('Reportado')->dateTime(ClockFormat::DATETIME)->sortable(),
+            Tables\Columns\TextColumn::make('created_at')->label('Reportado')->dateTime(ClockFormat::datetime())->sortable(),
             Tables\Columns\TextColumn::make('parkingLot.name')->label('Parqueadero')->toggleable(),
             Tables\Columns\TextColumn::make('kind')->label('Tipo')->badge()
                 ->formatStateUsing(fn (string $state) => ParkingIncident::KINDS[$state] ?? $state),

@@ -125,7 +125,7 @@
             <div class="plate-value">{{ $session->plate }}</div>
         </div>
 
-        <div class="row"><span class="lbl">Entrada</span><span class="val">{{ $session->entry_at->format(\App\Support\ClockFormat::DATETIME_SECONDS) }}</span></div>
+        <div class="row"><span class="lbl">Entrada</span><span class="val">{{ $session->entry_at->format(\App\Support\ClockFormat::datetimeSeconds()) }}</span></div>
         <div class="row"><span class="lbl">Tipo</span><span class="val">{{ $session->vehicleType?->icon }} {{ $session->vehicleType?->name ?? '—' }}</span></div>
         @if ($session->space_code)
             <div class="row"><span class="lbl">Espacio</span><span class="val">{{ $session->space_code }}</span></div>

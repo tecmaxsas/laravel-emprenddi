@@ -9,8 +9,8 @@ use App\Models\Parking\ParkingMembership;
 use App\Models\Parking\ParkingSession;
 use App\Models\SaleInvoice;
 use App\Models\Tax;
-use App\Services\Dian\PosDianTransmitter;
 use App\Models\ThirdParty;
+use App\Services\Dian\PosDianTransmitter;
 use App\Services\Sales\DocumentNumberer;
 use App\Services\Sales\SaleInvoiceEngine;
 use App\Support\ClockFormat;
@@ -40,8 +40,8 @@ class ParkingBillingEngine
 
     /**
      * @param  array  $payload  ['invoice_kind', 'payment_method', 'account_id',
-     *                           'paid_amount', 'third_party_id'?, 'reference'?,
-     *                           'extras'?]
+     *                          'paid_amount', 'third_party_id'?, 'reference'?,
+     *                          'extras'?]
      *
      *  Cada extra es un array:
      *    ['product_id', 'quantity', 'unit_price', 'tax_id'?, 'tax_rate'?]
@@ -146,8 +146,8 @@ class ParkingBillingEngine
                         'Parqueo placa %s — %d min — %s a %s',
                         $session->plate,
                         (int) ($session->total_minutes ?? 0),
-                        $session->entry_at?->format(ClockFormat::DATETIME) ?? '—',
-                        $session->exit_at?->format(ClockFormat::DATETIME) ?? '—',
+                        $session->entry_at?->format(ClockFormat::datetime()) ?? '—',
+                        $session->exit_at?->format(ClockFormat::datetime()) ?? '—',
                     ),
                     quantity: 1,
                     totalAtPublic: (float) $session->amount,
@@ -160,7 +160,9 @@ class ParkingBillingEngine
                 $qty = max(1, (int) ($extra['quantity'] ?? 1));
                 $unitPriceAtPublic = (float) ($extra['unit_price'] ?? 0);
                 $totalAtPublic = round($qty * $unitPriceAtPublic, 2);
-                if ($totalAtPublic <= 0) continue;
+                if ($totalAtPublic <= 0) {
+                    continue;
+                }
                 $this->createInvoiceLine(
                     invoice: $invoice,
                     lineNumber: $lineNumber++,
@@ -179,6 +181,7 @@ class ParkingBillingEngine
             if ($paidAmount > 0) {
                 $this->sales->addPayment($invoice, [
                     'amount' => min($paidAmount, (float) $invoice->fresh()->balance),
+                    'cash_received' => $payload['cash_received'] ?? null,
                     'payment_method' => $paymentMethod,
                     'account_id' => $accountId,
                     'date' => now()->toDateString(),
@@ -219,7 +222,7 @@ class ParkingBillingEngine
      * y el periodo de vigencia.
      *
      * @param  array  $payload  ['invoice_kind', 'payment_method', 'account_id',
-     *                           'paid_amount'?, 'period_start'?, 'period_end'?]
+     *                          'paid_amount'?, 'period_start'?, 'period_end'?]
      */
     public function issueForMembership(ParkingMembership $membership, array $payload): SaleInvoice
     {
@@ -386,7 +389,10 @@ class ParkingBillingEngine
      */
     protected function resolveOpenCashSession(): ?CashRegisterSession
     {
-        if (! Auth::id()) return null;
+        if (! Auth::id()) {
+            return null;
+        }
+
         return CashRegisterSession::query()
             ->where('cashier_user_id', Auth::id())
             ->where('status', CashRegisterSession::STATUS_OPEN)
@@ -400,6 +406,7 @@ class ParkingBillingEngine
         if ($lot?->defaultLocation) {
             return $lot->defaultLocation;
         }
+
         // Fallback: sede principal de la empresa
         return Location::query()
             ->where('company_id', $session->company_id)
@@ -417,6 +424,7 @@ class ParkingBillingEngine
                 return $tp;
             }
         }
+
         // Por defecto Consumidor Final (creado por CompanyOnboarding)
         return ThirdParty::firstOrCreate(
             ['company_id' => $company->id, 'document_number' => '222222222'],

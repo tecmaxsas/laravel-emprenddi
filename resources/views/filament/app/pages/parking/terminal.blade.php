@@ -24,7 +24,7 @@
     {{-- Banner del turno --}}
     @if ($cashSession)
         <div style="border:1px solid #16a34a; background:#dcfce7; color:#166534; border-radius:8px; padding:8px 14px; font-size:12.5px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
-            <div>💰 <strong>Turno abierto</strong> · {{ $cashSession->opened_at->format(\App\Support\ClockFormat::DATETIME) }} · Base {{ $fmt($cashSession->opening_amount) }} · Sede {{ $cashSession->location?->name ?? '—' }}</div>
+            <div>💰 <strong>Turno abierto</strong> · {{ $cashSession->opened_at->format(\App\Support\ClockFormat::datetime()) }} · Base {{ $fmt($cashSession->opening_amount) }} · Sede {{ $cashSession->location?->name ?? '—' }}</div>
             <button type="button" wire:click="openCloseSessionModal"
                style="background:#166534; color:#fff; padding:6px 12px; border:0; border-radius:6px; cursor:pointer; font-weight:700; font-size:12px;">
                 🔒 Cerrar caja
@@ -110,14 +110,14 @@
                             @if ($clickable) wire:click="selectSpace({{ $space->id }})" @else disabled @endif
                             class="pt-tile {{ $clickable ? '' : 'pt-tile-disabled' }}"
                             style="background:{{ $color }};"
-                            title="{{ $isOcc && $sess ? "Placa {$sess->plate} · entró ".$sess->entry_at->format(\App\Support\ClockFormat::TIME) : (\App\Models\Parking\ParkingSpace::STATUSES[$space->status] ?? '') }}">
+                            title="{{ $isOcc && $sess ? "Placa {$sess->plate} · entró ".$sess->entry_at->format(\App\Support\ClockFormat::time()) : (\App\Models\Parking\ParkingSpace::STATUSES[$space->status] ?? '') }}">
                             <div class="pt-tile-code">{{ $space->code }}</div>
                             @if ($space->is_accessibility)
                                 <div class="pt-tile-acc">♿</div>
                             @endif
                             @if ($isOcc && $sess)
                                 <div class="pt-tile-plate">{{ $sess->plate }}</div>
-                                <div class="pt-tile-time">{{ $sess->entry_at->format(\App\Support\ClockFormat::TIME) }}</div>
+                                <div class="pt-tile-time">{{ $sess->entry_at->format(\App\Support\ClockFormat::time()) }}</div>
                             @elseif ($space->vehicleType)
                                 <div class="pt-tile-vt">{{ $space->vehicleType->name }}</div>
                             @endif
@@ -139,7 +139,7 @@
                 @foreach ($activeWithoutSpace as $s)
                     <button type="button" wire:click="selectSession({{ $s->id }})" class="pt-chip">
                         <span class="pt-chip-plate">{{ $s->plate }}</span>
-                        <span class="pt-chip-time">{{ $s->entry_at->format(\App\Support\ClockFormat::TIME) }}</span>
+                        <span class="pt-chip-time">{{ $s->entry_at->format(\App\Support\ClockFormat::time()) }}</span>
                         @if ($s->parking_membership_id)
                             <span class="pt-chip-badge">🎟️</span>
                         @endif
@@ -229,7 +229,7 @@
                     <div class="pt-session-summary">
                         <div>
                             <div class="pt-summary-label">Entrada</div>
-                            <div class="pt-summary-val">{{ $sess->entry_at->format(\App\Support\ClockFormat::DATETIME_SECONDS) }}</div>
+                            <div class="pt-summary-val">{{ $sess->entry_at->format(\App\Support\ClockFormat::datetimeSeconds()) }}</div>
                         </div>
                         <div>
                             <div class="pt-summary-label">Tiempo</div>

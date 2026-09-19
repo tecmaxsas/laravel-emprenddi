@@ -7,7 +7,7 @@
     @if ($cashSession)
         <div style="border:1px solid #16a34a; background:#dcfce7; color:#166534; border-radius:8px; padding:10px 14px; font-size:13px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
             <div>
-                💰 <strong>Turno abierto</strong> desde <strong>{{ $cashSession->opened_at->format(\App\Support\ClockFormat::DATETIME) }}</strong>
+                💰 <strong>Turno abierto</strong> desde <strong>{{ $cashSession->opened_at->format(\App\Support\ClockFormat::datetime()) }}</strong>
                 · Base: {{ $fmt($cashSession->opening_amount) }}
                 · Sede: {{ $cashSession->location?->name ?? '—' }}
             </div>
@@ -34,7 +34,7 @@
                         @if ($activeSession->vehicleType) · {{ $activeSession->vehicleType->name }} @endif
                     </div>
                     <div style="font-size:13px; margin-top:2px;">
-                        Entrada: <strong>{{ $activeSession->entry_at->format(\App\Support\ClockFormat::DATETIME_SECONDS) }}</strong>
+                        Entrada: <strong>{{ $activeSession->entry_at->format(\App\Support\ClockFormat::datetimeSeconds()) }}</strong>
                         · Tiempo: <strong>{{ $quote['minutes'] ?? 0 }} min</strong>
                     </div>
                 </div>

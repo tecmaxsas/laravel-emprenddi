@@ -6,6 +6,7 @@ use App\Models\Account;
 use App\Models\Company;
 use App\Services\GiftCards\GiftCardProductProvisioner;
 use App\Support\AppointmentsSettings;
+use App\Support\ClockFormat;
 use App\Support\CommissionsSettings;
 use App\Support\CurrentCompany;
 use App\Support\GiftCardsSettings;
@@ -78,6 +79,7 @@ class Settings extends Page implements HasForms
             'website' => $company->website,
             'currency' => $company->currency,
             'timezone' => $company->timezone,
+            'clock_format' => ClockFormat::preferido($company),
 
             // Inventario / seriales (settings.serials.*)
             'serials_enabled' => (bool) data_get($settings, 'serials.enabled', false),
@@ -321,6 +323,19 @@ class Settings extends Page implements HasForms
                         ->label('Zona horaria')
                         ->default('America/Bogota')
                         ->required(),
+
+                    // En Colombia la hora se lee casi siempre en 12 horas,
+                    // pero un negocio que trabaja por turnos —transporte,
+                    // una clinica— suele preferir 24, donde no hay forma de
+                    // confundir la manana con la tarde.
+                    Forms\Components\Select::make('clock_format')
+                        ->label('Formato de hora')
+                        ->options(ClockFormat::FORMATOS)
+                        ->default(ClockFormat::POR_DEFECTO)
+                        ->native(false)
+                        ->required()
+                        ->helperText('Aplica en todo el sistema: pantallas, reportes, tiquetes y etiquetas.')
+                        ->columnSpan(2),
                 ]),
 
             Forms\Components\Section::make('Inventario por seriales')
@@ -642,10 +657,21 @@ class Settings extends Page implements HasForms
                 : 0,
         ]);
 
+        // El formato de hora es de la empresa, no de cada pantalla: aqui se
+        // guarda una vez y ClockFormat lo lee desde todas.
+        $settings['clock'] = array_merge($settings['clock'] ?? [], [
+            'format' => in_array($state['clock_format'] ?? null, array_keys(ClockFormat::FORMATOS), true)
+                ? $state['clock_format']
+                : ClockFormat::POR_DEFECTO,
+        ]);
+
         $settings['discounts'] = array_merge($settings['discounts'] ?? [], [
             'sales' => (bool) ($state['discounts_sales'] ?? false),
             'purchases' => (bool) ($state['discounts_purchases'] ?? false),
         ]);
+
+        // Si no, la misma peticion sigue pintando con el formato anterior.
+        ClockFormat::olvidarCache();
 
         $company->update([
             'logo_path' => $state['logo_path'] ?: null,

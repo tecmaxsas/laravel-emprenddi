@@ -88,7 +88,7 @@ class SaleInvoiceDeleter
             return sprintf(
                 'La venta pertenece a un turno de caja ya cerrado (%s). Borrarla dejaría el '
                 .'cuadre de ese turno descuadrado. Registra una devolución o una nota crédito.',
-                $turno->closed_at?->format(ClockFormat::DATETIME) ?? 'cerrado',
+                $turno->closed_at?->format(ClockFormat::datetime()) ?? 'cerrado',
             );
         }
 
@@ -125,7 +125,7 @@ class SaleInvoiceDeleter
 
             $invoice->update([
                 'notes' => trim(($invoice->notes ? $invoice->notes."\n" : '')
-                    .'Borrada el '.now()->format(ClockFormat::DATETIME)
+                    .'Borrada el '.now()->format(ClockFormat::datetime())
                     .' por '.(Auth::user()?->name ?? 'el sistema')
                     .($motivo ? ' — '.$motivo : '')),
             ]);

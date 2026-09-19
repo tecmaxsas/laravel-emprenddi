@@ -64,7 +64,7 @@
                             $isOcc = $space->status === \App\Models\Parking\ParkingSpace::STATUS_OCCUPIED;
                             $sess = $space->activeSession->first();
                             $tooltip = $isOcc && $sess
-                                ? "Placa {$sess->plate} · entró ".$sess->entry_at->format(\App\Support\ClockFormat::TIME)
+                                ? "Placa {$sess->plate} · entró ".$sess->entry_at->format(\App\Support\ClockFormat::time())
                                 : (\App\Models\Parking\ParkingSpace::STATUSES[$space->status] ?? '');
                         @endphp
                         <div title="{{ $tooltip }}" style="position:relative; background:{{ $color }}; color:#fff; border-radius:8px; padding:8px 6px; text-align:center; min-height:70px; display:flex; flex-direction:column; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,.06);">

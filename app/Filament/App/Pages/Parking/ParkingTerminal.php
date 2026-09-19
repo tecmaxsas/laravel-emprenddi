@@ -666,7 +666,7 @@ class ParkingTerminal extends Page
             Notification::make()
                 ->title("✓ Entrada · {$session->plate}")
                 ->body('Ticket #'.str_pad((string) $session->id, 6, '0', STR_PAD_LEFT)
-                    .' · '.$session->entry_at->format(ClockFormat::TIME))
+                    .' · '.$session->entry_at->format(ClockFormat::time()))
                 ->success()->send();
 
             // Dispara JS para abrir ventana de impresion del ticket

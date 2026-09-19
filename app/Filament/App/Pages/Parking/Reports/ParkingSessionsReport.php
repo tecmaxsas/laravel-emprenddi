@@ -96,8 +96,8 @@ class ParkingSessionsReport extends Page implements HasForms, HasTable
                 Tables\Columns\TextColumn::make('plate')->label('Placa')->fontFamily('mono')->weight('semibold'),
                 Tables\Columns\TextColumn::make('parkingLot.name')->label('Parqueadero')->toggleable(),
                 Tables\Columns\TextColumn::make('vehicleType.name')->label('Vehículo')->toggleable()->placeholder('—'),
-                Tables\Columns\TextColumn::make('entry_at')->label('Entrada')->dateTime(ClockFormat::DATETIME),
-                Tables\Columns\TextColumn::make('exit_at')->label('Salida')->dateTime(ClockFormat::DATETIME)->placeholder('—'),
+                Tables\Columns\TextColumn::make('entry_at')->label('Entrada')->dateTime(ClockFormat::datetime()),
+                Tables\Columns\TextColumn::make('exit_at')->label('Salida')->dateTime(ClockFormat::datetime())->placeholder('—'),
                 Tables\Columns\TextColumn::make('total_minutes')->label('Min')->alignEnd(),
                 Tables\Columns\TextColumn::make('amount')->label('Monto')->money('COP')->alignEnd()->weight('semibold'),
                 Tables\Columns\TextColumn::make('status')->label('Estado')->badge()

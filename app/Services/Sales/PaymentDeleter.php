@@ -73,7 +73,7 @@ class PaymentDeleter
             return sprintf(
                 'Este cobro pertenece a un turno de caja ya cerrado (%s). Borrarlo dejaría '
                 .'descuadrado el arqueo de ese turno. Registra una nota crédito o un ajuste.',
-                $turno->closed_at?->format(ClockFormat::DATETIME) ?? 'cerrado',
+                $turno->closed_at?->format(ClockFormat::datetime()) ?? 'cerrado',
             );
         }
 
@@ -135,7 +135,7 @@ class PaymentDeleter
 
             $pago->update([
                 'description' => trim(($pago->description ? $pago->description."\n" : '')
-                    .'Borrado el '.now()->format(ClockFormat::DATETIME)
+                    .'Borrado el '.now()->format(ClockFormat::datetime())
                     .' por '.(Auth::user()?->name ?? 'el sistema')
                     .($motivo ? ' — '.$motivo : '')),
             ]);
