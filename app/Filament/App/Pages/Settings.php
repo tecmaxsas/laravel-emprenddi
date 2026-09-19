@@ -12,6 +12,7 @@ use App\Support\CurrentCompany;
 use App\Support\GiftCardsSettings;
 use App\Support\LabelsSettings;
 use App\Support\ModuleGate;
+use App\Support\PrecuentaSettings;
 use App\Support\PromotionsSettings;
 use App\Support\RestaurantSettings;
 use Filament\Forms;
@@ -130,6 +131,13 @@ class Settings extends Page implements HasForms
 
         // Cuenta de propinas por pagar
         $this->data['restaurant_tip_payable_account_id'] = data_get($settings, 'restaurant.tip_payable_account_id');
+
+        // Precuenta (settings.restaurant.precheck.*)
+        $precuenta = PrecuentaSettings::config($company);
+        $this->data['restaurant_precheck_enabled'] = $precuenta['enabled'];
+        $this->data['restaurant_precheck_footer'] = $precuenta['footer'];
+        $this->data['restaurant_precheck_tip_percent'] = $precuenta['tip_percent'];
+        $this->data['restaurant_precheck_show_tip'] = $precuenta['show_tip'];
 
         // Promotions settings (settings.promotions.*) — uno por feature
         foreach (array_keys(PromotionsSettings::FEATURES) as $key) {
@@ -748,6 +756,55 @@ class Settings extends Page implements HasForms
                 ->columns(2)
                 ->schema($toggles),
 
+            Forms\Components\Section::make('Precuenta')
+                ->description('La precuenta es lo que el mesero le lleva al cliente para que revise su consumo ANTES de facturar. Así el error se corrige en la mesa y no con una anulación —o una nota crédito, si la factura ya se fue a la DIAN—.')
+                ->columns(2)
+                ->schema([
+                    Forms\Components\Toggle::make('restaurant_precheck_enabled')
+                        ->label('Activar precuenta')
+                        ->default(true)
+                        ->live()
+                        ->helperText('Agrega el botón «Precuenta» en el POS de restaurante.')
+                        ->columnSpanFull(),
+
+                    Forms\Components\Toggle::make('restaurant_precheck_show_tip')
+                        ->label('Sugerir propina en la precuenta')
+                        ->default(true)
+                        ->live()
+                        ->visible(fn (Forms\Get $get) => (bool) $get('restaurant_precheck_enabled')),
+
+                    Forms\Components\TextInput::make('restaurant_precheck_tip_percent')
+                        ->label('% de propina sugerida')
+                        ->numeric()->minValue(0)->maxValue(100)
+                        ->default(PrecuentaSettings::PROPINA_POR_DEFECTO)
+                        ->suffix('%')
+                        ->visible(fn (Forms\Get $get) => (bool) $get('restaurant_precheck_enabled')
+                            && (bool) $get('restaurant_precheck_show_tip'))
+                        ->helperText('Se imprime aparte del consumo, nunca sumada al total: es voluntaria.'),
+
+                    Forms\Components\Textarea::make('restaurant_precheck_footer')
+                        ->label('Texto al pie de la precuenta')
+                        ->rows(4)
+                        ->maxLength(600)
+                        ->default(PrecuentaSettings::PIE_POR_DEFECTO)
+                        ->visible(fn (Forms\Get $get) => (bool) $get('restaurant_precheck_enabled'))
+                        ->helperText('Aquí va lo que tu negocio quiera advertir. En Colombia la propina es voluntaria y hay que decirlo.')
+                        ->columnSpanFull(),
+
+                    Forms\Components\Placeholder::make('precheck_aviso_legal')
+                        ->label('')
+                        ->visible(fn (Forms\Get $get) => (bool) $get('restaurant_precheck_enabled'))
+                        ->columnSpanFull()
+                        ->content(new HtmlString(
+                            '<div style="background:#fffbeb; border-left:4px solid #f59e0b; padding:12px 14px; border-radius:6px; font-size:13px; color:#78350f; line-height:1.55;">'
+                            .'<strong>La leyenda «Este documento NO es una factura de venta» se imprime siempre y no se puede quitar.</strong> '
+                            .'Una precuenta sale por la misma impresora que la factura, se parece y lleva los mismos totales: '
+                            .'si no lo advierte, el cliente se va creyendo que ya tiene su factura. Ante la DIAN eso es un problema, '
+                            .'no un detalle de diseño.'
+                            .'</div>'
+                        )),
+                ]),
+
             Forms\Components\Section::make('Cuentas contables')
                 ->description('Configuración contable específica del módulo.')
                 ->schema([
@@ -811,6 +868,8 @@ class Settings extends Page implements HasForms
         }
 
         // Cuenta de propinas por pagar (puede ser null = sin asiento)
+        $restaurant['precheck'] = PrecuentaSettings::paraGuardar($this->data);
+
         $tipAccount = $this->data['restaurant_tip_payable_account_id'] ?? null;
         $restaurant['tip_payable_account_id'] = $tipAccount ? (int) $tipAccount : null;
 

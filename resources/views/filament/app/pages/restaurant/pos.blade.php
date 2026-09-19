@@ -862,6 +862,24 @@
                             </div>
                         @endif
 
+                        {{-- PRECUENTA
+                             Va ANTES del boton de cobrar y a proposito: es el
+                             paso previo. El cliente revisa su consumo, y si
+                             hay un error se corrige en la mesa en vez de con
+                             una anulacion —o una nota credito, si la factura
+                             ya se fue a la DIAN—.
+                             Abre en otra pestana para no perder la orden que
+                             el mesero tiene en pantalla. --}}
+                        @if (\App\Support\PrecuentaSettings::activa())
+                            <a href="{{ route('restaurant.precheck', ['order' => $order->id]) }}"
+                               target="_blank" rel="noopener"
+                               @class(['precuenta-btn'])
+                               style="padding:12px; border-radius:8px; background:transparent; color:#4f46e5; border:2px solid #c7d2fe; font-weight:700; cursor:pointer; font-size:14px; margin-top:6px; text-align:center; text-decoration:none; display:block;
+                                      {{ $order->items->reject(fn ($i) => $i->kitchen_status === 'cancelled')->isEmpty() ? 'pointer-events:none; opacity:.45;' : '' }}">
+                                🧾 Imprimir precuenta
+                            </a>
+                        @endif
+
                         <button type="button" wire:click="openBillingModal"
                                 @disabled($order->items->reject(fn ($i) => $i->kitchen_status === 'cancelled')->isEmpty())
                                 style="padding:14px; border-radius:8px; background:#10b981; color:white; border:0; font-weight:800; cursor:pointer; font-size:15px; margin-top:6px; box-shadow:0 2px 4px rgba(16,185,129,0.3);">

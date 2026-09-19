@@ -18,6 +18,7 @@ use App\Http\Controllers\PublicCatalogController;
 use App\Http\Controllers\PublicCustomerStatementController;
 use App\Http\Controllers\PublicMenuController;
 use App\Http\Controllers\QzSigningController;
+use App\Http\Controllers\RestaurantPrecheckController;
 use App\Http\Controllers\WarrantyPrintController;
 use App\Http\Middleware\SetActiveCompany;
 use Illuminate\Support\Facades\Route;
@@ -36,6 +37,14 @@ Route::middleware(['web', 'auth', SetActiveCompany::class])->group(function () {
     // impresora activa enruta los productos de la orden.
     Route::get('/app/restaurant/kot/print/{ticket}', [KitchenTicketPrintController::class, 'show'])
         ->name('restaurant.kot.print');
+
+    // Precuenta del restaurante: lo que el mesero le lleva al cliente para
+    // que revise su consumo ANTES de facturar. No es un documento del
+    // sistema, es una hoja para la mesa: se puede imprimir las veces que haga
+    // falta y no cambia el estado de la orden.
+    Route::get('/app/restaurant/orders/{order}/precheck',
+        [RestaurantPrecheckController::class, 'show'])
+        ->name('restaurant.precheck');
 
     // Comprobante imprimible de garantía (constancia de recepción)
     Route::get('/app/warranties/{warranty}/print', [WarrantyPrintController::class, 'show'])
