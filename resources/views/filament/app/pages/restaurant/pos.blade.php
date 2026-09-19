@@ -1789,6 +1789,44 @@
                                                 <div></div>
                                             @endif
                                         </div>
+
+                                        {{-- CON CUANTO PAGA / VUELTO
+                                             Solo en efectivo: de una
+                                             transferencia nadie devuelve plata.
+                                             Va debajo de su linea de pago
+                                             porque una cuenta dividida puede
+                                             tener una parte en efectivo y otra
+                                             con tarjeta, y el vuelto es solo de
+                                             la primera. --}}
+                                        @if (\App\Support\Vuelto::aplica($p['method'] ?? null))
+                                            @php
+                                                $recibido = (float) ($p['cash_received'] ?? 0);
+                                                $aPagar = (float) ($p['amount'] ?? 0);
+                                                $vuelto = \App\Support\Vuelto::calcular($recibido, $aPagar);
+                                                $falta = \App\Support\Vuelto::faltante($recibido, $aPagar);
+                                            @endphp
+                                            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; align-items:center; margin-top:4px; padding-left:4px;">
+                                                <input type="number" step="1" min="0" inputmode="numeric"
+                                                       wire:model.live.debounce.300ms="billingPayments.{{ $t['key'] }}.{{ $pIdx }}.cash_received"
+                                                       onwheel="this.blur()"
+                                                       placeholder="Con cuánto paga"
+                                                       style="width:100%; padding:6px 8px; border-radius:6px; border:1px solid #d1d5db; font-size:12px; color:#111827; background:#ffffff; text-align:right;" />
+                                                <div style="text-align:right; font-size:12px;">
+                                                    @if ($recibido <= 0)
+                                                        <span style="color:#9ca3af;">Opcional</span>
+                                                    @elseif ($falta > 0)
+                                                        <span style="color:#dc2626; font-weight:700;">
+                                                            Faltan ${{ number_format($falta, 0, ',', '.') }}
+                                                        </span>
+                                                    @else
+                                                        <span style="color:#6b7280;">Cambio</span>
+                                                        <span style="font-weight:800; font-size:14px; color:#059669;">
+                                                            ${{ number_format($vuelto, 0, ',', '.') }}
+                                                        </span>
+                                                    @endif
+                                                </div>
+                                            </div>
+                                        @endif
                                     @endforeach
                                 </div>
 

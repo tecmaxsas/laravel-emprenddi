@@ -492,6 +492,9 @@ class ParkingTerminal extends Page
 
         $this->exitForm = [
             'payment_method' => 'cash',
+            // Con cuanto paga el cliente. Opcional: si el cajero no lo digita,
+            // el cobro se registra igual y sin vuelto.
+            'cash_received' => null,
             'account_id' => $defaultAccount,
             'invoice_kind' => $this->currentLot?->default_invoice_kind ?: 'pos',
             'third_party_id' => null,
@@ -801,6 +804,7 @@ class ParkingTerminal extends Page
             'payment_method' => $metodo,
             'account_id' => $accountId,
             'paid_amount' => $grandTotal,
+            'cash_received' => $this->exitForm['cash_received'] ?? null,
             'third_party_id' => $this->exitForm['third_party_id'] ?? null,
             'reference' => 'Parqueo '.$closed->plate,
             'extras' => $this->exitExtras,

@@ -226,6 +226,34 @@ class VueltoTest extends TestCase
         }
     }
 
+    /**
+     * Los tres POS tienen dónde digitar con cuánto paga el cliente.
+     *
+     * El motor aceptaba el dato desde el primer día, pero durante un tiempo
+     * solo el POS de retail tenía la casilla. Un dato que el sistema sabe
+     * guardar y la pantalla no deja escribir no le sirve a nadie, y desde
+     * fuera parece que la función existe.
+     */
+    public function test_los_tres_pos_tienen_la_casilla(): void
+    {
+        $pantallas = [
+            'retail' => resource_path('views/filament/app/pages/pos-terminal.blade.php'),
+            'restaurante' => resource_path('views/filament/app/pages/restaurant/pos.blade.php'),
+            'parqueadero' => resource_path('views/filament/app/pages/parking/terminal.blade.php'),
+        ];
+
+        foreach ($pantallas as $nombre => $ruta) {
+            $vista = file_get_contents($ruta);
+
+            $this->assertStringContainsString('cash_received', $vista,
+                "El POS de {$nombre} no deja digitar con cuánto paga el cliente.");
+
+            $this->assertStringContainsString('Vuelto::aplica', $vista,
+                "El POS de {$nombre} tiene que preguntar solo en efectivo, "
+                .'y decidirlo por el tipo del método y no por su código.');
+        }
+    }
+
     // --------------------------------------------------------- auxiliares
 
     private function registrarLimpieza(int $pagoId): void

@@ -146,7 +146,8 @@ class RestaurantPos extends Page
     public bool $billingModalOpen = false;
 
     // Multi-pago: por cada tab un array de pagos
-    // [tabKey => [['method' => 'cash', 'account_id' => 5, 'amount' => '50000.00'], ...]]
+    // [tabKey => [['method' => 'cash', 'account_id' => 5, 'amount' => '50000.00',
+    //              'cash_received' => null], ...]]
     public array $billingPayments = [];
 
     public string $billingReference = '';
@@ -1735,6 +1736,10 @@ class RestaurantPos extends Page
             $payable = (float) ($t['payable_amount'] ?? $t['invoice_total']);
             $this->billingPayments[$t['key']] = [[
                 'method' => 'cash',
+                'cash_received' => null,
+                // Con cuanto paga el cliente. Opcional: sin dato el cobro se
+                // registra igual y sin vuelto.
+                'cash_received' => null,
                 'account_id' => $defaultAccount,
                 'amount' => number_format($payable, 2, '.', ''),
             ]];
@@ -1907,6 +1912,7 @@ class RestaurantPos extends Page
                     'payment_method' => $p['method'],
                     'account_id' => (int) $p['account_id'],
                     'amount' => round((float) $p['amount'], 2),
+                    'cash_received' => $p['cash_received'] ?? null,
                 ], $this->billingPayments[$t['key']]),
                 // Descuento por promociones distribuido proporcionalmente
                 // al invoice_total de este tab. RestaurantOrderEngine::bill()
