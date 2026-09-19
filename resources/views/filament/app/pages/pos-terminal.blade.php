@@ -1115,6 +1115,43 @@
                                                wire:model.blur="payments.{{ $i }}.reference"
                                                class="pos-input" style="font-size:12px;" />
                                     @endif
+
+                                    {{-- CON CUANTO PAGA / VUELTO
+                                         Solo en efectivo: de una transferencia
+                                         nadie devuelve plata. La resta la hacia
+                                         el cajero de cabeza, y el faltante
+                                         aparecia al arquear cuando ya nadie
+                                         sabia en cual venta fue. --}}
+                                    @if (\App\Support\Vuelto::aplica($p['payment_method'] ?? null))
+                                        @php
+                                            $recibido = (float) ($p['cash_received'] ?? 0);
+                                            $aPagar = (float) ($p['amount'] ?? 0);
+                                            $vuelto = \App\Support\Vuelto::calcular($recibido, $aPagar);
+                                            $falta = \App\Support\Vuelto::faltante($recibido, $aPagar);
+                                        @endphp
+                                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; align-items:center;">
+                                            <input type="number" step="1" min="0" inputmode="numeric"
+                                                   wire:model.live.debounce.300ms="payments.{{ $i }}.cash_received"
+                                                   onwheel="this.blur()"
+                                                   placeholder="Con cuánto paga"
+                                                   class="pos-input"
+                                                   style="text-align:right; font-size:14px;" />
+                                            <div style="text-align:right; font-size:13px;">
+                                                @if ($recibido <= 0)
+                                                    <span style="color:#9ca3af;">Opcional</span>
+                                                @elseif ($falta > 0)
+                                                    <span style="color:rgb(220,38,38); font-weight:700;">
+                                                        Faltan ${{ number_format($falta, 0, ',', '.') }}
+                                                    </span>
+                                                @else
+                                                    <span style="color:#6b7280;">Cambio</span>
+                                                    <span style="font-weight:800; font-size:16px; color:rgb(5,150,105);">
+                                                        ${{ number_format($vuelto, 0, ',', '.') }}
+                                                    </span>
+                                                @endif
+                                            </div>
+                                        </div>
+                                    @endif
                                 </div>
                             @endforeach
                         </div>

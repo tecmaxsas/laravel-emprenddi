@@ -261,6 +261,19 @@
             @if ($get($t, 'show_paid'))
                 <div class="row bold"><span>Pagado</span><span>${{ number_format($totalPaid, 0, ',', '.') }}</span></div>
             @endif
+
+            {{-- RECIBIDO Y VUELTO
+                 Va impreso porque es la unica constancia que le queda al
+                 cliente de cuanto entrego. Un reclamo de «me devolvio mal»
+                 sin tiquete se resuelve de memoria contra memoria. --}}
+            @php
+                $recibido = $invoice->payments->sum(fn ($p) => (float) ($p->cash_received ?? 0));
+                $vuelto = $invoice->payments->sum(fn ($p) => (float) ($p->change_given ?? 0));
+            @endphp
+            @if ($recibido > 0)
+                <div class="row"><span>Recibido</span><span>${{ number_format($recibido, 0, ',', '.') }}</span></div>
+                <div class="row bold"><span>Cambio</span><span>${{ number_format($vuelto, 0, ',', '.') }}</span></div>
+            @endif
         @endif
 
         {{-- FOOTER --}}

@@ -3,7 +3,11 @@
 namespace App\Services\Restaurant;
 
 use App\Models\Company;
+use App\Models\JournalEntry;
+use App\Models\JournalEntryLine;
+use App\Models\Location;
 use App\Models\Product;
+use App\Models\Restaurant\Driver;
 use App\Models\Restaurant\KitchenTicket;
 use App\Models\Restaurant\Order;
 use App\Models\Restaurant\OrderItem;
@@ -11,14 +15,17 @@ use App\Models\Restaurant\Printer;
 use App\Models\Restaurant\Table;
 use App\Models\SaleInvoice;
 use App\Models\Tax;
+use App\Services\Accounting\JournalEntryNumberer;
 use App\Services\Dian\PosDianTransmitter;
+use App\Services\Sales\DocumentNumberer;
 use App\Services\Sales\SaleInvoiceEngine;
-use App\Services\Sales\SaleInvoiceNumberer;
 use App\Support\CashSessionGate;
+use App\Support\GiftCardsSettings;
 use App\Support\PaymentAccountResolver;
 use App\Support\RestaurantSettings;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
@@ -94,7 +101,7 @@ class RestaurantOrderEngine
      * delivery improvisado o cliente que no se va a sentar.
      */
     public function openTakeawayOrder(
-        \App\Models\Location $location,
+        Location $location,
         int $guests = 1,
         ?string $customerName = null,
     ): Order {
@@ -134,7 +141,7 @@ class RestaurantOrderEngine
      * del delivery: 'preparing'.
      */
     public function openDeliveryOrder(
-        \App\Models\Location $location,
+        Location $location,
         string $customerName,
         string $address,
         ?string $phone = null,
@@ -193,7 +200,7 @@ class RestaurantOrderEngine
                 'server_user_id' => Auth::id(),
                 'prefix' => 'ORD',
                 'number' => $this->numberer->next($company, 'ORD'),
-                'tracking_token' => \Illuminate\Support\Str::random(32),
+                'tracking_token' => Str::random(32),
                 'guests' => max(1, $guests),
                 'status' => Order::STATUS_OPEN,
                 'opened_at' => now(),
@@ -233,7 +240,7 @@ class RestaurantOrderEngine
      * Asigna o quita un driver al pedido de delivery. Pasar null para
      * desasignar. Actualiza delivery_metadata.driver_id.
      */
-    public function assignDeliveryDriver(Order $order, ?\App\Models\Restaurant\Driver $driver): Order
+    public function assignDeliveryDriver(Order $order, ?Driver $driver): Order
     {
         if (! $order->is_delivery) {
             throw new RuntimeException('La orden no es de domicilio.');
@@ -242,6 +249,7 @@ class RestaurantOrderEngine
         $metadata['driver_id'] = $driver?->id;
         $metadata['driver_name'] = $driver?->name;
         $order->update(['delivery_metadata' => $metadata]);
+
         return $order->fresh();
     }
 
@@ -274,6 +282,7 @@ class RestaurantOrderEngine
         }
 
         $order->update(['delivery_metadata' => $metadata]);
+
         return $order->fresh();
     }
 
@@ -287,6 +296,7 @@ class RestaurantOrderEngine
         }
         $order->update(['delivery_fee' => max(0, round($fee, 2))]);
         $this->recalculateTotals($order);
+
         return $order->fresh();
     }
 
@@ -322,7 +332,9 @@ class RestaurantOrderEngine
      */
     public function resolveTaxForMode(?Tax $baseTax, Order $order): ?Tax
     {
-        if (! $baseTax) return null;
+        if (! $baseTax) {
+            return null;
+        }
 
         $isTakeawayMode = $order->is_takeaway || $order->is_delivery;
         if ($isTakeawayMode && $baseTax->takeaway_tax_id) {
@@ -342,11 +354,17 @@ class RestaurantOrderEngine
         $order->load('items');
 
         foreach ($order->items as $item) {
-            if ($item->kitchen_status === OrderItem::KS_CANCELLED) continue;
-            if (! $item->product_id) continue;
+            if ($item->kitchen_status === OrderItem::KS_CANCELLED) {
+                continue;
+            }
+            if (! $item->product_id) {
+                continue;
+            }
 
             $product = Product::find($item->product_id);
-            if (! $product) continue;
+            if (! $product) {
+                continue;
+            }
 
             $baseTax = $product->default_sale_tax_id ? Tax::find($product->default_sale_tax_id) : null;
             $tax = $this->resolveTaxForMode($baseTax, $order);
@@ -396,7 +414,7 @@ class RestaurantOrderEngine
         $taxRate = $tax ? (float) $tax->rate : 0.0;
 
         // priceForLocation() respeta override por sede; cae a default_sale_price.
-        $location = $order->location_id ? \App\Models\Location::find($order->location_id) : null;
+        $location = $order->location_id ? Location::find($order->location_id) : null;
         $rawPrice = (float) $product->priceForLocation($location);
 
         // Si el precio del producto incluye el impuesto, desnormalizar: el
@@ -497,7 +515,7 @@ class RestaurantOrderEngine
             throw new RuntimeException('Las dos mitades deben ser de la misma categoria.');
         }
 
-        $location = $order->location_id ? \App\Models\Location::find($order->location_id) : null;
+        $location = $order->location_id ? Location::find($order->location_id) : null;
 
         // Normalizar precios a "base" (sin IVA) si el flag dice que el precio
         // ya incluia el impuesto. La tasa respeta el modo (para llevar).
@@ -589,6 +607,7 @@ class RestaurantOrderEngine
     {
         if ($quantity <= 0) {
             $this->cancelItem($item, 'cantidad cero');
+
             return;
         }
         if (in_array($item->kitchen_status, [OrderItem::KS_READY, OrderItem::KS_SERVED], true)) {
@@ -887,6 +906,7 @@ class RestaurantOrderEngine
         }
 
         $this->recalculateTotals($order);
+
         return $order->fresh();
     }
 
@@ -962,7 +982,7 @@ class RestaurantOrderEngine
         $orderTip = (float) $order->tip_amount;
 
         $invoiceEngine = app(SaleInvoiceEngine::class);
-        $documentNumberer = app(\App\Services\Sales\DocumentNumberer::class);
+        $documentNumberer = app(DocumentNumberer::class);
 
         // Jobs de impresión de recibo — se ejecutan DESPUÉS del commit para
         // no demorar la transacción si la impresora está lenta/apagada.
@@ -976,7 +996,9 @@ class RestaurantOrderEngine
 
             foreach ($tabs as $tab) {
                 $items = $activeItems->whereIn('id', $tab['item_ids'])->values();
-                if ($items->isEmpty()) continue;
+                if ($items->isEmpty()) {
+                    continue;
+                }
 
                 $tabSubtotal = (float) $items->sum('subtotal');
                 $tipShare = $orderSubtotal > 0
@@ -1127,7 +1149,9 @@ class RestaurantOrderEngine
 
                 foreach ($payments as $idx => $p) {
                     $amount = round((float) $p['amount'], 2);
-                    if ($amount <= 0) continue;
+                    if ($amount <= 0) {
+                        continue;
+                    }
 
                     // La cuenta la decide el metodo de pago. El mesero solo la
                     // ve si el negocio lleva contabilidad; si no, se resuelve.
@@ -1144,6 +1168,7 @@ class RestaurantOrderEngine
 
                     $invoiceEngine->addPayment($invoice, [
                         'amount' => $amount,
+                        'cash_received' => $p['cash_received'] ?? ($tab['cash_received'] ?? null),
                         'payment_method' => $metodoPago,
                         'account_id' => $cuenta,
                         'date' => now()->toDateString(),
@@ -1159,13 +1184,15 @@ class RestaurantOrderEngine
                 // → cancela el pasivo que se creo al emitir la card y cubre
                 // la venta como si fuera efectivo.
                 if (! empty($giftCardPayments)) {
-                    $liabilityAccountId = \App\Support\GiftCardsSettings::liabilityAccountId();
+                    $liabilityAccountId = GiftCardsSettings::liabilityAccountId();
                     if (! $liabilityAccountId) {
                         throw new RuntimeException('No se encuentra la cuenta de pasivo Gift Card. Configurala en Configuraciones → Gift Cards o asegurate que la cuenta 240825 exista en el PUC.');
                     }
                     foreach ($giftCardPayments as $gIdx => $g) {
                         $amount = round((float) $g['amount'], 2);
-                        if ($amount <= 0) continue;
+                        if ($amount <= 0) {
+                            continue;
+                        }
                         $invoiceEngine->addPayment($invoice, [
                             'amount' => $amount,
                             'payment_method' => 'gift_card',
@@ -1195,7 +1222,6 @@ class RestaurantOrderEngine
 
                 $invoice = $invoice->fresh();
                 $invoices[] = $invoice;
-
 
                 // Encolar impresión del recibo (se ejecuta tras el commit)
                 $receiptJobs[] = [
@@ -1343,8 +1369,8 @@ class RestaurantOrderEngine
         float $tipAmount,
         int $cashAccountId,
         ?string $tabLabel = null,
-    ): ?\App\Models\JournalEntry {
-        $company = \App\Models\Company::find($order->company_id);
+    ): ?JournalEntry {
+        $company = Company::find($order->company_id);
         $settings = $company?->settings ?? [];
         $tipAccountId = data_get($settings, 'restaurant.tip_payable_account_id');
 
@@ -1352,14 +1378,14 @@ class RestaurantOrderEngine
             return null; // sin cuenta configurada, no se crea asiento
         }
 
-        $numberer = app(\App\Services\Accounting\JournalEntryNumberer::class);
+        $numberer = app(JournalEntryNumberer::class);
         $number = $numberer->next($company, 'PR'); // PR = Propina Recibida
 
         $description = "Propina recibida — Orden {$order->fullNumber()}"
             .($tabLabel ? " tab {$tabLabel}" : '')
             ." (Factura {$invoice->fullNumber()})";
 
-        $entry = \App\Models\JournalEntry::create([
+        $entry = JournalEntry::create([
             'company_id' => $order->company_id,
             'prefix' => 'PR',
             'number' => $number,
@@ -1375,7 +1401,7 @@ class RestaurantOrderEngine
             'total_credit' => $tipAmount,
         ]);
 
-        \App\Models\JournalEntryLine::create([
+        JournalEntryLine::create([
             'journal_entry_id' => $entry->id,
             'line_number' => 1,
             'account_id' => $cashAccountId,
@@ -1384,7 +1410,7 @@ class RestaurantOrderEngine
             'credit' => 0,
         ]);
 
-        \App\Models\JournalEntryLine::create([
+        JournalEntryLine::create([
             'journal_entry_id' => $entry->id,
             'line_number' => 2,
             'account_id' => (int) $tipAccountId,

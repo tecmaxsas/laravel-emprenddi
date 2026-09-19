@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\Accounting\FiscalPeriodGuard;
 use App\Traits\BelongsToCompany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Payment extends Model
 {
-    use HasFactory, BelongsToCompany, SoftDeletes;
+    use BelongsToCompany, HasFactory, SoftDeletes;
 
     public const PAYMENT_METHODS = [
         'cash' => 'Efectivo',
@@ -34,6 +35,8 @@ class Payment extends Model
         'customer_advance_id',
         'date',
         'amount',
+        'cash_received',
+        'change_given',
         'payment_method',
         'account_id',
         'cash_register_session_id',
@@ -48,6 +51,8 @@ class Payment extends Model
         return [
             'date' => 'date',
             'amount' => 'decimal:2',
+            'cash_received' => 'decimal:2',
+            'change_given' => 'decimal:2',
         ];
     }
 
@@ -84,7 +89,7 @@ class Payment extends Model
     protected static function booted(): void
     {
         static::saving(function (Payment $payment) {
-            \App\Services\Accounting\FiscalPeriodGuard::ensureOpen(
+            FiscalPeriodGuard::ensureOpen(
                 $payment->company_id,
                 $payment->date,
             );

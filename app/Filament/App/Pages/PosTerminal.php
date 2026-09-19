@@ -1119,6 +1119,7 @@ class PosTerminal extends Page
                     'payment_method' => $method,
                     'account_id' => $this->defaultAccountForMethod($method),
                     'amount' => $totals['net_payable'],
+                    'cash_received' => null,
                     'reference' => '',
                 ];
             }
@@ -1137,6 +1138,7 @@ class PosTerminal extends Page
             'payment_method' => 'cash',
             'account_id' => $this->defaultAccountForMethod('cash'),
             'amount' => $remaining,
+            'cash_received' => null,
             'reference' => '',
         ];
     }
@@ -1898,6 +1900,9 @@ class PosTerminal extends Page
 
                     $engine->addPayment($invoice, [
                         'amount' => $amount,
+                        // Lo que el cliente puso sobre el mostrador. El motor
+                        // lo ignora si el metodo no es efectivo.
+                        'cash_received' => $payment['cash_received'] ?? null,
                         'payment_method' => $payment['payment_method'],
                         'account_id' => $payment['account_id'],
                         'date' => now()->toDateString(),

@@ -17,6 +17,7 @@ use App\Services\Invoicing\GlobalDiscount;
 use App\Support\CashSessionGate;
 use App\Support\CommissionsSettings;
 use App\Support\PaymentMethodOptions;
+use App\Support\Vuelto;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -246,6 +247,15 @@ class SaleInvoiceEngine
                 'third_party_id' => $invoice->third_party_id,
                 'date' => $data['date'],
                 'amount' => $amount,
+                // Lo que el cliente puso sobre el mostrador y lo que se le
+                // devolvio. Solo en efectivo; en los demas metodos quedan en
+                // null, porque guardar ceros haria creer que hubo entrega.
+                ...Vuelto::paraGuardar(
+                    $data['payment_method'],
+                    $data['cash_received'] ?? null,
+                    $amount,
+                    $invoice->company_id,
+                ),
                 'payment_method' => $data['payment_method'],
                 'account_id' => $cashAccountId,
                 'cash_register_session_id' => CashSessionGate::receivingSessionId(
