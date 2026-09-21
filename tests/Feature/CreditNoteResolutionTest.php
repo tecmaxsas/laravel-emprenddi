@@ -258,6 +258,48 @@ class CreditNoteResolutionTest extends TestCase
         app(CreditDebitNoteEngine::class)->asignarResolucionDian($nota->fresh());
     }
 
+    // ------------------------------------------- saltar hacia adelante
+
+    /**
+     * Subir el contador adelanta el consecutivo, sin repetir lo ya emitido.
+     *
+     * Hace falta cuando la DIAN ya tiene notas emitidas fuera de Emprenddi —un
+     * sistema anterior, una migración a medias— y la siguiente no puede salir
+     * con un número que allá ya existe. Como la numeración de notas no se
+     * teclea en ninguna pantalla, el único contador que hay vive en las
+     * asignaciones de la resolución: es el que mueve
+     * `scripts/consecutivo-notas.php`, y esta prueba fija que moverlo sirva
+     * para lo que se cree que sirve.
+     */
+    public function test_el_contador_de_asignaciones_adelanta_el_consecutivo(): void
+    {
+        $resolucion = $this->resolucion(documentTypeId: 4, prefijo: 'ZZNC', desde: 1, hasta: 1000);
+
+        $primera = app(CreditDebitNoteEngine::class)->post($this->notaBorrador());
+        $this->assertSame(1, (int) $primera->number);
+
+        // La fila va inactiva a propósito: lleva la cuenta sin convertirse en
+        // la resolución predeterminada de esa sede.
+        DB::table('dian_location_resolutions')->insert([
+            'location_id' => $this->sede->id,
+            'dian_resolution_id' => $resolucion->id,
+            'current_consecutive' => 6,
+            'active' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $siguiente = app(CreditDebitNoteEngine::class)->post($this->notaBorrador());
+
+        $this->assertSame(6, (int) $siguiente->number,
+            'El contador manda sobre «la última emitida más uno»: si no, saldría la 2.');
+
+        $this->assertSame(7, (int) DB::table('dian_location_resolutions')
+            ->where('dian_resolution_id', $resolucion->id)
+            ->value('current_consecutive'),
+            'Tras emitir, el contador queda listo para la siguiente.');
+    }
+
     // --------------------------------------------------------- auxiliares
 
     private function resolucion(int $documentTypeId, string $prefijo, int $desde, int $hasta): Resolution
