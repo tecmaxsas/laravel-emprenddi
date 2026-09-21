@@ -122,11 +122,22 @@ class CreditDebitNoteEngine
      * motor las buscaba por la sede. Sin esto habría que anularlas y rehacerlas,
      * y una nota crédito anulada deja la cuenta del cliente donde no debe.
      *
+     * También sirve para las notas que la DIAN **rechazó**, aunque ya tengan
+     * resolución. El rechazo típico es «Documento ya emitido»: ese consecutivo
+     * está ocupado allá —lo gastó otro sistema, o un envío anterior— y la nota
+     * no va a pasar nunca con el número que tiene. Antes había que anularla y
+     * rehacerla, y una nota crédito anulada deja la cuenta del cliente donde no
+     * debe.
+     *
      * Renumerar un documento contabilizado no es gratis, así que solo procede
-     * cuando la DIAN nunca lo aceptó: si lo aceptó, ese número ya existe fuera
-     * de aquí y cambiarlo dejaría los dos sistemas hablando de documentos
-     * distintos. El asiento se arrastra con la nota, porque su referencia es
-     * justamente el número que cambia.
+     * cuando la DIAN nunca lo autorizó: si lo autorizó, ese número ya existe
+     * fuera de aquí y cambiarlo dejaría los dos sistemas hablando de documentos
+     * distintos. Por eso se mira el CUFE además del estado: es la prueba de que
+     * la DIAN alguna vez le dio validez, y sobrevive a cualquier estado que
+     * alguien haya dejado mal guardado después.
+     *
+     * El asiento se arrastra con la nota, porque su referencia es justamente el
+     * número que cambia.
      *
      * @throws RuntimeException con un mensaje que se le puede mostrar al usuario
      */
@@ -143,7 +154,18 @@ class CreditDebitNoteEngine
             );
         }
 
-        if ($note->dian_resolution_id) {
+        if ($note->cufe) {
+            throw new RuntimeException(
+                'Esta nota tiene CUFE: la DIAN la autorizó en algún momento con su '
+                .'número actual. Renumerarla dejaría dos documentos distintos hablando '
+                .'de la misma operación.'
+            );
+        }
+
+        // Con resolución y sin rechazo no hay nada que arreglar: o está esperando
+        // respuesta de la DIAN —y renumerarla ahora dejaría en el aire el número
+        // que ya viajó— o nunca se ha intentado enviar.
+        if ($note->dian_resolution_id && $note->dian_status !== CreditDebitNote::DIAN_REJECTED) {
             throw new RuntimeException('Esta nota ya tiene resolución asignada.');
         }
 

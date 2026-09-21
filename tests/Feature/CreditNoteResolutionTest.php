@@ -258,6 +258,71 @@ class CreditNoteResolutionTest extends TestCase
         app(CreditDebitNoteEngine::class)->asignarResolucionDian($nota->fresh());
     }
 
+    /**
+     * Una nota rechazada sí se renumera, aunque ya tenga resolución.
+     *
+     * «Documento ya emitido» significa que ese consecutivo está ocupado en la
+     * DIAN —lo gastó otro sistema, o un envío anterior—: la nota no va a pasar
+     * nunca con el número que tiene. Negarse a renumerarla obligaba a anularla
+     * y rehacerla, y una nota crédito anulada deja la cuenta del cliente donde
+     * no debe.
+     */
+    public function test_una_nota_rechazada_se_renumera_aunque_tenga_resolucion(): void
+    {
+        $resolucion = $this->resolucion(documentTypeId: 4, prefijo: 'ZZNC', desde: 1, hasta: 1000);
+
+        $nota = app(CreditDebitNoteEngine::class)->post($this->notaBorrador());
+        $this->assertSame(1, (int) $nota->number);
+        $this->assertNotNull($nota->dian_resolution_id);
+
+        $nota->update([
+            'dian_status' => CreditDebitNote::DIAN_REJECTED,
+            'dian_error_message' => 'Documento ya emitido.',
+        ]);
+
+        // El consecutivo desde el que debe seguir, porque en la DIAN los
+        // anteriores ya están ocupados.
+        DB::table('dian_location_resolutions')->insert([
+            'location_id' => $this->sede->id,
+            'dian_resolution_id' => $resolucion->id,
+            'current_consecutive' => 6,
+            'active' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $renumerada = app(CreditDebitNoteEngine::class)->asignarResolucionDian($nota->fresh());
+
+        $this->assertSame(6, (int) $renumerada->number);
+        $this->assertSame(CreditDebitNote::DIAN_PENDING, $renumerada->dian_status,
+            'Queda lista para reintentar el envío.');
+        $this->assertNull($renumerada->dian_error_message,
+            'El motivo del rechazo era del número viejo.');
+    }
+
+    /**
+     * Pero una nota con CUFE no se renumera, diga lo que diga su estado.
+     *
+     * El CUFE es la prueba de que la DIAN le dio validez en algún momento. Si
+     * alguien dejó el estado mal guardado después —un reintento, una
+     * sincronización a medias—, el estado miente y el CUFE no.
+     */
+    public function test_una_nota_con_cufe_no_se_renumera(): void
+    {
+        $this->resolucion(documentTypeId: 4, prefijo: 'ZZNC', desde: 1, hasta: 1000);
+
+        $nota = app(CreditDebitNoteEngine::class)->post($this->notaBorrador());
+        $nota->update([
+            'dian_status' => CreditDebitNote::DIAN_REJECTED,
+            'cufe' => str_repeat('a', 96),
+        ]);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessageMatches('/CUFE/');
+
+        app(CreditDebitNoteEngine::class)->asignarResolucionDian($nota->fresh());
+    }
+
     // ------------------------------------------- saltar hacia adelante
 
     /**

@@ -93,28 +93,43 @@ class ViewCreditDebitNote extends ViewRecord
                     }
                 }),
 
-            // Rescate de las notas que se contabilizaron sin resolución mientras
-            // el motor la buscaba por la sede. Sin esto habría que anularlas y
-            // rehacerlas, y una nota crédito anulada deja la cuenta del cliente
-            // donde no debe.
+            // Rescate de dos situaciones que terminan igual —una nota que no va a
+            // pasar nunca con el número que tiene— y que antes obligaban a
+            // anularla y rehacerla, con lo que eso le hace a la cuenta del
+            // cliente: la que se contabilizó sin resolución mientras el motor la
+            // buscaba por la sede, y la que la DIAN rechazó porque su consecutivo
+            // ya estaba ocupado allá.
             Actions\Action::make('assignResolution')
-                ->label('Asignar resolución DIAN')
+                ->label(fn (CreditDebitNote $r) => $r->dian_resolution_id
+                    ? 'Renumerar y reintentar'
+                    : 'Asignar resolución DIAN')
                 ->icon('heroicon-o-hashtag')
                 ->color('warning')
                 ->visible(fn (CreditDebitNote $r) => $r->isPosted()
-                    && ! $r->dian_resolution_id
+                    && ! $r->cufe
                     && $r->dian_status !== CreditDebitNote::DIAN_ACCEPTED
+                    && (! $r->dian_resolution_id || $r->dian_status === CreditDebitNote::DIAN_REJECTED)
                     && auth()->user()?->can('credit_debit_notes.post'))
                 ->requiresConfirmation()
                 ->modalHeading('Numerar con la resolución de la empresa')
-                ->modalDescription(fn (CreditDebitNote $r) => sprintf(
-                    'Esta nota se numeró a mano (%s) y por eso la DIAN la rechaza: el '
-                    .'documento no tiene resolución. Se le va a asignar el siguiente '
-                    .'consecutivo de la resolución de %s de la empresa, y el asiento '
-                    .'contable se actualiza con el número nuevo. Después podrás enviarla.',
-                    $r->fullNumber(),
-                    $r->isCredit() ? 'nota crédito' : 'nota débito',
-                ))
+                ->modalDescription(fn (CreditDebitNote $r) => $r->dian_resolution_id
+                    ? sprintf(
+                        'La DIAN rechazó esta nota con el número %s%s Se le va a asignar el '
+                        .'siguiente consecutivo libre de la resolución de %s de la empresa, y el '
+                        .'asiento contable se actualiza con el número nuevo. Después podrás '
+                        .'reintentar el envío.',
+                        $r->fullNumber(),
+                        $r->dian_error_message ? ': «'.mb_strimwidth((string) $r->dian_error_message, 0, 120, '…').'».' : '.',
+                        $r->isCredit() ? 'nota crédito' : 'nota débito',
+                    )
+                    : sprintf(
+                        'Esta nota se numeró a mano (%s) y por eso la DIAN la rechaza: el '
+                        .'documento no tiene resolución. Se le va a asignar el siguiente '
+                        .'consecutivo de la resolución de %s de la empresa, y el asiento '
+                        .'contable se actualiza con el número nuevo. Después podrás enviarla.',
+                        $r->fullNumber(),
+                        $r->isCredit() ? 'nota crédito' : 'nota débito',
+                    ))
                 ->modalSubmitActionLabel('Asignar y renumerar')
                 ->action(function (CreditDebitNote $r) {
                     try {
