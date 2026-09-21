@@ -301,6 +301,60 @@ class CreditNoteResolutionTest extends TestCase
     }
 
     /**
+     * Y se puede renumerar más de una vez, mientras no se haya enviado.
+     *
+     * Al renumerar, la nota queda pendiente de envío. Si eso cerrara la puerta,
+     * la trampa sería completa: una primera pasada hecha antes de mover el
+     * consecutivo devuelve el mismo número —el siguiente libre era ese—, y la
+     * segunda, la que de verdad lo arregla, ya no se podría hacer.
+     */
+    public function test_una_nota_pendiente_de_envio_se_puede_renumerar_otra_vez(): void
+    {
+        $resolucion = $this->resolucion(documentTypeId: 4, prefijo: 'ZZNC', desde: 1, hasta: 1000);
+
+        $nota = app(CreditDebitNoteEngine::class)->post($this->notaBorrador());
+        $nota->update(['dian_status' => CreditDebitNote::DIAN_REJECTED]);
+
+        // Primer intento, sin mover el consecutivo: sale el mismo número.
+        $primera = app(CreditDebitNoteEngine::class)->asignarResolucionDian($nota->fresh());
+        $this->assertSame(1, (int) $primera->number);
+        $this->assertSame(CreditDebitNote::DIAN_PENDING, $primera->dian_status);
+
+        DB::table('dian_location_resolutions')->insert([
+            'location_id' => $this->sede->id,
+            'dian_resolution_id' => $resolucion->id,
+            'current_consecutive' => 6,
+            'active' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $segunda = app(CreditDebitNoteEngine::class)->asignarResolucionDian($primera->fresh());
+
+        $this->assertSame(6, (int) $segunda->number,
+            'Sin esto, quien renumeró antes de mover el contador se queda sin salida.');
+    }
+
+    /**
+     * Lo que sí espera: una nota cuyo número ya viajó a la DIAN.
+     *
+     * Hasta que llegue la respuesta nadie sabe con qué se quedó allá, y cambiarlo
+     * mientras tanto deja ese número en el aire.
+     */
+    public function test_una_nota_enviada_no_se_renumera_hasta_que_la_dian_responda(): void
+    {
+        $this->resolucion(documentTypeId: 4, prefijo: 'ZZNC', desde: 1, hasta: 1000);
+
+        $nota = app(CreditDebitNoteEngine::class)->post($this->notaBorrador());
+        $nota->update(['dian_status' => CreditDebitNote::DIAN_SENT]);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessageMatches('/esperando la respuesta/');
+
+        app(CreditDebitNoteEngine::class)->asignarResolucionDian($nota->fresh());
+    }
+
+    /**
      * Pero una nota con CUFE no se renumera, diga lo que diga su estado.
      *
      * El CUFE es la prueba de que la DIAN le dio validez en algún momento. Si

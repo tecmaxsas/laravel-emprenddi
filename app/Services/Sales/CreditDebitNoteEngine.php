@@ -129,6 +129,12 @@ class CreditDebitNoteEngine
      * rehacerla, y una nota crédito anulada deja la cuenta del cliente donde no
      * debe.
      *
+     * Y sirve las veces que haga falta mientras la nota no se haya enviado. Al
+     * renumerar, la nota queda pendiente de envío, y negarse entonces sería la
+     * peor trampa posible: la primera pasada deja el número donde estaba —si el
+     * contador no se había movido— y la segunda, la que lo arreglaría, ya no se
+     * puede hacer.
+     *
      * Renumerar un documento contabilizado no es gratis, así que solo procede
      * cuando la DIAN nunca lo autorizó: si lo autorizó, ese número ya existe
      * fuera de aquí y cambiarlo dejaría los dos sistemas hablando de documentos
@@ -162,11 +168,14 @@ class CreditDebitNoteEngine
             );
         }
 
-        // Con resolución y sin rechazo no hay nada que arreglar: o está esperando
-        // respuesta de la DIAN —y renumerarla ahora dejaría en el aire el número
-        // que ya viajó— o nunca se ha intentado enviar.
-        if ($note->dian_resolution_id && $note->dian_status !== CreditDebitNote::DIAN_REJECTED) {
-            throw new RuntimeException('Esta nota ya tiene resolución asignada.');
+        // Lo único que de verdad impide renumerar, además del CUFE: que el número
+        // vaya viajando. Hasta que la DIAN no responda, nadie sabe con qué se
+        // quedó allá, y cambiarlo aquí mientras tanto deja ese número en el aire.
+        if ($note->dian_status === CreditDebitNote::DIAN_SENT) {
+            throw new RuntimeException(
+                'Esta nota está esperando la respuesta de la DIAN. Espera a que responda: '
+                .'si la rechaza, podrás renumerarla y reintentar.'
+            );
         }
 
         $docTypeId = $note->dianTypeDocumentId();
