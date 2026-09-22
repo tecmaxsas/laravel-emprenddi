@@ -86,6 +86,49 @@ class Product extends Model
         ];
     }
 
+    /**
+     * Las variantes siguen al padre cuando se borra, se restaura o se elimina.
+     *
+     * Son filas de esta misma tabla con `parent_product_id`, y el listado de
+     * productos las oculta por defecto («ver solo padres y simples»). Borrar el
+     * padre sin ellas las dejaba invisibles ahí y vivitas en el POS: un cliente
+     * borró su catálogo entero y le siguieron apareciendo cuatro tallas de una
+     * pijama en pantalla, a $0, listas para venderse.
+     *
+     * Va en el modelo y no en la acción de la pantalla porque el borrado entra
+     * por varias vías —tabla, formulario, acción masiva— y solo hace falta que
+     * una se olvide.
+     */
+    protected static function booted(): void
+    {
+        static::deleted(function (self $product) {
+            if ($product->isVariant()) {
+                return;
+            }
+
+            $variantes = self::withoutGlobalScopes()->where('parent_product_id', $product->id);
+
+            if ($product->isForceDeleting()) {
+                $variantes->forceDelete();
+
+                return;
+            }
+
+            $variantes->delete();
+        });
+
+        static::restored(function (self $product) {
+            if ($product->isVariant()) {
+                return;
+            }
+
+            self::withoutGlobalScopes()
+                ->onlyTrashed()
+                ->where('parent_product_id', $product->id)
+                ->restore();
+        });
+    }
+
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
