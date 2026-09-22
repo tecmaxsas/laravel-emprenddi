@@ -93,7 +93,14 @@ class CreditDebitNoteSender
         }
 
         $dianResponse = $data['ResponseDian']['Envelope']['Body']['SendBillSyncResponse']['SendBillSyncResult'] ?? null;
-        $cufe = DianErrorReader::texto($data['cufe'] ?? null) ?: null;
+
+        // En notas el identificador se llama CUDE, no CUFE: es el mismo número
+        // con otro nombre. Leer solo `cufe` dejaba vacío el código de una nota
+        // que la DIAN había aceptado, y como la aceptación lo exigía, la nota
+        // quedaba marcada como rechazada con un «Procesado Correctamente» en el
+        // mensaje. El cliente la daba por fallida y la reenviaba, y el segundo
+        // envío sí fallaba de verdad: documento ya emitido.
+        $cufe = DianErrorReader::texto($data['cude'] ?? $data['cufe'] ?? null) ?: null;
 
         if (! $dianResponse) {
             $note->update([
@@ -107,16 +114,33 @@ class CreditDebitNoteSender
         $statusCode = DianErrorReader::texto($dianResponse['StatusCode'] ?? null);
         $isValid = filter_var($dianResponse['IsValid'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
-        if ($isValid && $cufe) {
-            $qrUrl = 'https://catalogo-vpfe.dian.gov.co/document/searchqr?documentkey='.$cufe;
+        // Quien decide si pasó es la DIAN: IsValid, o el código 00 —«Procesado
+        // Correctamente»—. Que el proveedor no devuelva el código no convierte
+        // en rechazo un documento aceptado; solo nos deja sin CUDE, y eso se
+        // dice aparte.
+        if ($isValid || $statusCode === '00') {
+            // Las notificaciones no son rechazos: la DIAN acepta el documento y
+            // avisa de algo a corregir para la próxima. Se guardan porque son
+            // útiles —«no se informó el número de la factura referenciada» es un
+            // enlace que falta— pero la pantalla las muestra como aviso, no como
+            // error.
+            $avisos = DianErrorReader::reglas($dianResponse);
+
             $note->update([
                 'dian_status' => CreditDebitNote::DIAN_ACCEPTED,
                 'dian_status_code' => $statusCode,
                 'cufe' => $cufe,
-                'qr_url' => $qrUrl,
-                'dian_error_message' => null,
+                'qr_url' => $cufe
+                    ? 'https://catalogo-vpfe.dian.gov.co/document/searchqr?documentkey='.$cufe
+                    : null,
+                'dian_error_message' => $cufe
+                    ? ($avisos === [] ? null : implode(' · ', $avisos))
+                    : 'La DIAN la aceptó, pero el proveedor no devolvió el CUDE, así que no hay '
+                        .'PDF ni QR. Reclámalo al proveedor: el documento ya está radicado y '
+                        .'volver a enviarlo lo duplicaría.',
                 'dian_response' => $data,
             ]);
+
             return ['ok' => true, 'message' => 'Aceptada por DIAN', 'cufe' => $cufe, 'status_code' => $statusCode];
         }
 

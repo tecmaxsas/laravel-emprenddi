@@ -324,15 +324,24 @@ class ViewCreditDebitNote extends ViewRecord
                         }),
                     Infolists\Components\TextEntry::make('dian_status_code')->label('Código DIAN')->placeholder('—'),
                     Infolists\Components\TextEntry::make('dian_sent_at')->label('Último envío')->dateTime('Y-m-d H:i:s')->placeholder('—'),
-                    Infolists\Components\TextEntry::make('cufe')->label('CUFE')->columnSpan(3)->fontFamily('mono')->placeholder('—')->copyable(),
+                    // En notas la DIAN lo llama CUDE. La columna sigue siendo
+                    // `cufe` porque renombrarla no vale una migración, pero el
+                    // usuario tiene que ver el nombre que le van a pedir.
+                    Infolists\Components\TextEntry::make('cufe')->label('CUDE')->columnSpan(3)->fontFamily('mono')->placeholder('—')->copyable(),
                     Infolists\Components\TextEntry::make('qr_url')->label('QR DIAN')->columnSpan(3)->placeholder('—')
                         ->url(fn (CreditDebitNote $r) => $r->qr_url, true)
                         ->openUrlInNewTab(),
+                    // Una nota aceptada también trae mensajes: notificaciones que
+                    // la DIAN deja para corregir de cara al próximo documento.
+                    // Pintarlas de rojo bajo el rótulo «error» hace que se lea
+                    // como un rechazo lo que no lo es.
                     Infolists\Components\TextEntry::make('dian_error_message')
-                        ->label('Mensaje de error')
+                        ->label(fn (CreditDebitNote $r) => $r->isDianAccepted()
+                            ? 'Notificaciones de la DIAN'
+                            : 'Mensaje de error')
                         ->columnSpan(3)
                         ->visible(fn (CreditDebitNote $r) => ! empty($r->dian_error_message))
-                        ->color('danger'),
+                        ->color(fn (CreditDebitNote $r) => $r->isDianAccepted() ? 'warning' : 'danger'),
                 ]),
 
             // El rechazo de la DIAN («la resolución no está configurada») no le
