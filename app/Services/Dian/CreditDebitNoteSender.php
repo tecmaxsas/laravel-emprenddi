@@ -130,26 +130,41 @@ class CreditDebitNoteSender
         return DianErrorReader::resumen($errors);
     }
 
+    /**
+     * El motivo del rechazo, con lo que dijo la DIAN por delante.
+     *
+     * El código 99 se traducía a «Documento ya emitido» y ahí terminaba la
+     * lectura. No es lo que significa: la DIAN lo usa para decir que el
+     * documento trae errores en campos obligatorios, y esos errores vienen en
+     * la misma respuesta, en la lista que este método antes ni miraba. El
+     * resultado era un cliente renumerando una nota que la DIAN no tenía
+     * registrada, porque el mensaje lo mandaba a arreglar el consecutivo
+     * mientras el motivo real —el que sí se podía corregir— quedaba guardado en
+     * la base y no lo veía nadie.
+     *
+     * Por eso las reglas van primero y el rótulo del código solo las encabeza.
+     */
     protected function extractDianError(array $dianResponse, string $statusCode): string
     {
-        $special = [
-            '115' => 'Consecutivo ya registrado en DIAN.',
-            '117' => 'Fecha mayor a la del sistema.',
-            '90' => 'Documento ya emitido.',
-            '99' => 'Documento ya emitido.',
-        ];
-
-        if (isset($special[$statusCode])) return $special[$statusCode];
-
         // DianErrorReader sabe leer las tres formas en que llega esto: string
         // suelto, lista bajo `string`, y el bloque anidado que hacía reventar el
         // implode con «Array to string conversion».
         $reglas = DianErrorReader::reglas($dianResponse);
 
+        $rotulos = [
+            '115' => 'Consecutivo ya registrado en DIAN',
+            '117' => 'Fecha mayor a la del sistema',
+            '90' => 'Documento ya emitido',
+            '99' => 'La DIAN encontró errores en el documento',
+        ];
+
+        $rotulo = $rotulos[$statusCode]
+            ?? trim(DianErrorReader::texto($dianResponse['StatusDescription'] ?? null));
+
         if ($reglas !== []) {
-            return implode(' · ', $reglas);
+            return ($rotulo !== '' ? $rotulo.': ' : '').implode(' · ', $reglas);
         }
 
-        return DianErrorReader::texto($dianResponse['StatusDescription'] ?? null).' (código '.$statusCode.')';
+        return ($rotulo !== '' ? $rotulo : 'Rechazada sin detalle').' (código '.$statusCode.')';
     }
 }

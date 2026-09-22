@@ -105,6 +105,84 @@ class DianErrorMessageTest extends TestCase
     }
 
     /**
+     * El código 99 no puede tapar lo que la DIAN explicó.
+     *
+     * 99 no significa «documento ya emitido»: la DIAN lo usa para decir que el
+     * documento trae errores, y los enumera en la misma respuesta. Traducirlo a
+     * una frase fija y no leer la lista costó días de soporte — el cliente
+     * renumerando una nota crédito que la DIAN no tenía registrada, porque el
+     * mensaje lo mandaba a arreglar el consecutivo mientras el motivo real
+     * quedaba guardado en la base sin que lo viera nadie.
+     *
+     * Los dos servicios de envío, porque el fallo estaba copiado en ambos.
+     */
+    public function test_el_codigo_99_muestra_las_reglas_de_la_dian(): void
+    {
+        $respuesta = [
+            'StatusCode' => '99',
+            'StatusDescription' => 'Validación contiene errores en campos mandatorios.',
+            'IsValid' => 'false',
+            'ErrorMessage' => [
+                'string' => [
+                    'Regla: FAJ42, Rechazo: El valor del campo InvoiceTypeCode es inválido.',
+                    'Regla: DD04, Rechazo: El CUFE de la factura referenciada no existe.',
+                ],
+            ],
+        ];
+
+        foreach (self::senders() as $nombre => [$clase, $builder]) {
+            $mensaje = $this->extraer(new $clase(app($builder)), $respuesta, '99');
+
+            $this->assertStringContainsString('FAJ42', $mensaje, "En {$nombre}");
+            $this->assertStringContainsString('DD04', $mensaje, "En {$nombre}");
+            $this->assertStringNotContainsString('ya emitido', $mensaje,
+                "En {$nombre}: el rótulo del código tapaba el motivo real y mandaba a "
+                .'corregir lo que no era.');
+        }
+    }
+
+    /** Y cuando la DIAN no detalla nada, el mensaje igual dice algo útil. */
+    public function test_sin_reglas_queda_el_rotulo_y_el_codigo(): void
+    {
+        $sender = new \App\Services\Dian\CreditDebitNoteSender(
+            app(\App\Services\Dian\CreditDebitNoteUblBuilder::class)
+        );
+
+        $mensaje = $this->extraer($sender, [
+            'StatusCode' => '90',
+            'StatusDescription' => 'Documento procesado anteriormente.',
+            'IsValid' => 'false',
+        ], '90');
+
+        $this->assertStringContainsString('90', $mensaje);
+        $this->assertNotSame('', trim($mensaje));
+    }
+
+    /** @return array<string, array{class-string, class-string}> */
+    public static function senders(): array
+    {
+        return [
+            'facturas' => [
+                \App\Services\Dian\DianInvoiceSender::class,
+                \App\Services\Dian\SaleInvoiceUblBuilder::class,
+            ],
+            'notas' => [
+                \App\Services\Dian\CreditDebitNoteSender::class,
+                \App\Services\Dian\CreditDebitNoteUblBuilder::class,
+            ],
+        ];
+    }
+
+    /** extractDianError es protegido: es detalle del sender, no API pública. */
+    private function extraer(object $sender, array $respuesta, string $codigo): string
+    {
+        $metodo = new \ReflectionMethod($sender, 'extractDianError');
+        $metodo->setAccessible(true);
+
+        return $metodo->invoke($sender, $respuesta, $codigo);
+    }
+
+    /**
      * Ningún servicio de envío puede volver a aplanar errores por su cuenta.
      *
      * El fallo estaba copiado en los dos senders. Mientras la lógica viva en un
