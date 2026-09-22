@@ -212,7 +212,23 @@ echo "==> Reiniciando workers y app para tomar código nuevo..."
 $COMPOSE exec -T app php artisan queue:restart
 $COMPOSE restart worker scheduler app
 
-# Nginx solo si cambió su config
+# Nginx se reinicia SIEMPRE detrás de app, no solo cuando cambia su config.
+#
+# Dos deploys del 2026-09-21 dejaron el sitio en 502 y volvió al reiniciar
+# nginx a mano. La causa NO está confirmada: reiniciar y hasta recrear el
+# contenedor de app en desarrollo no lo reproduce —conserva la IP y nginx sigue
+# respondiendo—, así que esto no es el arreglo de un diagnóstico, es un seguro
+# barato mientras aparece. La próxima vez que ocurra hay que capturar
+# `logs nginx` y `logs app` ANTES de reiniciar nada: es lo que faltó las dos
+# veces.
+#
+# Cuesta menos de un segundo y no tiene más efecto que soltar las conexiones en
+# curso, que en ese punto ya se cortaron con el reinicio de app.
+echo "==> Reiniciando nginx detrás de app..."
+$COMPOSE restart nginx
+
+# Si además cambió su configuración, hay que recrear el contenedor: el restart
+# reusa el archivo que ya tenía montado.
 if changed '^docker/nginx/'; then
     echo "==> Recreando nginx (cambió su configuración)..."
     $COMPOSE up -d --no-deps --force-recreate nginx
