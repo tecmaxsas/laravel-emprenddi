@@ -229,6 +229,67 @@ class CreditDebitNoteEngine
         });
     }
 
+    /**
+     * Pone la nota en la fecha de hoy, para que se pueda transmitir.
+     *
+     * La DIAN exige que la fecha de generación del documento sea la misma en que
+     * se firma —regla CAD09— y la firma la pone el proveedor en el momento del
+     * envío. Una nota contabilizada hace once días se rechaza siempre, tenga el
+     * consecutivo que tenga: no hay manera de enviarla con su fecha vieja. Lo
+     * único que se puede hacer es emitirla hoy.
+     *
+     * El asiento se mueve con ella. Dejarlo en la fecha vieja pondría el libro a
+     * hablar de un documento que, para la DIAN, se emitió otro día.
+     *
+     * @throws RuntimeException con un mensaje que se le puede mostrar al usuario
+     */
+    public function ponerFechaDeHoy(CreditDebitNote $note): CreditDebitNote
+    {
+        if (! $note->isPosted()) {
+            throw new RuntimeException('La nota todavía no está contabilizada.');
+        }
+
+        if ($note->cufe || $note->dian_status === CreditDebitNote::DIAN_ACCEPTED) {
+            throw new RuntimeException(
+                'La DIAN ya autorizó esta nota: su fecha es parte del documento que '
+                .'existe allá y no se puede mover.'
+            );
+        }
+
+        if ($note->dian_status === CreditDebitNote::DIAN_SENT) {
+            throw new RuntimeException(
+                'Esta nota está esperando la respuesta de la DIAN. Espera a que responda '
+                .'antes de moverle la fecha.'
+            );
+        }
+
+        $hoy = now();
+
+        if ($note->date?->isSameDay($hoy)) {
+            throw new RuntimeException('La nota ya está fechada hoy.');
+        }
+
+        return DB::transaction(function () use ($note, $hoy) {
+            $note->update([
+                'date' => $hoy->toDateString(),
+                // La hora también viaja en el documento y sale de posted_at.
+                'posted_at' => $hoy,
+                'dian_status' => CreditDebitNote::DIAN_PENDING,
+                'dian_error_message' => null,
+            ]);
+
+            $asientos = JournalEntry::withoutGlobalScopes()
+                ->where('company_id', $note->company_id)
+                ->where(fn ($q) => $q
+                    ->whereKey($note->journal_entry_id)
+                    ->orWhere('reference', $note->fullNumber()));
+
+            $asientos->update(['date' => $hoy->toDateString()]);
+
+            return $note->fresh();
+        });
+    }
+
     public function recalculateTotals(CreditDebitNote $note): void
     {
         $subtotal = 0;

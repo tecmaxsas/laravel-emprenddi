@@ -93,6 +93,47 @@ class ViewCreditDebitNote extends ViewRecord
                     }
                 }),
 
+            // La DIAN firma el documento en el momento del envío y exige que esa
+            // fecha sea la del documento (regla CAD09). Una nota contabilizada
+            // hace días no pasa nunca, y desde la pantalla no había cómo
+            // arreglarlo: la fecha solo se edita en borrador.
+            Actions\Action::make('fecharHoy')
+                ->label('Poner fecha de hoy')
+                ->icon('heroicon-o-calendar-days')
+                ->color('warning')
+                ->visible(fn (CreditDebitNote $r) => $r->isPosted()
+                    && ! $r->cufe
+                    && $r->dian_status !== CreditDebitNote::DIAN_ACCEPTED
+                    && $r->dian_status !== CreditDebitNote::DIAN_SENT
+                    && ! $r->date?->isSameDay(now())
+                    && auth()->user()?->can('credit_debit_notes.post'))
+                ->requiresConfirmation()
+                ->modalHeading('Emitir la nota con la fecha de hoy')
+                ->modalDescription(fn (CreditDebitNote $r) => sprintf(
+                    'Esta nota está fechada el %s. La DIAN exige que la fecha del documento '
+                    .'sea la misma en que se firma —hoy, %s—, así que con la fecha actual el '
+                    .'envío se rechaza siempre. La nota y su asiento contable pasan a hoy.',
+                    $r->date?->format('Y-m-d') ?? '—',
+                    now()->format('Y-m-d'),
+                ))
+                ->modalSubmitActionLabel('Poner fecha de hoy')
+                ->action(function (CreditDebitNote $r) {
+                    try {
+                        $nota = app(CreditDebitNoteEngine::class)->ponerFechaDeHoy($r);
+
+                        Notification::make()
+                            ->success()
+                            ->title('Nota fechada hoy')
+                            ->body("Ahora es del {$nota->date->format('Y-m-d')}. Ya se puede enviar a la DIAN.")
+                            ->send();
+
+                        $this->refreshFormData(['date', 'dian_status', 'dian_error_message']);
+                    } catch (\Throwable $e) {
+                        ErrorDeAccion::reportar($e, 'cambiar la fecha de la nota',
+                            ['nota_id' => $r->id], titulo: 'No se pudo cambiar la fecha');
+                    }
+                }),
+
             // Rescate de dos situaciones que terminan igual —una nota que no va a
             // pasar nunca con el número que tiene— y que antes obligaban a
             // anularla y rehacerla, con lo que eso le hace a la cuenta del

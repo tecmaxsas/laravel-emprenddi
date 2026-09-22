@@ -32,6 +32,19 @@ class CreditDebitNoteSender
             throw new RuntimeException('Falta el token DIAN.');
         }
 
+        // La DIAN exige que la fecha del documento sea la misma en que se firma
+        // (regla CAD09), y la firma la pone el proveedor ahora. Enviar una nota
+        // con fecha vieja no falla aquí: falla allá, y vuelve como un rechazo
+        // que cuesta leer. Mejor decirlo antes, con la salida a la vista.
+        if (! $note->date?->isSameDay(now())) {
+            throw new RuntimeException(sprintf(
+                'Esta nota está fechada el %s y la DIAN exige que la fecha del documento '
+                .'sea la misma en que se firma, que es hoy. Usa «Poner fecha de hoy» en la '
+                .'nota y vuelve a enviarla.',
+                $note->date?->format('Y-m-d') ?? 'sin fecha',
+            ));
+        }
+
         $payload = $this->builder->build($note);
 
         $note->update([
