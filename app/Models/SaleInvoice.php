@@ -153,7 +153,19 @@ class SaleInvoice extends Model
             return false;
         }
 
-        return $this->isPosted() && $this->dian_status !== self::DIAN_ACCEPTED;
+        if (! $this->isPosted() || $this->dian_status === self::DIAN_ACCEPTED) {
+            return false;
+        }
+
+        // Enviada y con CUFE: el documento ya viajó firmado y puede estar
+        // radicado en la DIAN aunque no tengamos su respuesta. Reenviarlo lo
+        // duplica; lo que corresponde es «Consultar estado DIAN», que existe
+        // precisamente para esto. Sin CUFE sí se reintenta: ahí no viajó nada.
+        if ($this->dian_status === self::DIAN_SENT && ! empty($this->cufe)) {
+            return false;
+        }
+
+        return true;
     }
 
     public function location(): BelongsTo

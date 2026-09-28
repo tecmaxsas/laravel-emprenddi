@@ -102,13 +102,23 @@ class CreditDebitNoteSender
         // envío sí fallaba de verdad: documento ya emitido.
         $cufe = DianErrorReader::texto($data['cude'] ?? $data['cufe'] ?? null) ?: null;
 
+        // Sin el bloque de la DIAN no sabemos qué pasó allá, y eso no es un
+        // rechazo: si la nota llegó, reenviarla la duplica. Queda enviada, con
+        // su CUDE si vino — es lo que permite comprobarlo después.
         if (! $dianResponse) {
             $note->update([
-                'dian_status' => CreditDebitNote::DIAN_REJECTED,
-                'dian_error_message' => 'Sin respuesta de DIAN.',
+                'dian_status' => CreditDebitNote::DIAN_SENT,
+                'cufe' => $cufe ?: $note->cufe,
+                'dian_error_message' => $cufe
+                    ? 'El proveedor no devolvió la respuesta de la DIAN, pero sí el CUDE: el '
+                        .'documento viajó firmado. Compruébalo con el proveedor antes de '
+                        .'reenviarlo, o lo duplicas.'
+                    : 'El proveedor respondió sin la respuesta de la DIAN y sin CUDE. Consulta '
+                        .'el estado en unos minutos antes de reintentar.',
                 'dian_response' => $data,
             ]);
-            return ['ok' => false, 'message' => 'Sin respuesta DIAN', 'cufe' => $cufe, 'status_code' => null];
+
+            return ['ok' => false, 'message' => 'El proveedor no devolvió la respuesta de la DIAN', 'cufe' => $cufe, 'status_code' => null];
         }
 
         $statusCode = DianErrorReader::texto($dianResponse['StatusCode'] ?? null);

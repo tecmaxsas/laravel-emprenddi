@@ -119,15 +119,32 @@ class DianInvoiceSender
         $dianResponse = $data['ResponseDian']['Envelope']['Body']['SendBillSyncResponse']['SendBillSyncResult'] ?? null;
         $cufe = DianErrorReader::texto($data['cufe'] ?? null) ?: null;
 
+        // El proveedor contestó sin el bloque de la DIAN. No sabemos qué pasó
+        // allá, y eso NO es un rechazo: marcarlo así invita a reenviar, y si el
+        // documento sí llegó, el reenvío lo duplica o vuelve como «documento ya
+        // emitido». Queda como enviado, a la espera de que alguien consulte.
+        //
+        // El CUFE se guarda si vino. Antes se descartaba, y sin CUFE el botón
+        // «Consultar estado DIAN» no aparece —lo esconde isManageable()—: se
+        // perdía justo lo único que resolvía el caso. Pasó con la ARI20 de
+        // IMPORTACIONES ARI: estaba radicada en la DIAN, con CUFE, y aquí
+        // figuraba rechazada y sin forma de comprobarlo.
         if (! $dianResponse) {
             $invoice->update([
-                'dian_status' => SaleInvoice::DIAN_REJECTED,
-                'dian_error_message' => 'Sin respuesta de DIAN. Reintenta en unos minutos.',
+                'dian_status' => SaleInvoice::DIAN_SENT,
+                'cufe' => $cufe ?: $invoice->cufe,
+                'dian_error_message' => $cufe
+                    ? 'El proveedor no devolvió la respuesta de la DIAN, pero sí el CUFE: el '
+                        .'documento viajó firmado. Usa «Consultar estado DIAN» para saber cómo '
+                        .'quedó. No lo reenvíes sin consultar: si la DIAN ya lo aceptó, lo duplicas.'
+                    : 'El proveedor respondió sin la respuesta de la DIAN y sin CUFE. Consulta el '
+                        .'estado en unos minutos antes de reintentar.',
                 'dian_response' => $data,
             ]);
+
             return [
                 'ok' => false,
-                'message' => 'Sin respuesta de DIAN',
+                'message' => 'El proveedor no devolvió la respuesta de la DIAN',
                 'cufe' => $cufe,
                 'status_code' => null,
                 'reached_dian' => false,
