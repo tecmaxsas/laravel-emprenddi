@@ -453,11 +453,16 @@ class ViewSaleInvoice extends ViewRecord
                         ->placeholder('—')
                         ->url(fn (SaleInvoice $r) => $r->qr_url, true)
                         ->openUrlInNewTab(),
+                    // Una factura autorizada también trae mensajes: las
+                    // notificaciones que la DIAN deja para corregir. En rojo y
+                    // bajo el rótulo «error» se leen como un rechazo que no es.
                     Infolists\Components\TextEntry::make('dian_error_message')
-                        ->label('Mensaje de error')
+                        ->label(fn (SaleInvoice $r) => $r->isDianAccepted()
+                            ? 'Notificaciones de la DIAN'
+                            : 'Mensaje de error')
                         ->columnSpan(3)
                         ->visible(fn (SaleInvoice $r) => ! empty($r->dian_error_message))
-                        ->color('danger'),
+                        ->color(fn (SaleInvoice $r) => $r->isDianAccepted() ? 'warning' : 'danger'),
                 ]),
 
             Infolists\Components\Section::make('Notas')

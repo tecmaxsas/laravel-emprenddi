@@ -105,18 +105,34 @@ class DianStatusCheckerTest extends TestCase
         $this->assertSame(SaleInvoice::DIAN_ACCEPTED, $this->factura->fresh()->dian_status);
     }
 
-    /** Y la otra que manda el proveedor: GetStatusResult. */
+    /**
+     * Y la otra que manda el proveedor: GetStatusResult.
+     *
+     * Es la respuesta real de la ARI20 de IMPORTACIONES ARI, con sus dos
+     * notificaciones: autorizada, y con cosas que corregir para la próxima.
+     */
     public function test_lee_tambien_la_respuesta_en_get_status(): void
     {
         $resultado = $this->consultar($this->cuerpo('GetStatusResponse', 'GetStatusResult', [
             'StatusCode' => '00',
             'StatusDescription' => 'Procesado Correctamente.',
+            'StatusMessage' => 'La Factura electrónica ARI-20, ha sido autorizada.',
             'IsValid' => 'true',
+            'ErrorMessage' => [
+                'string' => [
+                    'Regla: FAJ43b, Notificación: Nombre informado No corresponde al registrado en el RUT.',
+                    'Regla: RUT01, Notificación: La validación del estado del RUT próximamente estará disponible.',
+                ],
+            ],
         ]));
 
         $this->assertSame(SaleInvoice::DIAN_ACCEPTED, $resultado['status'],
             'Con este nombre la consulta quedaba ciega y la factura no salía nunca del rojo.');
-        $this->assertNotNull($this->factura->fresh()->qr_url);
+
+        $factura = $this->factura->fresh();
+        $this->assertNotNull($factura->qr_url);
+        $this->assertStringContainsString('FAJ43b', (string) $factura->dian_error_message,
+            'Las notificaciones se conservan: son lo que hay que corregir para la próxima.');
     }
 
     /** Lo que no se entiende se guarda, que es lo único que permite arreglarlo. */

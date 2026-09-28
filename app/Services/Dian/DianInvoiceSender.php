@@ -159,12 +159,16 @@ class DianInvoiceSender
             // Aceptado — guardar CUFE y construir QR URL
             $qrUrl = 'https://catalogo-vpfe.dian.gov.co/document/searchqr?documentkey='.$cufe;
 
+            // Las notificaciones de una factura aceptada se conservan: son lo
+            // que hay que corregir antes de que alguna se vuelva rechazo.
+            $avisos = DianErrorReader::reglas($dianResponse);
+
             $invoice->update([
                 'dian_status' => SaleInvoice::DIAN_ACCEPTED,
                 'dian_status_code' => $statusCode,
                 'cufe' => $cufe,
                 'qr_url' => $qrUrl,
-                'dian_error_message' => null,
+                'dian_error_message' => $avisos === [] ? null : implode(' · ', $avisos),
                 'dian_response' => $data,
             ]);
 

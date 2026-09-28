@@ -114,12 +114,19 @@ class DianStatusChecker
         }
 
         if ($isValid) {
+            // Una factura autorizada puede traer notificaciones: cosas que la
+            // DIAN acepta hoy y pide corregir para las próximas —«el nombre no
+            // corresponde al registrado en el RUT», por ejemplo—. Borrarlas al
+            // aceptar dejaba al cliente sin enterarse hasta que una se volviera
+            // rechazo.
+            $avisos = DianErrorReader::reglas($dianResponse);
+
             $invoice->update([
                 'dian_status' => SaleInvoice::DIAN_ACCEPTED,
                 'dian_status_code' => $statusCode,
                 'qr_url' => $invoice->qr_url
                     ?: 'https://catalogo-vpfe.dian.gov.co/document/searchqr?documentkey='.$invoice->cufe,
-                'dian_error_message' => null,
+                'dian_error_message' => $avisos === [] ? null : implode(' · ', $avisos),
                 'dian_response' => $data,
             ]);
 
