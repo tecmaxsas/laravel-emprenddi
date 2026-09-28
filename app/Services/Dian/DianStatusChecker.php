@@ -73,14 +73,21 @@ class DianStatusChecker
             ];
         }
 
-        $dianResponse = $data['ResponseDian']['Envelope']['Body']['GetStatusZipResponse']['GetStatusZipResult'] ?? null;
+        $dianResponse = $this->resultadoDian($data);
 
         if (! $dianResponse) {
+            // Se guarda la respuesta cruda aunque no se entienda —sobre todo
+            // porque no se entiende—. Antes se descartaba, y el usuario se
+            // quedaba con «reintenta en unos minutos» mientras la única pista
+            // de por qué no se pudo leer se perdía en cada consulta.
+            $invoice->update(['dian_response' => $data]);
+
             return [
                 'ok' => false,
                 'changed' => false,
                 'status' => $previousStatus,
-                'message' => 'DIAN respondió sin datos de estado. Reintenta en unos minutos.',
+                'message' => 'El proveedor respondió sin los datos de estado de la DIAN. '
+                    .'La respuesta quedó guardada en la factura para revisarla.',
                 'status_code' => null,
             ];
         }
@@ -120,7 +127,12 @@ class DianStatusChecker
                 'ok' => true,
                 'changed' => $previousStatus !== SaleInvoice::DIAN_ACCEPTED,
                 'status' => SaleInvoice::DIAN_ACCEPTED,
-                'message' => (string) ($dianResponse['StatusMessage'] ?: 'DIAN confirma que el documento está autorizado.'),
+                // StatusMessage no siempre viene, y leerlo sin más reventaba con
+                // «Undefined array key» justo en el caso bueno: la factura
+                // quedaba autorizada en la base y el usuario veía un error.
+                // DianErrorReader lo lee aunque llegue como estructura.
+                'message' => DianErrorReader::texto($dianResponse['StatusMessage'] ?? null)
+                    ?: 'DIAN confirma que el documento está autorizado.',
                 'status_code' => $statusCode,
             ];
         }
@@ -141,6 +153,43 @@ class DianStatusChecker
             'message' => $errorMsg,
             'status_code' => $statusCode,
         ];
+    }
+
+    /**
+     * El bloque de resultado de la DIAN, se llame como se llame.
+     *
+     * La consulta de estado responde dentro de `GetStatusZipResult`, pero el
+     * proveedor no siempre usa ese nombre: según el endpoint y la versión llega
+     * como `GetStatusResult` u otra variante. Buscar uno solo dejaba la consulta
+     * ciega ante una respuesta perfectamente válida, y el usuario veía
+     * «reintenta en unos minutos» para siempre.
+     *
+     * Todas terminan en `Result` y cuelgan del Body, así que se busca por ahí.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>|null
+     */
+    protected function resultadoDian(array $data): ?array
+    {
+        $body = $data['ResponseDian']['Envelope']['Body'] ?? null;
+
+        if (! is_array($body)) {
+            return null;
+        }
+
+        foreach ($body as $respuesta) {
+            if (! is_array($respuesta)) {
+                continue;
+            }
+
+            foreach ($respuesta as $clave => $resultado) {
+                if (is_array($resultado) && str_ends_with((string) $clave, 'Result')) {
+                    return $resultado;
+                }
+            }
+        }
+
+        return null;
     }
 
     protected function extractError(array $dianResponse, string $statusCode): string

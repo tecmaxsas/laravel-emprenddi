@@ -147,11 +147,15 @@ class DianInvoiceActions
         if ($notify) {
             $status = $result['status'];
 
+            // Si la consulta no concluyó, el título no puede anunciar el estado
+            // guardado: decía «Rechazada por la DIAN» encima de un cuerpo que
+            // explicaba que no se pudo saber nada. El usuario leía el título.
             $notification = Notification::make()
-                ->title(match ($status) {
-                    SaleInvoice::DIAN_ACCEPTED => 'Autorizada por la DIAN',
-                    SaleInvoice::DIAN_REJECTED => 'Rechazada por la DIAN',
-                    SaleInvoice::DIAN_SENT => 'En validación',
+                ->title(match (true) {
+                    ! $result['ok'] => 'No se pudo determinar el estado',
+                    $status === SaleInvoice::DIAN_ACCEPTED => 'Autorizada por la DIAN',
+                    $status === SaleInvoice::DIAN_REJECTED => 'Rechazada por la DIAN',
+                    $status === SaleInvoice::DIAN_SENT => 'En validación',
                     default => 'Consulta de estado',
                 })
                 ->body($result['message'].($result['changed'] ? ' El estado guardado se actualizó.' : ''));
