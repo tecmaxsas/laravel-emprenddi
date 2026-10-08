@@ -12,6 +12,7 @@ use App\Services\Accounting\TaxesProvisioner;
 use App\Services\Ai\AiCredits;
 use App\Services\Ai\AiMoney;
 use App\Services\Maintenance\CompanyDataReset;
+use App\Support\ResumenDeEmpresa;
 use Filament\Forms;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Form;
@@ -20,6 +21,7 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\HtmlString;
 
 class CompanyResource extends Resource
 {
@@ -38,6 +40,20 @@ class CompanyResource extends Resource
     public static function form(Form $form): Form
     {
         return $form->schema([
+            // El resumen va PRIMERO y no al final: es lo que se viene a mirar
+            // cuando se abre una empresa desde soporte. Los datos de
+            // identificacion ya se conocen —se llego aqui buscandolos—.
+            Forms\Components\Section::make('Resumen de la operación')
+                ->description('Lo que esta empresa hace con el sistema. Se calcula al abrir la ficha.')
+                ->collapsible()
+                ->schema([
+                    Forms\Components\Placeholder::make('resumen')
+                        ->label('')
+                        ->content(fn (?Company $record) => $record
+                            ? new HtmlString(static::resumenHtml($record))
+                            : 'Disponible al guardar la empresa.'),
+                ]),
+
             Forms\Components\Section::make('Identificación')
                 ->columns(2)
                 ->schema([
@@ -185,10 +201,17 @@ class CompanyResource extends Resource
                     ->label('Ciudad')
                     ->searchable(),
 
+                Tables\Columns\TextColumn::make('locations_count')
+                    ->label('Sedes')
+                    ->counts('locations')
+                    ->alignCenter()
+                    ->sortable(),
+
                 Tables\Columns\TextColumn::make('users_count')
                     ->label('Usuarios')
                     ->counts('users')
-                    ->alignCenter(),
+                    ->alignCenter()
+                    ->sortable(),
 
                 Tables\Columns\TextColumn::make('activeSubscription.plan.name')
                     ->label('Plan actual')
@@ -454,6 +477,54 @@ class CompanyResource extends Resource
                         ->send();
                 }
             });
+    }
+
+    /**
+     * El resumen, en tarjetas.
+     *
+     * Se arma en HTML y no con componentes de Filament porque son doce cifras
+     * de solo lectura: doce Placeholders serian doce consultas y una pantalla
+     * que tarda en abrir.
+     */
+    protected static function resumenHtml(Company $record): string
+    {
+        $r = ResumenDeEmpresa::de($record);
+
+        $plata = fn ($n) => '$'.number_format((float) $n, 0, ',', '.');
+
+        $tarjeta = fn (string $titulo, string $valor, ?string $nota = null, string $color = '#111827') => '<div style="background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px; padding:10px 12px;">'
+            .'<div style="font-size:11px; color:#6b7280; text-transform:uppercase; letter-spacing:.03em;">'.e($titulo).'</div>'
+            .'<div style="font-size:19px; font-weight:800; color:'.$color.'; line-height:1.25;">'.e($valor).'</div>'
+            .($nota ? '<div style="font-size:11px; color:#6b7280;">'.e($nota).'</div>' : '')
+            .'</div>';
+
+        // La ultima venta es el dato que de verdad dice si la empresa sigue
+        // viva, asi que se colorea: un mes sin facturar es una senal.
+        if ($r['ultima_venta'] === null) {
+            $ventaTxt = 'Nunca';
+            $ventaNota = 'No ha facturado';
+            $ventaColor = '#b91c1c';
+        } else {
+            $dias = $r['dias_sin_vender'];
+            $ventaTxt = $r['ultima_venta']->format('d/m/Y');
+            $ventaNota = $dias === 0 ? 'Hoy' : ('Hace '.$dias.' día'.($dias === 1 ? '' : 's'));
+            $ventaColor = $dias <= 7 ? '#047857' : ($dias <= 30 ? '#b45309' : '#b91c1c');
+        }
+
+        $tarjetas = implode('', [
+            $tarjeta('Sedes / bodegas', (string) $r['sedes']),
+            $tarjeta('Usuarios', (string) $r['usuarios'], $r['usuarios_activos'].' activos'),
+            $tarjeta('Facturas POS', number_format($r['facturas_pos'], 0, ',', '.')),
+            $tarjeta('Facturas electrónicas', number_format($r['facturas_electronicas'], 0, ',', '.')),
+            $tarjeta('Última venta', $ventaTxt, $ventaNota, $ventaColor),
+            $tarjeta('Vendido este mes', $plata($r['vendido_mes'])),
+            $tarjeta('Vendido histórico', $plata($r['vendido_total'])),
+            $tarjeta('Productos', number_format($r['productos'], 0, ',', '.')),
+            $tarjeta('Clientes', number_format($r['clientes'], 0, ',', '.')),
+        ]);
+
+        return '<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px;">'
+            .$tarjetas.'</div>';
     }
 
     public static function getRelations(): array
