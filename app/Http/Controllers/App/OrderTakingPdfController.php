@@ -4,6 +4,7 @@ namespace App\Http\Controllers\App;
 
 use App\Http\Controllers\Controller;
 use App\Models\OrderTaking\Order;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -19,7 +20,9 @@ class OrderTakingPdfController extends Controller
         abort_unless(Auth::user()->can('order_taking.use'), 403);
 
         $record = Order::query()
-            ->with(['items.product', 'customer', 'priceList', 'seller', 'retentions'])
+            // `branch` entra aqui porque el formato despacha a la sucursal: sin
+            // precargarla, cada PDF seria una consulta mas por pedido.
+            ->with(['items.product', 'customer', 'branch', 'priceList', 'seller', 'retentions'])
             ->where('id', $order)
             ->where('company_id', Auth::user()->company_id)
             ->firstOrFail();
@@ -27,12 +30,12 @@ class OrderTakingPdfController extends Controller
         $company = Auth::user()->company;
 
         abort_unless(
-            class_exists(\Barryvdh\DomPDF\Facade\Pdf::class),
+            class_exists(Pdf::class),
             500,
             'El paquete barryvdh/laravel-dompdf no está instalado. Ejecuta composer install en el container.',
         );
 
-        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('order-taking.order-pdf', [
+        $pdf = Pdf::loadView('order-taking.order-pdf', [
             'order' => $record,
             'company' => $company,
         ])->setPaper('a4');

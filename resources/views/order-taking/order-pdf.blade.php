@@ -1,169 +1,383 @@
+@php
+    /** @var \App\Models\OrderTaking\Order $order */
+    /** @var \App\Models\Company $company */
+
+    // El formato es el del formato en Excel que el cliente ya usa con sus
+    // compradores. Se respeta hasta en los nombres de las columnas: quien lo
+    // recibe lleva anos leyendo ese papel, y un documento "mejorado" que no se
+    // parezca al de siempre obliga a volver a explicarlo en cada pedido.
+    $plata = fn ($n, $dec = 0) => number_format((float) $n, $dec, ',', '.');
+
+    $cliente = $order->customer;
+    $sucursal = $order->branch ?? null;
+
+    // La sucursal manda donde la hay: un cliente con varios puntos se factura
+    // al NIT pero se despacha a una direccion concreta.
+    $direccion = $sucursal?->address ?: $cliente?->address;
+    $ciudad = $sucursal?->city ?: $cliente?->city;
+    $correo = $sucursal?->email ?: $cliente?->email;
+    $contacto = $sucursal?->contact_person ?: $cliente?->contact_person;
+    $horario = $sucursal?->delivery_horario ?: $cliente?->delivery_horario;
+
+    $totalCajas = (float) $order->items->sum('quantity_ordered');
+
+    // El vendedor de la empresa que emite, no el cliente: es a quien se llama
+    // si algo del pedido no cuadra.
+    $vendedor = $order->seller;
+@endphp
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Pedido {{ $order->fullNumber() }}</title>
+    <title>Pedido de venta {{ $order->fullNumber() }}</title>
     <style>
-        {{-- Formato calcado del reporte diario del cliente: cabecera en tres
-             bloques, tabla densa con rejilla completa y franjas grises de
-             totales. Sin colores de marca ni cajas redondeadas: el documento
-             se imprime y se archiva. --}}
-        @page { size: A4 landscape; margin: 10mm 8mm; }
+        @page { size: A4 portrait; margin: 10mm 9mm; }
+
         * { box-sizing: border-box; }
-        body { font-family: DejaVu Sans, sans-serif; font-size: 8.5px; color: #000; margin: 0; }
 
-        .head { display: table; width: 100%; margin-bottom: 6px; }
-        .head > div { display: table-cell; vertical-align: top; }
-        .head .left  { width: 33%; text-align: left; }
-        .head .mid   { width: 34%; text-align: center; }
-        .head .right { width: 33%; text-align: right; }
-        .co-name { font-size: 10px; font-weight: bold; }
-        .doc-title { font-size: 11px; font-weight: bold; letter-spacing: .5px; }
+        body {
+            font-family: DejaVu Sans, sans-serif;
+            font-size: 8px;
+            color: #000;
+            margin: 0;
+        }
 
-        .meta { margin: 4px 0 6px; font-size: 8.5px; }
-        .meta span { margin-right: 10px; }
-        .meta b { font-weight: bold; }
+        /* La franja azul y el titulo gigante son la firma visual del formato:
+           es lo primero que el comprador reconoce al recibirlo. */
+        .barra { background: #1f3864; height: 9mm; }
 
-        table.grid { width: 100%; border-collapse: collapse; }
-        table.grid th,
-        table.grid td { border: 1px solid #000; padding: 2.5px 4px; vertical-align: top; }
-        table.grid th { font-weight: bold; text-align: left; }
-        table.grid td.num,
-        table.grid th.num { text-align: right; white-space: nowrap; }
-        table.grid td.mid,
-        table.grid th.mid { text-align: center; white-space: nowrap; }
+        .titulo {
+            text-align: center;
+            font-size: 30px;
+            font-weight: bold;
+            letter-spacing: .5px;
+            margin: 4px 0 2px;
+        }
 
-        /* Franjas de totales, como los cortes por documento y cliente del
-           reporte de referencia. */
-        tr.band td { background: #d9d9d9; font-weight: bold; }
-        tr.band-strong td { background: #bfbfbf; font-weight: bold; }
-        tr.ret td { background: #f2f2f2; }
+        table { border-collapse: collapse; }
+        .w100 { width: 100%; }
 
-        .notes { margin-top: 8px; padding: 4px 8px; border: 1px solid #000; font-size: 8.5px; }
-        .sig-box { margin-top: 26px; display: table; width: 100%; }
-        .sig-cell { display: table-cell; width: 50%; padding: 0 30px; }
-        .sig-line { border-top: 1px solid #000; padding-top: 2px; font-size: 8px; text-align: center; }
-        .foot { margin-top: 10px; font-size: 7.5px; color: #444; }
+        .fecha-box {
+            border: 1px solid #000;
+            background: #dce6f1;
+            font-weight: bold;
+            text-align: center;
+            padding: 3px 10px;
+            font-size: 10px;
+        }
+
+        .etq { font-weight: bold; font-size: 8px; }
+
+        /* Los datos van sobre una linea, no dentro de una caja: asi esta el
+           original, y en el impreso se puede escribir encima a mano. */
+        .dato {
+            border-bottom: 1px solid #000;
+            text-align: center;
+            padding: 1px 4px;
+            font-size: 8px;
+        }
+
+        .cliente-nombre {
+            font-size: 11px;
+            font-weight: bold;
+            text-align: center;
+            padding-bottom: 2px;
+        }
+
+        table.items { width: 100%; }
+        table.items th,
+        table.items td {
+            border: 1px solid #000;
+            padding: 2.5px 3px;
+            font-size: 7.5px;
+        }
+        table.items th {
+            background: #dce6f1;
+            font-weight: bold;
+            text-align: center;
+            font-size: 7.5px;
+        }
+        table.items td.c { text-align: center; }
+        table.items td.r { text-align: right; font-weight: bold; }
+        table.items td.d { text-align: center; }
+
+        /* El numero de fila va por fuera de la rejilla, como en el original. */
+        td.fila-num {
+            border: 0;
+            text-align: right;
+            font-weight: bold;
+            font-size: 7.5px;
+            padding-right: 3px;
+            width: 12px;
+        }
+
+        .cajas-box {
+            background: #dce6f1;
+            border: 1px solid #9bb2d4;
+            font-weight: bold;
+            text-align: center;
+            padding: 4px;
+            font-size: 10px;
+        }
+
+        .tot-etq { text-align: right; font-size: 8.5px; padding: 1.5px 6px; }
+        .tot-val { text-align: right; font-size: 8.5px; padding: 1.5px 4px; width: 70px; }
+        .tot-ret { background: #dce6f1; }
+        .tot-neto { font-size: 12px; font-weight: bold; }
+
+        .enviar {
+            background: #dce6f1;
+            padding: 6px 8px;
+            margin-top: 10px;
+            min-height: 16mm;
+        }
+        .enviar-tit { font-weight: bold; color: #1f3864; font-size: 10px; }
+
+        .pie {
+            text-align: center;
+            font-size: 7.5px;
+            margin-top: 6px;
+        }
     </style>
 </head>
 <body>
-    @php
-        $money = fn ($n) => '$'.number_format((float) $n, 2, ',', '.');
-        $qty = fn ($n) => number_format((float) $n, 2, ',', '.');
 
-        // El vendedor se repite en cada fila igual que en el reporte de
-        // referencia, que trae una columna por linea y no un dato de cabecera.
-        $vendedor = $order->seller?->name ?? '—';
-        $fechaPedido = $order->order_date?->format('d/m/Y');
+    <div class="barra"></div>
+    <div class="titulo">PEDIDO DE VENTA</div>
 
-        $totalCantidad = $order->items->sum('quantity_ordered');
-    @endphp
-
-    <div class="head">
-        <div class="left">
-            <div class="co-name">{{ strtoupper($company->name ?? '') }}</div>
-            <div>@if ($company?->nit){{ $company->nit }}{{ $company->dv ? '-'.$company->dv : '' }}@endif</div>
-            <div>
-                @if ($company?->address){{ $company->address }}@endif
-                @if ($company?->city) · {{ $company->city }}@endif
-                @if ($company?->phone) · Tel {{ $company->phone }}@endif
-            </div>
-        </div>
-        <div class="mid">
-            <div class="doc-title">PEDIDO</div>
-            <div>{{ $order->fullNumber() }}</div>
-        </div>
-        <div class="right">
-            <div>{{ $fechaPedido }}</div>
-            <div>{{ now()->format('g:i A') }}</div>
-        </div>
-    </div>
-
-    <div class="meta">
-        <span><b>Cliente:</b> {{ $order->customer?->name ?? '—' }}
-            @if ($order->customer?->document_number) · NIT {{ $order->customer->document_number }}@endif</span>
-        <span><b>Dirección:</b> {{ $order->customer?->address ?? '—' }}@if ($order->customer?->city), {{ $order->customer->city }}@endif</span>
-        <br>
-        <span><b>Forma de pago:</b> {{ $order->customer?->payment_terms ?? '—' }}</span>
-        <span><b>Horario recibo:</b> {{ $order->customer?->delivery_horario ?? '—' }}</span>
-        @if ($order->priceList)<span><b>Lista:</b> {{ $order->priceList->name }}</span>@endif
-        @if ($order->delivery_date_expected)<span><b>Entrega esperada:</b> {{ $order->delivery_date_expected->format('d/m/Y') }}</span>@endif
-    </div>
-
-    <table class="grid">
-        <thead>
-            <tr>
-                <th style="width: 11%;">Nombre vend.</th>
-                <th style="width: 7%;">Referencia</th>
-                <th>Desc. ítem</th>
-                <th class="mid" style="width: 8%;">Fecha</th>
-                <th class="mid" style="width: 5%;">U.M.</th>
-                <th class="num" style="width: 5%;">Cant.</th>
-                <th class="num" style="width: 10%;">Precio unit.</th>
-                <th class="num" style="width: 12%;">Valor subtotal</th>
-                <th class="num" style="width: 10%;">Vlr. imp. IVA</th>
-                <th class="num" style="width: 12%;">Valor neto</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach ($order->items as $item)
-                <tr>
-                    <td>{{ $vendedor }}</td>
-                    <td>{{ $item->product?->code }}</td>
-                    <td>{{ $item->description }}</td>
-                    <td class="mid">{{ $fechaPedido }}</td>
-                    <td class="mid">{{ $item->product?->unit_of_measure ?: '—' }}</td>
-                    <td class="num">{{ $qty($item->quantity_ordered) }}</td>
-                    <td class="num">{{ $money($item->unit_price_before_tax ?: $item->unit_price_at_public) }}</td>
-                    <td class="num">{{ $money($item->subtotal ?: $item->total) }}</td>
-                    <td class="num">{{ $money($item->tax_amount) }}</td>
-                    <td class="num">{{ $money($item->total) }}</td>
-                </tr>
-            @endforeach
-
-            {{-- Corte por documento: el equivalente a la franja "FE-000xxxxx"
-                 del reporte de referencia. --}}
-            <tr class="band">
-                <td colspan="5">{{ $order->fullNumber() }} · {{ $order->customer?->name ?? '—' }}</td>
-                <td class="num">{{ $qty($totalCantidad) }}</td>
-                <td></td>
-                <td class="num">{{ $money($order->subtotal) }}</td>
-                <td class="num">{{ $money($order->tax_total) }}</td>
-                <td class="num">{{ $money($order->total) }}</td>
-            </tr>
-
-            {{-- El cliente necesita ver que se le retuvo y con que tarifa. --}}
-            @if ((float) $order->retention_total > 0)
-                @foreach ($order->retentions as $ret)
-                    <tr class="ret">
-                        <td colspan="9">{{ $ret->tax_name }} — {{ $ret->tax_code }} ({{ $ret->rateLabel() }}%) sobre base {{ $money($ret->base_amount) }}</td>
-                        <td class="num">− {{ $money($ret->amount) }}</td>
-                    </tr>
-                @endforeach
-            @endif
-
-            <tr class="band-strong">
-                <td colspan="5">{{ (float) $order->retention_total > 0 ? 'Neto a pagar' : 'Gran total' }}</td>
-                <td class="num">{{ $qty($totalCantidad) }}</td>
-                <td></td>
-                <td class="num">{{ $money($order->subtotal) }}</td>
-                <td class="num">{{ $money($order->tax_total) }}</td>
-                <td class="num">{{ $money($order->net_payable ?: $order->total) }}</td>
-            </tr>
-        </tbody>
+    {{-- FECHA, arriba a la derecha --}}
+    <table class="w100">
+        <tr>
+            <td style="width:72%;"></td>
+            <td class="etq" style="text-align:right; padding-right:6px; width:10%;">FECHA</td>
+            <td style="width:18%;"><div class="fecha-box">{{ $order->order_date?->format('M.d.Y') ?? '' }}</div></td>
+        </tr>
     </table>
 
-    @if ($order->notes)
-        <div class="notes"><b>Notas:</b> {{ $order->notes }}</div>
-    @endif
+    <div style="height:6px;"></div>
 
-    <div class="sig-box">
-        <div class="sig-cell"><div class="sig-line">Elaborado por</div></div>
-        <div class="sig-cell"><div class="sig-line">Recibido por</div></div>
+    {{-- A quien se le factura. En el original es un numero de sucursal; aqui
+         se imprime la sucursal cuando el cliente tiene varias, que es el mismo
+         dato con nombre propio. --}}
+    <table class="w100">
+        <tr>
+            <td class="etq" style="width:14%;">Facturar a:</td>
+            <td style="font-weight:bold; font-size:8.5px;">{{ $sucursal?->name ?: $order->fullNumber() }}</td>
+        </tr>
+    </table>
+
+    <div style="height:4px;"></div>
+
+    {{-- Cliente a la izquierda, datos de recibo a la derecha --}}
+    <table class="w100">
+        <tr>
+            <td style="width:46%; vertical-align:top;">
+                <div class="cliente-nombre">{{ strtoupper($cliente?->name ?? '') }}</div>
+                <table class="w100">
+                    <tr>
+                        <td class="etq" style="width:30%; border-bottom:1px solid #000; padding:1px 2px;">NIT :</td>
+                        <td class="dato">{{ $cliente?->document_number }}{{ $cliente?->dv ? '-'.$cliente->dv : '' }}</td>
+                    </tr>
+                    <tr>
+                        <td class="etq" style="border-bottom:1px solid #000; padding:1px 2px;">Direccion</td>
+                        <td class="dato">{{ $direccion ?: '-' }}</td>
+                    </tr>
+                    <tr>
+                        <td class="etq" style="border-bottom:1px solid #000; padding:1px 2px;">Ciudad:</td>
+                        <td class="dato">{{ $ciudad ?: '-' }}</td>
+                    </tr>
+                    <tr>
+                        <td class="etq" style="border-bottom:1px solid #000; padding:1px 2px;">Correo:</td>
+                        <td class="dato">{{ $correo ?: '-' }}</td>
+                    </tr>
+                </table>
+            </td>
+
+            <td style="width:8%;"></td>
+
+            <td style="width:46%; vertical-align:top;">
+                <table class="w100">
+                    <tr>
+                        <td class="etq" style="width:38%; padding:1px 2px;">CONTACTO</td>
+                        <td class="dato">{{ $contacto ?: '-' }}</td>
+                    </tr>
+                    <tr><td colspan="2" style="height:4px;"></td></tr>
+                    <tr>
+                        <td class="etq" style="padding:1px 2px;">HORARIO RECIBO</td>
+                        <td class="dato">{{ $horario ?: '-' }}</td>
+                    </tr>
+                    <tr><td colspan="2" style="height:4px;"></td></tr>
+                    <tr>
+                        <td class="etq" style="padding:1px 2px;">FORMA DE PAGO</td>
+                        <td class="dato">{{ $cliente?->payment_terms ?: '-' }}</td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+
+    <div style="height:8px;"></div>
+
+    {{-- EL CUERPO DEL PEDIDO --}}
+    <table class="w100">
+        <tr>
+            <td style="vertical-align:top;">
+                <table class="items">
+                    <thead>
+                        <tr>
+                            <th class="fila-num" style="border:0;"></th>
+                            <th style="width:9%;">COD</th>
+                            <th style="width:34%;">DESCRIPCION PRODUCTO</th>
+                            <th style="width:8%;">PEDIDO<br>CAJAS</th>
+                            <th style="width:11%;">VALOR CAJA</th>
+                            <th style="width:10%;">IMPUESTO</th>
+                            <th style="width:11%;">VALOR CAJA<br>TOTAL</th>
+                            <th style="width:15%; border-left:2px solid #000;">COSTO PEDIDO</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach ($order->items as $i => $item)
+                            @php
+                                $cajas = (float) $item->quantity_ordered;
+                                $valorCaja = (float) $item->unit_price_before_tax;
+
+                                // El precio con impuesto se toma del precio de
+                                // catalogo, no de dividir el impuesto de la
+                                // linea. Es lo que hace que una fila con 0
+                                // cajas siga mostrando sus precios: el formato
+                                // se manda con el catalogo completo y el
+                                // comprador escribe cantidades solo donde
+                                // necesita. Dividiendo, esas filas saldrian en
+                                // cero y el papel dejaria de servir para pedir.
+                                $valorCajaTotal = (float) $item->unit_price_at_public;
+
+                                if ($valorCajaTotal <= 0) {
+                                    // Sin precio publico guardado se reconstruye:
+                                    // del impuesto de la linea si hay cajas, y
+                                    // si no, de la tarifa.
+                                    $valorCajaTotal = $cajas > 0
+                                        ? $valorCaja + ((float) $item->tax_amount) / $cajas
+                                        : $valorCaja * (1 + ((float) $item->tax_rate) / 100);
+                                }
+
+                                $impuestoCaja = max(0, $valorCajaTotal - $valorCaja);
+
+                                // El costo sale del total guardado, no de
+                                // multiplicar las columnas de arriba: si hubo
+                                // redondeo, manda lo que de verdad se cobra.
+                                $costoPedido = (float) $item->total;
+                            @endphp
+                            <tr>
+                                <td class="fila-num">{{ $i + 1 }}</td>
+                                <td class="c">{{ $item->product?->code }}</td>
+                                <td class="d">{{ $item->description }}</td>
+                                <td class="c">{{ $plata($cajas) }}</td>
+                                <td class="r">{{ $plata($valorCaja) }}</td>
+                                <td class="r">{{ $plata($impuestoCaja) }}</td>
+                                <td class="r">{{ $plata($valorCajaTotal) }}</td>
+                                {{-- Una linea sin pedido se deja en guion, como
+                                     en el original: el formato se manda con el
+                                     catalogo completo y el comprador escribe
+                                     cantidades solo donde necesita. --}}
+                                <td class="r" style="border-left:2px solid #000;">
+                                    {{ $costoPedido > 0 ? $plata($costoPedido) : '-' }}
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </td>
+        </tr>
+    </table>
+
+    <div style="height:10px;"></div>
+
+    {{-- TOTALES: cajas a la izquierda, plata a la derecha --}}
+    <table class="w100">
+        <tr>
+            <td style="width:40%; vertical-align:top;">
+                <table class="w100">
+                    <tr>
+                        <td class="cajas-box" style="width:60%; text-align:right; padding-right:8px;">TOTAL CAJAS</td>
+                        <td class="cajas-box" style="width:40%;">{{ $plata($totalCajas) }}</td>
+                    </tr>
+                </table>
+            </td>
+            <td style="width:14%;"></td>
+            <td style="width:46%; vertical-align:top;">
+                <table class="w100">
+                    <tr>
+                        <td class="tot-etq" style="font-weight:bold;">SUBTOTAL</td>
+                        <td class="tot-val" style="text-align:left; width:14px;">$</td>
+                        <td class="tot-val" style="font-weight:bold;">{{ $plata($order->total) }}</td>
+                    </tr>
+                    <tr>
+                        <td class="tot-etq">VALOR ANTES IMPUESTOS</td>
+                        <td class="tot-val" style="text-align:left;">$</td>
+                        <td class="tot-val">{{ $plata($order->subtotal) }}</td>
+                    </tr>
+
+                    {{-- Cada retencion con su tarifa: el comprador necesita ver
+                         con que porcentaje se le retuvo, no solo cuanto. --}}
+                    @forelse ($order->retentions as $ret)
+                        <tr>
+                            <td class="tot-etq tot-ret" style="font-weight:bold;">
+                                {{ strtoupper($ret->tax_name ?: 'RETENCION') }} {{ $ret->tax_code }}
+                                {{-- La tarifa COMPLETA, no recortada a dos
+                                     decimales: en un 2.514% la cuenta que ve
+                                     el cliente no daria. Solo se cambia el
+                                     punto por coma, como el resto del
+                                     formato. --}}
+                                {{ str_replace('.', ',', $ret->rateLabel()) }}%
+                            </td>
+                            <td class="tot-val tot-ret" style="text-align:left;">$</td>
+                            <td class="tot-val tot-ret">{{ $plata($ret->amount, 2) }}</td>
+                        </tr>
+                    @empty
+                        @if ((float) $order->retention_total > 0)
+                            <tr>
+                                <td class="tot-etq tot-ret" style="font-weight:bold;">RETENCION</td>
+                                <td class="tot-val tot-ret" style="text-align:left;">$</td>
+                                <td class="tot-val tot-ret">{{ $plata($order->retention_total, 2) }}</td>
+                            </tr>
+                        @endif
+                    @endforelse
+
+                    <tr>
+                        <td class="tot-etq tot-neto">VALOR NETO FACTURA</td>
+                        <td class="tot-val tot-neto" style="text-align:left;">$</td>
+                        <td class="tot-val tot-neto">{{ $plata($order->net_payable ?: $order->total) }}</td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+
+    {{-- ENVIAR: instrucciones de despacho. En el original es un recuadro en
+         blanco donde se escribe a mano; aqui se llena con lo que el sistema ya
+         sabe y queda espacio para el resto. --}}
+    <div class="enviar">
+        <div class="enviar-tit">ENVIAR</div>
+        @if ($sucursal)
+            <div>{{ $sucursal->name }}@if ($sucursal->address) — {{ $sucursal->address }}@endif</div>
+        @endif
+        @if ($order->delivery_date_expected)
+            <div>Entrega esperada: {{ $order->delivery_date_expected->format('d/m/Y') }}</div>
+        @endif
+        @if ($order->notes)
+            <div>{{ $order->notes }}</div>
+        @endif
     </div>
 
-    <div class="foot">
-        Documento generado por Emprenddi · {{ now()->format('d/m/Y H:i') }}
+    <div class="pie">
+        @if ($vendedor)
+            <b>Contacto: {{ $vendedor->name }}@if ($company?->name) — Comercial {{ $company->name }}@endif</b>.
+            @if ($vendedor->email) Correo: {{ $vendedor->email }}. @endif
+        @elseif ($company?->name)
+            <b>{{ $company->name }}</b>.
+        @endif
+        @if ($company?->phone) <b>Corporativo: {{ $company->phone }}</b> @endif
     </div>
+
 </body>
 </html>

@@ -380,15 +380,21 @@ class OrderTakingFlowTest extends TestCase
         ])->render();
 
         $this->assertStringContainsString('ZZRF', $html);
-        // Columnas del formato calcado del reporte del cliente.
-        foreach (['Nombre vend.', 'Referencia', 'Desc. ítem', 'U.M.', 'Precio unit.',
-            'Valor subtotal', 'Vlr. imp. IVA', 'Valor neto'] as $columna) {
+
+        // Columnas del formato que el cliente ya usa con sus compradores. Son
+        // literales a proposito: quien lo recibe lleva anos leyendo ese papel,
+        // y renombrar una columna «para que se entienda mejor» obliga a volver
+        // a explicarlo en cada pedido.
+        foreach (['COD', 'DESCRIPCION PRODUCTO', 'PEDIDO<br>CAJAS', 'VALOR CAJA',
+            'IMPUESTO', 'COSTO PEDIDO', 'TOTAL CAJAS', 'VALOR ANTES IMPUESTOS'] as $columna) {
             $this->assertStringContainsString($columna, $html, "Falta la columna {$columna}.");
         }
-        // La tarifa completa, no recortada a 2 decimales: si dijera "2.5" en un
-        // 2.514% la cuenta que ve el cliente no daria.
-        $this->assertStringContainsString('(2.5%)', $html);
-        $this->assertStringContainsString('Neto a pagar', $html);
+
+        // La tarifa completa, no recortada a 2 decimales: si dijera "2,5" en un
+        // 2.514% la cuenta que ve el cliente no daria. Con coma, como el resto
+        // de las cifras del formato.
+        $this->assertStringContainsString('2,5%', $html);
+        $this->assertStringContainsString('VALOR NETO FACTURA', $html);
         $this->assertStringContainsString('1.165.000', $html);
     }
 
