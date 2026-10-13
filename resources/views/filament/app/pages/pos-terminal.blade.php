@@ -642,13 +642,38 @@
                 <div class="shrink-0 px-4 py-3 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
                     <div class="relative max-w-2xl">
                         <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"/></svg>
+                        {{-- El color del texto va explicito, en claro y en
+                             oscuro. Sin el, el input heredaba un color que en
+                             modo oscuro quedaba del mismo tono que el fondo: el
+                             cajero escribia a ciegas y solo veia lo tecleado al
+                             seleccionarlo. --}}
                         <input type="text"
                                id="pos-search-input"
                                wire:model.live.debounce.250ms="productSearch"
-                               x-on:keydown.enter.prevent="$wire.addByBarcode($event.target.value)"
+                               {{-- EL VACIADO VA PRIMERO, Y EN EL NAVEGADOR.
+                                    La pistola teclea y manda Enter. Si se
+                                    esperaba a que el servidor vaciara
+                                    `productSearch`, el `wire:model` con 250 ms
+                                    de espera alcanzaba a enviar el codigo
+                                    ANTERIOR despues de que el servidor ya lo
+                                    habia limpiado: el input volvia a quedar con
+                                    el codigo viejo, el siguiente escaneo se le
+                                    pegaba detras —«20142018»— y el POS decia que
+                                    ese codigo no existe. Recargar lo arreglaba
+                                    porque borraba ese estado.
+                                    `$wire.set(..., false)` actualiza el estado
+                                    de Livewire sin pedir nada al servidor, asi
+                                    que el envio pendiente ya no lleva el codigo
+                                    viejo. --}}
+                               x-on:keydown.enter.prevent="
+                                   const codigo = $event.target.value.trim();
+                                   $event.target.value = '';
+                                   $wire.set('productSearch', '', false);
+                                   if (codigo !== '') { $wire.addByBarcode(codigo); }
+                               "
                                placeholder="Buscar por código, nombre o escanear código de barras (Enter para agregar)…"
                                autocomplete="off"
-                               class="w-full pl-9 pr-4 py-2.5 text-sm rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/60 focus:bg-white dark:focus:bg-gray-900 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition" />
+                               class="w-full pl-9 pr-4 py-2.5 text-sm rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/60 text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:bg-white dark:focus:bg-gray-900 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition" />
                     </div>
                 </div>
 

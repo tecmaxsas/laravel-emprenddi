@@ -471,6 +471,8 @@ class PosTerminal extends Page
                 // No permitir vender el mismo serial dos veces en la misma sesión
                 foreach ($this->cart as $line) {
                     if (($line['serial_id'] ?? null) === $serial->id) {
+                        $this->productSearch = '';
+
                         Notification::make()
                             ->title('Serial ya está en el carrito')
                             ->body("El serial {$serial->serial_number} ya fue agregado.")
@@ -499,6 +501,11 @@ class PosTerminal extends Page
             ->first();
 
         if (! $product) {
+            // Se vacia aunque no haya match. Dejando el codigo malo en el
+            // buscador, el siguiente escaneo se le pegaba detras y fallaba
+            // tambien: un error se volvia dos.
+            $this->productSearch = '';
+
             Notification::make()
                 ->title('Producto no encontrado')
                 ->body("Código '{$code}' no coincide con ningún producto activo ni serial en stock.")
@@ -511,6 +518,8 @@ class PosTerminal extends Page
         // 3. Si el producto encontrado MANEJA seriales, exigir scan por serial.
         // No puedes vender un equipo serializado sin saber qué unidad sale.
         if (SerialsSettings::enabled() && $product->tracks_serials) {
+            $this->productSearch = '';
+
             Notification::make()
                 ->title('Producto requiere número de serie')
                 ->body("'{$product->name}' se vende por serial. Escanea el serial específico de la unidad que sale.")
