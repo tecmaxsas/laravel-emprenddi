@@ -10,6 +10,7 @@ use App\Services\Sales\QuickCustomer;
 use App\Support\CurrentCompany;
 use Filament\Facades\Filament;
 use Livewire\Livewire;
+use Tests\Concerns\FuerzaPosDeRetail;
 use Tests\TestCase;
 
 /**
@@ -23,6 +24,8 @@ use Tests\TestCase;
  */
 class PosCustomerTest extends TestCase
 {
+    use FuerzaPosDeRetail;
+
     private int $companyId;
 
     /** @var list<callable> */
@@ -38,6 +41,12 @@ class PosCustomerTest extends TestCase
 
         Filament::setCurrentPanel(Filament::getPanel('app'));
         app(CurrentCompany::class)->set(Company::find($this->companyId));
+
+        // Sin esto, estas pruebas solo pasan si la base de desarrollo tiene
+        // los modulos como ellas esperan: con restaurante o parqueadero
+        // activo, el POS de retail redirige y Livewire se queja de un
+        // «snapshot» invalido, que no tiene nada que ver con lo que prueban.
+        $this->fuerzaPosDeRetail(Company::findOrFail($this->companyId), $this->limpiar);
     }
 
     protected function tearDown(): void

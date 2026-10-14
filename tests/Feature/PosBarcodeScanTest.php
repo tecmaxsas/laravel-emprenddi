@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Support\CurrentCompany;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
+use Tests\Concerns\FuerzaPosDeRetail;
 use Tests\TestCase;
 
 /**
@@ -29,6 +30,8 @@ use Tests\TestCase;
  */
 class PosBarcodeScanTest extends TestCase
 {
+    use FuerzaPosDeRetail;
+
     private Company $company;
 
     private User $user;
@@ -53,7 +56,7 @@ class PosBarcodeScanTest extends TestCase
         // El POS de retail redirige si la empresa tiene restaurante o
         // parqueadero: ahi el flujo de venta es otro. Se apagan para la prueba
         // y se devuelven en tearDown.
-        $this->forzarPosDeRetail();
+        $this->fuerzaPosDeRetail($this->company, $this->limpiar);
 
         $this->abrirCaja();
     }
@@ -156,27 +159,6 @@ class PosBarcodeScanTest extends TestCase
     }
 
     // --------------------------------------------------------- auxiliares
-
-    private function forzarPosDeRetail(): void
-    {
-        $original = $this->company->active_modules;
-
-        $sinOtrosPos = array_values(array_diff($original ?? [], ['restaurant', 'parking']));
-
-        if ($sinOtrosPos === ($original ?? [])) {
-            return;
-        }
-
-        $this->company->update(['active_modules' => $sinOtrosPos]);
-        app(CurrentCompany::class)->set($this->company->fresh());
-        auth()->user()?->unsetRelation('company');
-
-        $this->limpiar[] = function () use ($original) {
-            $this->company->update(['active_modules' => $original]);
-            app(CurrentCompany::class)->set($this->company->fresh());
-            auth()->user()?->unsetRelation('company');
-        };
-    }
 
     private function producto(string $codigo): Product
     {
