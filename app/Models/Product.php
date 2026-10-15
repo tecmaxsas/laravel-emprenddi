@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Models\Restaurant\ModifierGroup;
+use App\Services\Inventory\InventoryEngine;
 use App\Traits\BelongsToCompany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -12,7 +14,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Product extends Model
 {
-    use HasFactory, BelongsToCompany, SoftDeletes;
+    use BelongsToCompany, HasFactory, SoftDeletes;
 
     public const TYPES = [
         'good' => 'Bien físico',
@@ -144,6 +146,83 @@ class Product extends Model
         return $this->hasMany(self::class, 'parent_product_id')->orderBy('code');
     }
 
+    /**
+     * De qué está hecho este combo.
+     *
+     * Vacío en todo lo que no sea un kit. Un kit sin componentes se crea sin
+     * problema —se puede llenar después— pero no se puede vender: no habría
+     * nada que sacar del almacén.
+     */
+    public function components(): HasMany
+    {
+        return $this->hasMany(ProductComponent::class, 'kit_product_id');
+    }
+
+    /** Los combos en los que entra este producto. */
+    public function partOfKits(): HasMany
+    {
+        return $this->hasMany(ProductComponent::class, 'component_product_id');
+    }
+
+    public function isKit(): bool
+    {
+        return $this->type === 'kit';
+    }
+
+    /**
+     * Cuántos combos se pueden armar con lo que hay en esa sede.
+     *
+     * Lo limita el componente que menos alcance: con pan para 10 y carne para
+     * 3 se arman 3 hamburguesas, no 10.
+     *
+     * Devuelve null cuando no es un kit o no tiene componentes — no es lo
+     * mismo que cero, y un cero inventado haría parecer agotado algo que no lo
+     * está.
+     */
+    public function combosDisponiblesEn(int $locationId): ?float
+    {
+        if (! $this->isKit()) {
+            return null;
+        }
+
+        $componentes = $this->relationLoaded('components')
+            ? $this->components
+            : $this->components()->with('component')->get();
+
+        if ($componentes->isEmpty()) {
+            return null;
+        }
+
+        $posibles = null;
+
+        foreach ($componentes as $pieza) {
+            $producto = $pieza->component;
+
+            // Un componente que no lleva inventario —un servicio, por
+            // ejemplo— no limita nada: siempre hay.
+            if (! $producto || ! $producto->track_inventory) {
+                continue;
+            }
+
+            $cantidad = (float) $pieza->quantity;
+
+            if ($cantidad <= 0) {
+                continue;
+            }
+
+            // `product_locations` guarda configuracion por sede —minimos,
+            // precios propios—, no existencias. El saldo real es el ultimo
+            // movimiento del kardex, que es lo que `currentStock()` lee.
+            $stock = app(InventoryEngine::class)->currentStock($producto->id, $locationId);
+
+            $alcanza = floor($stock / $cantidad);
+
+            $posibles = $posibles === null ? $alcanza : min($posibles, $alcanza);
+        }
+
+        return $posibles === null ? null : max(0, $posibles);
+    }
+
     public function isVariable(): bool
     {
         return $this->type === 'variable';
@@ -242,7 +321,7 @@ class Product extends Model
     public function modifierGroups(): BelongsToMany
     {
         return $this->belongsToMany(
-            \App\Models\Restaurant\ModifierGroup::class,
+            ModifierGroup::class,
             'product_restaurant_modifier_group',
             'product_id',
             'restaurant_modifier_group_id',

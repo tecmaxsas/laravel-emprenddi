@@ -4,15 +4,17 @@ namespace App\Services\Products;
 
 use App\Models\Account;
 use App\Models\Category;
+use App\Models\Company;
 use App\Models\InventoryOpening;
 use App\Models\Location;
 use App\Models\Product;
+use App\Models\ProductComponent;
 use App\Models\ProductLocation;
 use App\Models\Tax;
+use App\Services\Inventory\InventoryEngine;
 use App\Services\Inventory\InventoryOpeningEngine;
 use App\Services\Inventory\InventoryOpeningNumberer;
 use App\Support\SpreadsheetCell;
-use App\Services\Inventory\InventoryEngine;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use OpenSpout\Reader\XLSX\Reader;
@@ -40,10 +42,13 @@ class ProductImportEngine
 {
     /** @var array<string,int|null> */
     protected array $categoryCache = [];
+
     /** @var array<string,int|null> */
     protected array $taxCache = [];
+
     /** @var array<string,int|null> */
     protected array $accountCache = [];
+
     /** @var array<string,int|null> */
     protected array $locationCache = [];
 
@@ -70,11 +75,12 @@ class ProductImportEngine
     {
         $this->resetCaches();
 
-        $reader = new Reader();
+        $reader = new Reader;
         $reader->open($filePath);
 
         $rows = [];
         $stockRows = [];
+        $comboRows = [];
         $productsSheetFound = false;
 
         foreach ($reader->getSheetIterator() as $sheet) {
@@ -83,11 +89,19 @@ class ProductImportEngine
             if (preg_match('/^productos/i', $name)) {
                 $productsSheetFound = true;
                 $rows = $this->readProductsSheet($sheet, $companyId);
+
                 continue;
             }
 
             if (preg_match('/^inventario\s*inicial/i', $name)) {
                 $stockRows = $this->readInitialStockSheet($sheet, $companyId, $rows);
+
+                continue;
+            }
+
+            if (preg_match('/^combos/i', $name)) {
+                $comboRows = $this->readCombosSheet($sheet, $companyId, $rows);
+
                 continue;
             }
         }
@@ -97,6 +111,7 @@ class ProductImportEngine
             return [
                 'rows' => [],
                 'stock_rows' => [],
+                'combo_rows' => [],
                 'summary' => ['total' => 0, 'ok' => 0, 'errors' => 0, 'to_create' => 0, 'to_update' => 0, 'stock_lines' => 0, 'stock_locations' => 0, 'stock_errors' => 0],
                 'valid' => false,
                 'fatal' => 'No se encontró la hoja "Productos" en el archivo. Usa la plantilla oficial.',
@@ -116,9 +131,15 @@ class ProductImportEngine
 
         foreach ($rows as &$r) {
             $vof = $r['data']['variation_of_code'] ?? null;
-            if (! $vof) continue;
-            if (in_array($vof, $codesInFile, true)) continue;
-            if (in_array(strtolower(trim((string) $vof)), $variableNamesInFile, true)) continue;
+            if (! $vof) {
+                continue;
+            }
+            if (in_array($vof, $codesInFile, true)) {
+                continue;
+            }
+            if (in_array(strtolower(trim((string) $vof)), $variableNamesInFile, true)) {
+                continue;
+            }
             $existsByCode = Product::query()
                 ->where('company_id', $companyId)
                 ->where('code', $vof)
@@ -153,7 +174,9 @@ class ProductImportEngine
         $stockErrors = 0;
         $stockLocations = [];
         foreach ($stockRows as $sr) {
-            if (! empty($sr['errors'])) $stockErrors++;
+            if (! empty($sr['errors'])) {
+                $stockErrors++;
+            }
             if (! empty($sr['data']['location_code'])) {
                 $stockLocations[strtolower($sr['data']['location_code'])] = true;
             }
@@ -170,6 +193,7 @@ class ProductImportEngine
         return [
             'rows' => $rows,
             'stock_rows' => $stockRows,
+            'combo_rows' => $comboRows,
             'summary' => $summary,
             'valid' => $valid,
         ];
@@ -196,15 +220,19 @@ class ProductImportEngine
 
             if ($rowNum === 1) {
                 $headers = array_map(fn ($h) => strtolower(trim((string) $h)), $cells);
+
                 continue;
             }
 
             $allEmpty = ! array_filter($cells, fn ($v) => $v !== null && $v !== '');
-            if ($allEmpty) continue;
+            if ($allEmpty) {
+                continue;
+            }
 
             $data = $this->rowToAssoc($headers, $cells);
             $rows[] = $this->validateRow($data, $rowNum, $companyId);
         }
+
         return $rows;
     }
 
@@ -240,11 +268,14 @@ class ProductImportEngine
 
             if ($rowNum === 1) {
                 $headers = array_map(fn ($h) => strtolower(trim((string) $h)), $cells);
+
                 continue;
             }
 
             $allEmpty = ! array_filter($cells, fn ($v) => $v !== null && $v !== '');
-            if ($allEmpty) continue;
+            if ($allEmpty) {
+                continue;
+            }
 
             $data = [];
             foreach (ProductImportTemplateGenerator::STOCK_COLUMNS as $col) {
@@ -268,6 +299,7 @@ class ProductImportEngine
                 && $vacio($data['qty'])
                 && $vacio($data['unit_cost'])) {
                 $omitidas++;
+
                 continue;
             }
 
@@ -275,6 +307,7 @@ class ProductImportEngine
             // dos formas de decir "este no tiene".
             if ($vacio($data['qty']) || (is_numeric($data['qty']) && (float) $data['qty'] == 0.0)) {
                 $omitidas++;
+
                 continue;
             }
 
@@ -298,8 +331,12 @@ class ProductImportEngine
             }
 
             $errors = [];
-            if (! $data['product_code']) $errors[] = 'product_code es obligatorio (puede ser el code o el name del producto)';
-            if (! $data['location_code']) $errors[] = 'location_code es obligatorio';
+            if (! $data['product_code']) {
+                $errors[] = 'product_code es obligatorio (puede ser el code o el name del producto)';
+            }
+            if (! $data['location_code']) {
+                $errors[] = 'location_code es obligatorio';
+            }
             if (! is_numeric($data['qty']) || (float) $data['qty'] <= 0) {
                 $errors[] = 'qty debe ser un número > 0';
             }
@@ -324,7 +361,7 @@ class ProductImportEngine
                         ->where('company_id', $companyId)
                         ->where(function ($q) use ($data) {
                             $q->where('code', $data['product_code'])
-                              ->orWhere('name', $data['product_code']);
+                                ->orWhere('name', $data['product_code']);
                         })
                         ->exists();
                     if (! $existsInDb) {
@@ -374,11 +411,9 @@ class ProductImportEngine
      * se generan y postean InventoryOpening (una por sede) con las lineas
      * correspondientes.
      *
-     * @param array $rows           Filas validadas de la hoja Productos
-     * @param int $companyId
-     * @param array $stockRows      Filas validadas de la hoja Inventario Inicial
-     * @param int|null $counterpartAccountId  Cuenta contrapartida CR (ej. 3705)
-     *
+     * @param  array  $rows  Filas validadas de la hoja Productos
+     * @param  array  $stockRows  Filas validadas de la hoja Inventario Inicial
+     * @param  int|null  $counterpartAccountId  Cuenta contrapartida CR (ej. 3705)
      * @return array{created:int, updated:int, errors:array, openings:array}
      */
     public function import(
@@ -387,6 +422,7 @@ class ProductImportEngine
         array $stockRows = [],
         ?int $counterpartAccountId = null,
         bool $allowStockOnTop = false,
+        array $comboRows = [],
     ): array {
         // Importar el inventario inicial dos veces duplica las existencias y
         // deja un asiento de mas. Es dificil de deshacer, asi que se para
@@ -404,7 +440,7 @@ class ProductImportEngine
                 );
 
                 throw new \RuntimeException(sprintf(
-                    "%d productos de la hoja \"Inventario Inicial\" YA tienen existencias. "
+                    '%d productos de la hoja "Inventario Inicial" YA tienen existencias. '
                     ."La apertura suma, no reemplaza: importarla otra vez duplicaría el inventario.\n\n%s%s\n\n"
                     .'Quita esas filas del archivo, o marca "sumar sobre las existencias actuales" '
                     .'si de verdad quieres agregarlas.',
@@ -435,7 +471,7 @@ class ProductImportEngine
 
         DB::transaction(function () use (
             &$created, &$updated, &$errors, &$openingsCreated,
-            $pass1, $pass2, $companyId, $stockRows, $counterpartAccountId,
+            $pass1, $pass2, $companyId, $stockRows, $counterpartAccountId, $comboRows,
         ) {
             foreach ([$pass1, $pass2] as $batch) {
                 foreach ($batch as $r) {
@@ -451,6 +487,14 @@ class ProductImportEngine
                     }
                 }
             }
+
+            // Las recetas van DESPUES de crear los productos: un combo puede
+            // referenciar piezas que vienen en el mismo archivo.
+            $this->sincronizarCombos(
+                array_values(array_filter($comboRows, fn ($r) => empty($r['errors']))),
+                $companyId,
+                $errors,
+            );
 
             // Stock inicial — solo si hay filas y cuenta contrapartida
             $validStock = array_values(array_filter($stockRows, fn ($r) => empty($r['errors'])));
@@ -477,6 +521,194 @@ class ProductImportEngine
      * InventoryOpening por sede. Retorna lista de openings creadas.
      * Errores se acumulan en el array pasado por referencia.
      */
+    /**
+     * Lee la hoja «Combos»: qué lleva cada kit.
+     *
+     * Tres columnas: el código del combo, el del componente y la cantidad por
+     * cada combo vendido. Se puede referenciar por código o por nombre, igual
+     * que la hoja de inventario inicial, porque un producto con código
+     * autogenerado no tiene código que escribir cuando se arma el archivo.
+     *
+     * @param  array  $productRows  filas de la hoja Productos, para poder
+     *                              validar contra lo que viene en el mismo archivo
+     */
+    protected function readCombosSheet($sheet, int $companyId, array $productRows): array
+    {
+        $rows = [];
+        $headers = [];
+        $n = 0;
+
+        // Lo que viene en el archivo: por codigo y por nombre.
+        $enArchivo = [];
+        foreach ($productRows as $pr) {
+            $tipo = strtolower(trim((string) ($pr['data']['type'] ?? '')));
+            foreach ([$pr['data']['code'] ?? null, $pr['data']['name'] ?? null] as $ref) {
+                $ref = strtolower(trim((string) $ref));
+                if ($ref !== '') {
+                    $enArchivo[$ref] = $tipo;
+                }
+            }
+        }
+
+        foreach ($sheet->getRowIterator() as $row) {
+            $n++;
+            $cells = array_map(
+                fn ($c) => is_string($c->getValue()) ? trim($c->getValue()) : $c->getValue(),
+                $row->getCells(),
+            );
+
+            if ($n === 1) {
+                $headers = array_map(fn ($c) => strtolower(trim((string) $c)), $cells);
+
+                continue;
+            }
+
+            if (count(array_filter($cells, fn ($c) => $c !== null && $c !== '')) === 0) {
+                continue;
+            }
+
+            $data = $this->rowToAssoc($headers, $cells);
+            $data['kit_code'] = trim((string) ($data['kit_code'] ?? ''));
+            $data['component_code'] = trim((string) ($data['component_code'] ?? ''));
+
+            $errors = [];
+
+            if ($data['kit_code'] === '') {
+                $errors[] = 'kit_code es obligatorio (el code o el name del combo)';
+            }
+            if ($data['component_code'] === '') {
+                $errors[] = 'component_code es obligatorio (el code o el name del componente)';
+            }
+
+            $cantidad = $data['quantity'] ?? null;
+            if ($cantidad === null || $cantidad === '' || ! is_numeric($cantidad) || (float) $cantidad <= 0) {
+                $errors[] = 'quantity debe ser un número mayor a 0';
+            }
+
+            // El combo tiene que ser un kit: poniendo aqui un producto normal
+            // el archivo se importa pero la receta no se aplica a nada, y
+            // nadie se entera hasta que el combo se vende sin descargar.
+            if ($errors === []) {
+                $tipoKit = $this->tipoDelProducto($data['kit_code'], $companyId, $enArchivo);
+
+                if ($tipoKit === null) {
+                    $errors[] = "El combo '{$data['kit_code']}' no existe ni viene en este archivo.";
+                } elseif ($tipoKit !== 'kit') {
+                    $errors[] = "'{$data['kit_code']}' no es un combo (su type es '{$tipoKit}'). Solo los productos tipo kit llevan componentes.";
+                }
+
+                $tipoComp = $this->tipoDelProducto($data['component_code'], $companyId, $enArchivo);
+
+                if ($tipoComp === null) {
+                    $errors[] = "El componente '{$data['component_code']}' no existe ni viene en este archivo.";
+                } elseif (in_array($tipoComp, ['kit', 'variable'], true)) {
+                    // Un combo dentro de otro obligaria a desarmar en cadena
+                    // al vender y a vigilar que no se referencien entre si.
+                    $errors[] = "'{$data['component_code']}' es de tipo '{$tipoComp}' y no puede ser componente de un combo.";
+                }
+
+                if (strcasecmp($data['kit_code'], $data['component_code']) === 0) {
+                    $errors[] = 'Un combo no puede llevarse a sí mismo como componente.';
+                }
+            }
+
+            $rows[] = ['row_number' => $n, 'data' => $data, 'errors' => $errors];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * El tipo de un producto referenciado por código o por nombre.
+     *
+     * Mira primero lo que viene en el archivo —puede no existir todavía en la
+     * base— y después la base. Null si no aparece en ninguno.
+     */
+    protected function tipoDelProducto(string $ref, int $companyId, array $enArchivo): ?string
+    {
+        $clave = strtolower(trim($ref));
+
+        if (isset($enArchivo[$clave])) {
+            return $enArchivo[$clave];
+        }
+
+        return Product::withoutGlobalScopes()
+            ->where('company_id', $companyId)
+            ->where(fn ($q) => $q->where('code', $ref)->orWhere('name', $ref))
+            ->value('type');
+    }
+
+    /**
+     * Graba las recetas de los combos.
+     *
+     * REEMPLAZA la receta completa de cada combo que aparezca en el archivo.
+     * No suma: importar un archivo con la receta corregida tiene que dejar esa
+     * receta y no la vieja mezclada con la nueva, que es lo que pasaría si se
+     * agregara. Los combos que no vienen en el archivo no se tocan.
+     */
+    protected function sincronizarCombos(array $comboRows, int $companyId, array &$errors): void
+    {
+        if ($comboRows === []) {
+            return;
+        }
+
+        // Agrupadas por combo, para poder reemplazar de una.
+        $porCombo = [];
+
+        foreach ($comboRows as $r) {
+            $porCombo[strtolower($r['data']['kit_code'])][] = $r;
+        }
+
+        foreach ($porCombo as $filas) {
+            $kit = $this->productoPorReferencia($filas[0]['data']['kit_code'], $companyId);
+
+            if (! $kit) {
+                $errors[] = [
+                    'row_number' => $filas[0]['row_number'],
+                    'code' => 'COMBO/'.$filas[0]['data']['kit_code'],
+                    'message' => 'El combo no se encontró después de importar los productos.',
+                ];
+
+                continue;
+            }
+
+            $kit->components()->delete();
+
+            foreach ($filas as $r) {
+                $componente = $this->productoPorReferencia($r['data']['component_code'], $companyId);
+
+                if (! $componente) {
+                    $errors[] = [
+                        'row_number' => $r['row_number'],
+                        'code' => 'COMBO/'.$r['data']['component_code'],
+                        'message' => 'El componente no se encontró después de importar los productos.',
+                    ];
+
+                    continue;
+                }
+
+                ProductComponent::withoutGlobalScopes()->updateOrCreate(
+                    [
+                        'kit_product_id' => $kit->id,
+                        'component_product_id' => $componente->id,
+                    ],
+                    [
+                        'company_id' => $companyId,
+                        'quantity' => (float) $r['data']['quantity'],
+                    ],
+                );
+            }
+        }
+    }
+
+    protected function productoPorReferencia(string $ref, int $companyId): ?Product
+    {
+        return Product::withoutGlobalScopes()
+            ->where('company_id', $companyId)
+            ->where(fn ($q) => $q->where('code', $ref)->orWhere('name', $ref))
+            ->first();
+    }
+
     protected function createInitialStockOpenings(
         array $validStockLines,
         int $companyId,
@@ -491,7 +723,7 @@ class ProductImportEngine
         }
 
         $openings = [];
-        $companyModel = \App\Models\Company::find($companyId);
+        $companyModel = Company::find($companyId);
 
         foreach ($byLocation as $locCode => $lines) {
             $locationId = $this->resolveLocationId($locCode, $companyId);
@@ -501,6 +733,7 @@ class ProductImportEngine
                     'code' => "STOCK/{$locCode}",
                     'message' => "Sede '{$locCode}' no encontrada al crear apertura de inventario.",
                 ];
+
                 continue;
             }
 
@@ -536,16 +769,18 @@ class ProductImportEngine
                         $errors[] = [
                             'row_number' => $sl['row_number'],
                             'code' => 'STOCK/'.$sl['data']['product_code'],
-                            'message' => "Producto no encontrado despues del import.",
+                            'message' => 'Producto no encontrado despues del import.',
                         ];
+
                         continue;
                     }
                     if (! $product->track_inventory) {
                         $errors[] = [
                             'row_number' => $sl['row_number'],
                             'code' => 'STOCK/'.$sl['data']['product_code'],
-                            'message' => "Producto no controla inventario (track_inventory=false).",
+                            'message' => 'Producto no controla inventario (track_inventory=false).',
                         ];
+
                         continue;
                     }
                     $opening->lines()->create([
@@ -582,6 +817,7 @@ class ProductImportEngine
                 ];
             }
         }
+
         return $openings;
     }
 
@@ -620,9 +856,13 @@ class ProductImportEngine
 
     protected function resolveLocationId(?string $code, int $companyId): ?int
     {
-        if (! $code) return null;
+        if (! $code) {
+            return null;
+        }
         $key = strtolower($code);
-        if (array_key_exists($key, $this->locationCache)) return $this->locationCache[$key];
+        if (array_key_exists($key, $this->locationCache)) {
+            return $this->locationCache[$key];
+        }
         $id = Location::query()
             ->where('company_id', $companyId)
             ->where('active', true)
@@ -630,6 +870,7 @@ class ProductImportEngine
                 $q->where('code', $code)->orWhere('name', $code);
             })
             ->value('id');
+
         return $this->locationCache[$key] = $id ? (int) $id : null;
     }
 
@@ -664,9 +905,11 @@ class ProductImportEngine
 
         if ($existing) {
             $existing->update($payload);
+
             return true; // update
         }
         Product::create(array_merge(['company_id' => $companyId], $payload));
+
         return false; // create
     }
 
@@ -682,7 +925,9 @@ class ProductImportEngine
     {
         // Filas sin code (por generar)
         $needCode = array_filter($valid, fn ($r) => empty(trim((string) ($r['data']['code'] ?? ''))));
-        if (empty($needCode)) return $valid;
+        if (empty($needCode)) {
+            return $valid;
+        }
 
         // Encuentra el siguiente numero disponible (driver-agnostic: extrae
         // el numero en PHP en vez de usar SUBSTRING nativo, que difiere
@@ -695,7 +940,9 @@ class ProductImportEngine
             ->each(function ($code) use (&$lastNum) {
                 if (preg_match('/^PROD-(\d+)$/', $code, $m)) {
                     $n = (int) $m[1];
-                    if ($n > $lastNum) $lastNum = $n;
+                    if ($n > $lastNum) {
+                        $lastNum = $n;
+                    }
                 }
             });
 
@@ -722,7 +969,9 @@ class ProductImportEngine
         // resuelve por code directo.
         foreach ($valid as &$r) {
             $vof = $r['data']['variation_of_code'] ?? null;
-            if (! $vof) continue;
+            if (! $vof) {
+                continue;
+            }
             $key = strtolower(trim((string) $vof));
             if (isset($parentNameToCode[$key])) {
                 $r['data']['variation_of_code'] = $parentNameToCode[$key];
@@ -780,10 +1029,13 @@ class ProductImportEngine
         $errors = [];
 
         // code es OPCIONAL — si viene vacio, el engine lo genera al importar.
-        if (! ($data['name'] ?? null)) $errors[] = 'name es obligatorio';
+        if (! ($data['name'] ?? null)) {
+            $errors[] = 'name es obligatorio';
+        }
         $type = strtolower(trim((string) ($data['type'] ?? '')));
-        if (! $type) $errors[] = 'type es obligatorio';
-        elseif (! in_array($type, ['good', 'service', 'kit', 'consumable', 'variable'], true)) {
+        if (! $type) {
+            $errors[] = 'type es obligatorio';
+        } elseif (! in_array($type, ['good', 'service', 'kit', 'consumable', 'variable'], true)) {
             $errors[] = "type '{$type}' invalido (debe ser: good, service, kit, consumable, variable)";
         }
         $data['type'] = $type;
@@ -840,10 +1092,12 @@ class ProductImportEngine
         foreach ($rows as $r) {
             if (! empty($r['errors'])) {
                 $errors++;
+
                 continue;
             }
             in_array($r['data']['code'] ?? null, $existingCodes, true) ? $toUpdate++ : $toCreate++;
         }
+
         return [
             'total' => $total,
             'ok' => $total - $errors,
@@ -854,7 +1108,7 @@ class ProductImportEngine
     }
 
     /* ------------------------------------------------------------------ */
-    /*  Helpers                                                             */
+    /*  Helpers */
     /* ------------------------------------------------------------------ */
 
     protected function resetCaches(): void
@@ -878,62 +1132,85 @@ class ProductImportEngine
         }
         // Normaliza codes a upper trim
         foreach (['code', 'variation_of_code', 'category_code', 'sale_tax_code', 'purchase_tax_code',
-                  'sale_account_code', 'purchase_account_code', 'inventory_account_code', 'cost_account_code'] as $c) {
+            'sale_account_code', 'purchase_account_code', 'inventory_account_code', 'cost_account_code'] as $c) {
             if (isset($out[$c])) {
                 $out[$c] = trim((string) $out[$c]);
             }
         }
+
         return $out;
     }
 
     protected function coerceBool(mixed $v, bool $default): bool
     {
-        if ($v === null || $v === '') return $default;
-        if (is_bool($v)) return $v;
-        if (is_numeric($v)) return (bool) (int) $v;
+        if ($v === null || $v === '') {
+            return $default;
+        }
+        if (is_bool($v)) {
+            return $v;
+        }
+        if (is_numeric($v)) {
+            return (bool) (int) $v;
+        }
         $s = strtolower(trim((string) $v));
+
         return in_array($s, ['si', 'sí', 'yes', 'true', '1', 'x'], true);
     }
 
     protected function resolveCategoryId(?string $code, int $companyId): ?int
     {
-        if (! $code) return null;
+        if (! $code) {
+            return null;
+        }
         $key = strtolower($code);
-        if (array_key_exists($key, $this->categoryCache)) return $this->categoryCache[$key];
+        if (array_key_exists($key, $this->categoryCache)) {
+            return $this->categoryCache[$key];
+        }
         $id = Category::query()
             ->where('company_id', $companyId)
             ->where(function ($q) use ($code) {
                 $q->where('code', $code)->orWhere('name', $code);
             })
             ->value('id');
+
         return $this->categoryCache[$key] = $id ? (int) $id : null;
     }
 
     protected function resolveTaxId(?string $code, int $companyId): ?int
     {
-        if (! $code) return null;
+        if (! $code) {
+            return null;
+        }
         $key = strtolower($code);
-        if (array_key_exists($key, $this->taxCache)) return $this->taxCache[$key];
+        if (array_key_exists($key, $this->taxCache)) {
+            return $this->taxCache[$key];
+        }
         $id = Tax::query()
             ->where('company_id', $companyId)
             ->where(function ($q) use ($code) {
                 $q->where('code', $code)->orWhere('name', $code);
             })
             ->value('id');
+
         return $this->taxCache[$key] = $id ? (int) $id : null;
     }
 
     protected function resolveAccountId(?string $code, int $companyId): ?int
     {
-        if (! $code) return null;
+        if (! $code) {
+            return null;
+        }
         $key = strtolower($code);
-        if (array_key_exists($key, $this->accountCache)) return $this->accountCache[$key];
+        if (array_key_exists($key, $this->accountCache)) {
+            return $this->accountCache[$key];
+        }
         $id = Account::query()
             ->where('company_id', $companyId)
             ->where('accepts_movements', true)
             ->where('active', true)
             ->where('code', $code)
             ->value('id');
+
         return $this->accountCache[$key] = $id ? (int) $id : null;
     }
 }

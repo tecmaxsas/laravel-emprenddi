@@ -25,6 +25,9 @@ use OpenSpout\Writer\XLSX\Writer;
  */
 class ProductImportTemplateGenerator
 {
+    /** Columnas de la hoja "Combos" — orden exacto. */
+    public const COMBO_COLUMNS = ['kit_code', 'component_code', 'quantity'];
+
     /** Columnas de la hoja "Inventario Inicial" — orden exacto. */
     public const STOCK_COLUMNS = [
         'product_code',
@@ -64,13 +67,14 @@ class ProductImportTemplateGenerator
     public function stream(int $companyId): callable
     {
         return function () use ($companyId) {
-            $options = new Options();
+            $options = new Options;
             $writer = new Writer($options);
             $writer->openToFile('php://output');
 
             $this->writeInstructionsSheet($writer);
             $this->writeProductsSheet($writer);
             $this->writeInitialStockSheet($writer);
+            $this->writeCombosSheet($writer);
             $this->writeCategoriesRefSheet($writer, $companyId);
             $this->writeTaxesRefSheet($writer, $companyId);
             $this->writeAccountsRefSheet($writer, $companyId);
@@ -81,7 +85,7 @@ class ProductImportTemplateGenerator
     }
 
     /* ------------------------------------------------------------------ */
-    /*  Hoja 1 — Instrucciones                                              */
+    /*  Hoja 1 — Instrucciones */
     /* ------------------------------------------------------------------ */
 
     protected function writeInstructionsSheet(Writer $writer): void
@@ -89,9 +93,9 @@ class ProductImportTemplateGenerator
         $sheet = $writer->getCurrentSheet();
         $sheet->setName('Instrucciones');
 
-        $title = (new Style())->setFontBold()->setFontSize(16)->setFontColor('4F46E5');
-        $section = (new Style())->setFontBold()->setFontSize(12)->setBackgroundColor('EEF2FF');
-        $warn = (new Style())->setFontBold()->setFontColor('B45309');
+        $title = (new Style)->setFontBold()->setFontSize(16)->setFontColor('4F46E5');
+        $section = (new Style)->setFontBold()->setFontSize(12)->setBackgroundColor('EEF2FF');
+        $warn = (new Style)->setFontBold()->setFontColor('B45309');
 
         $lines = [
             ['title', 'Importación masiva de productos'],
@@ -157,6 +161,8 @@ class ProductImportTemplateGenerator
             ['blank', ''],
             ['section', 'Inventario inicial (opcional)'],
             ['text', 'La hoja "Inventario Inicial" permite cargar el saldo de arranque de cada producto por sede.'],
+            ['text', 'La hoja "Combos" define de que esta hecho cada producto tipo kit: un renglon por componente, repitiendo el kit_code. Al vender el combo salen del almacen esas piezas y su costo es el de la venta. Un combo sin componentes NO se puede vender.'],
+            ['text', 'Importar la hoja "Combos" REEMPLAZA la receta completa de cada combo que aparezca en ella. Los combos que no vengan en el archivo no se tocan.'],
             ['text', 'Columnas:'],
             ['text', '  product_code*    Código del producto (debe existir en la hoja "Productos" o en la BD)'],
             ['text', '  location_code*   Código de la sede (ver hoja "Sedes")'],
@@ -187,14 +193,14 @@ class ProductImportTemplateGenerator
     }
 
     /* ------------------------------------------------------------------ */
-    /*  Hoja 2 — Productos (headers + ejemplos)                            */
+    /*  Hoja 2 — Productos (headers + ejemplos) */
     /* ------------------------------------------------------------------ */
 
     protected function writeProductsSheet(Writer $writer): void
     {
         $writer->addNewSheetAndMakeItCurrent()->setName('Productos');
 
-        $headerStyle = (new Style())
+        $headerStyle = (new Style)
             ->setFontBold()
             ->setBackgroundColor('4F46E5')
             ->setFontColor('FFFFFF');
@@ -264,14 +270,14 @@ class ProductImportTemplateGenerator
     }
 
     /* ------------------------------------------------------------------ */
-    /*  Hoja 3 — Inventario Inicial (headers + ejemplos)                   */
+    /*  Hoja 3 — Inventario Inicial (headers + ejemplos) */
     /* ------------------------------------------------------------------ */
 
     protected function writeInitialStockSheet(Writer $writer): void
     {
         $writer->addNewSheetAndMakeItCurrent()->setName('Inventario Inicial');
 
-        $headerStyle = (new Style())
+        $headerStyle = (new Style)
             ->setFontBold()
             ->setBackgroundColor('16A34A')
             ->setFontColor('FFFFFF');
@@ -292,13 +298,46 @@ class ProductImportTemplateGenerator
     }
 
     /* ------------------------------------------------------------------ */
-    /*  Hoja 4-7 — Referencias (categorias, impuestos, cuentas, sedes)     */
+    /*  Hoja 4 — Combos (de que esta hecho cada kit) */
+    /* ------------------------------------------------------------------ */
+
+    /**
+     * La receta de cada combo.
+     *
+     * Solo aplica a los productos con `type = kit`. Al vender el combo, esto
+     * es lo que sale del almacen, y la suma de lo que costaron esas piezas es
+     * el costo de la venta. Un kit sin receta no se puede vender.
+     */
+    protected function writeCombosSheet(Writer $writer): void
+    {
+        $writer->addNewSheetAndMakeItCurrent()->setName('Combos');
+
+        $headerStyle = (new Style)
+            ->setFontBold()
+            ->setBackgroundColor('7C3AED')
+            ->setFontColor('FFFFFF');
+
+        $writer->addRow(Row::fromValues(self::COMBO_COLUMNS, $headerStyle));
+
+        // Un combo de dos piezas: se repite el kit_code en cada renglon.
+        $examples = [
+            ['COMBO-DIA', 'AGUA600', 1],
+            ['COMBO-DIA', 'CAMISA-M-AZUL', 1],
+        ];
+
+        foreach ($examples as $ex) {
+            $writer->addRow(Row::fromValues($ex));
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /*  Hoja 5-8 — Referencias (categorias, impuestos, cuentas, sedes) */
     /* ------------------------------------------------------------------ */
 
     protected function writeCategoriesRefSheet(Writer $writer, int $companyId): void
     {
         $writer->addNewSheetAndMakeItCurrent()->setName('Categorias (ref)');
-        $header = (new Style())->setFontBold()->setBackgroundColor('E0E7FF');
+        $header = (new Style)->setFontBold()->setBackgroundColor('E0E7FF');
         $writer->addRow(Row::fromValues(['code', 'name', 'padre'], $header));
 
         $rows = Category::query()
@@ -319,7 +358,7 @@ class ProductImportTemplateGenerator
     protected function writeTaxesRefSheet(Writer $writer, int $companyId): void
     {
         $writer->addNewSheetAndMakeItCurrent()->setName('Impuestos (ref)');
-        $header = (new Style())->setFontBold()->setBackgroundColor('E0E7FF');
+        $header = (new Style)->setFontBold()->setBackgroundColor('E0E7FF');
         $writer->addRow(Row::fromValues(['code', 'name', 'rate', 'type'], $header));
 
         Tax::query()
@@ -339,7 +378,7 @@ class ProductImportTemplateGenerator
     protected function writeAccountsRefSheet(Writer $writer, int $companyId): void
     {
         $writer->addNewSheetAndMakeItCurrent()->setName('Cuentas (ref)');
-        $header = (new Style())->setFontBold()->setBackgroundColor('E0E7FF');
+        $header = (new Style)->setFontBold()->setBackgroundColor('E0E7FF');
         $writer->addRow(Row::fromValues(['code', 'name', 'uso sugerido'], $header));
 
         // Solo las cuentas que aceptan movimientos y del rango 13xx, 14xx, 41xx, 42xx, 51xx, 52xx, 6xxx
@@ -376,7 +415,7 @@ class ProductImportTemplateGenerator
     protected function writeLocationsRefSheet(Writer $writer, int $companyId): void
     {
         $writer->addNewSheetAndMakeItCurrent()->setName('Sedes (ref)');
-        $header = (new Style())->setFontBold()->setBackgroundColor('E0E7FF');
+        $header = (new Style)->setFontBold()->setBackgroundColor('E0E7FF');
         $writer->addRow(Row::fromValues(['code', 'name', 'is_main'], $header));
 
         Location::query()

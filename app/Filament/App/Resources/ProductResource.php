@@ -8,20 +8,35 @@ use App\Models\Account;
 use App\Models\Category;
 use App\Models\Location;
 use App\Models\Product;
+use App\Models\ProductLocation;
 use App\Models\Tax;
+use App\Services\Inventory\InventoryEngine;
+use App\Support\LabelsSettings;
+use App\Support\ModuleGate;
+use App\Support\RestaurantSettings;
+use App\Support\SerialsSettings;
+use App\Support\WarrantiesSettings;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\HtmlString;
 
 class ProductResource extends Resource
 {
     use ChecksPermission;
 
-    protected static function viewPermission(): string { return 'products.view'; }
-    protected static function managePermission(): string { return 'products.manage'; }
+    protected static function viewPermission(): string
+    {
+        return 'products.view';
+    }
+
+    protected static function managePermission(): string
+    {
+        return 'products.manage';
+    }
 
     protected static ?string $model = Product::class;
 
@@ -143,6 +158,67 @@ class ProductResource extends Resource
                                 ->native(false),
                         ]),
 
+                        // LA RECETA DEL COMBO.
+                        //
+                        // El tipo «kit» existia desde el principio y esta
+                        // misma pantalla prometia que «al venderse desglosa
+                        // componentes», pero no habia donde definirlos. Era
+                        // una etiqueta: el combo se vendia sin descargar nada
+                        // y con margen del 100%.
+                        Forms\Components\Section::make('Qué incluye el combo')
+                            ->description('Al vender el combo, esto es lo que sale del almacén. El costo de la venta es la suma de lo que costaron estas piezas.')
+                            ->visible(fn (Forms\Get $get) => $get('type') === 'kit')
+                            ->schema([
+                                Forms\Components\Repeater::make('components')
+                                    ->relationship()
+                                    ->label('')
+                                    ->addActionLabel('Agregar componente')
+                                    ->columns(3)
+                                    ->defaultItems(1)
+                                    ->schema([
+                                        Forms\Components\Select::make('component_product_id')
+                                            ->label('Producto')
+                                            ->required()
+                                            ->searchable()
+                                            ->getSearchResultsUsing(fn (string $search) => Product::query()
+                                                ->where('company_id', auth()->user()?->company_id)
+                                                ->where('active', true)
+                                                // Un combo dentro de otro combo
+                                                // obligaria a desarmar en cadena
+                                                // al vender, y a vigilar que no
+                                                // se referencien entre si.
+                                                ->whereNotIn('type', ['kit', 'variable'])
+                                                ->where(function ($q) use ($search) {
+                                                    $q->where('name', 'ilike', "%{$search}%")
+                                                        ->orWhere('code', 'ilike', "%{$search}%");
+                                                })
+                                                ->orderBy('name')
+                                                ->limit(30)
+                                                ->get()
+                                                ->mapWithKeys(fn (Product $p) => [$p->id => $p->code.' — '.$p->name])
+                                                ->all())
+                                            ->getOptionLabelUsing(function ($value) {
+                                                $p = Product::query()->find($value);
+
+                                                return $p ? $p->code.' — '.$p->name : null;
+                                            })
+                                            ->columnSpan(2),
+
+                                        Forms\Components\TextInput::make('quantity')
+                                            ->label('Cantidad')
+                                            ->numeric()
+                                            ->minValue(0.001)
+                                            ->default(1)
+                                            ->required()
+                                            ->extraInputAttributes(['onwheel' => 'this.blur()'])
+                                            ->helperText('Por cada combo vendido.'),
+                                    ])
+                                    ->addable()
+                                    ->deletable()
+                                    ->reorderable(false)
+                                    ->helperText('Un combo sin componentes no se puede vender: no habría nada que descargar del almacén.'),
+                            ]),
+
                         Forms\Components\Section::make('Comportamiento')
                             ->columns(4)
                             ->schema([
@@ -155,7 +231,7 @@ class ProductResource extends Resource
                                     ->label('Maneja seriales')
                                     ->default(false)
                                     ->helperText('Cada unidad entra y sale con su número de serie. Útil para equipos con garantía.')
-                                    ->visible(fn () => \App\Support\SerialsSettings::enabled()),
+                                    ->visible(fn () => SerialsSettings::enabled()),
 
                                 Forms\Components\TextInput::make('warranty_days')
                                     ->label('Días de garantía')
@@ -164,7 +240,7 @@ class ProductResource extends Resource
                                     ->maxValue(3650)
                                     ->default(0)
                                     ->helperText('0 = sin garantía. Se usa para calcular fecha de vencimiento al crear tickets.')
-                                    ->visible(fn () => \App\Support\WarrantiesSettings::enabled()),
+                                    ->visible(fn () => WarrantiesSettings::enabled()),
 
                                 Forms\Components\Toggle::make('is_purchasable')
                                     ->label('Se compra')
@@ -222,7 +298,7 @@ class ProductResource extends Resource
                                     ->whereIn('applies_to', ['purchase', 'both'])
                                     ->where(function ($q) use ($search) {
                                         $q->where('name', 'ilike', "%{$search}%")
-                                          ->orWhere('code', 'ilike', "%{$search}%");
+                                            ->orWhere('code', 'ilike', "%{$search}%");
                                     })
                                     ->orderBy('name')
                                     ->limit(20)
@@ -243,7 +319,7 @@ class ProductResource extends Resource
                                     ->whereIn('applies_to', ['sale', 'both'])
                                     ->where(function ($q) use ($search) {
                                         $q->where('name', 'ilike', "%{$search}%")
-                                          ->orWhere('code', 'ilike', "%{$search}%");
+                                            ->orWhere('code', 'ilike', "%{$search}%");
                                     })
                                     ->orderBy('name')
                                     ->limit(20)
@@ -269,12 +345,15 @@ class ProductResource extends Resource
                                 $price = (float) $get('default_sale_price');
                                 $taxId = $get('default_sale_tax_id');
                                 $tax = $taxId ? Tax::find($taxId) : null;
-                                if (! $tax || $price <= 0) return '—';
+                                if (! $tax || $price <= 0) {
+                                    return '—';
+                                }
                                 $rate = (float) $tax->rate;
 
                                 if ($get('sale_price_includes_tax')) {
                                     $base = round($price / (1 + $rate / 100), 2);
                                     $taxAmount = round($price - $base, 2);
+
                                     return sprintf(
                                         '📊 Cliente paga: $%s · Base: $%s · %s: $%s',
                                         number_format($price, 0, ',', '.'),
@@ -285,6 +364,7 @@ class ProductResource extends Resource
                                 } else {
                                     $taxAmount = round($price * $rate / 100, 2);
                                     $final = round($price + $taxAmount, 2);
+
                                     return sprintf(
                                         '📊 Base: $%s + %s ($%s) = Cliente paga $%s',
                                         number_format($price, 0, ',', '.'),
@@ -298,13 +378,13 @@ class ProductResource extends Resource
                     ]),
 
                 Forms\Components\Tabs\Tab::make('Cuentas contables')
-                    ->visible(fn () => \App\Support\ModuleGate::active(\App\Support\ModuleGate::ACCOUNTING))
+                    ->visible(fn () => ModuleGate::active(ModuleGate::ACCOUNTING))
                     ->icon('heroicon-o-banknotes')
                     ->badge('Opcional')
                     ->schema([
                         Forms\Components\Placeholder::make('accounts_inheritance_hint')
                             ->label('')
-                            ->content(new \Illuminate\Support\HtmlString(
+                            ->content(new HtmlString(
                                 '<div style="padding:10px 12px; background:#eef2ff; color:#3730a3; border-radius:8px; font-size:13px;">'
                                 .'💡 <strong>Estas cuentas son un override opcional.</strong> Si las dejas vacías, el producto hereda las cuentas configuradas en su <strong>categoría</strong> (o en la categoría padre si la suya no las define). Solo configúralas aquí si este producto necesita cuentas distintas a las del resto de su categoría.'
                                 .'</div>'
@@ -437,7 +517,7 @@ class ProductResource extends Resource
                                 Forms\Components\Placeholder::make('current_stock_display')
                                     ->label('Stock actual')
                                     ->visibleOn('edit')
-                                    ->content(function (Forms\Get $get, ?\App\Models\ProductLocation $record = null) {
+                                    ->content(function (Forms\Get $get, ?ProductLocation $record = null) {
                                         $locationId = $get('location_id');
                                         // En el Repeater de productLocations, $record es la fila del pivot
                                         // (ProductLocation) y su product_id es el del producto editado.
@@ -445,9 +525,9 @@ class ProductResource extends Resource
                                         if (! $locationId || ! $productId) {
                                             return '—';
                                         }
-                                        $stock = app(\App\Services\Inventory\InventoryEngine::class)
+                                        $stock = app(InventoryEngine::class)
                                             ->currentStock($productId, $locationId);
-                                        $cost = app(\App\Services\Inventory\InventoryEngine::class)
+                                        $cost = app(InventoryEngine::class)
                                             ->currentAvgCost($productId, $locationId);
 
                                         return sprintf(
@@ -468,8 +548,8 @@ class ProductResource extends Resource
 
                 Forms\Components\Tabs\Tab::make('Modificadores (Restaurante)')
                     ->icon('heroicon-o-adjustments-horizontal')
-                    ->visible(fn () => \App\Support\ModuleGate::active('restaurant')
-                        && \App\Support\RestaurantSettings::isEnabled('modifiers'))
+                    ->visible(fn () => ModuleGate::active('restaurant')
+                        && RestaurantSettings::isEnabled('modifiers'))
                     ->schema([
                         Forms\Components\Placeholder::make('modifier_hint')
                             ->label('')
@@ -494,14 +574,19 @@ class ProductResource extends Resource
      */
     private static function inheritanceHint(?int $categoryId, string $field, string $fallback): string
     {
-        if (! $categoryId) return $fallback;
-        $category = \App\Models\Category::with('parent')->find($categoryId);
-        if (! $category) return $fallback;
+        if (! $categoryId) {
+            return $fallback;
+        }
+        $category = Category::with('parent')->find($categoryId);
+        if (! $category) {
+            return $fallback;
+        }
         $resolvedId = $category->resolveDefault($field);
         if (! $resolvedId) {
             return "Vacío = heredar (la categoría \"{$category->name}\" no tiene esta cuenta configurada).";
         }
-        $account = \App\Models\Account::query()->where('company_id', auth()->user()?->company_id)->find($resolvedId);
+        $account = Account::query()->where('company_id', auth()->user()?->company_id)->find($resolvedId);
+
         return $account
             ? "Vacío = heredar de la categoría → {$account->code} — {$account->name}"
             : $fallback;
@@ -519,7 +604,7 @@ class ProductResource extends Resource
                 ->where('active', true)
                 ->where(function ($q) use ($search) {
                     $q->where('code', 'like', "%{$search}%")
-                      ->orWhere('name', 'ilike', "%{$search}%");
+                        ->orWhere('name', 'ilike', "%{$search}%");
                 })
                 ->orderBy('code')
                 ->limit(50)
@@ -618,7 +703,7 @@ class ProductResource extends Resource
                     ->label('Imprimir etiquetas')
                     ->icon('heroicon-o-qr-code')
                     ->color('gray')
-                    ->visible(fn () => \App\Support\LabelsSettings::enabled())
+                    ->visible(fn () => LabelsSettings::enabled())
                     ->form([
                         Forms\Components\TextInput::make('qty')
                             ->label('Cantidad de etiquetas')
@@ -638,7 +723,7 @@ class ProductResource extends Resource
                     ->label('Imprimir etiquetas')
                     ->icon('heroicon-o-qr-code')
                     ->color('gray')
-                    ->visible(fn () => \App\Support\LabelsSettings::enabled())
+                    ->visible(fn () => LabelsSettings::enabled())
                     ->form([
                         Forms\Components\TextInput::make('qty_per_product')
                             ->label('Etiquetas por cada producto seleccionado')

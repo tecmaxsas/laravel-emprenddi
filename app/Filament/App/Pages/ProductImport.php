@@ -3,6 +3,7 @@
 namespace App\Filament\App\Pages;
 
 use App\Filament\Concerns\ResolvesUploadedFile;
+use App\Models\Account;
 use App\Services\Products\ProductImportEngine;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
@@ -24,16 +25,23 @@ class ProductImport extends Page implements HasForms
     use InteractsWithForms, ResolvesUploadedFile;
 
     protected static ?string $navigationIcon = 'heroicon-o-arrow-up-tray';
+
     protected static ?string $navigationLabel = 'Importar productos';
+
     protected static ?string $navigationGroup = 'Productos';
+
     protected static ?int $navigationSort = 20;
+
     protected static ?string $slug = 'products/import';
+
     protected static ?string $title = 'Importar productos desde Excel';
 
     protected static string $view = 'filament.app.pages.product-import';
 
     public ?array $data = ['file' => null, 'counterpart_account_id' => null, 'allow_stock_on_top' => false];
+
     public ?array $preview = null;
+
     public ?array $result = null;
 
     public static function canAccess(): bool
@@ -46,7 +54,7 @@ class ProductImport extends Page implements HasForms
         // Precarga cuenta contrapartida sugerida (3705 Resultados de
         // ejercicios anteriores) si existe.
         $companyId = auth()->user()?->company_id;
-        $defaultCounterpart = \App\Models\Account::query()
+        $defaultCounterpart = Account::query()
             ->where('company_id', $companyId)
             ->where('accepts_movements', true)
             ->where('active', true)
@@ -84,7 +92,7 @@ class ProductImport extends Page implements HasForms
                         // Sin opciones precargadas el campo salia vacio hasta
                         // escribir, y si lo escrito no existia no habia forma
                         // de saber que SI se podia elegir.
-                        ->options(fn () => \App\Models\Account::query()
+                        ->options(fn () => Account::query()
                             ->where('company_id', auth()->user()?->company_id)
                             ->where('accepts_movements', true)
                             ->where('active', true)
@@ -94,7 +102,7 @@ class ProductImport extends Page implements HasForms
                             ->get(['id', 'code', 'name'])
                             ->mapWithKeys(fn ($a) => [$a->id => "{$a->code} — {$a->name}"])
                             ->all())
-                        ->getSearchResultsUsing(fn (string $search) => \App\Models\Account::query()
+                        ->getSearchResultsUsing(fn (string $search) => Account::query()
                             ->where('company_id', auth()->user()?->company_id)
                             ->where('accepts_movements', true)
                             ->where('active', true)
@@ -108,9 +116,10 @@ class ProductImport extends Page implements HasForms
                             ->mapWithKeys(fn ($a) => [$a->id => "{$a->code} — {$a->name}"])
                             ->all())
                         ->getOptionLabelUsing(function ($value) {
-                            $a = \App\Models\Account::query()
+                            $a = Account::query()
                                 ->where('company_id', auth()->user()?->company_id)
                                 ->find($value);
+
                             return $a ? "{$a->code} — {$a->name}" : null;
                         }),
 
@@ -126,12 +135,14 @@ class ProductImport extends Page implements HasForms
         $path = $this->data['file'] ?? null;
         if (! $path) {
             Notification::make()->title('Sube un archivo primero')->warning()->send();
+
             return;
         }
 
         $absolute = $this->resolveUploadedFile($path);
         if (! $absolute) {
             Notification::make()->title('El archivo no se encuentra')->danger()->send();
+
             return;
         }
 
@@ -170,6 +181,7 @@ class ProductImport extends Page implements HasForms
     {
         if (! $this->preview) {
             Notification::make()->title('Primero analiza un archivo')->warning()->send();
+
             return;
         }
 
@@ -181,6 +193,7 @@ class ProductImport extends Page implements HasForms
 
         if ($bloqueado) {
             Notification::make()->title('Hay errores en el preview — corrige antes de confirmar')->warning()->send();
+
             return;
         }
 
@@ -193,6 +206,7 @@ class ProductImport extends Page implements HasForms
                     ->title('Selecciona la cuenta contrapartida')
                     ->body('Hay filas en la hoja "Inventario Inicial" pero no se eligió la cuenta CR para el asiento contable.')
                     ->warning()->send();
+
                 return;
             }
         }
@@ -204,6 +218,9 @@ class ProductImport extends Page implements HasForms
                 $stockRows,
                 $counterpartId,
                 (bool) ($this->data['allow_stock_on_top'] ?? false),
+                // Las recetas de los combos van siempre: no mueven inventario
+                // ni plata, solo dicen de que esta hecho cada kit.
+                $this->preview['combo_rows'] ?? [],
             );
 
             $parts = ["Creados: {$this->result['created']}", "Actualizados: {$this->result['updated']}"];

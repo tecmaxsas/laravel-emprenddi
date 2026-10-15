@@ -83,7 +83,25 @@ class SaleInvoiceEngine
             $cameFromDelivery = $invoice->from_delivery_note_id !== null;
 
             foreach ($invoice->lines as $line) {
-                if (! $line->product_id || ! $line->product?->track_inventory) {
+                if (! $line->product_id) {
+                    continue;
+                }
+
+                // UN COMBO NO SALE DEL ALMACEN: SALEN SUS PIEZAS.
+                //
+                // El kit no lleva inventario propio —se arma en el momento de
+                // venderlo—, asi que el `track_inventory` del combo es false y
+                // la condicion de abajo lo descartaria. Lo que hay que
+                // descontar son sus componentes, cada uno por su cantidad.
+                if ($line->product->isKit()) {
+                    $totalCogs += $this->descargarComponentesDelCombo(
+                        $invoice, $line, $allowNegativeStock
+                    );
+
+                    continue;
+                }
+
+                if (! $line->product->track_inventory) {
                     continue;
                 }
 
@@ -160,6 +178,145 @@ class SaleInvoiceEngine
 
             return $invoice->fresh();
         });
+    }
+
+    /**
+     * Devuelve al almacén las piezas de un combo anulado.
+     *
+     * El espejo de `descargarComponentesDelCombo()`. La receta se lee otra vez
+     * del producto: si alguien la cambió entre la venta y la anulación, se
+     * devuelve según la receta de hoy. Es imperfecto, pero la alternativa
+     * —guardar una copia de la receta en cada línea— es un registro que
+     * tampoco nadie mantiene, y el caso normal es anular el mismo día.
+     */
+    protected function devolverComponentesDelCombo(SaleInvoice $invoice, SaleInvoiceLine $line): void
+    {
+        $combosVendidos = abs((float) $line->quantity);
+
+        foreach ($line->product->components()->with('component')->get() as $pieza) {
+            $producto = $pieza->component;
+
+            if (! $producto || ! $producto->track_inventory) {
+                continue;
+            }
+
+            $cantidad = $combosVendidos * (float) $pieza->quantity;
+
+            if ($cantidad <= 0) {
+                continue;
+            }
+
+            $this->inventory->addMovement(
+                $producto,
+                $invoice->location,
+                [
+                    'type' => 'return_from_customer',
+                    'quantity' => $cantidad,
+                    'date' => now(),
+                    'reference_type' => SaleInvoice::class,
+                    'reference_id' => $invoice->id,
+                    'reference_number' => 'ANUL-'.$invoice->fullNumber(),
+                    'third_party_id' => $invoice->third_party_id,
+                    'description' => sprintf(
+                        'Anulación %s — combo %s',
+                        $invoice->fullNumber(),
+                        $line->product->name,
+                    ),
+                    'allow_negative' => true,
+                ]
+            );
+        }
+    }
+
+    /**
+     * Saca del almacén las piezas de un combo vendido.
+     *
+     * Por cada componente: su cantidad en la receta multiplicada por cuántos
+     * combos se vendieron. Dos combos que llevan 3 gaseosas descargan 6.
+     *
+     * El costo de la venta es la suma de lo que costaron las piezas. Es la
+     * unica forma de que el margen del combo sea real: el combo en si no tiene
+     * costo propio porque nunca se compro, se armo.
+     *
+     * Un kit sin componentes no se puede vender. Dejarlo pasar lo convertiria
+     * en una venta sin costo y sin salida de inventario —margen del 100% y
+     * almacen intacto—, que es justo el error que nadie revisa hasta que
+     * cuadra el inventario a fin de mes.
+     *
+     * @return float lo que costaron las piezas, para el COGS
+     */
+    protected function descargarComponentesDelCombo(
+        SaleInvoice $invoice,
+        SaleInvoiceLine $line,
+        bool $allowNegativeStock,
+    ): float {
+        $componentes = $line->product->components()->with('component')->get();
+
+        if ($componentes->isEmpty()) {
+            throw new RuntimeException(sprintf(
+                'El combo «%s» no tiene componentes definidos. Configúralos en la ficha '
+                .'del producto: sin ellos la venta no descargaría inventario ni tendría costo.',
+                $line->product->name,
+            ));
+        }
+
+        $combosVendidos = abs((float) $line->quantity);
+        $costo = 0.0;
+        $primerMovimiento = null;
+
+        foreach ($componentes as $pieza) {
+            $producto = $pieza->component;
+
+            if (! $producto) {
+                continue;
+            }
+
+            $cantidad = $combosVendidos * (float) $pieza->quantity;
+
+            if ($cantidad <= 0) {
+                continue;
+            }
+
+            // Un componente que no lleva inventario —un servicio incluido en
+            // el combo— no se descarga, pero tampoco estorba.
+            if (! $producto->track_inventory) {
+                continue;
+            }
+
+            $movimiento = $this->inventory->addMovement(
+                $producto,
+                $invoice->location,
+                [
+                    'type' => 'sale',
+                    'quantity' => $cantidad,
+                    'date' => $invoice->date,
+                    'reference_type' => SaleInvoice::class,
+                    'reference_id' => $invoice->id,
+                    'reference_number' => $invoice->fullNumber(),
+                    'third_party_id' => $invoice->third_party_id,
+                    'description' => sprintf(
+                        'Venta %s — combo %s',
+                        $invoice->fullNumber(),
+                        $line->product->name,
+                    ),
+                    'allow_negative' => $allowNegativeStock,
+                ]
+            );
+
+            $primerMovimiento ??= $movimiento;
+            $costo += abs((float) $movimiento->quantity) * (float) $movimiento->unit_cost;
+        }
+
+        // La linea guarda el costo del COMBO COMPLETO por unidad, que es lo
+        // que los reportes de margen esperan leer ahi. El movimiento que se
+        // referencia es el de la primera pieza: la columna admite uno solo, y
+        // deja un hilo para rastrear la venta desde el kardex.
+        $line->update([
+            'inventory_movement_id' => $primerMovimiento?->id,
+            'cost_at_sale' => $combosVendidos > 0 ? round($costo / $combosVendidos, 4) : 0,
+        ]);
+
+        return $costo;
     }
 
     /**
@@ -702,7 +859,20 @@ class SaleInvoiceEngine
         return DB::transaction(function () use ($invoice) {
             // 1. Devuelve el inventario (return_from_customer — entra al stock).
             foreach ($invoice->lines as $line) {
-                if (! $line->product_id || ! $line->product?->track_inventory) {
+                if (! $line->product_id) {
+                    continue;
+                }
+
+                // Del combo salieron sus piezas, asi que las piezas son las
+                // que vuelven. Sin esto, anular una venta de combos dejaba el
+                // inventario descargado para siempre.
+                if ($line->product?->isKit()) {
+                    $this->devolverComponentesDelCombo($invoice, $line);
+
+                    continue;
+                }
+
+                if (! $line->product?->track_inventory) {
                     continue;
                 }
                 if (! $line->inventory_movement_id) {
