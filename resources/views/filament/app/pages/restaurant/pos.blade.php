@@ -67,7 +67,13 @@
            espacio a los items de la orden y el boton enviar a cocina debajo. */
         .rpos-products-grid {
             display:grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-            gap:6px; max-height:200px; overflow-y:auto;
+            gap:6px;
+            /* 200px mostraba fila y media de productos dentro de una caja que
+               scrollea por su cuenta, encima de una pagina que tambien
+               scrollea: el mesero intenta bajar y mueve la lista equivocada.
+               Con 48vh entran tres o cuatro filas y la orden sigue a la
+               vista, que es lo que hace que el scroll anidado se note menos. */
+            max-height:48vh; overflow-y:auto;
         }
         @media (min-width: 1024px) {
             .rpos-products-grid {
@@ -85,11 +91,58 @@
         @media (min-width: 1024px) {
             .rpos-order-panel { max-height: calc(100vh - 160px); overflow-y:auto; }
         }
-        .rpos-item-row { display:flex; gap:8px; padding:8px 10px; border-radius:8px; align-items:center; }
         .rpos-item-row:hover { background:#f9fafb; }
         :is(.dark) .rpos-item-row:hover { background:rgb(31,41,55); }
-        .rpos-qty-btn { width:24px; height:24px; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; border:1px solid #d1d5db; background:#f9fafb; cursor:pointer; font-weight:600; }
+        /* LOS BOTONES MAS USADOS AL TOMAR UNA ORDEN.
+           Median 24x24: la mitad del minimo que se puede tocar con el pulgar
+           sin fallar (44px segun Apple, 48dp segun Android). El mesero suma
+           cantidades a golpe de dedo y cada toque errado le borra o le duplica
+           una linea. En escritorio hay raton y puntero fino, asi que ahi se
+           mantienen pequenos para no inflar la fila. */
+        .rpos-qty-btn {
+            width:40px; height:40px; border-radius:8px;
+            display:inline-flex; align-items:center; justify-content:center;
+            border:1px solid #d1d5db; background:#f9fafb; cursor:pointer;
+            font-weight:700; font-size:18px; line-height:1;
+            /* Mata el retardo de 300ms y el zoom por doble toque: sumar
+               cantidad son toques seguidos en el mismo sitio, que es
+               exactamente lo que el navegador interpreta como doble toque. */
+            touch-action:manipulation;
+            flex-shrink:0;
+        }
+        @media (min-width: 1024px) {
+            .rpos-qty-btn { width:26px; height:26px; font-size:14px; border-radius:6px; }
+        }
         :is(.dark) .rpos-qty-btn { background:rgb(31,41,55); border-color:rgb(75,85,99); color:rgb(229,231,235); }
+        /* Los botones de «enviar curso por curso» salian en tantas columnas
+           como cursos hubiera, hasta cuatro. En un telefono eso son cuatro
+           botones de 70px con el texto partido. En movil van de a dos. */
+        .rpos-course-grid { display:grid; grid-template-columns: repeat(2, 1fr); gap:6px; }
+        @media (min-width: 640px) {
+            .rpos-course-grid { grid-template-columns: repeat(var(--cursos, 2), 1fr); }
+        }
+
+        /* LA FILA DE UN ITEM, EN DOS RENGLONES EN MOVIL.
+           Todo iba en una linea: nombre + menos + cantidad + mas + precio +
+           borrar. Con los botones ya en tamaño tactil, lo fijo suma unos
+           270px y en un telefono de 360px quedaban 26px para el nombre del
+           producto: ilegible. Asi que el nombre se lleva su propio renglon y
+           los controles van debajo, alineados a la derecha, donde cae el
+           pulgar. En escritorio sigue en una sola linea. */
+        .rpos-item-row {
+            display:flex; align-items:center; gap:8px; border-radius:8px;
+            padding:12px 10px; flex-wrap:wrap; row-gap:8px;
+        }
+        .rpos-item-row > div:first-child { flex:1 1 100%; }
+        .rpos-item-row > :not(:first-child) { margin-left:auto; }
+        .rpos-item-row > :not(:first-child) ~ * { margin-left:0; }
+
+        @media (min-width: 1024px) {
+            .rpos-item-row { padding:8px 10px; flex-wrap:nowrap; }
+            .rpos-item-row > div:first-child { flex:1 1 auto; }
+            .rpos-item-row > :not(:first-child) { margin-left:0; }
+        }
+
         .rpos-status-badge { font-size:10px; padding:2px 6px; border-radius:999px; font-weight:600; text-transform:uppercase; }
     </style>
 
@@ -750,7 +803,7 @@
                             <div style="font-size:10px; color:#6b7280; text-transform:uppercase; font-weight:700; margin-top:4px; letter-spacing:0.5px;">
                                 O enviar curso por curso
                             </div>
-                            <div style="display:grid; grid-template-columns: repeat({{ min($pendingByCourse->count(), 4) }}, 1fr); gap:6px;">
+                            <div class="rpos-course-grid" style="--cursos: {{ min($pendingByCourse->count(), 4) }};">
                                 @foreach ($pendingByCourse as $cNum => $cCount)
                                     <button type="button" wire:click="sendToKitchen({{ $cNum }})"
                                             style="padding:8px 4px; border-radius:8px; background:#1e40af; color:white; border:0; font-weight:700; cursor:pointer; font-size:11px; line-height:1.3;"
