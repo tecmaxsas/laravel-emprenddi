@@ -17,6 +17,7 @@ use App\Models\SaleInvoice;
 use App\Models\Tax;
 use App\Services\Accounting\JournalEntryNumberer;
 use App\Services\Dian\PosDianTransmitter;
+use App\Services\Inventory\DescargaDeVenta;
 use App\Services\Sales\DocumentNumberer;
 use App\Services\Sales\SaleInvoiceEngine;
 use App\Support\CashSessionGate;
@@ -765,6 +766,17 @@ class RestaurantOrderEngine
         }
 
         return DB::transaction(function () use ($order, $notes) {
+            // LA COMIDA SALIO DE LA COCINA AUNQUE NO SE COBRE.
+            //
+            // El inventario se descargaba al facturar, asi que una cuenta
+            // cerrada sin factura —«casa invita»— dejaba el sistema creyendo
+            // que esos platos seguian en bodega. El faltante aparecia al
+            // contar, semanas despues y sin forma de saber de donde salio.
+            //
+            // No se toca caja ni se crea factura: aqui no entro ni salio
+            // plata. Lo unico que se mueve es la mercancia.
+            $this->descargarInventarioDeCortesia($order);
+
             $order->update([
                 'status' => Order::STATUS_CLOSED,
                 'closed_at' => now(),
@@ -780,6 +792,56 @@ class RestaurantOrderEngine
 
             return $order->fresh();
         });
+    }
+
+    /**
+     * Saca del almacén lo consumido en una cuenta de cortesía.
+     *
+     * Mismos ítems que facturaría `bill()` —todos menos los cancelados—, para
+     * que lo que sale del almacén no dependa de por dónde se cerró la cuenta.
+     * Un plato que el mesero agregó y nunca mandó a cocina debe cancelarse,
+     * no cerrarse: cancelarlo es lo que dice que no se preparó.
+     *
+     * Se permite dejar el inventario en negativo a propósito. Negarse aquí
+     * dejaría la mesa ocupada y al cliente esperando por un saldo mal
+     * cuadrado, cuando la comida ya se la comieron: el saldo negativo es la
+     * señal honesta de que hay que contar, y para eso está el aviso de
+     * «ítems con saldo negativo».
+     */
+    protected function descargarInventarioDeCortesia(Order $order): void
+    {
+        $sede = $order->location;
+
+        if (! $sede) {
+            return;
+        }
+
+        $items = $order->items()->with('product')->get()
+            ->reject(fn (OrderItem $i) => $i->kitchen_status === OrderItem::KS_CANCELLED);
+
+        $descarga = app(DescargaDeVenta::class);
+
+        foreach ($items as $item) {
+            if (! $item->product) {
+                continue;
+            }
+
+            $descarga->descargar(
+                $item->product,
+                $sede,
+                (float) $item->quantity,
+                [
+                    'type' => 'sale',
+                    'date' => now()->toDateString(),
+                    'reference_type' => Order::class,
+                    'reference_id' => $order->id,
+                    'reference_number' => $order->fullNumber(),
+                    'third_party_id' => $order->third_party_id,
+                    'description' => 'Casa invita — orden '.$order->fullNumber(),
+                ],
+                permitirNegativo: true,
+            );
+        }
     }
 
     /**
