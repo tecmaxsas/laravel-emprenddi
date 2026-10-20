@@ -105,9 +105,24 @@ class ViewSaleInvoice extends ViewRecord
                         : '',
                 ))
                 ->modalSubmitActionLabel('Enviar')
-                ->action(function (SaleInvoice $record) {
+                // Solo se pregunta si la fecha ya quedó atrás: la DIAN rechaza la
+                // emisión que no coincide con la firma (FAD09e).
+                ->form(fn (SaleInvoice $record) => $record->date?->isBefore(today())
+                    ? [
+                        \Filament\Forms\Components\Toggle::make('fecha_hoy')
+                            ->label('Enviar con la fecha y hora de hoy')
+                            ->default(true)
+                            ->helperText('La factura es del '.$record->date->format('d/m/Y').'. La DIAN rechaza '
+                                .'fechas de emisión atrasadas. La factura, su asiento y su IVA conservan la '
+                                .'fecha original; solo cambia el documento que se transmite.'),
+                    ]
+                    : [])
+                ->action(function (SaleInvoice $record, array $data) {
                     try {
-                        $result = app(DianInvoiceSender::class)->send($record);
+                        $result = app(DianInvoiceSender::class)->send(
+                            $record,
+                            ($data['fecha_hoy'] ?? false) ? now() : null,
+                        );
                         if ($result['ok']) {
                             Notification::make()
                                 ->success()

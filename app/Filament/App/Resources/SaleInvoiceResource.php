@@ -60,6 +60,13 @@ class SaleInvoiceResource extends Resource
     protected static ?int $navigationSort = 20;
 
     /**
+     * Tope del envío masivo desde el listado. Corre dentro de la petición web y
+     * cada factura tarda unos segundos en ir y volver de la DIAN: con más, la
+     * petición se corta a la mitad. Para cientos está dian:corregir-numeracion.
+     */
+    public const ENVIO_MASIVO_MAX = 50;
+
+    /**
      * Las resoluciones que se pueden elegir para numerar.
      *
      * Se listan TODAS las activas del tipo pedido, no solo las asignadas a la
@@ -81,13 +88,20 @@ class SaleInvoiceResource extends Resource
             ->unique()
             ->all();
 
+        $companyId = (int) auth()->user()?->company_id;
+        $enProduccion = Resolution::empresaEnProduccion($companyId);
+
         return Resolution::query()
-            ->where('company_id', auth()->user()?->company_id)
+            ->where('company_id', $companyId)
             ->where('kind', $kind)
             ->where('document_type_id', 1)
             ->where('active', true)
             ->orderBy('prefix')
             ->get()
+            // La de habilitación no se ofrece con la empresa en producción:
+            // elegirla por error fue lo que dejó a TRONITEC con 380 facturas
+            // SETP que la DIAN no podía recibir.
+            ->reject(fn (Resolution $r) => $enProduccion && $r->isHabilitacion())
             ->mapWithKeys(function (Resolution $r) use ($sedes) {
                 $partes = [$r->prefix];
 
@@ -894,6 +908,77 @@ class SaleInvoiceResource extends Resource
                     ->visible(fn (SaleInvoice $record) => DianInvoiceActions::isManageable($record)),
             ])
             ->bulkActions([
+                Tables\Actions\BulkAction::make('sendDianBulk')
+                    ->label('Enviar a DIAN')
+                    ->icon('heroicon-o-paper-airplane')
+                    ->visible(fn () => auth()->user()?->can('sales.send_dian'))
+                    ->deselectRecordsAfterCompletion()
+                    ->modalHeading('Enviar facturas a la DIAN')
+                    ->modalDescription('Se envían una por una. Las POS, las que no están contabilizadas, '
+                        .'las ya aceptadas y las que esperan respuesta de la DIAN se omiten. '
+                        .'Máximo '.self::ENVIO_MASIVO_MAX.' por vez: cada envío tarda unos segundos.')
+                    ->form([
+                        Forms\Components\Toggle::make('fecha_hoy')
+                            ->label('Enviar con la fecha y hora de hoy')
+                            ->default(true)
+                            ->helperText('La DIAN rechaza las facturas cuya fecha de emisión no coincide con la '
+                                .'de firma (FAD09e). La factura, su asiento y su IVA conservan la fecha original; '
+                                .'solo cambia el documento que se transmite.'),
+                    ])
+                    ->modalSubmitActionLabel('Enviar')
+                    ->action(function (Collection $records, array $data) {
+                        if ($records->count() > self::ENVIO_MASIVO_MAX) {
+                            Notification::make()
+                                ->warning()
+                                ->title('Demasiadas facturas')
+                                ->body('Selecciona máximo '.self::ENVIO_MASIVO_MAX.' por vez.')
+                                ->send();
+
+                            return;
+                        }
+
+                        $sender = app(\App\Services\Dian\DianInvoiceSender::class);
+                        $accepted = $rejected = $skipped = $failed = 0;
+
+                        foreach ($records->sortBy(['prefix', 'number']) as $record) {
+                            if (! $record->canResendToDian() || $record->dian_status === SaleInvoice::DIAN_SENT) {
+                                $skipped++;
+
+                                continue;
+                            }
+
+                            try {
+                                $result = $sender->send($record, ($data['fecha_hoy'] ?? true) ? now() : null);
+                            } catch (\Throwable $e) {
+                                report($e);
+                                $failed++;
+
+                                continue;
+                            }
+
+                            match (true) {
+                                $result['ok'] => $accepted++,
+                                $result['reached_dian'] => $rejected++,
+                                default => $failed++,
+                            };
+                        }
+
+                        $parts = array_filter([
+                            $accepted ? "{$accepted} aceptada(s)" : null,
+                            $rejected ? "{$rejected} rechazada(s)" : null,
+                            $failed ? "{$failed} sin respuesta de la DIAN" : null,
+                            $skipped ? "{$skipped} omitida(s)" : null,
+                        ]);
+
+                        Notification::make()
+                            ->title('Envío finalizado')
+                            ->body(($parts ? implode(' · ', $parts) : 'No había facturas para enviar.')
+                                .($rejected || $failed ? '. Revisa el motivo en cada factura.' : ''))
+                            ->status($rejected > 0 || $failed > 0 ? 'warning' : 'success')
+                            ->persistent($rejected > 0 || $failed > 0)
+                            ->send();
+                    }),
+
                 Tables\Actions\BulkAction::make('checkDianStatusBulk')
                     ->label('Consultar estado en DIAN')
                     ->icon('heroicon-o-arrow-path')

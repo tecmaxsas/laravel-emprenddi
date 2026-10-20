@@ -4,6 +4,7 @@ namespace App\Services\Dian;
 
 use App\Models\Dian\CompanyConfig;
 use App\Models\SaleInvoice;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -23,7 +24,16 @@ class DianInvoiceSender
         protected SaleInvoiceUblBuilder $builder,
     ) {}
 
-    public function send(SaleInvoice $invoice): array
+    /**
+     * @param  CarbonInterface|null  $fechaEmision  Fecha y hora con que viaja el
+     *         documento, si no es la de la factura. La DIAN exige que la emisión
+     *         coincida con la firma (FAD09e): una factura enviada días después de
+     *         su fecha vuelve rechazada. Va fecha Y hora juntas porque la fecha de
+     *         hoy con la hora de contabilización puede quedar en el futuro, y eso
+     *         es otro rechazo (117). La factura guardada, su asiento y su IVA se
+     *         quedan con la fecha original: solo cambia el documento transmitido.
+     */
+    public function send(SaleInvoice $invoice, ?CarbonInterface $fechaEmision = null): array
     {
         if (! $invoice->isPosted()) {
             throw new RuntimeException('Solo se pueden enviar a DIAN facturas contabilizadas.');
@@ -41,6 +51,10 @@ class DianInvoiceSender
 
         $payload = $this->builder->build($invoice);
 
+        if ($fechaEmision) {
+            $payload = self::conFechaEmision($payload, $fechaEmision);
+        }
+
         // Marca enviado antes de la llamada — si peta el HTTP, queda registrado el intento
         $invoice->update([
             'dian_status' => SaleInvoice::DIAN_SENT,
@@ -51,6 +65,26 @@ class DianInvoiceSender
         $result = $client->sendInvoice($payload);
 
         return $this->processResponse($invoice, $result);
+    }
+
+    /**
+     * El payload con otra fecha de emisión. Los vencimientos anteriores a ella
+     * se corren a la misma fecha: vencer antes de emitirse no tiene sentido.
+     */
+    public static function conFechaEmision(array $payload, CarbonInterface $fecha): array
+    {
+        $dia = $fecha->format('Y-m-d');
+
+        $payload['date'] = $dia;
+        $payload['time'] = $fecha->format('H:i:s');
+
+        foreach ($payload['payment_form'] ?? [] as $i => $forma) {
+            if (isset($forma['payment_due_date']) && $forma['payment_due_date'] < $dia) {
+                $payload['payment_form'][$i]['payment_due_date'] = $dia;
+            }
+        }
+
+        return $payload;
     }
 
     /**
