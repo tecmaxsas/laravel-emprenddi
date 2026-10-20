@@ -66,6 +66,42 @@ class Resolution extends Model
      */
     public const DOCUMENT_TYPES_GLOBALES = [4, 5, 9, 11];
 
+    /**
+     * Número de la resolución del set de habilitación, la misma para todos los
+     * contribuyentes (prefijo SETP, rango 990000000–995000000).
+     */
+    public const RESOLUCION_HABILITACION = '18760000001';
+
+    /** ¿Es la resolución de pruebas que la DIAN da para la habilitación? */
+    public function isHabilitacion(): bool
+    {
+        return trim((string) $this->resolution_number) === self::RESOLUCION_HABILITACION;
+    }
+
+    /**
+     * ¿La empresa ya factura en producción? Con la empresa en producción, la
+     * resolución de habilitación no le sirve para nada: la DIAN rechaza todo lo
+     * que se numere con ella (FAD05e, «número de factura no existe para el
+     * número de autorización»).
+     *
+     * Eso le pasó a TRONITEC: quedó activa después de la habilitación, apareció
+     * en el selector de resolución de la factura, y en un mes se emitieron 380
+     * facturas SETP que la DIAN no podía recibir. Nada avisó hasta que se
+     * intentó enviarlas.
+     */
+    public static function empresaEnProduccion(int $companyId): bool
+    {
+        return (int) CompanyConfig::query()
+            ->where('company_id', $companyId)
+            ->value('environment') === CompanyConfig::ENV_PRODUCTION;
+    }
+
+    /** ¿Ya no se puede numerar con ella porque la empresa está en producción? */
+    public function bloqueadaEnProduccion(): bool
+    {
+        return $this->isHabilitacion() && self::empresaEnProduccion((int) $this->company_id);
+    }
+
     /** ¿Su numeración es de toda la empresa en vez de por sede? */
     public function isGlobal(): bool
     {

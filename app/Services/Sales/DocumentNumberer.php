@@ -66,6 +66,8 @@ class DocumentNumberer
 
         $resolution = $locRes->resolution;
 
+        $this->ensureNoEsHabilitacionEnProduccion($resolution);
+
         // Doble candado: la Resolution debe pertenecer a la misma empresa que
         // la Location. Si por algun motivo hay una asociacion cross-tenant en
         // la BD, cortamos aqui en vez de emitir con el prefix equivocado.
@@ -185,6 +187,8 @@ class DocumentNumberer
             );
         }
 
+        $this->ensureNoEsHabilitacionEnProduccion($resolution);
+
         $kindLabel = $resolution->isPos() ? 'POS' : 'de facturación electrónica';
 
         return DB::transaction(function () use ($resolution, $companyId, $kindLabel, $locationId, $tabla, $excluirId) {
@@ -263,6 +267,22 @@ class DocumentNumberer
                 'kind' => $resolution->kind,
             ];
         });
+    }
+
+    /**
+     * Corta antes de gastar un consecutivo de la resolución de habilitación
+     * cuando la empresa ya está en producción: ese documento nunca lo va a
+     * aceptar la DIAN, y descubrirlo al enviarlo es descubrirlo tarde.
+     */
+    protected function ensureNoEsHabilitacionEnProduccion(Resolution $resolution): void
+    {
+        if ($resolution->bloqueadaEnProduccion()) {
+            throw new RuntimeException(
+                "La resolución {$resolution->prefix} es la de pruebas de la habilitación DIAN y la "
+                .'empresa ya factura en producción: la DIAN rechazaría el documento. Desactívala en '
+                .'Facturación Electrónica DIAN y numera con la resolución de producción.'
+            );
+        }
     }
 
     /**

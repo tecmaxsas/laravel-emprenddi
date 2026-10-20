@@ -2030,9 +2030,22 @@ class DianSettings extends Page implements HasForms
 
         if ($result['ok']) {
             $config->update(['environment' => $env]);
+
+            // En producción la resolución de habilitación ya no sirve, y si
+            // queda activa alguien termina numerando con ella. Se apaga sola.
+            $apagadas = 0;
+            if ($env === CompanyConfig::ENV_PRODUCTION) {
+                $apagadas = Resolution::query()
+                    ->where('company_id', $config->company_id)
+                    ->where('resolution_number', Resolution::RESOLUCION_HABILITACION)
+                    ->where('active', true)
+                    ->update(['active' => false]);
+            }
+
             $this->successNotif(
                 'Ambiente actualizado en DIAN',
-                'Ahora la empresa opera en '.(CompanyConfig::ENVIRONMENTS[$env] ?? '?').'.',
+                'Ahora la empresa opera en '.(CompanyConfig::ENVIRONMENTS[$env] ?? '?').'.'
+                .($apagadas ? ' Se desactivó la resolución de pruebas de la habilitación.' : ''),
             );
         } else {
             $this->errorNotif('No fue posible cambiar el ambiente en DIAN', $result['error'] ?? 'Error desconocido');
