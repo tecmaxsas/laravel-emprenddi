@@ -82,6 +82,8 @@
             border: 0; border-radius: 8px; background: #4f46e5; color: #fff; cursor: pointer;
         }
     </style>
+
+    @include('partials.thermal-print')
 </head>
 <body>
     <div class="center">

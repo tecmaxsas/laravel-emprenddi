@@ -64,6 +64,8 @@
             cursor: pointer;
         }
     </style>
+
+    @include('partials.thermal-print')
 </head>
 <body>
 

@@ -59,24 +59,12 @@
            Los bloques con background oscuro sobrecalientan el cabezal y salen
            mas palidos que el texto normal — mejor evitarlos por completo. */
         @media print {
-            /* Forzar impresion de colores tal cual (evita "auto-optimizacion" del navegador) */
-            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-
-            body { background:#fff !important; padding:0; color:#000 !important; font-weight:600; }
+            /* El negro puro, el trazo y el suavizado viven en
+               `partials/thermal-print`, incluido despues de este bloque.
+               Aqui queda solo lo propio del tiquete de parqueadero. */
+            body { background:#fff !important; padding:0; }
             .ticket { box-shadow:none; border:0; width:80mm; padding:8px 10px; margin:0; }
             .toolbar { display:none; }
-
-            /* Todo negro, todo en negrita — la termica solo entiende "hay
-               punto o no hay punto"; los grises se vuelven ruido. */
-            .head .co, .head .meta,
-            .lot-name, .lot-addr, .ticket-num,
-            .row .lbl, .row .val,
-            .qr-hint, .qr-code,
-            .foot p {
-                color:#000 !important;
-                font-weight:700 !important;
-            }
-            .head .meta, .lot-addr, .qr-hint, .foot p { font-weight:600 !important; }
 
             /* Bordes solidos gruesos en vez de dashed gris — se leen mejor */
             .head, .lot, .qr-wrap { border-color:#000 !important; border-style:solid !important; }
@@ -103,6 +91,8 @@
             @page { size:80mm auto; margin:0; }
         }
     </style>
+
+    @include('partials.thermal-print')
 </head>
 <body>
     <div class="ticket">

@@ -56,31 +56,19 @@
             .ticket { margin: 0; box-shadow: none; }
             .no-print { display: none !important; }
 
-            /* Impresion en termica. El cabezal solo entiende "hay punto o no
-               hay punto": cualquier gris se convierte en puntos dispersos y
-               sale tenue. De ahi las tres reglas:
-                 1. negro puro en todo, sin herencias que se cuelen
-                 2. print-color-adjust para que el navegador no "optimice"
-                 3. trazo mas grueso — la fuente fina se imprime clarita
-               Mismo criterio que ya usaba el tiquete de entrada de parqueadero. */
-            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-
-            html, body, .ticket, .ticket * {
-                color: #000 !important;
-            }
-
-            .ticket { font-weight: 600; }
-            .ticket .bold, .ticket th { font-weight: 800 !important; }
-
-            /* Separadores solidos en vez de punteados: se leen mejor en papel
-               termico y no dependen de que el driver dibuje bien el dashed. */
-            .sep { border-top: 1px solid #000 !important; }
+            /* Lo propio del tiquete de venta. Las reglas de impresion en
+               termica —negro puro, sin suavizado, trazo con cuerpo— viven en
+               `partials/thermal-print`, que se incluye despues de este
+               bloque: estaban escritas aqui y la comanda y la precuenta
+               salian claras porque no las tenian. */
             thead th { border-bottom: 1px solid #000 !important; }
         }
         .actions { max-width: 360px; margin: 8px auto; display: flex; gap: 8px; justify-content: center; }
         .actions button { padding: 8px 16px; border: 1px solid #ccc; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
         .actions button.primary { background: #4f46e5; color: #fff; border-color: #4f46e5; }
     </style>
+
+    @include('partials.thermal-print')
 </head>
 <body>
     <div class="no-print actions">
