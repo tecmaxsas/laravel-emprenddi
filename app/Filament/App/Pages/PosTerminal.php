@@ -37,6 +37,7 @@ use App\Support\PaymentAccountResolver;
 use App\Support\PaymentMethodOptions;
 use App\Support\PosDestination;
 use App\Support\PromotionsSettings;
+use App\Support\RetentionBase;
 use App\Support\SerialsSettings;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -775,6 +776,11 @@ class PosTerminal extends Page
         }
 
         $this->aplicarDescuentoGlobal();
+
+        // Las retenciones se calculan sobre el carrito, asi que cambiarlo las
+        // deja viejas. Va al final, cuando el descuento global ya esta
+        // repartido y los totales son los definitivos.
+        $this->recomputeRetentionBases();
     }
 
     /**
@@ -1198,9 +1204,15 @@ class PosTerminal extends Page
             }
         }
 
-        $totals = $this->totals();
-        // Base default: subtotal - descuento (base gravable estándar)
-        $base = max(0, $totals['subtotal'] - $totals['discount']);
+        // La base NO es la misma para todas las retenciones: retefuente y
+        // ReteICA van sobre el subtotal antes de IVA, pero ReteIVA va sobre el
+        // IVA. Aplicarle la tarifa al subtotal multiplica la retencion por
+        // varias veces su valor, y nadie lo nota hasta que el cliente reclama
+        // que le retuvieron de mas.
+        //
+        // La regla vive en RetentionBase, que ya usaban la factura de venta y
+        // toma de pedidos. El POS se habia quedado con su propia copia.
+        $base = $this->baseDeRetencion($tax->type);
         $rate = (float) $tax->rate;
         $amount = round($base * ($rate / 100), 2);
 
@@ -1212,7 +1224,44 @@ class PosTerminal extends Page
             'base_amount' => $base,
             'rate' => $rate,
             'amount' => $amount,
+            // Mientras el cajero no la escriba, la base sigue al carrito.
+            'base_manual' => false,
         ];
+    }
+
+    /** La base que le corresponde a una retención, con los totales de ahora. */
+    protected function baseDeRetencion(?string $tipoDeImpuesto): float
+    {
+        $totals = $this->totals();
+
+        return max(0, RetentionBase::para(
+            $tipoDeImpuesto,
+            $totals['subtotal'] - $totals['discount'],
+            $totals['tax'],
+        ));
+    }
+
+    /**
+     * Recalcula la base de cada retención contra el carrito de ahora.
+     *
+     * La base se fijaba al agregar la retención y se quedaba ahí: agregar un
+     * producto después dejaba la retención calculada sobre un carrito que ya
+     * no existía, y la factura salía con una cifra que no cuadra con nada.
+     *
+     * Si el cajero escribió la base a mano, se respeta: la corrigió por algo.
+     */
+    public function recomputeRetentionBases(): void
+    {
+        foreach ($this->retentions as $i => $r) {
+            if ($r['base_manual'] ?? false) {
+                continue;
+            }
+
+            $base = $this->baseDeRetencion($r['tax_type'] ?? null);
+
+            $this->retentions[$i]['base_amount'] = $base;
+            $this->retentions[$i]['amount'] = round($base * ((float) ($r['rate'] ?? 0) / 100), 2);
+        }
     }
 
     public function removeRetention(int $i): void
@@ -1226,11 +1275,13 @@ class PosTerminal extends Page
 
     public function updatedRetentions(): void
     {
-        // Recompute amount cuando el cajero edita la base
+        // El cajero edito la base: se recalcula el monto y esa retencion deja
+        // de seguir al carrito —la corrigio por algo—.
         foreach ($this->retentions as $i => $_) {
             $base = (float) ($this->retentions[$i]['base_amount'] ?? 0);
             $rate = (float) ($this->retentions[$i]['rate'] ?? 0);
             $this->retentions[$i]['amount'] = round($base * ($rate / 100), 2);
+            $this->retentions[$i]['base_manual'] = true;
         }
     }
 
