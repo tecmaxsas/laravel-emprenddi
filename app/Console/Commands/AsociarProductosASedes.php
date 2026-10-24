@@ -92,21 +92,27 @@ class AsociarProductosASedes extends Command
             return self::SUCCESS;
         }
 
+        // Inserción por lotes con ON CONFLICT DO NOTHING en vez de firstOrCreate:
+        // firstOrCreate abre un savepoint por fila, y con miles de filas en una
+        // sola transacción Postgres se queda sin memoria de locks
+        // («out of shared memory», max_locks_per_transaction).
         $resultado = DB::transaction(function () use ($elegidas, $productos) {
             $resultado = [];
+            $ahora = now();
 
             foreach ($elegidas as $sede) {
                 $creadas = 0;
 
-                foreach ($productos as $productoId) {
-                    $asociacion = ProductLocation::firstOrCreate(
-                        ['product_id' => $productoId, 'location_id' => $sede->id],
-                        ['active' => true],
+                foreach ($productos->chunk(1000) as $lote) {
+                    $creadas += ProductLocation::query()->insertOrIgnore(
+                        $lote->map(fn ($productoId) => [
+                            'product_id' => $productoId,
+                            'location_id' => $sede->id,
+                            'active' => true,
+                            'created_at' => $ahora,
+                            'updated_at' => $ahora,
+                        ])->values()->all(),
                     );
-
-                    if ($asociacion->wasRecentlyCreated) {
-                        $creadas++;
-                    }
                 }
 
                 $resultado[] = [$sede->code, $creadas, $productos->count() - $creadas];
