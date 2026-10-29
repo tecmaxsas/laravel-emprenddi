@@ -414,14 +414,21 @@ php artisan roles:sync-catalog --dry-run   # muestra qué haría
 php artisan roles:sync-catalog             # lo aplica
 ```
 
-**La regla que lo hace seguro: solo reparte los permisos que esa corrida acaba
-de crear.** Un administrador no puede haberle quitado a su cajero un permiso que
-hace un minuto no existía, así que agregarlos no pisa ninguna decisión suya.
-Repartir «todos los permisos que le faltan al rol» sí lo haría: devolvería todo
-lo que alguien quitó a propósito.
+**La regla que lo hace seguro:** se le da a un rol un permiso que le falta
+**solo si ese permiso se creó después que el rol**. Si nació después, la copia
+nunca pudo haberlo tenido y nadie pudo habérselo quitado, así que dárselo no
+pisa ninguna decisión. Si nació antes y el rol no lo tiene, es porque alguien
+se lo quitó a propósito, y ahí no se toca. Repartir «todo lo que le falta»
+devolvería justamente eso, y en silencio.
 
-Es idempotente: corrido dos veces, la segunda dice «el catálogo ya está
-completo».
+Es idempotente, y tiene `--dry-run` y `--prefijo=hotel.` para acotar.
+
+> **La primera versión no servía.** Usaba otra regla —solo los permisos que esa
+> corrida acababa de crear— y falló en el único momento en que hace falta:
+> `deploy.sh` corre `RolesSeeder` antes, que ya crea las filas de permiso, así
+> que al llegar el comando no había nada «nuevo» y respondía «el catálogo ya
+> está completo» dejando a las empresas sin los permisos. Lo fija
+> `SyncRolePermissionsTest`.
 
 ---
 
@@ -486,8 +493,8 @@ php artisan migrate --force
 php artisan roles:sync-catalog
 
 # 3. Activar el módulo para la empresa que lo contrató
-php artisan companies:enable-hotel <ID>
-# o:  php artisan companies:enable-hotel --document-number=900123456
+php artisan companies:enable-hotel 5
+# o por NIT:  php artisan companies:enable-hotel --nit=900123456
 
 # 4. (Opcional) La cuenta demo para mostrarle el módulo al equipo y a clientes
 HOTEL_DEMO_PASSWORD='la-que-quieras' php artisan db:seed --class=HotelDemoSeeder

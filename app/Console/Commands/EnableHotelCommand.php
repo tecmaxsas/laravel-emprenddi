@@ -17,13 +17,13 @@ use Illuminate\Console\Command;
  * tipos de habitación. Reservado al super-admin operando la VM.
  *
  *   php artisan companies:enable-hotel 5
- *   php artisan companies:enable-hotel --document-number=900123456
+ *   php artisan companies:enable-hotel --nit=900123456
  */
 class EnableHotelCommand extends Command
 {
     protected $signature = 'companies:enable-hotel
         {company? : ID de la empresa}
-        {--document-number= : NIT de la empresa (alternativa a ID)}
+        {--nit= : NIT de la empresa (alternativa al ID)}
         {--nombre= : Nombre del hotel inicial, si hay que crearlo}';
 
     protected $description = 'Activa el módulo Hoteles para una empresa y siembra lo mínimo para operar';
@@ -109,13 +109,17 @@ class EnableHotelCommand extends Command
             return Company::find($id);
         }
 
-        $nit = $this->option('document-number');
+        // `nit` y no `document_number`: esa columna no existe en `companies`.
+        // La opción venía copiada de EnableParkingCommand, donde apuntaba a
+        // una columna inexistente y reventaba con «Undefined column» a quien
+        // la usara.
+        $nit = $this->option('nit');
 
         if ($nit) {
-            return Company::query()->where('document_number', $nit)->first();
+            return Company::query()->where('nit', $nit)->first();
         }
 
-        $this->error('Debes pasar el ID como argumento o --document-number=NIT.');
+        $this->error('Debes pasar el ID como argumento o --nit=NIT.');
 
         return null;
     }

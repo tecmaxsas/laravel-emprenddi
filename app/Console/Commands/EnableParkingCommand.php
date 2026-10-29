@@ -13,13 +13,13 @@ use Illuminate\Console\Command;
  * por defecto. Reservado al super-admin operando la VM.
  *
  *   php artisan companies:enable-parking 5
- *   php artisan companies:enable-parking --document-number=900123456
+ *   php artisan companies:enable-parking --nit=900123456
  */
 class EnableParkingCommand extends Command
 {
     protected $signature = 'companies:enable-parking
         {company? : ID de la empresa}
-        {--document-number= : NIT de la empresa (alternativa a ID)}';
+        {--nit= : NIT de la empresa (alternativa al ID)}';
 
     protected $description = 'Activa el módulo parqueadero para una empresa y siembra defaults';
 
@@ -65,10 +65,13 @@ class EnableParkingCommand extends Command
         $id = $this->argument('company');
         if ($id) return Company::find($id);
 
-        $nit = $this->option('document-number');
-        if ($nit) return Company::query()->where('document_number', $nit)->first();
+        // `nit` y no `document_number`: esa columna no existe en
+        // `companies`, asi que la opcion reventaba con «Undefined column» a
+        // quien la usara.
+        $nit = $this->option('nit');
+        if ($nit) return Company::query()->where('nit', $nit)->first();
 
-        $this->error('Debes pasar el ID como argumento o --document-number=NIT.');
+        $this->error('Debes pasar el ID como argumento o --nit=NIT.');
         return null;
     }
 }
