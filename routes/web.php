@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\App\HotelDocumentController;
+use App\Http\Controllers\App\HotelReportExportController;
 use App\Http\Controllers\App\LabelPrintController;
 use App\Http\Controllers\App\OrderTakingCatalogTemplateController;
 use App\Http\Controllers\App\OrderTakingDebugController;
@@ -165,6 +167,26 @@ Route::middleware(['web', 'auth', SetActiveCompany::class])->group(function () {
         [OrderTakingDebugController::class, 'show'])
         ->name('order-taking.debug');
 
+    // Los dos papeles del hotel: la cuenta del huésped (térmica de 80 mm) y la
+    // tarjeta de registro hotelero (carta, se firma y se archiva).
+    Route::get('/app/hotel/stays/{stay}/folio',
+        [HotelDocumentController::class, 'folio'])
+        ->name('hotel.folio.print');
+    Route::get('/app/hotel/stays/{stay}/registration',
+        [HotelDocumentController::class, 'registration'])
+        ->name('hotel.registration.print');
+
+    // Exportación XLSX de los reportes del módulo Hoteles.
+    Route::get('/app/hotel/reports/export/occupancy',
+        [HotelReportExportController::class, 'occupancy'])
+        ->name('hotel.reports.export.occupancy');
+    Route::get('/app/hotel/reports/export/revenue',
+        [HotelReportExportController::class, 'revenue'])
+        ->name('hotel.reports.export.revenue');
+    Route::get('/app/hotel/reports/export/guests',
+        [HotelReportExportController::class, 'guests'])
+        ->name('hotel.reports.export.guests');
+
     // Exportacion XLSX de reportes del modulo de parqueadero.
     Route::get('/app/parking/reports/export/sessions',
         [ParkingReportExportController::class, 'sessions'])
@@ -209,3 +231,6 @@ Route::get('/legal/{doc}', fn (string $doc) => view('legal.policy', ['doc' => $d
 // Documentación pública del módulo Parqueadero.
 Route::get('/docs/parqueadero', fn () => view('docs.parking'))
     ->name('docs.parking');
+
+Route::get('/docs/hotel', fn () => view('docs.hotel'))
+    ->name('docs.hotel');

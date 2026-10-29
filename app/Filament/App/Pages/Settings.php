@@ -10,6 +10,7 @@ use App\Support\ClockFormat;
 use App\Support\CommissionsSettings;
 use App\Support\CurrentCompany;
 use App\Support\GiftCardsSettings;
+use App\Support\HotelSettings;
 use App\Support\LabelsSettings;
 use App\Support\ModuleGate;
 use App\Support\PrecuentaSettings;
@@ -182,6 +183,16 @@ class Settings extends Page implements HasForms
         // Parking settings (settings.parking.*)
         $this->data['parking_show_qr'] = (bool) data_get($settings, 'parking.show_qr', true);
 
+        // Hotel (settings.hotel.*). Los valores por defecto los resuelve
+        // HotelSettings, que es el que lee el resto del sistema: así la
+        // pantalla no puede mostrar un default distinto al que se aplica.
+        $hotel = HotelSettings::config($company);
+        $this->data['hotel_charge_late_checkout'] = $hotel['charge_late_checkout'];
+        $this->data['hotel_late_checkout_grace_minutes'] = $hotel['late_checkout_grace_minutes'];
+        $this->data['hotel_folio_footer'] = $hotel['folio_footer'];
+        $this->data['hotel_show_rnt'] = $hotel['show_rnt'];
+        $this->data['hotel_require_guest_document'] = $hotel['require_guest_document'];
+
         $this->form->fill($this->data);
     }
 
@@ -233,6 +244,12 @@ class Settings extends Page implements HasForms
                             ->visible(fn () => ModuleGate::active('parking')
                                 && auth()->user()?->can('company.settings'))
                             ->schema($this->parkingTabSchema()),
+
+                        Forms\Components\Tabs\Tab::make('Hotel')
+                            ->icon('heroicon-o-building-office-2')
+                            ->visible(fn () => ModuleGate::active('hotel')
+                                && auth()->user()?->can('company.settings'))
+                            ->schema($this->hotelTabSchema()),
                     ]),
             ])
             ->statePath('data');
@@ -1307,6 +1324,96 @@ class Settings extends Page implements HasForms
         app(CurrentCompany::class)->set($company->fresh());
 
         Notification::make()->title('Configuración de Citas guardada')->success()->send();
+    }
+
+    protected function hotelTabSchema(): array
+    {
+        return [
+            Forms\Components\Section::make('Salida tardía')
+                ->description('La hora de salida de cada hotel se configura en su ficha (Hotel → Hoteles). '
+                    .'Aquí se decide qué pasa cuando el huésped entrega la habitación después de esa hora.')
+                ->columns(2)
+                ->schema([
+                    Forms\Components\Toggle::make('hotel_charge_late_checkout')
+                        ->label('Cobrar una noche más por salida tardía')
+                        ->live()
+                        ->helperText('Apagado, la salida tardía no suma nada y recepción decide si carga '
+                            .'un servicio aparte.')
+                        ->default(true),
+
+                    Forms\Components\TextInput::make('hotel_late_checkout_grace_minutes')
+                        ->label('Minutos de gracia')
+                        ->numeric()
+                        ->minValue(0)
+                        ->maxValue(360)
+                        ->default(HotelSettings::HOLGURA_POR_DEFECTO)
+                        ->visible(fn (Forms\Get $get) => (bool) $get('hotel_charge_late_checkout'))
+                        ->helperText('Cobrarle una noche completa a quien entregó cinco minutos tarde es una '
+                            .'pelea en el mostrador. Máximo 6 horas: más que eso ya es otra hora de salida.'),
+                ]),
+
+            Forms\Components\Section::make('Cuenta del huésped')
+                ->schema([
+                    Forms\Components\Toggle::make('hotel_show_rnt')
+                        ->label('Imprimir el RNT en la cuenta')
+                        ->helperText('El Registro Nacional de Turismo es obligatorio exhibirlo para un '
+                            .'prestador inscrito. Se toma de la ficha del hotel.')
+                        ->default(true),
+
+                    Forms\Components\Textarea::make('hotel_folio_footer')
+                        ->label('Pie de la cuenta')
+                        ->rows(3)
+                        ->maxLength(500)
+                        ->placeholder("Gracias por su visita.\nCalificación: www.ejemplo.com/opinion")
+                        ->helperText('Vacío = no se imprime nada. El aviso de que la cuenta NO es una factura '
+                            .'de venta no es configurable: sin él el huésped se va creyendo que ya la tiene.'),
+                ]),
+
+            Forms\Components\Section::make('Registro de huéspedes')
+                ->schema([
+                    Forms\Components\Toggle::make('hotel_require_guest_document')
+                        ->label('Exigir documento al titular')
+                        ->helperText('La tarjeta de registro hotelero lo pide, y es lo que el hotel presenta '
+                            .'si alguien pregunta quién durmió ahí. A los acompañantes nunca se les exige: '
+                            .'un menor de edad no lleva cédula.')
+                        ->default(true),
+                ]),
+
+            Forms\Components\Actions::make([
+                Forms\Components\Actions\Action::make('saveHotel')
+                    ->label('Guardar configuración de Hotel')
+                    ->icon('heroicon-o-check-circle')
+                    ->color('primary')
+                    ->action('saveHotel'),
+            ])->alignEnd(),
+        ];
+    }
+
+    public function saveHotel(): void
+    {
+        if (! auth()->user()->can('company.settings')) {
+            $this->errorNotif('Sin permiso para editar configuración');
+
+            return;
+        }
+
+        $company = $this->getCompany();
+        $settings = $company->settings ?? [];
+        $hotel = $settings['hotel'] ?? [];
+
+        $hotel['charge_late_checkout'] = (bool) ($this->data['hotel_charge_late_checkout'] ?? true);
+        $hotel['late_checkout_grace_minutes'] = max(0, min(360,
+            (int) ($this->data['hotel_late_checkout_grace_minutes'] ?? HotelSettings::HOLGURA_POR_DEFECTO)
+        ));
+        $hotel['folio_footer'] = trim((string) ($this->data['hotel_folio_footer'] ?? ''));
+        $hotel['show_rnt'] = (bool) ($this->data['hotel_show_rnt'] ?? true);
+        $hotel['require_guest_document'] = (bool) ($this->data['hotel_require_guest_document'] ?? true);
+
+        $settings['hotel'] = $hotel;
+        $company->update(['settings' => $settings]);
+        app(CurrentCompany::class)->set($company->fresh());
+
+        Notification::make()->title('Configuración de Hotel guardada')->success()->send();
     }
 
     protected function parkingTabSchema(): array

@@ -1,13 +1,30 @@
-{{-- Botón "Ayuda" en el topbar del panel App. Si la empresa tiene el
-     módulo Parqueadero activo, apunta al centro de ayuda especifico
-     (/docs/parqueadero); en cualquier otro caso, al centro general
-     (emprenddi.com/docs/). Se abre en una pestaña nueva. --}}
+{{-- Botón "Ayuda" del topbar.
+
+     Apunta a la guía del módulo vertical que tenga la empresa —parqueadero u
+     hotel— y, si no tiene ninguno, al centro de ayuda general. La guía
+     específica vale mucho más que la general: un recepcionista buscando cómo
+     cobrar una salida tardía no tiene por qué pasar por el índice completo.
+
+     Si la empresa tuviera los dos, gana el parqueadero por ser el que ya
+     estaba; el caso es raro y la guía del otro sigue accesible por su URL. --}}
 @php
-    $docsHref = \App\Support\ModuleGate::active('parking')
-        ? route('docs.parking')
-        : 'https://emprenddi.com/docs/';
-    $docsTitle = \App\Support\ModuleGate::active('parking')
-        ? 'Abrir guia del modulo Parqueadero en nueva pestana'
+    $guias = [
+        'parking' => ['ruta' => 'docs.parking', 'nombre' => 'Parqueadero'],
+        'hotel' => ['ruta' => 'docs.hotel', 'nombre' => 'Hoteles'],
+    ];
+
+    $guia = null;
+
+    foreach ($guias as $modulo => $datos) {
+        if (\App\Support\ModuleGate::active($modulo)) {
+            $guia = $datos;
+            break;
+        }
+    }
+
+    $docsHref = $guia ? route($guia['ruta']) : 'https://emprenddi.com/docs/';
+    $docsTitle = $guia
+        ? 'Abrir guia del modulo '.$guia['nombre'].' en nueva pestana'
         : 'Abrir centro de ayuda en nueva pestana';
 @endphp
 <a

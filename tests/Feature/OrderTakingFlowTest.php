@@ -671,7 +671,10 @@ class OrderTakingFlowTest extends TestCase
             [
                 'kind' => Resolution::KIND_POS,
                 'document_type_id' => 1,
-                'document_type_name' => 'Factura de Venta',
+                // Del catálogo del modelo, no a mano: el tipo 1 es «Factura
+                // Electrónica» para la DIAN, y un nombre que no corresponde
+                // al código es lo que `DianDocumentTypeCodesTest` impide.
+                'document_type_name' => Resolution::DOCUMENT_TYPES[1],
                 'resolution_number' => 'ZZ-TEST',
                 'range_from' => 1,
                 'range_to' => 999999,

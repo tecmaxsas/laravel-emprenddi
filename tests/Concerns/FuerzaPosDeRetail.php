@@ -4,22 +4,28 @@ namespace Tests\Concerns;
 
 use App\Models\Company;
 use App\Support\CurrentCompany;
+use App\Support\PosDestination;
 
 /**
  * Deja la empresa en condiciones de abrir el POS de retail.
  *
- * `PosTerminal::mount()` redirige si la empresa tiene restaurante o
- * parqueadero: ahí el flujo de venta es otro y el POS correcto es ese. Una
- * prueba que monta el POS de retail sin asegurar esto solo pasa cuando la base
- * de desarrollo está configurada como esa prueba espera —y deja de pasar en
- * cuanto otra prueba, o alguien probando a mano, activa un módulo—.
+ * `PosTerminal::mount()` redirige si la empresa tiene un módulo vertical
+ * activo —restaurante, parqueadero, hotel—: ahí el flujo de venta es otro y el
+ * POS correcto es ese. Una prueba que monta el POS de retail sin asegurar esto
+ * solo pasa cuando la base de desarrollo está configurada como esa prueba
+ * espera —y deja de pasar en cuanto otra prueba, o alguien probando a mano,
+ * activa un módulo—.
  *
- * Eso ya ocurrió: la empresa quedó con solo `parking` activo y ocho pruebas del
- * POS empezaron a fallar con «Invalid Livewire snapshot structure», que es como
- * se ve un redirect desde una prueba de Livewire. Nada que ver con el código
- * que estaban probando.
+ * Eso ya ocurrió dos veces. La primera, la empresa quedó con solo `parking`
+ * activo y ocho pruebas del POS empezaron a fallar con «Invalid Livewire
+ * snapshot structure», que es como se ve un redirect desde una prueba de
+ * Livewire. Nada que ver con el código que estaban probando.
  *
- * Vive aquí y no copiado en cada prueba porque ya hacen falta dos.
+ * La segunda fue peor, porque fue culpa de esta misma lista: al nacer el
+ * módulo de hoteles este trait siguió apagando solo restaurante y parqueadero,
+ * y doce pruebas del POS cayeron igual. Por eso **la lista ya no se escribe
+ * aquí**: sale de `PosDestination::MODULOS_QUE_DESVIAN`, que es la misma que
+ * usa el código que decide el redirect. Un destino nuevo queda cubierto solo.
  */
 trait FuerzaPosDeRetail
 {
@@ -32,7 +38,10 @@ trait FuerzaPosDeRetail
     {
         $original = $company->active_modules;
 
-        $sinOtrosPos = array_values(array_diff($original ?? [], ['restaurant', 'parking']));
+        $sinOtrosPos = array_values(array_diff(
+            $original ?? [],
+            array_keys(PosDestination::MODULOS_QUE_DESVIAN),
+        ));
 
         if ($sinOtrosPos === ($original ?? [])) {
             return;

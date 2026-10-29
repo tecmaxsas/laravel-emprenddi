@@ -153,6 +153,22 @@ class PermissionsCatalog
                 'appointments.view' => 'Ver la agenda y las citas',
                 'appointments.manage' => 'Crear, reprogramar, atender y cancelar citas',
             ],
+            'Hotel' => [
+                'hotel.use' => 'Operar la recepción (check-in, check-out, folio)',
+                'hotel.manage' => 'Configurar hoteles, zonas, tipos de habitación y habitaciones',
+                'hotel.rates.manage' => 'Editar las tarifas por tipo de habitación',
+                'hotel.reservations.manage' => 'Crear y gestionar reservas',
+                'hotel.guests.manage' => 'Registrar y editar huéspedes',
+                'hotel.folio.charge' => 'Cargar consumos al folio del huésped',
+                // Separados a propósito: cargar un consumo es trabajo de
+                // recepción; rebajarlo es plata que el hotel deja de recibir.
+                'hotel.folio.adjust' => 'Aplicar cortesías y ajustes al folio',
+                'hotel.room.change' => 'Trasladar un huésped a otra habitación',
+                'hotel.stay.close_without_invoice' => 'Cerrar un folio sin facturar (cortesía)',
+                'hotel.stay.cancel' => 'Anular una estadía (check-in equivocado)',
+                'hotel.housekeeping' => 'Marcar habitaciones aseadas, en mantenimiento o bloqueadas',
+                'hotel.reports' => 'Ver reportes de hotel (ocupación, ingresos, huéspedes)',
+            ],
             'Parqueadero' => [
                 'parking.use' => 'Operar entrada/salida del parqueadero',
                 'parking.manage' => 'Configurar parqueaderos, tipos de vehículo y tarifas',
@@ -263,6 +279,14 @@ class PermissionsCatalog
                 'appointments.view', 'appointments.manage',
                 // Parqueadero: el cajero opera entrada/salida y puede anular
                 'parking.use', 'parking.cancel',
+                // Hotel: el recepcionista aloja, reserva, registra huéspedes y
+                // carga consumos al folio. Lo que NO tiene es con qué dejar de
+                // cobrar: cerrar sin facturar, anular una estadía y rebajar un
+                // folio son plata que el hotel no recibe, y eso lo autoriza un
+                // administrador. Es la misma lección del «cerrar sin facturar»
+                // del restaurante.
+                'hotel.use', 'hotel.reservations.manage', 'hotel.guests.manage',
+                'hotel.folio.charge', 'hotel.housekeeping',
                 // Toma pedidos: el cajero registra pagos de pedidos
                 'order_taking.use',
             ],

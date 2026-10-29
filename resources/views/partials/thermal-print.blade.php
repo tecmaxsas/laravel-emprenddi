@@ -18,10 +18,11 @@
     no rasteriza nada. Imprimiendo HTML eso no es posible, así que lo que se
     hace es quitarle al navegador todo lo que suaviza.
 
-    Vive en un solo archivo porque son cuatro formatos —comanda, precuenta,
-    tiquete de venta y tiquete de parqueadero— y la regla es la misma. Escrita
-    cuatro veces, se arregla en uno y los otros tres siguen saliendo claros,
-    que es exactamente lo que acababa de pasar.
+    Vive en un solo archivo porque son varios formatos —comanda, precuenta,
+    tiquete de venta, tiquete de parqueadero, cuenta del hotel— y la regla es
+    la misma. Escrita una vez por formato, se arregla en uno y los demás
+    siguen saliendo claros, que es exactamente lo que acababa de pasar. Y la
+    lista sigue creciendo: cada módulo nuevo que imprima entra aquí.
 --}}
 <style>
     @media print {

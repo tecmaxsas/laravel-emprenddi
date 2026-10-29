@@ -23,12 +23,19 @@ use Tests\TestCase;
  */
 class ImpresionTermicaTest extends TestCase
 {
-    /** Los cuatro formatos que salen por una impresora térmica. */
+    /**
+     * Los formatos que salen por una impresora térmica.
+     *
+     * Esta lista crece con cada módulo que imprime, y es el punto de la
+     * prueba: el formato nuevo queda cubierto el mismo día que nace, en vez
+     * de descubrirse claro cuando un cliente se queja.
+     */
     private const FORMATOS = [
         'comanda de cocina' => 'restaurant/print-kot.blade.php',
         'precuenta' => 'restaurant/precheck.blade.php',
         'tiquete de venta' => 'pos/print-ticket.blade.php',
         'tiquete de parqueadero' => 'parking/ticket.blade.php',
+        'cuenta del hotel' => 'hotel/folio.blade.php',
     ];
 
     private function partial(): string
@@ -81,8 +88,8 @@ class ImpresionTermicaTest extends TestCase
             'Fuera de @media print, esto solo afea la pantalla.');
     }
 
-    /** Los cuatro formatos usan la regla compartida. */
-    public function test_los_cuatro_formatos_la_usan(): void
+    /** Todos los formatos usan la regla compartida. */
+    public function test_todos_los_formatos_la_usan(): void
     {
         foreach (self::FORMATOS as $nombre => $ruta) {
             $vista = file_get_contents(resource_path('views/'.$ruta));
@@ -97,7 +104,7 @@ class ImpresionTermicaTest extends TestCase
      * Y ninguno se escribe su propia copia.
      *
      * Es lo que había pasado: el tiquete de venta tenía las reglas y los
-     * otros tres no. Una copia por formato significa que el siguiente arreglo
+     * demás no. Una copia por formato significa que el siguiente arreglo
      * tampoco llegará a todos.
      */
     public function test_ningun_formato_se_escribe_su_propia_copia(): void
