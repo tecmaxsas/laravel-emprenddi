@@ -5,6 +5,7 @@ namespace App\Services\Catalog;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductCatalog;
+use App\Support\ProductosInternos;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -132,6 +133,11 @@ class CatalogProducts
      *     vende es la variante. En un catálogo se muestra el padre.
      *   - Nunca las variantes sueltas: verían «Camiseta talla S», «talla M»
      *     y «talla L» como tres productos distintos. Van dentro del padre.
+     *   - Nunca los productos internos de los módulos. El parqueadero y el
+     *     hotel se crean solos un producto para poder facturar su cobro, con
+     *     precio 0 porque el precio real sale de la tarifa. «Alojamiento —
+     *     $0» en la vitrina de un hotel no es un producto: es una filtración
+     *     de la plomería del sistema. Ver ProductosInternos.
      */
     public function base(ProductCatalog $catalogo): Builder
     {
@@ -141,6 +147,7 @@ class CatalogProducts
             ->where('company_id', $catalogo->company_id)
             ->where('active', true)
             ->whereNull('parent_product_id')
+            ->whereNotIn('code', ProductosInternos::codigos())
             ->where(function (Builder $q) {
                 $q->where('is_sellable', true)->orWhere('type', 'variable');
             })

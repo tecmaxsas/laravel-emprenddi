@@ -9,6 +9,7 @@ use App\Models\ProductCatalog;
 use App\Models\User;
 use App\Services\Catalog\CatalogProducts;
 use App\Support\CurrentCompany;
+use App\Support\ProductosInternos;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
@@ -301,6 +302,72 @@ class PublicCatalogTest extends TestCase
 
         $this->assertSame(0, app(CatalogProducts::class)->total($this->catalogo),
             'Ninguno de los productos de prueba tiene foto.');
+    }
+
+    /**
+     * Los productos internos de los módulos no van en la vitrina.
+     *
+     * El parqueadero y el hotel se crean solos un producto para poder llevar
+     * su cobro a una factura, con precio 0 porque el precio real sale de la
+     * tarifa de cada caso. Al nacer el módulo de hoteles, «Alojamiento — $0»
+     * empezó a aparecer en el catálogo público de cualquier hotel, y el del
+     * parqueadero llevaba haciendo lo mismo desde antes sin que nadie lo
+     * hubiera notado.
+     *
+     * No es un producto: es plomería del sistema asomándose a lo que el
+     * negocio le muestra a sus clientes por un enlace.
+     */
+    public function test_los_productos_internos_de_los_modulos_no_se_publican(): void
+    {
+        // Puede que ya existan: la empresa de desarrollo tiene activo algún
+        // módulo y su provisionador los creó. Se usa el que esté y solo se
+        // borra el que esta prueba haya tenido que crear.
+        $creados = [];
+        $nombres = [];
+
+        foreach (ProductosInternos::codigos() as $codigo) {
+            $existente = Product::withoutGlobalScopes()
+                ->where('company_id', $this->company->id)
+                ->where('code', $codigo)
+                ->first();
+
+            if ($existente) {
+                $nombres[$codigo] = $existente->name;
+
+                continue;
+            }
+
+            $nombres[$codigo] = 'ZZ INTERNO '.$codigo;
+
+            $creados[] = Product::withoutGlobalScopes()->create([
+                'company_id' => $this->company->id,
+                'code' => $codigo,
+                'name' => $nombres[$codigo],
+                'type' => 'service',
+                'unit_of_measure' => 'service',
+                'track_inventory' => false,
+                'is_sellable' => true,
+                'default_sale_price' => 0,
+                'active' => true,
+            ]);
+        }
+
+        $this->limpiar[] = function () use ($creados) {
+            foreach ($creados as $producto) {
+                Product::withoutGlobalScopes()->whereKey($producto->id)->forceDelete();
+            }
+        };
+
+        $html = $this->get('/catalogo/'.$this->catalogo->slug)->assertOk()->getContent();
+
+        foreach ($nombres as $codigo => $nombre) {
+            $this->assertStringNotContainsString($nombre, $html,
+                "El producto interno {$codigo} se está publicando en el catálogo.");
+        }
+
+        // Y tampoco cuentan: el total es solo el perfume del setUp.
+        $this->assertSame(1, app(CatalogProducts::class)->total($this->catalogo),
+            'Los productos internos están inflando el conteo del catálogo.');
     }
 
     private function prepararCatalogo(): void
