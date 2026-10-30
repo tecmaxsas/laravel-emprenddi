@@ -228,9 +228,24 @@ Route::get('/legal/{doc}', fn (string $doc) => view('legal.policy', ['doc' => $d
     ->name('legal.policy')
     ->where('doc', 'terminos|privacidad');
 
-// Documentación pública del módulo Parqueadero.
+// Guías públicas de los módulos opcionales. Sin auth: se le pasan a un
+// prospecto por enlace antes de que tenga cuenta.
 Route::get('/docs/parqueadero', fn () => view('docs.parking'))
     ->name('docs.parking');
 
 Route::get('/docs/hotel', fn () => view('docs.hotel'))
     ->name('docs.hotel');
+
+/**
+ * El plural lleva al mismo sitio.
+ *
+ * La guía del parqueadero vive en `/docs/parqueadero` y el módulo se llama
+ * «Hoteles», así que quien va a buscar esta escribe `/docs/hoteles` y se
+ * encuentra un 404. Un prospecto al que se le cae el enlace no vuelve a
+ * intentarlo: cierra la pestaña.
+ *
+ * Redirección permanente y no una segunda ruta que pinte lo mismo, para que
+ * exista una sola dirección buena y los buscadores no vean la misma página
+ * dos veces.
+ */
+Route::permanentRedirect('/docs/hoteles', '/docs/hotel');

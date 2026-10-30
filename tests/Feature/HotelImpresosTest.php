@@ -182,6 +182,22 @@ class HotelImpresosTest extends TestCase
             ->assertSee('Parqueadero');
     }
 
+    /**
+     * El plural también lleva a la guía.
+     *
+     * La del parqueadero es `/docs/parqueadero` y el módulo se llama
+     * «Hoteles», así que quien va a buscar esta escribe `/docs/hoteles`. Antes
+     * eso era un 404, y a un prospecto al que se le cae el enlace no se le
+     * ocurre probar el singular: cierra la pestaña.
+     */
+    public function test_el_plural_lleva_a_la_guia(): void
+    {
+        auth()->logout();
+
+        $this->get('/docs/hoteles')
+            ->assertRedirect('/docs/hotel');
+    }
+
     // --------------------------------------------------------- auxiliares
 
     private function aloja(): Stay
