@@ -88,7 +88,13 @@ class HotelReports
             )
             ->join('hotel_stays', 'hotel_stays.id', '=', 'hotel_stay_charges.stay_id')
             ->where('hotel_stay_charges.company_id', $this->empresa())
-            ->whereIn('hotel_stay_charges.kind', [StayCharge::KIND_PRODUCT, StayCharge::KIND_SERVICE])
+            ->whereIn('hotel_stay_charges.kind', [
+                StayCharge::KIND_PRODUCT,
+                StayCharge::KIND_SERVICE,
+                // La alimentación es ingreso del hotel igual que el minibar:
+                // sin esto quedaba invisible en el reporte.
+                StayCharge::KIND_MEAL,
+            ])
             ->whereNull('hotel_stay_charges.deleted_at')
             ->where('hotel_stays.status', '!=', Stay::STATUS_CANCELLED)
             ->when($hotelId, fn ($q) => $q->where('hotel_stays.hotel_id', $hotelId))

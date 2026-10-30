@@ -66,18 +66,41 @@ recibe una reserva por Booking, alguien la digita. Si te preguntan por la
 integración: está en estudio, tiene costo adicional y todavía no está
 disponible. **No la ofrezcas como «ya viene».**
 
-**No divide la cuenta entre huéspedes.** El folio es uno por habitación. Dos
-personas que quieren pagar mitad y mitad se resuelven cobrando y dando dos
-recibos, no dos folios.
-
-**No maneja tarifas por temporada automáticas.** La tarifa vive en el tipo de
-habitación y se cambia cuando entra temporada. Lo pactado con cada huésped
-queda sellado en su reserva, así que subir la lista no le cambia el precio a
-quien ya reservó. Si el cliente pide calendario de tarifas por fecha, anótalo
-como requerimiento.
+**No divide la cuenta de una habitación entre dos huéspedes.** El folio es uno
+por habitación. Dos personas que quieren pagar mitad y mitad se resuelven
+cobrando y dando dos recibos. *(Lo de varias habitaciones en una sola factura
+sí existe: son los grupos.)*
 
 **No es un channel manager ni un motor de reservas web.** El huésped no reserva
 solo desde la página del hotel.
+
+**No manda la confirmación solo.** El botón de WhatsApp abre el chat con el
+mensaje escrito y el de correo lo envía, pero alguien tiene que apretarlos.
+
+---
+
+## 3 bis. Lo que sí hace y conviene enseñar
+
+Tres cosas que llegaron después de la primera versión y que son argumento de
+venta por sí solas.
+
+**Calendario de disponibilidad.** Habitaciones en filas, días en columnas. Se
+ve el hueco de tres noches entre dos reservas y se reserva con un clic encima.
+Es la pantalla que más impresiona en una demo porque es la que el hotelero
+reconoce de inmediato.
+
+**Tarifas por temporada.** Diciembre, Semana Santa y los puentes con su propio
+precio, y cada noche se cobra a lo que valga su fecha. El hotel no tiene que
+acordarse de devolver el precio en enero. Con prioridad, para meter un puente
+caro dentro de una temporada larga.
+
+**Grupos.** Un matrimonio o un congreso se aparta de una vez —«cinco dobles del
+8 al 10»— y se factura en **un solo documento**, normalmente a crédito contra
+la empresa o la agencia. Es lo que abre el cliente corporativo.
+
+Y dos más pequeñas: **planes de alimentación** (con desayuno, media pensión,
+todo incluido) y **confirmación al huésped** por WhatsApp o correo con el
+código de la reserva.
 
 ---
 

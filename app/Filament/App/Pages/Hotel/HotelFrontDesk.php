@@ -5,6 +5,7 @@ namespace App\Filament\App\Pages\Hotel;
 use App\Models\CashRegisterSession;
 use App\Models\Hotel\Guest;
 use App\Models\Hotel\Hotel;
+use App\Models\Hotel\MealPlan;
 use App\Models\Hotel\Reservation;
 use App\Models\Hotel\Room;
 use App\Models\Hotel\Stay;
@@ -336,6 +337,39 @@ class HotelFrontDesk extends Page
             )
             ->mapWithKeys(fn (Room $h) => [$h->id => $h->number.' — '.($h->roomType?->name ?? '')])
             ->all();
+    }
+
+    /**
+     * Los planes de alimentación del hotel.
+     *
+     * @return array<int, string>
+     */
+    public function getMealPlansProperty(): array
+    {
+        if (! $this->hotelId) {
+            return [];
+        }
+
+        return MealPlan::query()
+            ->where('company_id', auth()->user()?->company_id)
+            ->where('hotel_id', $this->hotelId)
+            ->where('active', true)
+            ->orderBy('sort_order')
+            ->get()
+            ->mapWithKeys(fn (MealPlan $p) => [$p->id => $p->etiqueta()])
+            ->all();
+    }
+
+    /**
+     * Con qué plan arranca un check-in.
+     *
+     * El primero de la lista, que por el orden sembrado es «solo alojamiento».
+     * Dejarlo vacío haría que el recepcionista tuviera que elegirlo cada vez
+     * para el caso más común, y acabaría olvidándolo justo cuando no toca.
+     */
+    protected function planPorDefecto(): ?int
+    {
+        return array_key_first($this->mealPlans);
     }
 
     public function getPaymentMethodOptionsProperty(): array
@@ -670,6 +704,7 @@ class HotelFrontDesk extends Page
                 ? (float) $this->checkinForm['rate_per_night']
                 : null,
             'third_party_id' => $this->checkinForm['third_party_id'] ?? null,
+            'meal_plan_id' => $this->checkinForm['meal_plan_id'] ?: null,
             'tax_exempt' => (bool) ($this->checkinForm['tax_exempt'] ?? false),
             'tax_exempt_reason' => $this->checkinForm['tax_exempt_reason'] ?? null,
             'notes' => $this->checkinForm['notes'] ?? null,
@@ -912,11 +947,12 @@ class HotelFrontDesk extends Page
 
         // Una noche no se quita a mano: la liquidación del check-out decide
         // cuántas se cobran, y quitarla aquí la volvería a cargar sola.
-        if ($cargo->esNoche()) {
+        if ($cargo->loPoneElSistema()) {
             $this->avisar(
                 'warning',
-                'Las noches no se quitan del folio',
-                'Si la estadía se acortó, cambia la fecha de salida: la liquidación ajusta las noches sola.',
+                'Eso lo pone el sistema con cada noche',
+                'Las noches y el plan de alimentación los decide la liquidación. Si la estadía se '
+                .'acortó, cambia la fecha de salida y se ajustan solos.',
             );
 
             return;
@@ -1637,6 +1673,7 @@ class HotelFrontDesk extends Page
                 : (float) ($habitacion?->roomType?->base_rate ?? 0),
             'third_party_id' => $reserva?->third_party_id,
             'third_party_label' => null,
+            'meal_plan_id' => $reserva?->meal_plan_id ?? $this->planPorDefecto(),
             'tax_exempt' => false,
             'tax_exempt_reason' => '',
             'notes' => $reserva?->notes,

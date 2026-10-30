@@ -5,7 +5,9 @@ namespace App\Services\Hotel;
 use App\Models\CashRegisterSession;
 use App\Models\Company;
 use App\Models\CustomerAdvance;
+use App\Models\Hotel\Hotel;
 use App\Models\Hotel\Reservation;
+use App\Models\Hotel\ReservationGroup;
 use App\Models\Hotel\Stay;
 use App\Models\Location;
 use App\Models\SaleInvoice;
@@ -315,6 +317,222 @@ class HotelBillingEngine
     }
 
     /**
+     * Factura un grupo entero en un solo documento.
+     *
+     * Es lo que una empresa o una agencia necesita para pagar: una factura, no
+     * diez. Hasta ahora diez habitaciones eran diez folios sin forma de
+     * cobrarlos juntos, y eso dejaba fuera a los dos clientes que más vale un
+     * hotel urbano.
+     *
+     * Cada estadía conserva su folio —ahí se revisa lo que consumió cada
+     * habitación— y lo que se junta son las líneas. La descripción de cada una
+     * lleva el número de habitación delante, porque la empresa que recibe la
+     * factura quiere saber qué se le cobró de cuál.
+     *
+     * Las estadías se liquidan ANTES de armar nada: si una se pasó de la fecha
+     * o alguien se fue antes, la cuenta tiene que reflejarlo igual que en un
+     * check-out normal.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    public function issueForGroup(ReservationGroup $grupo, array $payload): SaleInvoice
+    {
+        if (! $grupo->estaAbierto()) {
+            throw new RuntimeException('Este grupo ya está cerrado.');
+        }
+
+        if ($grupo->sale_invoice_id) {
+            throw new RuntimeException('Este grupo ya tiene factura emitida.');
+        }
+
+        $estadias = $grupo->openStays();
+
+        if ($estadias->isEmpty()) {
+            throw new RuntimeException(
+                'El grupo no tiene estadías abiertas que facturar. Si nadie llegó, cancélalo; '
+                .'si ya se cobraron una por una, ciérralo sin factura.'
+            );
+        }
+
+        $company = Company::find($grupo->company_id);
+        $location = $this->resolverSedeDelHotel((int) $grupo->hotel_id, (int) $grupo->company_id);
+
+        if (! $company || ! $location) {
+            throw new RuntimeException(
+                'El hotel no tiene sede asignada para facturar. '
+                .'Configura «Sede de facturación» en la ficha del hotel.'
+            );
+        }
+
+        $customer = $this->resolverCliente($company, $payload['third_party_id'] ?? $grupo->third_party_id);
+
+        $aCredito = (bool) ($payload['a_credito'] ?? false);
+
+        if ($aCredito && $this->esConsumidorFinal($customer)) {
+            throw new RuntimeException(
+                'No se puede dejar a crédito una factura a Consumidor Final. '
+                .'Asígnale al grupo la empresa o la agencia que paga.'
+            );
+        }
+
+        $cashSession = $this->turnoAbierto();
+
+        if (! $cashSession) {
+            throw new RuntimeException(
+                'No tienes un turno de caja abierto. Abre tu caja antes de facturar el grupo.'
+            );
+        }
+
+        // Liquidar todas primero: la cifra que se factura tiene que ser la
+        // definitiva, con las noches que de verdad se durmieron.
+        foreach ($estadias as $estadia) {
+            $this->stays->liquidar($estadia);
+        }
+
+        $estadias = $grupo->openStays();
+
+        $lineas = [];
+        $descuentoBase = 0.0;
+        $totalDelGrupo = 0.0;
+
+        foreach ($estadias as $estadia) {
+            $preparado = $this->folio->paraFacturar($estadia);
+            $habitacion = $estadia->room?->number ?? '—';
+
+            foreach ($preparado['lineas'] as $linea) {
+                $linea['description'] = 'Hab. '.$habitacion.' — '.$linea['description'];
+                $lineas[] = $linea;
+            }
+
+            $descuentoBase += $preparado['descuento_base'];
+            $totalDelGrupo += (float) $estadia->total;
+        }
+
+        if ($lineas === []) {
+            throw new RuntimeException('Los folios del grupo no tienen nada que facturar.');
+        }
+
+        $plazo = max(0, (int) ($payload['payment_terms_days'] ?? $customer->payment_terms_days ?? 0));
+
+        $paidAmount = $aCredito
+            ? 0.0
+            : (isset($payload['paid_amount']) && $payload['paid_amount'] !== null
+                ? (float) $payload['paid_amount']
+                : $totalDelGrupo);
+
+        $invoiceKind = in_array($payload['invoice_kind'] ?? 'pos', ['pos', 'electronic'], true)
+            ? $payload['invoice_kind']
+            : 'pos';
+
+        $accountId = (int) ($payload['account_id'] ?? 0);
+
+        if ($accountId <= 0) {
+            throw new RuntimeException('No se encontró la cuenta contable para registrar el cobro.');
+        }
+
+        $invoice = DB::transaction(function () use (
+            $grupo, $estadias, $company, $location, $customer, $cashSession, $invoiceKind,
+            $payload, $accountId, $paidAmount, $lineas, $descuentoBase, $aCredito, $plazo,
+        ) {
+            $doc = $this->numberer->reserveForLocation((int) $location->id, $invoiceKind);
+
+            $invoice = SaleInvoice::create([
+                'company_id' => $company->id,
+                'location_id' => $location->id,
+                'third_party_id' => $customer->id,
+                'cash_register_session_id' => $cashSession->id,
+                'prefix' => $doc['prefix'],
+                'number' => $doc['number'],
+                'invoice_kind' => $doc['kind'],
+                'dian_resolution_id' => $doc['resolution_id'],
+                'date' => now()->toDateString(),
+                'currency' => 'COP',
+                'status' => 'draft',
+                'payment_status' => 'pendiente',
+                'payment_terms_days' => $aCredito ? $plazo : 0,
+                'due_date' => $aCredito && $plazo > 0
+                    ? now()->copy()->addDays($plazo)->toDateString()
+                    : null,
+                'global_discount_type' => GlobalDiscount::TYPE_AMOUNT,
+                'global_discount_value' => round($descuentoBase, 2),
+                'created_by_user_id' => Auth::id(),
+                'seller_user_id' => Auth::id(),
+                'description' => sprintf(
+                    'Grupo %s — %s — %d habitación(es)',
+                    $grupo->code,
+                    $grupo->name,
+                    $estadias->count(),
+                ),
+            ]);
+
+            $numeroDeLinea = 1;
+
+            foreach ($lineas as $linea) {
+                $cantidad = (float) $linea['quantity'];
+                $base = (float) $linea['subtotal'];
+
+                $invoice->lines()->create([
+                    'line_number' => $numeroDeLinea++,
+                    'product_id' => $linea['product_id'],
+                    'description' => $linea['description'],
+                    'quantity' => $cantidad,
+                    'unit_price' => $cantidad > 0 ? round($base / $cantidad, 4) : $base,
+                    'discount_percentage' => 0,
+                    'discount_amount' => 0,
+                    'tax_id' => $linea['tax_id'],
+                    'tax_rate' => $linea['tax_rate'],
+                    'tax_amount' => $linea['tax_amount'],
+                    'subtotal' => $base,
+                    'total' => $linea['total'],
+                ]);
+            }
+
+            $invoice = $this->sales->post($invoice->fresh(['lines']));
+
+            $saldo = (float) $invoice->fresh()->balance;
+            $aCobrar = min(round($paidAmount, 2), round($saldo, 2));
+
+            if ($aCobrar > 0) {
+                $this->sales->addPayment($invoice, [
+                    'amount' => $aCobrar,
+                    'cash_received' => $payload['cash_received'] ?? null,
+                    'payment_method' => (string) ($payload['payment_method'] ?? 'cash'),
+                    'account_id' => $accountId,
+                    'date' => now()->toDateString(),
+                    'reference' => 'Grupo '.$grupo->code,
+                    'description' => 'Check-out de grupo '.$invoice->fullNumber(),
+                ]);
+            }
+
+            $invoice = $invoice->fresh();
+
+            // Cada estadía se cierra apuntando a la MISMA factura: así, desde
+            // cualquier habitación del grupo se llega al documento donde se
+            // cobró.
+            foreach ($estadias as $estadia) {
+                $this->stays->cerrarFacturada(
+                    $estadia,
+                    (int) $invoice->id,
+                    0.0,
+                    (int) $cashSession->id,
+                );
+            }
+
+            $grupo->update([
+                'status' => ReservationGroup::STATUS_CLOSED,
+                'sale_invoice_id' => $invoice->id,
+                'closed_at' => now(),
+            ]);
+
+            return $invoice;
+        });
+
+        app(PosDianTransmitter::class)->transmit($invoice);
+
+        return $invoice->fresh();
+    }
+
+    /**
      * Recibe el depósito de una reserva.
      *
      * Hasta ahora `deposit_amount` era un número en un formulario: se
@@ -415,6 +633,23 @@ class HotelBillingEngine
             ->where('cashier_user_id', Auth::id())
             ->where('status', CashRegisterSession::STATUS_OPEN)
             ->latest('opened_at')
+            ->first();
+    }
+
+    /** La sede de facturación de un hotel, para cuando no hay estadía de por medio. */
+    protected function resolverSedeDelHotel(int $hotelId, int $companyId): ?Location
+    {
+        $hotel = Hotel::query()->with('defaultLocation')->find($hotelId);
+
+        if ($hotel?->defaultLocation) {
+            return $hotel->defaultLocation;
+        }
+
+        return Location::query()
+            ->where('company_id', $companyId)
+            ->where('active', true)
+            ->orderByDesc('is_main')
+            ->orderBy('id')
             ->first();
     }
 

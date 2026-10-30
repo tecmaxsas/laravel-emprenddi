@@ -70,8 +70,10 @@ class Reservation extends Model
     protected $fillable = [
         'company_id',
         'hotel_id',
+        'group_id',
         'room_id',
         'room_type_id',
+        'meal_plan_id',
         'third_party_id',
         'guest_id',
         'stay_id',
@@ -120,6 +122,12 @@ class Reservation extends Model
         return $this->belongsTo(Hotel::class, 'hotel_id');
     }
 
+    /** El bloque al que pertenece, si vino de un grupo. */
+    public function group(): BelongsTo
+    {
+        return $this->belongsTo(ReservationGroup::class, 'group_id');
+    }
+
     public function room(): BelongsTo
     {
         return $this->belongsTo(Room::class, 'room_id');
@@ -128,6 +136,11 @@ class Reservation extends Model
     public function roomType(): BelongsTo
     {
         return $this->belongsTo(RoomType::class, 'room_type_id');
+    }
+
+    public function mealPlan(): BelongsTo
+    {
+        return $this->belongsTo(MealPlan::class, 'meal_plan_id');
     }
 
     public function customer(): BelongsTo

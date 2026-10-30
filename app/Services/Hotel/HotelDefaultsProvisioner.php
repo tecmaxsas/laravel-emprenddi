@@ -4,6 +4,7 @@ namespace App\Services\Hotel;
 
 use App\Models\Company;
 use App\Models\Hotel\Hotel;
+use App\Models\Hotel\MealPlan;
 use App\Models\Hotel\RoomType;
 use Illuminate\Support\Facades\DB;
 
@@ -28,7 +29,7 @@ class HotelDefaultsProvisioner
     ];
 
     /**
-     * @return array{creados: int, existentes: int}
+     * @return array{creados: int, existentes: int, planes: int}
      */
     public function provision(Company $company, ?Hotel $hotel = null): array
     {
@@ -38,7 +39,7 @@ class HotelDefaultsProvisioner
             ->first();
 
         if (! $hotel) {
-            return ['creados' => 0, 'existentes' => 0];
+            return ['creados' => 0, 'existentes' => 0, 'planes' => 0];
         }
 
         return DB::transaction(function () use ($company, $hotel) {
@@ -68,7 +69,38 @@ class HotelDefaultsProvisioner
                 $creados++;
             }
 
-            return ['creados' => $creados, 'existentes' => $existentes];
+            // Los planes de alimentación canónicos, en $0 y sin cobro.
+            // Como los tipos de habitación: se siembran los nombres que el
+            // oficio usa —los mismos de Booking y las agencias— y el precio lo
+            // pone el hotel. Sembrarlos con un valor inventado es peor, porque
+            // se queda puesto y algún día se le cobra a un huésped.
+            $planes = 0;
+
+            foreach (MealPlan::CANONICOS as $fila) {
+                $existe = MealPlan::query()
+                    ->where('hotel_id', $hotel->id)
+                    ->where('code', $fila['code'])
+                    ->exists();
+
+                if ($existe) {
+                    continue;
+                }
+
+                MealPlan::create(array_merge($fila, [
+                    'company_id' => $company->id,
+                    'hotel_id' => $hotel->id,
+                    // «Solo alojamiento» no cobra nada por definición; los
+                    // demás nacen apagados hasta que el hotel les ponga precio.
+                    'included_in_rate' => $fila['code'] === 'EP',
+                    'price_per_adult' => 0,
+                    'price_per_child' => 0,
+                    'active' => true,
+                ]));
+
+                $planes++;
+            }
+
+            return ['creados' => $creados, 'existentes' => $existentes, 'planes' => $planes];
         });
     }
 }

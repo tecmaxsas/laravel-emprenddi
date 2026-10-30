@@ -4,12 +4,15 @@ namespace App\Filament\App\Resources\Hotel;
 
 use App\Filament\App\Resources\Hotel\ReservationResource\Pages;
 use App\Filament\Concerns\ChecksPermission;
+use App\Mail\HotelReservationConfirmationMail;
 use App\Models\Hotel\Hotel;
+use App\Models\Hotel\MealPlan;
 use App\Models\Hotel\Reservation;
 use App\Models\Hotel\RoomType;
 use App\Models\ThirdParty;
 use App\Services\Hotel\HotelAvailability;
 use App\Services\Hotel\HotelBillingEngine;
+use App\Services\Hotel\HotelConfirmacion;
 use App\Services\Hotel\HotelReservationEngine;
 use App\Support\PaymentAccountResolver;
 use App\Support\PaymentMethodOptions;
@@ -21,6 +24,7 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Support\Facades\Mail;
 
 /**
  * Reservas.
@@ -114,6 +118,20 @@ class ReservationResource extends Resource
                             ->pluck('name', 'id')
                             ->all())
                         ->afterStateUpdated(fn (Get $get, Set $set) => static::recalcular($get, $set)),
+
+                    Forms\Components\Select::make('meal_plan_id')
+                        ->label('Plan de alimentación')
+                        ->native(false)
+                        ->placeholder('Sin plan')
+                        ->options(fn (Get $get) => MealPlan::query()
+                            ->where('company_id', auth()->user()?->company_id)
+                            ->when($get('hotel_id'), fn ($q) => $q->where('hotel_id', $get('hotel_id')))
+                            ->where('active', true)
+                            ->orderBy('sort_order')
+                            ->get()
+                            ->mapWithKeys(fn (MealPlan $p) => [$p->id => $p->etiqueta()])
+                            ->all())
+                        ->helperText('Si se cobra aparte, entra al folio una vez por noche.'),
 
                     Forms\Components\Select::make('room_id')
                         ->label('Habitación')
@@ -356,6 +374,64 @@ class ReservationResource extends Resource
                             Notification::make()->title('No se pudo confirmar')
                                 ->body($e->getMessage())->danger()->send();
                         }
+                    }),
+
+                Tables\Actions\Action::make('confirmarWhatsapp')
+                    ->label('WhatsApp')
+                    ->icon('heroicon-o-chat-bubble-left-right')
+                    ->color('success')
+                    ->visible(fn (Reservation $record) => $record->estaViva()
+                        && app(HotelConfirmacion::class)->enlaceWhatsapp($record) !== null)
+                    ->url(fn (Reservation $record) => app(HotelConfirmacion::class)->enlaceWhatsapp($record))
+                    ->openUrlInNewTab(),
+
+                Tables\Actions\Action::make('confirmarCorreo')
+                    ->label('Enviar por correo')
+                    ->icon('heroicon-o-envelope')
+                    ->color('gray')
+                    ->visible(fn (Reservation $record) => $record->estaViva())
+                    ->requiresConfirmation()
+                    ->modalHeading('Enviar la confirmación por correo')
+                    ->modalDescription(fn (Reservation $record) => $record->guest_email
+                        ? 'Se envía a '.$record->guest_email.'.'
+                        : 'Esta reserva no tiene correo registrado. Agrégalo primero desde Editar.')
+                    ->modalSubmitActionLabel('Enviar')
+                    ->action(function (Reservation $record) {
+                        $confirmacion = app(HotelConfirmacion::class);
+
+                        if (! $confirmacion->puedeEnviarPorCorreo($record)) {
+                            Notification::make()
+                                ->title('Sin correo válido')
+                                ->body('Agrégale el correo del huésped a la reserva y vuelve a intentar.')
+                                ->warning()->send();
+
+                            return;
+                        }
+
+                        try {
+                            Mail::to($record->guest_email)->send(
+                                new HotelReservationConfirmationMail(
+                                    $record,
+                                    $confirmacion->asunto($record),
+                                    $confirmacion->mensaje($record),
+                                ),
+                            );
+                        } catch (\Throwable $e) {
+                            // El correo falla por cosas de fuera —servidor
+                            // caido, casilla llena— y eso no puede tumbar la
+                            // pantalla ni hacer creer que se envio.
+                            Notification::make()
+                                ->title('No se pudo enviar')
+                                ->body($e->getMessage())
+                                ->danger()->persistent()->send();
+
+                            return;
+                        }
+
+                        Notification::make()
+                            ->title('Confirmación enviada')
+                            ->body('A '.$record->guest_email)
+                            ->success()->send();
                     }),
 
                 Tables\Actions\Action::make('recibirDeposito')

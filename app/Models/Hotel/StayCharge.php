@@ -32,12 +32,14 @@ class StayCharge extends Model
     protected $table = 'hotel_stay_charges';
 
     public const KIND_ROOM = 'room';
+    public const KIND_MEAL = 'meal';
     public const KIND_PRODUCT = 'product';
     public const KIND_SERVICE = 'service';
     public const KIND_ADJUSTMENT = 'adjustment';
 
     public const KINDS = [
         self::KIND_ROOM => 'Alojamiento',
+        self::KIND_MEAL => 'Alimentación',
         self::KIND_PRODUCT => 'Producto',
         self::KIND_SERVICE => 'Servicio',
         self::KIND_ADJUSTMENT => 'Ajuste',
@@ -102,12 +104,29 @@ class StayCharge extends Model
 
     public function scopeConsumos(Builder $query): Builder
     {
-        return $query->where('kind', '!=', self::KIND_ROOM);
+        return $query->whereNotIn('kind', [self::KIND_ROOM, self::KIND_MEAL]);
+    }
+
+    /** Los renglones que van atados a una noche: la habitación y el plan. */
+    public function scopePorNoche(Builder $query): Builder
+    {
+        return $query->whereIn('kind', [self::KIND_ROOM, self::KIND_MEAL]);
     }
 
     public function esNoche(): bool
     {
         return $this->kind === self::KIND_ROOM;
+    }
+
+    /**
+     * Si el renglón lo pone el sistema con cada noche.
+     *
+     * La habitación y el plan de alimentación no se quitan a mano del folio:
+     * los decide la liquidación según las noches que de verdad se durmieron.
+     */
+    public function loPoneElSistema(): bool
+    {
+        return in_array($this->kind, [self::KIND_ROOM, self::KIND_MEAL], true);
     }
 
     public function etiquetaDelTipo(): string

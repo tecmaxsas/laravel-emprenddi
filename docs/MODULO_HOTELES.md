@@ -708,7 +708,97 @@ sin quejarse.
 
 ---
 
-## 12. Pruebas
+## 12. Tercera entrega: grupos, planes de alimentación y confirmación
+
+Las tres que dejaban fuera a clientes enteros. Añadido el **31 de octubre de
+2026**.
+
+### 12.1 Reservas de grupo (`Hotel → Grupos`)
+
+Diez habitaciones eran diez reservas sueltas, diez folios y ninguna forma de
+cobrarlas juntas. Agencias, congresos y corporativos son un pedazo grande del
+ingreso de un hotel urbano, y ahí no llegábamos.
+
+**El grupo no reemplaza a la reserva: la envuelve.** Cada habitación conserva
+la suya —con su check-in y su folio— porque así funciona de verdad: llegan en
+horas distintas, uno se va antes, otro pide cambiarse. Lo que el grupo aporta:
+
+| | |
+|---|---|
+| `HotelGroupEngine::crear()` | Aparta N habitaciones por tipo, una por una |
+| `confirmar()` | Confirma todas las pendientes del bloque |
+| `cancelar()` | Cancela las vivas; **no toca las que ya hicieron check-in** |
+| `HotelBillingEngine::issueForGroup()` | **Una sola factura** para todo el bloque |
+
+Dos decisiones que conviene conocer:
+
+- **El motor no decide disponibilidad.** Cada habitación se aparta llamando a
+  `HotelReservationEngine`, que pregunta a `HotelAvailability` y recalcula en
+  cada vuelta —pedir cinco dobles no reserva cinco veces la misma—. Un grupo
+  que se saltara ese paso sería la forma más rápida de meter un sobrecupo de
+  diez habitaciones de un golpe.
+- **Puede quedar incompleto a propósito.** Si se piden diez y hay siete, se
+  crean siete y se dice cuántas faltaron. Reventar sin crear nada deja al
+  recepcionista con el cliente al teléfono y las manos vacías; prometer diez
+  que no existen es peor.
+
+Al facturar, cada línea lleva el número de habitación delante: la empresa que
+recibe la factura quiere saber qué se le cobró de cuál. Las estadías se
+liquidan antes —si alguien se pasó de la fecha, la cuenta lo refleja— y todas
+quedan apuntando a la **misma** factura, así que desde cualquier habitación se
+llega al documento.
+
+`bill_together` permite apagarlo: hay grupos donde la empresa paga el
+alojamiento y cada quien sus consumos.
+
+### 12.2 Planes de alimentación (`Hotel → Planes de alimentación`)
+
+Vender «doble con desayuno» obligaba a duplicar el tipo de habitación entero, o
+a meter el desayuno en la tarifa y perder la trazabilidad.
+
+Dos formas, y las dos se usan:
+
+| `included_in_rate` | Qué pasa |
+|---|---|
+| **true** | No cobra nada. Solo queda escrito en el folio y en la tarjeta de registro — que es lo que el huésped necesita para bajar a desayunar |
+| **false** | Se cobra por persona y por noche, como renglón propio. Así el hotel sabe cuánto vendió de alojamiento y cuánto de alimentación |
+
+**El plan va pegado a la noche, no a la estadía.** Se carga junto con ella y se
+va con ella: el que se va antes no paga el desayuno que no se comió. Tiene su
+propio índice único parcial —`hotel_charges_plan_unico`— por la misma razón que
+las noches: el pase nocturno puede correr dos veces.
+
+Se siembran los cinco códigos del oficio (EP, CP, MAP, AP, AI) en $0, con los
+nombres que el cliente ya conoce de Booking y las agencias.
+
+Ponerle precio exige `hotel.rates.manage`: un plan es tarifa, y le cambia la
+cuenta a todos los huéspedes que lo tengan.
+
+### 12.3 Confirmación al huésped
+
+WhatsApp con el mensaje ya escrito, y correo. **El texto se arma en un solo
+sitio** (`HotelConfirmacion`) para los dos canales: escrito dos veces, un día
+el correo lleva la hora de entrada y el WhatsApp no, y el huésped llega a
+mediodía a una habitación que se entrega a las tres.
+
+Lleva el código —es lo que va a decir al llamar—, las fechas **y las noches**
+(«del 5 al 7» es ambiguo para medio mundo), las dos horas, el plan y qué pasa
+con el depósito.
+
+### 12.4 De paso: `WhatsappNumero`
+
+La normalización del número estaba escrita **dos veces** —el estado de cuenta y
+el catálogo público— y **ya habían divergido**: una rechazaba los de menos de
+siete dígitos y la otra armaba el enlace igual, así que un teléfono incompleto
+abría un chat con un número que no existe. Eso nadie lo reporta: el que lo ve
+asume que escribió mal y cierra.
+
+Iba a ser la tercera copia. Vive en `App\Support\WhatsappNumero` y los tres
+sitios la usan.
+
+---
+
+## 13. Pruebas
 
 60 pruebas nuevas, en cuatro archivos:
 
@@ -747,19 +837,19 @@ docker compose exec -T -e DB_CONNECTION=pgsql -e DB_HOST=postgres -e DB_PORT=543
 
 ---
 
-## 13. Lo que quedó fuera, y por qué
+## 14. Lo que quedó fuera, y por qué
 
 | No está | Por qué |
 |---|---|
 | **Canal de reservas (Booking, Airbnb)** | Solo se guarda el **origen** de la reserva. Una integración real es sincronización bidireccional de disponibilidad con un tercero, y eso es un módulo propio |
-| **División de cuenta entre huéspedes** | El folio es uno por habitación. Dos cuentas en una habitación es una decisión de producto que conviene ver pedida antes de construirla |
+| **División de cuenta entre huéspedes** | El folio es uno por habitación. Dos cuentas en una habitación es una decisión de producto que conviene ver pedida antes de construirla. (Lo de varias habitaciones en una factura sí está: ver grupos) |
 | **Estado de camarería separado** | Un solo estado cubre el ciclo real; dos columnas habría que mantenerlas sincronizadas |
 | **Histórico de inventario de habitaciones** | Declarado como limitación en el reporte de ocupación |
 | **Penalidad por salida temprana** | Se carga como servicio al folio, a mano. Automatizarla exige una política que cada hotel tiene distinta |
 
 ---
 
-## 14. Archivos
+## 15. Archivos
 
 **Nuevos (46):**
 

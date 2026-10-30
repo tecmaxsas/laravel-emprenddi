@@ -110,6 +110,11 @@ class HotelFolio
 
         $impuesto = $this->impuestoDelAlojamiento($estadia);
 
+        // El plan de alimentación va pegado a la noche, no al final de la
+        // estadía: si el huésped se va antes, se le quitan los desayunos que
+        // no se comió junto con las noches que no durmió.
+        $this->agregarPlanDeLaNoche($estadia, $noche);
+
         return $this->guardar($estadia, [
             'kind' => StayCharge::KIND_ROOM,
             'product_id' => app(HotelProductProvisioner::class)->ensure($estadia->company)->id,
@@ -122,6 +127,67 @@ class HotelFolio
             ),
             'quantity' => 1,
             'unit_price' => $tarifa,
+            'tax_id' => $impuesto?->id,
+            'tax_rate' => $impuesto ? (float) $impuesto->rate : 0.0,
+        ]);
+    }
+
+    /**
+     * El plan de alimentación de esa noche.
+     *
+     * No hace nada si la estadía no tiene plan, o si el plan ya va incluido en
+     * la tarifa —ahí el plan no es un cobro sino una aclaración de qué cubre
+     * lo que ya se paga— o si vale cero.
+     *
+     * Se cobra por persona: un desayuno para dos no cuesta lo que uno. Los
+     * niños van a su propio precio porque casi todo hotel se lo cobra distinto
+     * o no se lo cobra.
+     */
+    protected function agregarPlanDeLaNoche(Stay $estadia, Carbon $noche): void
+    {
+        $plan = $estadia->mealPlan;
+
+        if (! $plan || ! $plan->seCobra()) {
+            return;
+        }
+
+        $valor = $plan->porNoche((int) $estadia->adults, (int) $estadia->children);
+
+        if ($valor <= 0) {
+            return;
+        }
+
+        // Ya cobrado: el pase nocturno puede correr dos veces y el huésped no
+        // puede amanecer con dos desayunos. La base lo impide igual con un
+        // índice único; esto evita llegar hasta el error.
+        $yaEsta = StayCharge::query()
+            ->where('stay_id', $estadia->id)
+            ->where('kind', StayCharge::KIND_MEAL)
+            ->whereDate('night_date', $noche->toDateString())
+            ->exists();
+
+        if ($yaEsta) {
+            return;
+        }
+
+        $producto = $plan->product;
+
+        $impuesto = $producto?->default_sale_tax_id
+            ? Tax::query()->where('company_id', $estadia->company_id)->find($producto->default_sale_tax_id)
+            : null;
+
+        $this->guardar($estadia, [
+            'kind' => StayCharge::KIND_MEAL,
+            'product_id' => $producto?->id,
+            'charge_date' => $noche->toDateString(),
+            'night_date' => $noche->toDateString(),
+            'description' => sprintf(
+                '%s — %s',
+                $plan->name,
+                $noche->format('d/m/Y'),
+            ),
+            'quantity' => 1,
+            'unit_price' => $valor,
             'tax_id' => $impuesto?->id,
             'tax_rate' => $impuesto ? (float) $impuesto->rate : 0.0,
         ]);
@@ -365,14 +431,22 @@ class HotelFolio
                 continue;
             }
 
-            if ($cargo->kind === StayCharge::KIND_ROOM) {
-                // Se agrupan por tarifa e impuesto: si a mitad de estadía se
-                // renegoció el precio, son dos líneas distintas y así debe
-                // verse.
-                $llave = (string) $cargo->unit_price.'|'.(string) $cargo->tax_id;
+            // Noches y planes de alimentación se agrupan igual: cinco
+            // desayunos en cinco renglones de factura es un documento que
+            // nadie lee. En el folio sí van separados, que es donde se
+            // revisan con el huésped al frente.
+            if (in_array($cargo->kind, [StayCharge::KIND_ROOM, StayCharge::KIND_MEAL], true)) {
+                // Se agrupan por tipo, tarifa e impuesto: si a mitad de
+                // estadía se renegoció el precio, son dos líneas distintas y
+                // así debe verse.
+                $llave = $cargo->kind.'|'.(string) $cargo->unit_price.'|'.(string) $cargo->tax_id;
 
                 if (! isset($noches[$llave])) {
                     $noches[$llave] = [
+                        'kind' => $cargo->kind,
+                        'concepto' => $cargo->kind === StayCharge::KIND_MEAL
+                            ? ($estadia->mealPlan?->name ?? 'Alimentación')
+                            : null,
                         'product_id' => $cargo->product_id,
                         'description' => '',
                         'quantity' => 0,
@@ -421,9 +495,13 @@ class HotelFolio
 
         foreach ($noches as $grupo) {
             $cantidad = (int) $grupo['quantity'];
+            $esPlan = $grupo['kind'] === StayCharge::KIND_MEAL;
+
             $grupo['description'] = sprintf(
-                'Alojamiento hab. %s — %d noche%s (%s al %s)',
-                $estadia->room?->number ?? '—',
+                '%s — %d noche%s (%s al %s)',
+                $esPlan
+                    ? $grupo['concepto']
+                    : 'Alojamiento hab. '.($estadia->room?->number ?? '—'),
                 $cantidad,
                 $cantidad === 1 ? '' : 's',
                 $grupo['desde']?->format('d/m/Y') ?? '—',
@@ -431,7 +509,7 @@ class HotelFolio
                 $grupo['hasta']?->copy()->addDay()->format('d/m/Y') ?? '—',
             );
 
-            unset($grupo['desde'], $grupo['hasta']);
+            unset($grupo['desde'], $grupo['hasta'], $grupo['kind'], $grupo['concepto']);
             $deAlojamiento[] = $grupo;
         }
 

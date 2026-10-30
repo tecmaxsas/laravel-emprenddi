@@ -271,6 +271,17 @@
                                 Precio al público. Del tipo: {{ $plata($habitacion->roomType?->base_rate ?? 0) }}
                             </span>
                         </div>
+                        <div class="hd-field">
+                            <label>Plan de alimentación</label>
+                            <select wire:model="checkinForm.meal_plan_id" class="hd-input">
+                                <option value="">Sin plan</option>
+                                @foreach ($this->mealPlans as $id => $etiqueta)
+                                    <option value="{{ $id }}">{{ $etiqueta }}</option>
+                                @endforeach
+                            </select>
+                            <span class="hd-hint">Si se cobra aparte, entra al folio una vez por noche.</span>
+                        </div>
+
                         <div class="hd-field hd-span-2">
                             <label>Cliente que paga (opcional)</label>
                             @if ($checkinForm['third_party_id'] ?? null)
@@ -436,8 +447,24 @@
                         </div>
                         <div>
                             <div class="hd-sum-label">Noches / tarifa</div>
-                            <div class="hd-sum-val">{{ $estadia->nights }} × {{ $plata($estadia->rate_per_night) }}</div>
+                            <div class="hd-sum-val">
+                                {{ $estadia->nights }} × {{ $plata($estadia->rate_per_night) }}
+                                @if ($estadia->rate_is_fixed)
+                                    <span class="hd-muted">pactada</span>
+                                @endif
+                            </div>
                         </div>
+                        @if ($estadia->mealPlan)
+                            <div>
+                                <div class="hd-sum-label">Plan</div>
+                                <div class="hd-sum-val">
+                                    {{ $estadia->mealPlan->name }}
+                                    @if ($estadia->mealPlan->included_in_rate)
+                                        <span class="hd-muted">incluido</span>
+                                    @endif
+                                </div>
+                            </div>
+                        @endif
                         <div class="hd-sum-total">
                             <div class="hd-sum-label">Total del folio</div>
                             <div class="hd-sum-total-val">{{ $plata($estadia->total) }}</div>

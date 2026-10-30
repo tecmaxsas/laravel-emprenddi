@@ -344,6 +344,7 @@
         font-size: 10px; font-weight: 700; text-transform: uppercase;
     }
     .hd-kind-room { background: #e0e7ff; color: #3730a3; }
+    .hd-kind-meal { background: #ffedd5; color: #9a3412; }
     .hd-kind-product { background: #dcfce7; color: #166534; }
     .hd-kind-service { background: #dbeafe; color: #1e40af; }
     .hd-kind-adjustment { background: #fef3c7; color: #92400e; }

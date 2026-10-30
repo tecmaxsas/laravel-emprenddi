@@ -87,6 +87,7 @@ class EnableHotelCommand extends Command
 
         $tipos = $defaults->provision($company, $hotel);
         $this->info("✓ Tipos de habitación: {$tipos['creados']} creados, {$tipos['existentes']} ya existían.");
+        $this->info("✓ Planes de alimentación: {$tipos['planes']} sembrados.");
 
         $producto = $productos->ensure($company);
         $this->info("✓ Producto de alojamiento: {$producto->code} — {$producto->name}.");

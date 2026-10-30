@@ -48,6 +48,7 @@ class Stay extends Model
         'hotel_id',
         'room_id',
         'room_type_id',
+        'meal_plan_id',
         'reservation_id',
         'third_party_id',
         'primary_guest_id',
@@ -115,6 +116,11 @@ class Stay extends Model
     public function roomType(): BelongsTo
     {
         return $this->belongsTo(RoomType::class, 'room_type_id');
+    }
+
+    public function mealPlan(): BelongsTo
+    {
+        return $this->belongsTo(MealPlan::class, 'meal_plan_id');
     }
 
     public function reservation(): BelongsTo

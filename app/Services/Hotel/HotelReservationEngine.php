@@ -122,6 +122,7 @@ class HotelReservationEngine
                 'hotel_id' => $hotel->id,
                 'room_id' => $habitacion?->id,
                 'room_type_id' => $tipo?->id,
+                'meal_plan_id' => $datos['meal_plan_id'] ?? null,
                 'third_party_id' => $datos['third_party_id'] ?? null,
                 'guest_id' => $datos['guest_id'] ?? null,
                 'guest_name' => $nombre,

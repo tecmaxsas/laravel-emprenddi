@@ -86,6 +86,9 @@ class HotelStayEngine
             // Si al reservar se pacto un precio cerrado, se respeta. Si no,
             // las noches se cobran por temporada igual que al cotizar.
             'rate_is_fixed' => (bool) $reserva->rate_is_fixed,
+            // El plan pactado al reservar es el que el huesped espera
+            // encontrar: si reservo con desayuno, baja a desayunar.
+            'meal_plan_id' => $reserva->meal_plan_id,
             'third_party_id' => $reserva->third_party_id,
             'primary_guest_id' => $reserva->guest_id,
             'notes' => $reserva->notes,
@@ -246,10 +249,12 @@ class HotelStayEngine
                 $validas[] = $entrada->copy()->addDays($i)->toDateString();
             }
 
+            // Habitación y plan de alimentación juntos: el que se va antes no
+            // paga la noche que no durmió NI el desayuno que no se comió.
             $cargadas = StayCharge::query()
                 ->where('stay_id', $estadia->id)
-                ->noches()
-                ->get(['id', 'night_date']);
+                ->porNoche()
+                ->get(['id', 'kind', 'night_date']);
 
             foreach ($cargadas as $cargo) {
                 if (! in_array($cargo->night_date->toDateString(), $validas, true)) {
@@ -258,6 +263,7 @@ class HotelStayEngine
             }
 
             $yaEstan = $cargadas
+                ->where('kind', StayCharge::KIND_ROOM)
                 ->map(fn ($cargo) => $cargo->night_date->toDateString())
                 ->all();
 
@@ -590,6 +596,7 @@ class HotelStayEngine
                 'hotel_id' => $hotel->id,
                 'room_id' => $habitacion->id,
                 'room_type_id' => $habitacion->room_type_id,
+                'meal_plan_id' => $datos['meal_plan_id'] ?? null,
                 'reservation_id' => $reserva?->id,
                 'third_party_id' => $datos['third_party_id'] ?? null,
                 'primary_guest_id' => $datos['primary_guest_id'] ?? null,
