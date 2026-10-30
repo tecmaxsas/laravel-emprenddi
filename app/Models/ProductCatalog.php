@@ -148,23 +148,16 @@ class ProductCatalog extends Model
     }
 
     /**
-     * El número de WhatsApp en el formato que espera wa.me: solo dígitos, con
-     * indicativo. Si el usuario escribió «310 555 1234» se asume Colombia,
-     * que es donde está el 100 % de los clientes de la plataforma.
+     * El número de WhatsApp en el formato que espera wa.me.
+     *
+     * La regla vive en `WhatsappNumero`, compartida con el estado de cuenta y
+     * con la confirmación de reservas del hotel. Estaba escrita aquí y allá, y
+     * ya habían divergido: esta versión armaba el enlace con cualquier cosa y
+     * la otra exigía al menos siete dígitos, así que un teléfono incompleto
+     * abría un chat con un número que no existe.
      */
     public function whatsappNormalizado(): ?string
     {
-        $numero = preg_replace('/\D+/', '', (string) ($this->whatsapp ?: $this->contact_phone));
-
-        if (! $numero) {
-            return null;
-        }
-
-        // 10 dígitos que empiezan por 3 = celular colombiano sin indicativo.
-        if (strlen($numero) === 10 && str_starts_with($numero, '3')) {
-            return '57'.$numero;
-        }
-
-        return $numero;
+        return \App\Support\WhatsappNumero::para($this->whatsapp ?: $this->contact_phone);
     }
 }

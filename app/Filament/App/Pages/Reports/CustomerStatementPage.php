@@ -284,22 +284,14 @@ class CustomerStatementPage extends Page implements HasActions, HasForms
     }
 
     /**
-     * El número en el formato que espera wa.me: solo dígitos, con indicativo.
-     * Diez dígitos que empiezan por 3 son un celular colombiano sin indicativo.
+     * El número en el formato que espera wa.me.
+     *
+     * La regla vive en `WhatsappNumero`: estaba también en el catálogo público
+     * y las dos copias ya se habían separado.
      */
     protected function normalizarWhatsapp(string $telefono): ?string
     {
-        $numero = preg_replace('/\D+/', '', $telefono);
-
-        if (strlen((string) $numero) < 7) {
-            return null;
-        }
-
-        if (strlen($numero) === 10 && str_starts_with($numero, '3')) {
-            return '57'.$numero;
-        }
-
-        return $numero;
+        return \App\Support\WhatsappNumero::para($telefono);
     }
 
     /**
