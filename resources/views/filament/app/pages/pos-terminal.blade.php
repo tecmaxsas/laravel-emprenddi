@@ -580,6 +580,18 @@
                     </button>
                 @endif
 
+                {{-- Entradas y salidas directas del cajón: el domicilio, la
+                     sangría, el cambio. Va junto a los demás botones de caja
+                     porque es lo mismo: plata del turno. --}}
+                @if (auth()->user()->can('pos.cash_movements'))
+                    <button type="button" wire:click="openCashMovementModal('out')"
+                            class="px-3 py-1.5 text-xs font-medium rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition flex items-center gap-1.5"
+                            title="Registrar una entrada o salida de efectivo del cajón">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
+                        Mover caja
+                    </button>
+                @endif
+
                 @if (auth()->user()->can('pos.cash_close'))
                     <button type="button" wire:click="openCloseSessionModal"
                             class="px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 transition flex items-center gap-1.5">
@@ -1509,6 +1521,20 @@
                             <span style="color:#6b7280;">Total compras + gastos</span>
                             <span style="font-weight:600; color:rgb(220,38,38);">${{ number_format($sessionTotals['purchases']['total'] + $sessionTotals['expenses']['total'], 0, ',', '.') }}</span>
                         </div>
+                        @if (($sessionTotals['movements']['count'] ?? 0) > 0)
+                            {{-- Lo que explica por qué el esperado no es solo
+                                 ventas menos gastos. Sin esto, la diferencia
+                                 aparece al cerrar y nadie sabe de dónde salió. --}}
+                            <div style="display:flex; justify-content:space-between; font-size:14px;">
+                                <span style="color:#6b7280;">Entradas directas de caja</span>
+                                <span style="font-weight:600; color:rgb(5,150,105);">+${{ number_format($sessionTotals['movements']['in'], 0, ',', '.') }}</span>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; font-size:14px;">
+                                <span style="color:#6b7280;">Salidas directas de caja</span>
+                                <span style="font-weight:600; color:rgb(220,38,38);">−${{ number_format($sessionTotals['movements']['out'], 0, ',', '.') }}</span>
+                            </div>
+                        @endif
+
                         <div style="display:flex; justify-content:space-between; font-size:14px;">
                             <span style="color:#6b7280;">Neto en efectivo del turno</span>
                             <span style="font-weight:600;">{{ $sessionTotals['net_cash'] >= 0 ? '+' : '' }}${{ number_format($sessionTotals['net_cash'], 0, ',', '.') }}</span>
@@ -1522,6 +1548,152 @@
 
                 <div class="pos-modal-footer">
                     <button type="button" wire:click="$set('showSessionDetailsModal', false)" class="pos-btn pos-btn-primary">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    {{-- ================================================================ --}}
+    {{-- MODAL — MOVIMIENTOS DIRECTOS DE CAJA                              --}}
+    {{--                                                                   --}}
+    {{-- Entrada o salida de efectivo del cajón que no es una venta: el    --}}
+    {{-- domicilio, la sangría a la caja fuerte, el cambio que hay que     --}}
+    {{-- meter. Afecta el arqueo y genera asiento contable.                --}}
+    {{-- ================================================================ --}}
+    @if ($showCashMovementModal && $session)
+        @php
+            $esEntrada = ($cashMovementForm['direction'] ?? 'out') === 'in';
+            $disponible = $this->cashAvailable;
+            $movimientos = $this->cashMovements;
+            $plata = fn ($v) => '$'.number_format((float) $v, 0, ',', '.');
+        @endphp
+        <div class="fixed inset-0 flex items-center justify-center p-4 pos-modal-overlay"
+             style="z-index: 100;" wire:click.self="closeCashMovementModal">
+            <div class="pos-modal-content" style="max-width: 34rem;">
+                <div class="pos-modal-header">
+                    <div style="flex:1;">
+                        <h2 class="text-base font-semibold">Mover caja</h2>
+                        <p style="font-size:11px; color:#6b7280; margin-top:2px;">
+                            Entradas y salidas de efectivo que no son ventas
+                        </p>
+                    </div>
+                    <button type="button" wire:click="closeCashMovementModal" class="pos-modal-close">×</button>
+                </div>
+
+                <div class="pos-modal-body" style="display:flex; flex-direction:column; gap:14px;">
+                    {{-- Cuánto hay. Es el dato que decide si la salida cabe,
+                         y verlo antes de digitar evita el intento fallido. --}}
+                    <div class="pos-modal-card" style="display:flex; justify-content:space-between; align-items:center; padding:10px 14px;">
+                        <span style="font-size:13px; color:#6b7280;">En el cajón ahora</span>
+                        <span style="font-size:19px; font-weight:800; color:rgb(5,150,105);">{{ $plata($disponible) }}</span>
+                    </div>
+
+                    <div style="display:flex; gap:8px;">
+                        <button type="button" wire:click="setCashMovementDirection('in')"
+                                class="pos-btn {{ $esEntrada ? 'pos-btn-primary' : '' }}"
+                                style="flex:1; {{ $esEntrada ? '' : 'background:#e5e7eb; color:#374151;' }}">
+                            ↓ Entra plata
+                        </button>
+                        <button type="button" wire:click="setCashMovementDirection('out')"
+                                class="pos-btn {{ ! $esEntrada ? 'pos-btn-primary' : '' }}"
+                                style="flex:1; {{ ! $esEntrada ? '' : 'background:#e5e7eb; color:#374151;' }}">
+                            ↑ Sale plata
+                        </button>
+                    </div>
+
+                    <div>
+                        <label style="display:block; font-size:11px; font-weight:700; text-transform:uppercase; color:#6b7280; margin-bottom:4px;">Motivo</label>
+                        <select wire:model.live="cashMovementForm.reason" class="pos-input" style="width:100%;">
+                            @foreach ($this->cashMovementReasons as $clave => $etiqueta)
+                                <option value="{{ $clave }}">{{ $etiqueta }}</option>
+                            @endforeach
+                        </select>
+                        @if ($this->cashMovementHelp)
+                            <p style="font-size:11px; color:#6b7280; margin-top:4px;">{{ $this->cashMovementHelp }}</p>
+                        @endif
+                    </div>
+
+                    <div>
+                        <label style="display:block; font-size:11px; font-weight:700; text-transform:uppercase; color:#6b7280; margin-bottom:4px;">¿Para qué fue?</label>
+                        <input type="text" wire:model="cashMovementForm.concept" class="pos-input" style="width:100%;"
+                               placeholder="Domicilio de Rappi, cambio para el turno de la tarde…" />
+                        <p style="font-size:11px; color:#6b7280; margin-top:4px;">
+                            Es lo único que va a explicar esa plata cuando alguien revise el turno dentro de tres meses.
+                        </p>
+                    </div>
+
+                    <div>
+                        <label style="display:block; font-size:11px; font-weight:700; text-transform:uppercase; color:#6b7280; margin-bottom:4px;">Valor</label>
+                        <input type="number" min="0" step="1" wire:model="cashMovementForm.amount"
+                               class="pos-input" style="width:100%; font-size:22px; font-weight:700; text-align:right;" />
+                        @if (! $esEntrada && $disponible <= 0)
+                            <p style="font-size:11px; color:rgb(220,38,38); margin-top:4px;">
+                                No hay efectivo en el cajón: no se puede sacar nada.
+                            </p>
+                        @endif
+                    </div>
+
+                    <button type="button" wire:click="saveCashMovement" class="pos-btn pos-btn-primary" style="width:100%;">
+                        Registrar {{ $esEntrada ? 'entrada' : 'salida' }}
+                    </button>
+
+                    {{-- Lo que ya se movió en este turno --}}
+                    @if ($movimientos->isNotEmpty())
+                        <div style="padding-top:12px; border-top:1px solid #e5e7eb;" class="dark:!border-gray-800">
+                            <div class="pos-stat-label" style="margin-bottom:8px;">Movimientos de este turno</div>
+
+                            <div style="display:flex; flex-direction:column; gap:6px; max-height:220px; overflow-y:auto;">
+                                @foreach ($movimientos as $m)
+                                    <div class="pos-modal-card" style="padding:8px 12px; {{ $m->estaAnulado() ? 'opacity:.5;' : '' }}">
+                                        <div style="display:flex; justify-content:space-between; gap:10px; align-items:baseline;">
+                                            <div style="flex:1; min-width:0;">
+                                                <div style="font-size:13px; font-weight:600;">
+                                                    {{ $m->concept }}
+                                                    @if ($m->estaAnulado())
+                                                        <span style="font-size:10px; color:rgb(220,38,38);">ANULADO</span>
+                                                    @endif
+                                                </div>
+                                                <div style="font-size:11px; color:#6b7280;">
+                                                    {{ $m->etiquetaDelMotivo() }} ·
+                                                    {{ $m->created_at->format(\App\Support\ClockFormat::time()) }} ·
+                                                    {{ $m->createdBy?->name }}
+                                                    @if (! $m->journal_entry_id && ! $m->estaAnulado())
+                                                        · <span style="color:rgb(180,83,9);">sin contabilizar</span>
+                                                    @endif
+                                                </div>
+                                            </div>
+                                            <div style="text-align:right;">
+                                                <div style="font-size:14px; font-weight:700; color:{{ $m->esEntrada() ? 'rgb(5,150,105)' : 'rgb(220,38,38)' }};">
+                                                    {{ $m->esEntrada() ? '+' : '−' }}{{ $plata($m->amount) }}
+                                                </div>
+                                                @if (! $m->estaAnulado())
+                                                    <button type="button" wire:click="$set('cashMovementToVoid', {{ $m->id }})"
+                                                            style="font-size:11px; color:rgb(220,38,38); text-decoration:underline;">
+                                                        anular
+                                                    </button>
+                                                @endif
+                                            </div>
+                                        </div>
+
+                                        @if ($cashMovementToVoid === $m->id)
+                                            <div style="margin-top:8px; display:flex; gap:6px;">
+                                                <input type="text" wire:model="cashMovementVoidReason" class="pos-input"
+                                                       style="flex:1; font-size:12px;" placeholder="Motivo de la anulación" />
+                                                <button type="button" wire:click="voidCashMovement" class="pos-btn"
+                                                        style="background:rgb(220,38,38); color:#fff; font-size:12px;">Anular</button>
+                                                <button type="button" wire:click="$set('cashMovementToVoid', null)" class="pos-btn"
+                                                        style="background:#e5e7eb; color:#374151; font-size:12px;">No</button>
+                                            </div>
+                                        @endif
+                                    </div>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endif
+                </div>
+
+                <div class="pos-modal-footer">
+                    <button type="button" wire:click="closeCashMovementModal" class="pos-btn">Cerrar</button>
                 </div>
             </div>
         </div>
@@ -1569,6 +1741,32 @@
                                     <span style="font-weight:500; color:rgb(220,38,38);">−${{ number_format($egresosCashTotal, 0, ',', '.') }}</span>
                                 </div>
                             @endif
+
+                            {{-- Las entradas y salidas directas van desglosadas
+                                 aquí, no escondidas dentro del neto: es justo
+                                 lo que el cajero necesita ver para entender por
+                                 qué lo esperado no es lo que vendió. --}}
+                            @if (($sessionTotals['movements']['in'] ?? 0) > 0)
+                                <div style="display:flex; justify-content:space-between; font-size:14px;">
+                                    <span style="color:#6b7280;">+ Entradas directas de caja</span>
+                                    <span style="font-weight:500; color:rgb(5,150,105);">+${{ number_format($sessionTotals['movements']['in'], 0, ',', '.') }}</span>
+                                </div>
+                            @endif
+                            @if (($sessionTotals['movements']['out'] ?? 0) > 0)
+                                <div style="display:flex; justify-content:space-between; font-size:14px;">
+                                    <span style="color:#6b7280;">− Salidas directas de caja</span>
+                                    <span style="font-weight:500; color:rgb(220,38,38);">−${{ number_format($sessionTotals['movements']['out'], 0, ',', '.') }}</span>
+                                </div>
+                                @foreach (($sessionTotals['movements']['por_motivo'] ?? []) as $motivo => $valor)
+                                    @if ($valor < 0)
+                                        <div style="display:flex; justify-content:space-between; font-size:12px; padding-left:12px;">
+                                            <span style="color:#9ca3af;">{{ $motivo }}</span>
+                                            <span style="color:#9ca3af;">−${{ number_format(abs($valor), 0, ',', '.') }}</span>
+                                        </div>
+                                    @endif
+                                @endforeach
+                            @endif
+
                             <div style="display:flex; justify-content:space-between; font-size:16px; font-weight:700; padding-top:8px; border-top:1px solid #e5e7eb;">
                                 <span>Esperado en caja</span>
                                 <span style="color:rgb(5,150,105);">${{ number_format($sessionTotals['expected_cash'], 0, ',', '.') }}</span>

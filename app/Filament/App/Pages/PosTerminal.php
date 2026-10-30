@@ -3,6 +3,7 @@
 namespace App\Filament\App\Pages;
 
 use App\Models\Appointment;
+use App\Models\CashMovement;
 use App\Models\CashRegisterSession;
 use App\Models\Category;
 use App\Models\Company;
@@ -18,6 +19,7 @@ use App\Models\Tax;
 use App\Models\ThirdParty;
 use App\Models\User;
 use App\Services\Cash\CashSessionCloser;
+use App\Services\Cash\CashMovementEngine;
 use App\Services\Cash\CashSessionSummary;
 use App\Services\Dian\PosDianTransmitter;
 use App\Services\GiftCards\GiftCardEngine;
@@ -103,6 +105,18 @@ class PosTerminal extends Page
     public bool $showSessionDetailsModal = false;
 
     public bool $showCloseSessionModal = false;
+
+    /* ------------------------------------------------------------------ */
+    /*  Movimientos directos de caja */
+    /* ------------------------------------------------------------------ */
+
+    public bool $showCashMovementModal = false;
+
+    public array $cashMovementForm = [];
+
+    public string $cashMovementVoidReason = '';
+
+    public ?int $cashMovementToVoid = null;
 
     // Filtro de productos
     public ?int $selectedCategoryId = null;
@@ -2381,6 +2395,183 @@ class PosTerminal extends Page
         }
 
         return app(CashSessionSummary::class)->compute($session);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /*  Entradas y salidas directas de caja */
+    /* ------------------------------------------------------------------ */
+
+    /**
+     * Abre el registro de un movimiento directo del cajón.
+     *
+     * Existe porque la plata del cajón se mueve por más razones que las
+     * ventas: hay que pagarle al domiciliario, sacar lo acumulado a la caja
+     * fuerte, meter cambio. Sin esto el cajero cuadraba «a mano» y la
+     * diferencia salía como faltante al cerrar, sin que nadie supiera por qué.
+     */
+    public function openCashMovementModal(string $direction = CashMovement::OUT): void
+    {
+        if (! auth()->user()?->can('pos.cash_movements')) {
+            Notification::make()->title('Sin permiso para mover la caja')->danger()->send();
+
+            return;
+        }
+
+        if (! $this->currentSession) {
+            Notification::make()
+                ->title('No hay turno abierto')
+                ->body('Abre la caja antes de registrar entradas o salidas.')
+                ->danger()->send();
+
+            return;
+        }
+
+        $this->resetCashMovementForm($direction);
+        $this->showCashMovementModal = true;
+    }
+
+    public function closeCashMovementModal(): void
+    {
+        $this->showCashMovementModal = false;
+        $this->cashMovementToVoid = null;
+        $this->cashMovementVoidReason = '';
+    }
+
+    /** Al cambiar de entrada a salida, los motivos son otros. */
+    public function setCashMovementDirection(string $direction): void
+    {
+        $this->resetCashMovementForm($direction);
+    }
+
+    /** @return array<string, string> */
+    public function getCashMovementReasonsProperty(): array
+    {
+        return CashMovement::motivosDe($this->cashMovementForm['direction'] ?? CashMovement::OUT);
+    }
+
+    /** La explicación del motivo elegido, para que el cajero sepa cuál es cuál. */
+    public function getCashMovementHelpProperty(): ?string
+    {
+        $motivo = $this->cashMovementForm['reason'] ?? null;
+
+        return $motivo ? (CashMovement::REASONS[$motivo]['help'] ?? null) : null;
+    }
+
+    /** Los movimientos vivos del turno, para listarlos y poder anularlos. */
+    public function getCashMovementsProperty(): Collection
+    {
+        if (! $this->currentSession) {
+            return collect();
+        }
+
+        return CashMovement::query()
+            ->where('cash_register_session_id', $this->currentSession->id)
+            ->with('createdBy:id,name')
+            ->orderByDesc('id')
+            ->get();
+    }
+
+    public function getCashAvailableProperty(): float
+    {
+        if (! $this->currentSession) {
+            return 0.0;
+        }
+
+        return app(CashMovementEngine::class)->efectivoDisponible($this->currentSession);
+    }
+
+    public function saveCashMovement(): void
+    {
+        if (! auth()->user()?->can('pos.cash_movements')) {
+            Notification::make()->title('Sin permiso para mover la caja')->danger()->send();
+
+            return;
+        }
+
+        $session = $this->currentSession;
+
+        if (! $session) {
+            return;
+        }
+
+        try {
+            $movimiento = app(CashMovementEngine::class)->registrar($session, [
+                'direction' => $this->cashMovementForm['direction'] ?? CashMovement::OUT,
+                'reason' => $this->cashMovementForm['reason'] ?? '',
+                'concept' => $this->cashMovementForm['concept'] ?? '',
+                'amount' => $this->cashMovementForm['amount'] ?? 0,
+                'notes' => $this->cashMovementForm['notes'] ?? null,
+            ]);
+        } catch (\Throwable $e) {
+            Notification::make()
+                ->title('No se pudo registrar el movimiento')
+                ->body($e->getMessage())
+                ->danger()->persistent()->send();
+
+            return;
+        }
+
+        $this->resetCashMovementForm($movimiento->direction);
+
+        // El resumen de caja cambió: se invalida para que el banner y los
+        // modales muestren el esperado nuevo y no el de hace un momento.
+        unset($this->sessionTotals);
+
+        Notification::make()
+            ->title(($movimiento->esEntrada() ? '✓ Entrada' : '✓ Salida').' de $'
+                .number_format((float) $movimiento->amount, 0, ',', '.'))
+            ->body($movimiento->etiquetaDelMotivo().' · en caja quedan $'
+                .number_format($this->cashAvailable, 0, ',', '.'))
+            ->success()->send();
+    }
+
+    public function voidCashMovement(): void
+    {
+        if (! auth()->user()?->can('pos.cash_movements')) {
+            Notification::make()->title('Sin permiso para mover la caja')->danger()->send();
+
+            return;
+        }
+
+        $movimiento = $this->cashMovementToVoid
+            ? CashMovement::query()
+                ->where('company_id', auth()->user()?->company_id)
+                ->find($this->cashMovementToVoid)
+            : null;
+
+        if (! $movimiento) {
+            return;
+        }
+
+        try {
+            app(CashMovementEngine::class)->anular($movimiento, $this->cashMovementVoidReason);
+        } catch (\Throwable $e) {
+            Notification::make()
+                ->title('No se pudo anular')
+                ->body($e->getMessage())
+                ->danger()->persistent()->send();
+
+            return;
+        }
+
+        $this->cashMovementToVoid = null;
+        $this->cashMovementVoidReason = '';
+        unset($this->sessionTotals);
+
+        Notification::make()->title('Movimiento anulado')->warning()->send();
+    }
+
+    protected function resetCashMovementForm(string $direction): void
+    {
+        $motivos = CashMovement::motivosDe($direction);
+
+        $this->cashMovementForm = [
+            'direction' => $direction,
+            'reason' => array_key_first($motivos),
+            'concept' => '',
+            'amount' => null,
+            'notes' => null,
+        ];
     }
 
     public function openCloseSessionModal(): void

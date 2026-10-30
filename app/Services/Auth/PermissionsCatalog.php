@@ -98,6 +98,13 @@ class PermissionsCatalog
                 'credit_debit_notes.send_dian' => 'Enviar NC/ND a DIAN',
                 'pos.use' => 'Usar el terminal POS',
                 'pos.cash_close' => 'Cerrar turno de caja',
+                // Mover plata del cajón sin que sea una venta: pagarle al
+                // domiciliario, sacar a la caja fuerte, meter cambio. El
+                // cajero lo necesita para trabajar, así que lo trae por
+                // defecto; el control no es prohibirlo sino que quede
+                // registrado con nombre, hora y motivo, y que salga en el
+                // arqueo.
+                'pos.cash_movements' => 'Registrar entradas y salidas directas de caja',
                 'pos.resolutions.manage' => 'Configurar resoluciones POS y asignarlas a sedes',
                 'pos.discount.approve' => 'Aprobar descuentos del POS que exceden el umbral',
             ],
@@ -260,7 +267,7 @@ class PermissionsCatalog
                 'products.view', 'categories.view',
             ],
             'cashier' => [
-                'pos.use', 'pos.cash_close',
+                'pos.use', 'pos.cash_close', 'pos.cash_movements',
                 'sales.view', 'sales.create', 'sales.receive_payment',
                 'products.view', 'categories.view',
                 'third_parties.view', 'third_parties.manage',

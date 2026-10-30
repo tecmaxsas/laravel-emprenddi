@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\Account;
+use App\Models\CashMovement;
 use Illuminate\Support\Facades\Auth;
 
 /**
@@ -58,6 +59,40 @@ class DefaultAccounts
 
         return self::primeraQueExista(['5295', '5195'], $companyId)
             ?? self::primeraDeClase('5', $companyId);
+    }
+
+    /**
+     * Contrapartida de un movimiento directo de caja.
+     *
+     * La decide el MOTIVO, y eso importa: sacar plata a la caja fuerte no es
+     * un gasto —el dinero sigue siendo del negocio y solo cambió de sitio—
+     * mientras que pagarle al domiciliario sí lo es. Mandarlas a la misma
+     * cuenta dejaría el estado de resultados contando como gasto plata que
+     * está guardada en la caja fuerte.
+     *
+     * Los códigos de cada motivo viven en `CashMovement::REASONS`, junto al
+     * motivo que los explica. Aquí solo se resuelven contra el PUC de la
+     * empresa, con el mismo criterio que el resto de este archivo: el primero
+     * que exista, porque el plan sembrado puede venir recortado.
+     */
+    public static function contrapartidaDeMovimientoDeCaja(string $motivo, ?int $companyId = null): ?int
+    {
+        $codigos = CashMovement::REASONS[$motivo]['cuentas'] ?? [];
+
+        if ($codigos === []) {
+            return null;
+        }
+
+        $id = self::primeraQueExista($codigos, $companyId);
+
+        if ($id) {
+            return $id;
+        }
+
+        // Sin la cuenta propia del motivo, se cae a la clase que le
+        // corresponde por su primer código: así una entrada no termina
+        // contabilizada contra una cuenta de gasto.
+        return self::primeraDeClase(substr($codigos[0], 0, 1), $companyId);
     }
 
     /**

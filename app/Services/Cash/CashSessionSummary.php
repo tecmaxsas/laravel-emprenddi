@@ -2,6 +2,7 @@
 
 namespace App\Services\Cash;
 
+use App\Models\CashMovement;
 use App\Models\CashRegisterSession;
 use App\Models\CustomerAdvance;
 use App\Models\Expense;
@@ -30,6 +31,7 @@ class CashSessionSummary
      *   sales: array{count:int, total:float, by_method:array<string,float>, cash:float},
      *   purchases: array{count:int, total:float, by_method:array<string,float>, cash:float},
      *   expenses: array{count:int, total:float, by_method:array<string,float>, cash:float},
+     *   movements: array{count:int, in:float, out:float, neto:float, por_motivo:array<string,float>},
      *   net_cash: float,
      *   expected_cash: float,
      *   payment_breakdown: array<string,float>,
@@ -40,8 +42,9 @@ class CashSessionSummary
         $sales = $this->summarizeSalePayments($session);
         $purchases = $this->summarizePurchasePayments($session);
         $expenses = $this->summarizeExpenses($session);
+        $movements = $this->summarizeCashMovements($session);
 
-        $netCash = $sales['cash'] - $purchases['cash'] - $expenses['cash'];
+        $netCash = $sales['cash'] - $purchases['cash'] - $expenses['cash'] + $movements['neto'];
         $expectedCash = (float) $session->opening_amount + $netCash;
 
         // Breakdown global por método: suma ventas (positivo) menos compras
@@ -58,13 +61,68 @@ class CashSessionSummary
             $breakdown[$method] = ($breakdown[$method] ?? 0) - $amount;
         }
 
+        // Los movimientos directos son efectivo por definición, así que van
+        // todos al mismo renglón del desglose —con su signo— en vez de
+        // inventarles un método de pago que no tienen.
+        if (abs($movements['neto']) > 0.001) {
+            $breakdown['cash'] = round(($breakdown['cash'] ?? 0) + $movements['neto'], 2);
+        }
+
         return [
             'sales' => $sales,
             'purchases' => $purchases,
             'expenses' => $expenses,
+            'movements' => $movements,
             'net_cash' => round($netCash, 2),
             'expected_cash' => round($expectedCash, 2),
             'payment_breakdown' => $breakdown,
+        ];
+    }
+
+    /**
+     * Las entradas y salidas directas del cajón.
+     *
+     * Sin esto, el pago del domiciliario o la sangría a la caja fuerte salían
+     * como faltante al cerrar, y un faltante que en realidad fue un pago es
+     * peor que un faltante de verdad: le enseña a todo el mundo que las
+     * diferencias de caja no significan nada.
+     *
+     * Los anulados no cuentan: la anulación revierte el asiento y la plata
+     * vuelve a estar donde estaba.
+     *
+     * @return array{count:int, in:float, out:float, neto:float, por_motivo:array<string,float>}
+     */
+    protected function summarizeCashMovements(CashRegisterSession $session): array
+    {
+        $movimientos = CashMovement::query()
+            ->delTurno((int) $session->id)
+            ->get(['direction', 'reason', 'amount']);
+
+        $entradas = 0.0;
+        $salidas = 0.0;
+        $porMotivo = [];
+
+        foreach ($movimientos as $movimiento) {
+            $monto = (float) $movimiento->amount;
+
+            if ($movimiento->esEntrada()) {
+                $entradas += $monto;
+            } else {
+                $salidas += $monto;
+            }
+
+            $etiqueta = $movimiento->etiquetaDelMotivo();
+            $signo = $movimiento->esEntrada() ? $monto : -$monto;
+
+            $porMotivo[$etiqueta] = round(($porMotivo[$etiqueta] ?? 0) + $signo, 2);
+        }
+
+        return [
+            'count' => $movimientos->count(),
+            'in' => round($entradas, 2),
+            'out' => round($salidas, 2),
+            'neto' => round($entradas - $salidas, 2),
+            'por_motivo' => $porMotivo,
         ];
     }
 
