@@ -49,6 +49,10 @@
     .hr-dim { color: #94a3b8; }
     .hr-strong { font-weight: 700; }
 
+    /* El fin de semana se resalta: en un hotel es cuando se juega el mes. */
+    .hr-finde td { background: #f8fafc; }
+    .dark .hr-finde td { background: #0f172a; }
+
     .hr-empty {
         margin-top: 16px; padding: 30px; text-align: center; font-size: 13.5px;
         color: #64748b; background: #f8fafc; border-radius: 10px; border: 1px dashed #cbd5e1;

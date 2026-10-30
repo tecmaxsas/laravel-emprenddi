@@ -20,6 +20,7 @@ use App\Services\Hotel\HotelBillingEngine;
 use App\Services\Hotel\HotelFolio;
 use App\Services\Hotel\HotelProductProvisioner;
 use App\Services\Hotel\HotelStayEngine;
+use App\Services\Sales\CustomerAdvanceService;
 use App\Services\Sales\QuickCustomer;
 use App\Support\ClockFormat;
 use App\Support\HotelSettings;
@@ -398,6 +399,25 @@ class HotelFrontDesk extends Page
             (float) $this->checkoutForm['cash_received'],
             (float) $estadia->total,
         );
+    }
+
+    /**
+     * Cuánto tiene el huésped a favor.
+     *
+     * Es el depósito, que al facturar se cruza solo. Se muestra antes de
+     * cobrar porque si no, el recepcionista le pide el total completo a quien
+     * ya pagó la mitad por anticipado.
+     */
+    public function getSaldoAFavorProperty(): float
+    {
+        $estadia = $this->activeStay;
+        $cliente = $estadia?->customer;
+
+        if (! $cliente) {
+            return 0.0;
+        }
+
+        return app(CustomerAdvanceService::class)->availableBalance($cliente);
     }
 
     public function getVueltoAplicaProperty(): bool
@@ -1144,11 +1164,14 @@ class HotelFrontDesk extends Page
         $cuenta = (int) ($this->checkoutForm['account_id'] ?? 0)
             ?: (int) PaymentAccountResolver::forMethod($metodo);
 
+        $aCredito = ($this->checkoutForm['modo'] ?? 'contado') === 'credito';
+
         try {
             $factura = app(HotelBillingEngine::class)->issueForStay($estadia, [
                 'invoice_kind' => $this->checkoutForm['invoice_kind'] ?? 'pos',
                 'payment_method' => $metodo,
                 'account_id' => $cuenta,
+                'a_credito' => $aCredito,
                 'paid_amount' => (float) $estadia->total,
                 'cash_received' => $this->checkoutForm['cash_received'] ?? null,
                 'third_party_id' => $this->checkoutForm['third_party_id'] ?? null,
@@ -1163,10 +1186,17 @@ class HotelFrontDesk extends Page
         $stayId = (int) $estadia->id;
         $this->closeModal();
 
+        $saldo = round((float) $factura->total - (float) $factura->paid_amount, 2);
+
         Notification::make()
             ->title('✓ Check-out · hab. '.$estadia->room?->number)
-            ->body('Factura '.$factura->fullNumber().' · $'.number_format((float) $factura->total, 0, ',', '.'))
+            ->body('Factura '.$factura->fullNumber().' · $'.number_format((float) $factura->total, 0, ',', '.')
+                .($saldo > 0.01
+                    ? ' · QUEDA A CRÉDITO: $'.number_format($saldo, 0, ',', '.')
+                        .($factura->due_date ? ', vence el '.$factura->due_date->format('d/m/Y') : '')
+                    : ''))
             ->success()
+            ->persistent($saldo > 0.01)
             ->send();
 
         $this->printStayId = $stayId;
@@ -1637,6 +1667,8 @@ class HotelFrontDesk extends Page
             'third_party_id' => null,
             'third_party_label' => null,
             'no_invoice_reason' => '',
+            // contado | credito. Arranca de contado: fiar es la excepcion.
+            'modo' => 'contado',
         ];
     }
 

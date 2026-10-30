@@ -5,6 +5,7 @@ namespace App\Services\Hotel;
 use App\Models\CashRegisterSession;
 use App\Models\Company;
 use App\Models\CustomerAdvance;
+use App\Models\Hotel\Reservation;
 use App\Models\Hotel\Stay;
 use App\Models\Location;
 use App\Models\SaleInvoice;
@@ -111,6 +112,30 @@ class HotelBillingEngine
 
         $customer = $this->resolverCliente($company, $payload['third_party_id'] ?? $estadia->third_party_id);
 
+        /**
+         * Check-out a crédito: se factura y se cobra después.
+         *
+         * Es el cliente típico del hotel urbano: la empresa que manda
+         * empleados todo el mes y paga a treinta días. El empleado se va sin
+         * pagar nada y la factura queda en cartera.
+         *
+         * A Consumidor Final no se le fía. No es una restricción inventada: la
+         * cartera se persigue por tercero, y una factura a crédito a nombre de
+         * «Consumidor Final» es plata que nadie va a poder cobrar porque no se
+         * sabe a quién llamar.
+         *
+         * El cupo de crédito no se revisa aquí: lo hace SaleInvoiceEngine al
+         * contabilizar, que es por donde pasan todas las ventas del sistema.
+         */
+        $aCredito = (bool) ($payload['a_credito'] ?? false);
+
+        if ($aCredito && $this->esConsumidorFinal($customer)) {
+            throw new RuntimeException(
+                'No se puede dejar a crédito una factura a Consumidor Final: la cartera se cobra por '
+                .'cliente y nadie sabría a quién llamar. Asígnale el cliente o la empresa que paga.'
+            );
+        }
+
         // Turno de caja obligatorio: la venta tiene que quedar en el cierre de
         // alguien. Sin esto, el arqueo del turno nunca cuadra contra lo
         // facturado.
@@ -122,13 +147,20 @@ class HotelBillingEngine
             );
         }
 
-        $paidAmount = isset($payload['paid_amount']) && $payload['paid_amount'] !== null
-            ? (float) $payload['paid_amount']
-            : (float) $estadia->total;
+        // Días de plazo del cliente. Cero es válido —«paga contra factura»—
+        // y entonces vence el mismo día.
+        $plazo = max(0, (int) ($payload['payment_terms_days'] ?? $customer->payment_terms_days ?? 0));
+
+        $paidAmount = $aCredito
+            ? 0.0
+            : (isset($payload['paid_amount']) && $payload['paid_amount'] !== null
+                ? (float) $payload['paid_amount']
+                : (float) $estadia->total);
 
         $invoice = DB::transaction(function () use (
             $estadia, $company, $location, $customer, $cashSession,
             $invoiceKind, $paymentMethod, $accountId, $paidAmount, $payload, $preparado,
+            $aCredito, $plazo,
         ) {
             $doc = $this->numberer->reserveForLocation((int) $location->id, $invoiceKind);
 
@@ -145,6 +177,13 @@ class HotelBillingEngine
                 'currency' => 'COP',
                 'status' => 'draft',
                 'payment_status' => 'pendiente',
+                // A crédito, el plazo sale del que tenga pactado el cliente.
+                // Sin vencimiento la factura nunca aparece vencida y la
+                // cartera no sirve para perseguir a nadie.
+                'payment_terms_days' => $aCredito ? $plazo : 0,
+                'due_date' => $aCredito && $plazo > 0
+                    ? now()->copy()->addDays($plazo)->toDateString()
+                    : null,
                 // Las rebajas del folio, sobre la base gravable.
                 'global_discount_type' => GlobalDiscount::TYPE_AMOUNT,
                 'global_discount_value' => $preparado['descuento_base'],
@@ -276,6 +315,91 @@ class HotelBillingEngine
     }
 
     /**
+     * Recibe el depósito de una reserva.
+     *
+     * Hasta ahora `deposit_amount` era un número en un formulario: se
+     * escribía, se mostraba y nadie lo leía. Esto es la plata de verdad —entra
+     * al turno de caja del día en que se recibe— y queda enlazada a la
+     * reserva, así que al facturar el check-out se cruza sola y el huésped
+     * paga solo la diferencia.
+     *
+     * Exige cliente con nombre por la misma razón que el depósito del folio: a
+     * Consumidor Final no se le puede guardar un saldo a favor porque no hay a
+     * quién devolvérselo ni contra qué cruzarlo.
+     *
+     * @param  array{amount?: float|null, payment_method?: string, account_id?: int|null,
+     *               third_party_id?: int|null, reference?: string|null}  $payload
+     */
+    public function recibirDepositoDeReserva(Reservation $reserva, array $payload = []): CustomerAdvance
+    {
+        if (! $reserva->estaViva()) {
+            throw new RuntimeException(
+                'Esta reserva está '.strtolower(Reservation::STATUSES[$reserva->status] ?? $reserva->status)
+                .': no se le puede recibir un depósito.'
+            );
+        }
+
+        if ($reserva->deposit_advance_id) {
+            throw new RuntimeException(
+                'Esta reserva ya tiene un depósito recibido de $'
+                .number_format((float) $reserva->depositoRecibido(), 0, ',', '.')
+                .'. Si va a abonar más, recíbelo como anticipo del cliente.'
+            );
+        }
+
+        $clienteId = $payload['third_party_id'] ?? $reserva->third_party_id;
+
+        $customer = $clienteId
+            ? ThirdParty::query()->where('company_id', $reserva->company_id)->find($clienteId)
+            : null;
+
+        if (! $customer) {
+            throw new RuntimeException(
+                'Para recibir el depósito hay que decir a nombre de quién queda: un saldo a favor '
+                .'sin dueño no se puede cruzar con nada ni devolver. Asígnale un cliente a la reserva.'
+            );
+        }
+
+        $monto = round((float) ($payload['amount'] ?? $reserva->deposit_amount), 2);
+
+        if ($monto <= 0) {
+            throw new RuntimeException('El depósito tiene que tener un valor.');
+        }
+
+        $cashSession = $this->turnoAbierto();
+
+        if (! $cashSession) {
+            throw new RuntimeException(
+                'No tienes un turno de caja abierto. Abre tu caja antes de recibir un depósito.'
+            );
+        }
+
+        $metodo = $payload['payment_method'] ?? 'cash';
+
+        return DB::transaction(function () use ($reserva, $customer, $monto, $metodo, $payload, $cashSession) {
+            $anticipo = app(CustomerAdvanceService::class)->register($customer, [
+                'amount' => $monto,
+                'payment_method' => $metodo,
+                'account_id' => $payload['account_id'] ?? null,
+                'cash_register_session_id' => $cashSession->id,
+                'reference' => $payload['reference'] ?? ('Depósito reserva '.$reserva->code),
+                'notes' => 'Reserva '.$reserva->code.' — '.$reserva->guest_name,
+            ]);
+
+            $reserva->forceFill([
+                'deposit_advance_id' => $anticipo->id,
+                'third_party_id' => $customer->id,
+                // Lo pactado se iguala a lo recibido si no se había puesto, o
+                // si entró un monto distinto al acordado: lo que vale es lo
+                // que de verdad entró.
+                'deposit_amount' => $monto,
+            ])->save();
+
+            return $anticipo;
+        });
+    }
+
+    /**
      * Turno abierto del usuario actual.
      *
      * No está amarrado a la sede de la factura: un recepcionista puede operar
@@ -308,6 +432,18 @@ class HotelBillingEngine
             ->orderByDesc('is_main')
             ->orderBy('id')
             ->first();
+    }
+
+    /**
+     * El cliente generico con el que sale una venta de mostrador.
+     *
+     * Se identifica por el documento y no por el nombre: el nombre lo puede
+     * cambiar cualquiera desde Terceros, el 222222222 es el que la DIAN
+     * reconoce.
+     */
+    protected function esConsumidorFinal(ThirdParty $customer): bool
+    {
+        return $customer->document_number === '222222222';
     }
 
     protected function resolverCliente(Company $company, ?int $thirdPartyId): ThirdParty

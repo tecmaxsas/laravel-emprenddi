@@ -228,7 +228,7 @@ class HotelAvailability
             ->vendibles()
             ->when($roomTypeId, fn ($q) => $q->where('room_type_id', $roomTypeId))
             ->when($comprometidas !== [], fn ($q) => $q->whereNotIn('id', $comprometidas))
-            ->with('roomType:id,name,code,base_rate,max_adults,max_children')
+            ->with('roomType:id,hotel_id,name,code,base_rate,max_adults,max_children,extra_person_rate')
             ->get()
             // Orden natural: la 2 antes de la 10. Un ORDER BY de SQL compara
             // carácter por carácter y pondría la 10 primero.
@@ -250,6 +250,178 @@ class HotelAvailability
                 'habitaciones' => $habitaciones->pluck('number')->all(),
             ])
             ->all();
+    }
+
+    /**
+     * Qué ocupa cada habitación, día por día.
+     *
+     * Es la fuente del calendario de recepción y del pronóstico de ocupación.
+     * Vive aquí, junto a `comprometidas()`, porque usa exactamente la misma
+     * regla de solapamiento: si el calendario la calculara por su cuenta,
+     * acabaría pintando libre una noche que el check-in rechaza —o al revés—,
+     * y entonces el recepcionista dejaría de creerle a la pantalla.
+     *
+     * La diferencia con `comprometidas()` es solo la forma de la respuesta:
+     * aquella contesta «¿cabe esto en este rango?» y esta «¿qué hay cada día?».
+     *
+     * @return array{
+     *   dias: list<string>,
+     *   habitaciones: Collection<int, Room>,
+     *   ocupacion: array<int, array<string, array<string, mixed>>>,
+     * }
+     */
+    public function calendario(
+        int $hotelId,
+        Carbon|string $desde,
+        int $dias = 14,
+        ?int $roomTypeId = null,
+    ): array {
+        $dias = max(1, min(60, $dias));
+
+        $desde = ($desde instanceof Carbon ? $desde->copy() : Carbon::parse($desde))->startOfDay();
+        $hasta = $desde->copy()->addDays($dias);
+
+        $habitaciones = Room::query()
+            ->where('hotel_id', $hotelId)
+            ->where('active', true)
+            ->when($roomTypeId, fn ($q) => $q->where('room_type_id', $roomTypeId))
+            // El select parcial trae SOLO lo que se nombra, y eso ya mordio:
+            // sin `hotel_id` el tipo llega con ese campo en null, y como
+            // HotelTarifas busca las temporadas por hotel, ninguna aplicaba y
+            // el pronostico valoraba todo a tarifa base sin decir nada.
+            // Van todos los campos que hacen falta para cotizar una noche.
+            ->with([
+                'zone:id,name,display_order',
+                'roomType:id,hotel_id,name,code,base_rate,max_adults,extra_person_rate',
+            ])
+            ->get()
+            ->sort(function (Room $a, Room $b) {
+                $ordenA = (int) ($a->zone?->display_order ?? 9999);
+                $ordenB = (int) ($b->zone?->display_order ?? 9999);
+
+                return $ordenA !== $ordenB
+                    ? $ordenA <=> $ordenB
+                    : strnatcasecmp((string) $a->number, (string) $b->number);
+            })
+            ->values();
+
+        $fechas = [];
+        $dia = $desde->copy();
+
+        while ($dia->lt($hasta)) {
+            $fechas[] = $dia->toDateString();
+            $dia->addDay();
+        }
+
+        $ocupacion = [];
+
+        // 1 — Las estadías. Ocupan de verdad: hay alguien adentro.
+        $estadias = Stay::query()
+            ->where('hotel_id', $hotelId)
+            ->whereIn('status', [Stay::STATUS_OPEN, Stay::STATUS_CLOSED])
+            ->whereDate('check_in_at', '<', $hasta->toDateString())
+            ->where(function ($q) use ($desde) {
+                $q->where('status', Stay::STATUS_OPEN)
+                    ->orWhere(fn ($cerradas) => $cerradas
+                        ->where('status', Stay::STATUS_CLOSED)
+                        ->where('check_out_at', '>', $desde->copy()->startOfDay()));
+            })
+            ->with('primaryGuest:id,first_name,last_name')
+            ->get();
+
+        foreach ($estadias as $estadia) {
+            $this->pintar($ocupacion, (int) $estadia->room_id, $fechas, [
+                'desde' => $estadia->check_in_at->copy()->startOfDay(),
+                'hasta' => $this->finEfectivo($estadia),
+                'tipo' => $estadia->status === Stay::STATUS_OPEN ? 'estadia' : 'cerrada',
+                'etiqueta' => $estadia->nombreDelHuesped(),
+                'referencia' => $estadia->fullNumber(),
+                'id' => (int) $estadia->id,
+            ]);
+        }
+
+        // 2 — Las reservas vivas. Comprometen, aunque todavía no haya nadie.
+        $reservas = Reservation::query()
+            ->where('hotel_id', $hotelId)
+            ->whereNotNull('room_id')
+            ->queBloquean()
+            ->whereDate('check_in_date', '<', $hasta->toDateString())
+            ->whereDate('check_out_date', '>', $desde->toDateString())
+            ->get(['id', 'room_id', 'code', 'guest_name', 'status', 'check_in_date', 'check_out_date']);
+
+        foreach ($reservas as $reserva) {
+            $this->pintar($ocupacion, (int) $reserva->room_id, $fechas, [
+                'desde' => $reserva->check_in_date->copy()->startOfDay(),
+                'hasta' => $reserva->check_out_date->copy()->startOfDay(),
+                'tipo' => 'reserva',
+                'etiqueta' => $reserva->guest_name,
+                'referencia' => $reserva->code,
+                'id' => (int) $reserva->id,
+            ]);
+        }
+
+        // 3 — Las que están fuera de servicio. Pesan sobre el rango entero:
+        // una habitación en mantenimiento no se vende ningún día.
+        foreach ($habitaciones as $habitacion) {
+            if ($habitacion->sePuedeVender()) {
+                continue;
+            }
+
+            foreach ($fechas as $fecha) {
+                $ocupacion[(int) $habitacion->id][$fecha] ??= [
+                    'tipo' => 'bloqueo',
+                    'etiqueta' => Room::STATUSES[$habitacion->status] ?? $habitacion->status,
+                    'referencia' => null,
+                    'id' => null,
+                    'inicio' => false,
+                ];
+            }
+        }
+
+        return [
+            'dias' => $fechas,
+            'habitaciones' => $habitaciones,
+            'ocupacion' => $ocupacion,
+        ];
+    }
+
+    /**
+     * Marca los días que cubre algo en una habitación.
+     *
+     * `inicio` sirve para que la vista escriba el nombre del huésped una sola
+     * vez, al principio de la barra, en lugar de repetirlo en cada casilla.
+     *
+     * @param  array<int, array<string, array<string, mixed>>>  $ocupacion
+     * @param  list<string>  $fechas
+     * @param  array<string, mixed>  $datos
+     */
+    protected function pintar(array &$ocupacion, int $roomId, array $fechas, array $datos): void
+    {
+        $primero = true;
+
+        foreach ($fechas as $fecha) {
+            if ($fecha < $datos['desde']->toDateString() || $fecha >= $datos['hasta']->toDateString()) {
+                continue;
+            }
+
+            // Lo que ya esté pintado manda: una estadía abierta pesa más que
+            // la reserva de la que salió, y las dos pesan más que un bloqueo.
+            if (isset($ocupacion[$roomId][$fecha])) {
+                $primero = false;
+
+                continue;
+            }
+
+            $ocupacion[$roomId][$fecha] = [
+                'tipo' => $datos['tipo'],
+                'etiqueta' => $datos['etiqueta'],
+                'referencia' => $datos['referencia'],
+                'id' => $datos['id'],
+                'inicio' => $primero,
+            ];
+
+            $primero = false;
+        }
     }
 
     /**

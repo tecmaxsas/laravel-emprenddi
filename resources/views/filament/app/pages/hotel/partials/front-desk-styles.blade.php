@@ -238,6 +238,21 @@
     .dark .hd-check { color: #e2e8f0; }
     .hd-check input { width: 18px; height: 18px; }
 
+    /* Contado o credito: dos botones grandes y excluyentes, no un
+       desplegable. Es la decision que cambia si entra plata o no, y
+       esconderla en una lista es como no preguntarla. */
+    .hd-modo { display: flex; gap: 8px; margin-bottom: 11px; }
+    .hd-modo-btn {
+        flex: 1; padding: 11px 10px; border-radius: 9px; cursor: pointer;
+        border: 2px solid #cbd5e1; background: #fff; color: #475569;
+        font-weight: 700; font-size: 13.5px; min-height: 46px;
+    }
+    .dark .hd-modo-btn { border-color: #475569; background: #0f172a; color: #cbd5e1; }
+    .hd-modo-btn.is-active { border-color: #4f46e5; background: #eef2ff; color: #3730a3; }
+    .dark .hd-modo-btn.is-active { background: #1e1b4b; color: #c7d2fe; }
+
+    .hd-strong-row { font-weight: 800; }
+
     .hd-section {
         margin-top: 12px; padding: 11px 12px;
         border: 1px solid #e2e8f0; border-radius: 9px; background: #f8fafc;

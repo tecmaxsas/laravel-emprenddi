@@ -106,7 +106,7 @@ class HotelFolio
     public function agregarNoche(Stay $estadia, Carbon|string $noche, ?float $tarifa = null): StayCharge
     {
         $noche = ($noche instanceof Carbon ? $noche->copy() : Carbon::parse($noche))->startOfDay();
-        $tarifa ??= (float) $estadia->rate_per_night;
+        $tarifa ??= $this->tarifaDeLaNoche($estadia, $noche);
 
         $impuesto = $this->impuestoDelAlojamiento($estadia);
 
@@ -125,6 +125,34 @@ class HotelFolio
             'tax_id' => $impuesto?->id,
             'tax_rate' => $impuesto ? (float) $impuesto->rate : 0.0,
         ]);
+    }
+
+    /**
+     * Lo que vale esa noche en concreto.
+     *
+     * Con temporadas, dos noches de la misma estadía pueden costar distinto
+     * —el 30 de diciembre no vale lo que el 10 de enero— y el folio ya guarda
+     * un renglón por noche, así que cada uno nace con el precio de su fecha.
+     *
+     * Salvo que se haya pactado una tarifa fija: un convenio corporativo o una
+     * negociación de grupo no se le reajusta por encima porque caiga un puente
+     * en el medio.
+     *
+     * Si no hay tipo de habitación o la temporada diera cero, se cae a lo
+     * pactado en la estadía. Cobrar una noche en cero por un dato mal
+     * configurado es peor que cobrar la tarifa vieja.
+     */
+    protected function tarifaDeLaNoche(Stay $estadia, Carbon $noche): float
+    {
+        if ($estadia->rate_is_fixed) {
+            return (float) $estadia->rate_per_night;
+        }
+
+        $tipo = $estadia->roomType ?: $estadia->room?->roomType;
+
+        $porTemporada = app(HotelTarifas::class)->paraNoche($tipo, $noche, (int) $estadia->adults);
+
+        return $porTemporada > 0 ? $porTemporada : (float) $estadia->rate_per_night;
     }
 
     /**

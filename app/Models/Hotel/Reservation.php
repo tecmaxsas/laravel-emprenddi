@@ -2,6 +2,7 @@
 
 namespace App\Models\Hotel;
 
+use App\Models\CustomerAdvance;
 use App\Models\ThirdParty;
 use App\Models\User;
 use App\Traits\BelongsToCompany;
@@ -84,8 +85,10 @@ class Reservation extends Model
         'adults',
         'children',
         'rate_per_night',
+        'rate_is_fixed',
         'estimated_total',
         'deposit_amount',
+        'deposit_advance_id',
         'source',
         'status',
         'confirmed_at',
@@ -104,6 +107,7 @@ class Reservation extends Model
             'adults' => 'integer',
             'children' => 'integer',
             'rate_per_night' => 'decimal:2',
+            'rate_is_fixed' => 'boolean',
             'estimated_total' => 'decimal:2',
             'deposit_amount' => 'decimal:2',
             'confirmed_at' => 'datetime',
@@ -144,6 +148,30 @@ class Reservation extends Model
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by_user_id');
+    }
+
+    /**
+     * El anticipo con el que entró el depósito.
+     *
+     * `deposit_amount` es lo PACTADO —«para apartar son $200.000»— y esto es
+     * lo RECIBIDO. Son dos cosas distintas y conviene que se vean distintas:
+     * una reserva puede tener depósito pactado y no pagado, que es justo la
+     * que hay que perseguir.
+     */
+    public function depositAdvance(): BelongsTo
+    {
+        return $this->belongsTo(CustomerAdvance::class, 'deposit_advance_id');
+    }
+
+    /** Cuánto entró de verdad. Cero si solo se pactó. */
+    public function depositoRecibido(): float
+    {
+        return (float) ($this->depositAdvance?->amount ?? 0);
+    }
+
+    public function tieneDepositoPendiente(): bool
+    {
+        return (float) $this->deposit_amount > 0 && ! $this->deposit_advance_id;
     }
 
     public function scopeQueBloquean(Builder $query): Builder

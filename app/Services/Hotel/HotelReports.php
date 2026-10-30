@@ -3,6 +3,7 @@
 namespace App\Services\Hotel;
 
 use App\Models\Hotel\Guest;
+use App\Models\Hotel\Hotel;
 use App\Models\Hotel\Room;
 use App\Models\Hotel\Stay;
 use App\Models\Hotel\StayCharge;
@@ -142,6 +143,111 @@ class HotelReports
                 'total' => round((float) $filas->sum('total'), 2),
                 'adr' => $vendidasTotal > 0 ? round($alojamientoTotal / $vendidasTotal, 2) : 0.0,
                 'revpar' => $nochesDisponibles > 0 ? round($alojamientoTotal / $nochesDisponibles, 2) : 0.0,
+            ],
+        ];
+    }
+
+    /**
+     * Pronóstico: cuánto hay vendido de aquí en adelante.
+     *
+     * Todos los demás reportes miran hacia atrás. Este es el único que mira
+     * hacia adelante, y es el que un gerente abre el lunes por la mañana: si
+     * el fin de semana viene en 40 %, todavía hay tiempo de hacer algo. Si se
+     * entera el lunes siguiente, ya no.
+     *
+     * Sale del mismo `calendario()` que pinta la rejilla de recepción, así que
+     * lo que dice el pronóstico y lo que se ve en el calendario no pueden
+     * discrepar.
+     *
+     * Cuenta estadías abiertas y reservas vivas. Las estadías ya cerradas no
+     * entran: esa habitación vuelve a estar en venta.
+     *
+     * @param  array{hotel_id?: int|null, dias?: int, desde?: string|null}  $filtros
+     * @return array{filas: Collection, totales: array<string, float|int>, vendibles: int}
+     */
+    public function pronostico(array $filtros): array
+    {
+        $dias = max(1, min(60, (int) ($filtros['dias'] ?? 30)));
+        $desde = $filtros['desde'] ?? now()->toDateString();
+        $hotelId = $filtros['hotel_id'] ?? null;
+
+        if (! $hotelId) {
+            $hotelId = Hotel::query()
+                ->where('company_id', $this->empresa())
+                ->where('active', true)
+                ->orderBy('id')
+                ->value('id');
+        }
+
+        if (! $hotelId) {
+            return ['filas' => collect(), 'totales' => [], 'vendibles' => 0];
+        }
+
+        $calendario = app(HotelAvailability::class)->calendario($hotelId, $desde, $dias);
+
+        $vendibles = $calendario['habitaciones']->filter(fn (Room $h) => $h->sePuedeVender())->count();
+        $tarifas = app(HotelTarifas::class);
+
+        $filas = collect();
+
+        foreach ($calendario['dias'] as $dia) {
+            $alojados = 0;
+            $reservados = 0;
+            $ingreso = 0.0;
+
+            foreach ($calendario['habitaciones'] as $habitacion) {
+                $celda = $calendario['ocupacion'][$habitacion->id][$dia] ?? null;
+
+                if (! $celda) {
+                    continue;
+                }
+
+                if ($celda['tipo'] === 'estadia') {
+                    $alojados++;
+                } elseif ($celda['tipo'] === 'reserva') {
+                    $reservados++;
+                } else {
+                    continue;
+                }
+
+                // Lo que se espera cobrar esa noche, a la tarifa que
+                // corresponda a esa fecha. No es lo facturado —todavía no
+                // existe— sino lo comprometido.
+                $ingreso += $tarifas->paraNoche($habitacion->roomType, $dia);
+            }
+
+            $vendidas = $alojados + $reservados;
+            $fecha = Carbon::parse($dia);
+
+            $filas->push([
+                'dia' => $dia,
+                'finde' => $fecha->isFriday() || $fecha->isSaturday(),
+                'vendibles' => $vendibles,
+                'alojados' => $alojados,
+                'reservados' => $reservados,
+                'vendidas' => $vendidas,
+                'libres' => max(0, $vendibles - $vendidas),
+                'ocupacion' => $vendibles > 0 ? round($vendidas / $vendibles * 100, 1) : 0.0,
+                'ingreso' => round($ingreso, 2),
+            ]);
+        }
+
+        $nochesDisponibles = $vendibles * $filas->count();
+        $vendidasTotal = (int) $filas->sum('vendidas');
+        $ingresoTotal = (float) $filas->sum('ingreso');
+
+        return [
+            'filas' => $filas,
+            'vendibles' => $vendibles,
+            'totales' => [
+                'dias' => $filas->count(),
+                'noches_disponibles' => $nochesDisponibles,
+                'vendidas' => $vendidasTotal,
+                'libres' => max(0, $nochesDisponibles - $vendidasTotal),
+                'ocupacion' => $nochesDisponibles > 0 ? round($vendidasTotal / $nochesDisponibles * 100, 1) : 0.0,
+                'ingreso' => round($ingresoTotal, 2),
+                'adr' => $vendidasTotal > 0 ? round($ingresoTotal / $vendidasTotal, 2) : 0.0,
+                'revpar' => $nochesDisponibles > 0 ? round($ingresoTotal / $nochesDisponibles, 2) : 0.0,
             ],
         ];
     }

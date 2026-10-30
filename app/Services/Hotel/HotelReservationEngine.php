@@ -110,13 +110,12 @@ class HotelReservationEngine
         $this->exigirCapacidad($tipo, $habitacion, $adultos, $ninos);
 
         $noches = $this->disponibilidad->noches($entrada, $salida);
-        $tarifa = isset($datos['rate_per_night']) && $datos['rate_per_night'] !== null
-            ? (float) $datos['rate_per_night']
-            : (float) ($tipo?->tarifaPara($adultos) ?? 0);
+
+        [$tarifa, $estimado, $fija] = $this->cotizar($tipo, $entrada, $salida, $adultos, $datos);
 
         return DB::transaction(function () use (
             $hotel, $habitacion, $tipo, $entrada, $salida, $noches,
-            $nombre, $adultos, $ninos, $tarifa, $datos,
+            $nombre, $adultos, $ninos, $tarifa, $estimado, $fija, $datos,
         ) {
             $reserva = Reservation::create([
                 'company_id' => $hotel->company_id,
@@ -134,7 +133,8 @@ class HotelReservationEngine
                 'adults' => $adultos,
                 'children' => $ninos,
                 'rate_per_night' => $tarifa,
-                'estimated_total' => round($tarifa * $noches, 2),
+                'rate_is_fixed' => $fija,
+                'estimated_total' => $estimado,
                 'deposit_amount' => max(0, (float) ($datos['deposit_amount'] ?? 0)),
                 'source' => array_key_exists((string) ($datos['source'] ?? ''), Reservation::SOURCES)
                     ? $datos['source']
@@ -150,6 +150,52 @@ class HotelReservationEngine
 
             return $reserva->fresh();
         });
+    }
+
+    /**
+     * Qué se le va a cobrar: tarifa, total estimado y si quedó pactada.
+     *
+     * Por defecto cada noche vale lo que valga su fecha, que es lo que hace
+     * que una estadía del 28 de diciembre al 3 de enero cueste lo correcto en
+     * vez de un promedio inventado.
+     *
+     * **Cuándo queda pactada.** Si quien crea la reserva escribe una tarifa
+     * distinta a la cotizada, es porque negoció un precio, y entonces se marca
+     * como fija y las temporadas ya no la tocan. No es que el sistema lo
+     * adivine cada vez: lo decide UNA vez, al crearla, y lo deja escrito en la
+     * reserva para que después se vea y se pueda cambiar. Adivinarlo en cada
+     * cobro sería que un día cobre distinto de lo pactado, y eso se descubre
+     * con el huésped en el mostrador.
+     *
+     * @param  array<string, mixed>  $datos
+     * @return array{0: float, 1: float, 2: bool}
+     */
+    protected function cotizar(
+        ?RoomType $tipo,
+        Carbon $entrada,
+        Carbon $salida,
+        int $adultos,
+        array $datos,
+    ): array {
+        $noches = $this->disponibilidad->noches($entrada, $salida);
+        $cotizacion = app(HotelTarifas::class)->cotizar($tipo, $entrada, $salida, $adultos);
+
+        $escrita = $datos['rate_per_night'] ?? null;
+        $fija = (bool) ($datos['rate_is_fixed'] ?? false);
+
+        if ($escrita === null || $escrita === '') {
+            return [$cotizacion['promedio'], $cotizacion['total'], $fija];
+        }
+
+        $tarifa = (float) $escrita;
+
+        if (abs($tarifa - $cotizacion['promedio']) > 0.01) {
+            $fija = true;
+        }
+
+        return $fija
+            ? [$tarifa, round($tarifa * $noches, 2), true]
+            : [$cotizacion['promedio'], $cotizacion['total'], false];
     }
 
     /**
@@ -276,9 +322,17 @@ class HotelReservationEngine
         }
 
         $noches = $this->disponibilidad->noches($entrada, $salida);
-        $tarifa = isset($datos['rate_per_night'])
-            ? (float) $datos['rate_per_night']
-            : (float) $reserva->rate_per_night;
+
+        // Se recotiza: mover las fechas puede meter la estadia en otra
+        // temporada, y dejar el total viejo seria prometerle al cliente un
+        // precio que ya no corresponde a esas noches.
+        [$tarifa, $estimado, $fija] = $this->cotizar(
+            $reserva->roomType,
+            $entrada,
+            $salida,
+            $adultos,
+            $datos + ['rate_is_fixed' => (bool) $reserva->rate_is_fixed],
+        );
 
         $reserva->update(array_filter([
             'check_in_date' => $entrada->toDateString(),
@@ -287,7 +341,8 @@ class HotelReservationEngine
             'adults' => $adultos,
             'children' => $ninos,
             'rate_per_night' => $tarifa,
-            'estimated_total' => round($tarifa * $noches, 2),
+            'rate_is_fixed' => $fija,
+            'estimated_total' => $estimado,
             'guest_name' => isset($datos['guest_name']) ? trim((string) $datos['guest_name']) : null,
             'guest_phone' => $datos['guest_phone'] ?? null,
             'guest_email' => $datos['guest_email'] ?? null,
@@ -319,6 +374,38 @@ class HotelReservationEngine
         ]);
 
         return $reserva->fresh();
+    }
+
+    /**
+     * Qué pasa con el depósito cuando la reserva se cae.
+     *
+     * Nada, a propósito: la plata se queda como saldo a favor del cliente, que
+     * es exactamente lo que es —entró al hotel y está registrada a su nombre—.
+     *
+     * Lo que el hotel haga después es una decisión suya y de cada caso:
+     *
+     *   · **Devolverlo** → se registra la devolución del anticipo.
+     *   · **Retenerlo como penalidad** → se le factura la penalidad y el
+     *     anticipo se cruza solo contra esa factura.
+     *
+     * El sistema no elige por el hotel, pero sí tiene que decírselo: un
+     * depósito que desaparece en silencio cuando se cancela una reserva es
+     * plata de un cliente que nadie vuelve a mirar.
+     */
+    public function avisoDelDeposito(Reservation $reserva): ?string
+    {
+        $recibido = $reserva->depositoRecibido();
+
+        if ($recibido <= 0) {
+            return null;
+        }
+
+        return sprintf(
+            '%s tiene $%s a favor por el depósito de esta reserva. Devuélvanlo o factúrenlo como '
+            .'penalidad: el saldo queda a su nombre hasta que decidan.',
+            $reserva->customer?->name ?: $reserva->guest_name,
+            number_format($recibido, 0, ',', '.'),
+        );
     }
 
     /**

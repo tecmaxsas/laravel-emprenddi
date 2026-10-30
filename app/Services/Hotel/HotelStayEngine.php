@@ -83,6 +83,9 @@ class HotelStayEngine
             'adults' => (int) $reserva->adults,
             'children' => (int) $reserva->children,
             'rate_per_night' => (float) $reserva->rate_per_night,
+            // Si al reservar se pacto un precio cerrado, se respeta. Si no,
+            // las noches se cobran por temporada igual que al cotizar.
+            'rate_is_fixed' => (bool) $reserva->rate_is_fixed,
             'third_party_id' => $reserva->third_party_id,
             'primary_guest_id' => $reserva->guest_id,
             'notes' => $reserva->notes,
@@ -533,9 +536,32 @@ class HotelStayEngine
             ));
         }
 
-        $tarifa = isset($datos['rate_per_night']) && $datos['rate_per_night'] !== null
-            ? (float) $datos['rate_per_night']
-            : (float) ($habitacion->roomType?->tarifaPara($adultos) ?? 0);
+        // Por defecto cada noche vale lo que valga su fecha; el folio las
+        // cobra una por una. `rate_per_night` queda como la representativa,
+        // que es la que se muestra en el mapa y en la cuenta.
+        $cotizacion = app(HotelTarifas::class)->cotizar(
+            $habitacion->roomType,
+            $entrada,
+            $salida,
+            $adultos,
+        );
+
+        $escrita = $datos['rate_per_night'] ?? null;
+        $tarifaFija = (bool) ($datos['rate_is_fixed'] ?? false);
+
+        if ($escrita !== null && $escrita !== '') {
+            $tarifa = (float) $escrita;
+
+            // Una tarifa distinta a la cotizada es una tarifa negociada, y
+            // entonces las temporadas no se le aplican por encima.
+            if (abs($tarifa - $cotizacion['promedio']) > 0.01) {
+                $tarifaFija = true;
+            } elseif (! $tarifaFija) {
+                $tarifa = $cotizacion['promedio'];
+            }
+        } else {
+            $tarifa = $cotizacion['promedio'];
+        }
 
         if ($tarifa <= 0) {
             throw new RuntimeException(
@@ -557,7 +583,7 @@ class HotelStayEngine
 
         $estadia = DB::transaction(function () use (
             $hotel, $habitacion, $reserva, $entrada, $salida, $noches,
-            $adultos, $ninos, $tarifa, $exenta, $motivoExencion, $datos,
+            $adultos, $ninos, $tarifa, $tarifaFija, $exenta, $motivoExencion, $datos,
         ) {
             $estadia = Stay::create([
                 'company_id' => $hotel->company_id,
@@ -575,6 +601,7 @@ class HotelStayEngine
                 'adults' => $adultos,
                 'children' => $ninos,
                 'rate_per_night' => $tarifa,
+                'rate_is_fixed' => $tarifaFija,
                 'status' => Stay::STATUS_OPEN,
                 'tax_exempt' => $exenta,
                 'tax_exempt_reason' => $exenta ? $motivoExencion : null,

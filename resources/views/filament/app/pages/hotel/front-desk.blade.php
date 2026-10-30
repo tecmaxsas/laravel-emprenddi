@@ -594,6 +594,8 @@
             $vuelto = $this->changeDue;
             $faltante = $this->missingAmount;
             $pideEfectivo = $this->vueltoAplica;
+            $aCredito = ($checkoutForm['modo'] ?? 'contado') === 'credito';
+            $aFavor = $this->saldoAFavor;
         @endphp
         <div class="hd-overlay" wire:click.self="volverAlFolio">
             <div class="hd-modal hd-modal-lg">
@@ -623,10 +625,45 @@
                             <span>TOTAL</span>
                             <span>{{ $plata($estadia->total) }}</span>
                         </div>
+
+                        @if ($aFavor > 0.01)
+                            {{-- El depósito que ya pagó. Si no se muestra aquí, el
+                                 recepcionista le pide el total completo a quien ya
+                                 abonó la mitad. --}}
+                            <div class="hd-total-rows" style="margin-top:6px;">
+                                <div><span>Tiene a favor (depósito)</span><span>− {{ $plata($aFavor) }}</span></div>
+                                <div class="hd-strong-row">
+                                    <span>Paga ahora</span>
+                                    <span>{{ $plata(max(0, (float) $estadia->total - $aFavor)) }}</span>
+                                </div>
+                            </div>
+                        @endif
                     </div>
 
+                    {{-- Contado o crédito. Fiar es la excepción, así que arranca
+                         en contado y el crédito hay que elegirlo a propósito. --}}
+                    <div class="hd-modo">
+                        <button type="button" wire:click="$set('checkoutForm.modo', 'contado')"
+                            class="hd-modo-btn @if (! $aCredito) is-active @endif">
+                            💵 Cobrar ahora
+                        </button>
+                        <button type="button" wire:click="$set('checkoutForm.modo', 'credito')"
+                            class="hd-modo-btn @if ($aCredito) is-active @endif">
+                            🧾 Dejar a crédito
+                        </button>
+                    </div>
+
+                    @if ($aCredito)
+                        <div class="hd-note">
+                            La factura queda <strong>pendiente de pago</strong> y pasa a cartera con el
+                            plazo que tenga pactado el cliente. Hay que asignarle el cliente o la empresa
+                            que paga: a Consumidor Final no se le puede fiar, porque después nadie sabe
+                            a quién cobrarle.
+                        </div>
+                    @endif
+
                     <div class="hd-cols-2">
-                        <div class="hd-field">
+                        <div class="hd-field" @if ($aCredito) style="display:none;" @endif>
                             <label>Forma de pago</label>
                             <select wire:model.live="checkoutForm.payment_method" class="hd-input">
                                 @foreach ($this->paymentMethodOptions as $codigo => $nombre)
@@ -643,7 +680,7 @@
                             </select>
                         </div>
 
-                        @if ($pideEfectivo)
+                        @if ($pideEfectivo && ! $aCredito)
                             <div class="hd-field">
                                 <label>¿Con cuánto paga?</label>
                                 <input type="number" min="0" step="1" wire:model.live.debounce.400ms="checkoutForm.cash_received"
@@ -716,8 +753,13 @@
 
                 <div class="hd-modal-foot">
                     <button type="button" wire:click="volverAlFolio" class="hd-btn hd-btn-gray">← Volver al folio</button>
-                    <button type="button" wire:click="cobrarYCerrar" class="hd-btn hd-btn-green hd-btn-grow">
-                        ✓ Cobrar {{ $plata($estadia->total) }} y cerrar
+                    <button type="button" wire:click="cobrarYCerrar"
+                        class="hd-btn hd-btn-grow {{ $aCredito ? 'hd-btn-amber' : 'hd-btn-green' }}">
+                        @if ($aCredito)
+                            ✓ Facturar a crédito {{ $plata($estadia->total) }} y cerrar
+                        @else
+                            ✓ Cobrar {{ $plata(max(0, (float) $estadia->total - $aFavor)) }} y cerrar
+                        @endif
                     </button>
                 </div>
             </div>

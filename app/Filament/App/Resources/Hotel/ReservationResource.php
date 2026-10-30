@@ -9,7 +9,10 @@ use App\Models\Hotel\Reservation;
 use App\Models\Hotel\RoomType;
 use App\Models\ThirdParty;
 use App\Services\Hotel\HotelAvailability;
+use App\Services\Hotel\HotelBillingEngine;
 use App\Services\Hotel\HotelReservationEngine;
+use App\Support\PaymentAccountResolver;
+use App\Support\PaymentMethodOptions;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
@@ -266,7 +269,29 @@ class ReservationResource extends Resource
                 Tables\Columns\TextColumn::make('estimated_total')
                     ->label('Estimado')
                     ->money('COP', 0)
-                    ->sortable(),
+                    ->sortable()
+                    ->description(fn (Reservation $record) => $record->rate_is_fixed
+                        ? 'tarifa pactada'
+                        : null),
+
+                // Pactado y recibido son dos cosas distintas, y la que hay que
+                // perseguir es justo la que tiene lo uno y no lo otro.
+                Tables\Columns\TextColumn::make('deposito')
+                    ->label('Depósito')
+                    ->state(fn (Reservation $record) => match (true) {
+                        $record->depositoRecibido() > 0 => 'Recibido',
+                        $record->tieneDepositoPendiente() => 'Pendiente',
+                        default => '—',
+                    })
+                    ->badge()
+                    ->color(fn (string $state) => match ($state) {
+                        'Recibido' => 'success',
+                        'Pendiente' => 'warning',
+                        default => 'gray',
+                    })
+                    ->description(fn (Reservation $record) => (float) $record->deposit_amount > 0
+                        ? '$'.number_format((float) $record->deposit_amount, 0, ',', '.')
+                        : null),
 
                 Tables\Columns\TextColumn::make('status')
                     ->label('Estado')
@@ -333,6 +358,75 @@ class ReservationResource extends Resource
                         }
                     }),
 
+                Tables\Actions\Action::make('recibirDeposito')
+                    ->label('Recibir depósito')
+                    ->icon('heroicon-o-banknotes')
+                    ->color('success')
+                    ->visible(fn (Reservation $record) => $record->estaViva() && ! $record->deposit_advance_id)
+                    ->modalDescription('Entra como anticipo del cliente y queda en tu turno de caja. '
+                        .'Al facturar el check-out se cruza solo y el huésped paga la diferencia.')
+                    ->form(fn (Reservation $record) => [
+                        Forms\Components\TextInput::make('amount')
+                            ->label('Valor recibido')
+                            ->numeric()
+                            ->minValue(1)
+                            ->required()
+                            ->prefix('$')
+                            ->default((float) $record->deposit_amount ?: null)
+                            ->helperText('Lo pactado fue $'
+                                .number_format((float) $record->deposit_amount, 0, ',', '.')
+                                .'. Si entra otro monto, manda el que de verdad entró.'),
+
+                        Forms\Components\Select::make('payment_method')
+                            ->label('Forma de pago')
+                            ->native(false)
+                            ->required()
+                            ->default('cash')
+                            ->options(fn () => PaymentMethodOptions::para()),
+
+                        Forms\Components\Select::make('third_party_id')
+                            ->label('A nombre de')
+                            ->native(false)
+                            ->searchable()
+                            ->required()
+                            ->default($record->third_party_id)
+                            ->helperText('Un saldo a favor sin dueño no se puede cruzar ni devolver.')
+                            ->getSearchResultsUsing(fn (string $search) => ThirdParty::query()
+                                ->where('company_id', auth()->user()?->company_id)
+                                ->where('is_customer', true)
+                                ->where(fn ($q) => $q
+                                    ->where('name', 'ilike', "%{$search}%")
+                                    ->orWhere('document_number', 'ilike', "%{$search}%"))
+                                ->orderBy('name')
+                                ->limit(20)
+                                ->get()
+                                ->mapWithKeys(fn (ThirdParty $t) => [$t->id => ($t->document_number ?: '—').' · '.$t->name])
+                                ->all())
+                            ->getOptionLabelUsing(fn ($value) => ThirdParty::find($value)?->name),
+                    ])
+                    ->action(function (Reservation $record, array $data) {
+                        try {
+                            $anticipo = app(HotelBillingEngine::class)->recibirDepositoDeReserva($record, [
+                                'amount' => (float) $data['amount'],
+                                'payment_method' => $data['payment_method'],
+                                'account_id' => PaymentAccountResolver::forMethod($data['payment_method']),
+                                'third_party_id' => (int) $data['third_party_id'],
+                            ]);
+                        } catch (\Throwable $e) {
+                            Notification::make()->title('No se pudo recibir el depósito')
+                                ->body($e->getMessage())->danger()->persistent()->send();
+
+                            return;
+                        }
+
+                        Notification::make()
+                            ->title('Depósito recibido')
+                            ->body('$'.number_format((float) $anticipo->amount, 0, ',', '.')
+                                .' a favor de '.$anticipo->customer?->name
+                                .'. Se cruza solo al facturar el check-out.')
+                            ->success()->send();
+                    }),
+
                 Tables\Actions\Action::make('asignar')
                     ->label('Asignar habitación')
                     ->icon('heroicon-o-key')
@@ -375,8 +469,15 @@ class ReservationResource extends Resource
                     ->visible(fn (Reservation $record) => $record->estaViva())
                     ->action(function (Reservation $record) {
                         try {
-                            app(HotelReservationEngine::class)->noLlego($record);
-                            Notification::make()->title('Marcada como «no llegó»')->warning()->send();
+                            $motor = app(HotelReservationEngine::class);
+                            $aviso = $motor->avisoDelDeposito($record);
+                            $motor->noLlego($record);
+
+                            Notification::make()->title('Marcada como «no llegó»')
+                                ->body($aviso)
+                                ->warning()
+                                ->persistent((bool) $aviso)
+                                ->send();
                         } catch (\Throwable $e) {
                             Notification::make()->title('No se pudo marcar')
                                 ->body($e->getMessage())->danger()->send();
@@ -397,8 +498,15 @@ class ReservationResource extends Resource
                     ])
                     ->action(function (Reservation $record, array $data) {
                         try {
-                            app(HotelReservationEngine::class)->cancelar($record, (string) $data['motivo']);
-                            Notification::make()->title('Reserva cancelada')->warning()->send();
+                            $motor = app(HotelReservationEngine::class);
+                            $aviso = $motor->avisoDelDeposito($record);
+                            $motor->cancelar($record, (string) $data['motivo']);
+
+                            Notification::make()->title('Reserva cancelada')
+                                ->body($aviso)
+                                ->{$aviso ? 'warning' : 'warning'}()
+                                ->persistent((bool) $aviso)
+                                ->send();
                         } catch (\Throwable $e) {
                             Notification::make()->title('No se pudo cancelar')
                                 ->body($e->getMessage())->danger()->send();

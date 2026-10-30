@@ -6,6 +6,11 @@ completo —menú, pantallas, rutas y reportes—.
 
 Fecha de implementación: **29 de octubre de 2026**.
 
+> **Este es el documento técnico.** Hay otros dos del mismo módulo:
+> **`MANUAL_CAPACITACION_HOTELES.md`** para el equipo que presenta, vende y
+> enseña, y **emprenddi.com/docs/hotel** —la guía pública que se le pasa a un
+> prospecto, cuyo contenido vive en `resources/views/docs/hotel.blade.php`—.
+
 ---
 
 ## 1. Qué resuelve
@@ -606,7 +611,104 @@ tiene justamente ese hueco: no crea suscripción.)
 
 ---
 
-## 11. Pruebas
+## 11. Segunda entrega: calendario, temporadas y pronóstico
+
+Lo que faltaba y se notaba. Añadido el **30 de octubre de 2026**.
+
+### 11.1 Calendario de disponibilidad (`Hotel → Calendario`)
+
+La Recepción muestra **hoy**, y eso cubre la mitad del trabajo. La otra mitad
+es «¿qué tengo libre del 15 al 20?», y para eso no había pantalla: tocaba
+empezar a crear una reserva y mirar qué salía en el desplegable.
+
+Habitaciones en filas, días en columnas, cada reserva una barra. Clic en un
+hueco abre la reserva con la habitación y la fecha puestas.
+
+Sale de **`HotelAvailability::calendario()`**, la misma clase que decide si un
+check-in cabe. No es casualidad: un calendario que pintara libre una noche que
+el check-in rechaza haría que el recepcionista dejara de creerle a la pantalla,
+y entonces no sirve de nada. `test_el_calendario_no_contradice_a_la_disponibilidad`
+recorre todas las casillas comprobando justo eso.
+
+### 11.2 Tarifas por temporada (`Hotel → Temporadas`)
+
+Un rango de fechas con su precio. Si una noche cae dentro, manda la temporada.
+
+- **Cada noche se cotiza por separado.** El folio ya guardaba un renglón por
+  noche, así que encajó sin inventar nada: cada renglón nace con el precio de
+  su fecha. Una estadía del 29/12 al 03/01 cuesta lo que debe costar en vez de
+  un promedio.
+- **Las dos fechas son inclusivas**, al revés que el rango de una estadía. Una
+  temporada no son noches, son días del calendario: «del 15 de diciembre al 15
+  de enero» incluye los dos, que es como lo dice cualquiera.
+- **`priority`** resuelve el empate, y sirve para meter un puente caro de tres
+  días dentro de una temporada alta de un mes sin partirla en tres.
+- **`rate_is_fixed`** (en reservas y estadías) marca la tarifa pactada: un
+  convenio corporativo no se reajusta porque caiga un puente en el medio. Se
+  decide **una vez**, al crear, y queda escrito — no se adivina en cada cobro,
+  porque adivinar significa cobrar distinto de lo pactado y descubrirlo con el
+  huésped en el mostrador.
+
+Las temporadas **empiezan vacías**: sin ninguna configurada todo se cobra a la
+tarifa del tipo, exactamente como antes. El despliegue no cambia ningún precio
+por su cuenta.
+
+### 11.3 Pronóstico de ocupación (`Hotel → Pronóstico`)
+
+El único reporte que mira hacia adelante. Si el fin de semana viene en 40 %
+todavía hay tiempo de hacer algo; si se entera el lunes siguiente, no.
+
+Sale del mismo `calendario()`, así que el pronóstico y la rejilla no pueden
+discrepar. El ingreso es lo **comprometido** a la tarifa de cada fecha, no lo
+facturado.
+
+### 11.4 El depósito de la reserva, conectado
+
+Era un número en un formulario: se escribía, se mostraba y nadie lo leía. Ahora
+son dos cosas distintas, que es lo que siempre fueron:
+
+| Campo | Qué es |
+|---|---|
+| `deposit_amount` | Lo **pactado**: «para apartar son $200.000» |
+| `deposit_advance_id` | Lo **recibido**: el anticipo con su fecha, forma de pago y turno de caja |
+
+Al facturar el check-out se cruza solo —vía `CustomerAdvanceService`, que ya
+existía— y el huésped paga la diferencia. La pantalla de cobro muestra «Tiene a
+favor» antes del total, para que nadie le pida el total completo a quien ya
+abonó la mitad.
+
+Al cancelar o marcar no-show, `avisoDelDeposito()` dice que hay plata a nombre
+de esa persona. **El sistema no decide** si se devuelve o se retiene como
+penalidad —eso es de cada caso— pero no la deja desaparecer en silencio.
+
+### 11.5 Check-out a crédito
+
+La empresa que manda empleados todo el mes y paga a treinta días es cliente
+típico de hotel urbano, y no se podía atender: la pantalla siempre cobraba el
+total.
+
+`issueForStay` acepta `a_credito`. La factura queda pendiente con el
+`payment_terms_days` del cliente y su `due_date`, así entra en cartera y vence
+cuando toca. **A Consumidor Final no se le fía**: la cartera se cobra por
+tercero y nadie sabría a quién llamar. El cupo de crédito no se revisa aquí —lo
+hace `SaleInvoiceEngine` al contabilizar, que es por donde pasan todas las
+ventas.
+
+### 11.6 Un fallo que encontraron las pruebas
+
+El pronóstico valoraba **todo a tarifa base**, ignorando las temporadas.
+`calendario()` cargaba el tipo de habitación con un `select` parcial que no
+incluía `hotel_id`, y `HotelTarifas` busca las temporadas justamente por ahí:
+llegaba en `null`, ninguna coincidía y nadie se enteraba.
+
+Habría salido a producción subestimando los ingresos de diciembre sin dar
+ningún error. Los `select` parciales sobre relaciones son exactamente esta
+clase de trampa: traen solo lo que se nombra, y lo que falta llega en `null`
+sin quejarse.
+
+---
+
+## 12. Pruebas
 
 60 pruebas nuevas, en cuatro archivos:
 
@@ -645,11 +747,10 @@ docker compose exec -T -e DB_CONNECTION=pgsql -e DB_HOST=postgres -e DB_PORT=543
 
 ---
 
-## 12. Lo que quedó fuera, y por qué
+## 13. Lo que quedó fuera, y por qué
 
 | No está | Por qué |
 |---|---|
-| **Tarifas por temporada** | La tarifa vive en el tipo y se cambia ahí cuando entra temporada; lo pactado con cada huésped queda sellado en su reserva y en su estadía. Un motor de temporadas a medias es peor que no tenerlo: nadie sabría qué precio va a salir |
 | **Canal de reservas (Booking, Airbnb)** | Solo se guarda el **origen** de la reserva. Una integración real es sincronización bidireccional de disponibilidad con un tercero, y eso es un módulo propio |
 | **División de cuenta entre huéspedes** | El folio es uno por habitación. Dos cuentas en una habitación es una decisión de producto que conviene ver pedida antes de construirla |
 | **Estado de camarería separado** | Un solo estado cubre el ciclo real; dos columnas habría que mantenerlas sincronizadas |
@@ -658,7 +759,7 @@ docker compose exec -T -e DB_CONNECTION=pgsql -e DB_HOST=postgres -e DB_PORT=543
 
 ---
 
-## 13. Archivos
+## 14. Archivos
 
 **Nuevos (46):**
 
