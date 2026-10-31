@@ -27,6 +27,18 @@ fi
 PROJECT_DIR="${PROJECT_DIR:-/opt/emprenddi}"
 COMPOSE="docker compose --env-file .env.production -f docker-compose.prod.yml"
 
+# El commit del ULTIMO deploy que termino bien. No es lo mismo que el HEAD de
+# git, y la diferencia es justo lo que fallo el 31/10/2026: el build se cayo
+# por disco lleno DESPUES del `git reset --hard`, y la siguiente corrida
+# comparo HEAD contra HEAD, concluyo "sin cambios" y salio con exito sin
+# migrar, sin sembrar y sin reiniciar nada.
+#
+# Un deploy a medias que se reporta como exitoso es peor que uno que falla:
+# nadie va a volver a mirarlo. Por eso este archivo se escribe al final y solo
+# al final —con `set -e`, cualquier paso que falle aborta antes— y es lo que se
+# compara en la corrida siguiente.
+STATE_FILE="$PROJECT_DIR/.deploy-last-success"
+
 # ---- Parse flags ------------------------------------------------------------
 FORCE_ALL=false
 SKIP_BUILD=false
@@ -52,8 +64,14 @@ echo "==> Pull últimos cambios desde origin/main..."
 if [ -n "${EMPRENDDI_DEPLOY_PRE_HEAD:-}" ]; then
     PRE_HEAD="$EMPRENDDI_DEPLOY_PRE_HEAD"
     echo "   (continuación post re-exec, PRE_HEAD heredado: $(git rev-parse --short "$PRE_HEAD" 2>/dev/null || echo "$PRE_HEAD"))"
+elif [ -s "$STATE_FILE" ] && git cat-file -e "$(cat "$STATE_FILE")^{commit}" 2>/dev/null; then
+    PRE_HEAD=$(cat "$STATE_FILE")
+    echo "   (último deploy exitoso: $(git rev-parse --short "$PRE_HEAD"))"
 else
+    # Primera corrida con marca de estado, o la marca quedó ilegible: el HEAD
+    # actual es la mejor referencia que hay.
     PRE_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "")
+    echo "   (sin marca de deploy previo, se usa el HEAD actual como referencia)"
 fi
 
 SCRIPT_FILE="$(realpath "$0")"
@@ -77,6 +95,7 @@ if [ -z "$PRE_HEAD" ] || [ "$PRE_HEAD" = "$POST_HEAD" ]; then
         echo "   Usa --full para forzar reconstrucción completa."
         # Aun así, garantizamos que el stack esté arriba (idempotente).
         $COMPOSE up -d
+        echo "$POST_HEAD" > "$STATE_FILE"
         exit 0
     fi
 fi
@@ -124,6 +143,37 @@ printf "   %-22s %s\n" "view:cache rebuild:" "$NEEDS_VIEW_CACHE"
 # ---- Stack arriba -----------------------------------------------------------
 echo "==> Asegurando stack arriba..."
 if [ "$NEEDS_BUILD" = true ]; then
+    # Compilar las extensiones de PHP necesita varios GB temporales. Sin
+    # espacio, lo que sale no dice "disco lleno": sale un error de autoconf
+    # —«m4: cannot clean temporary file for diversion»— y uno se va a buscar
+    # el problema al Dockerfile. Paso el 31/10/2026 y costo el deploy entero.
+    DOCKER_DIR=/var/lib/docker
+    [ -d "$DOCKER_DIR" ] || DOCKER_DIR=/
+    LIBRE_MB=$(df -BM "$DOCKER_DIR" 2>/dev/null | awk 'NR==2 {gsub(/M/, "", $4); print $4}')
+    MINIMO_MB=4096
+
+    # Si `df` no contesta algo numerico, no se bloquea el deploy por eso: se
+    # avisa y se sigue. El guardia esta para ahorrar un diagnostico, no para
+    # convertirse en un motivo nuevo de que no se pueda desplegar.
+    if ! [ "${LIBRE_MB:-}" -ge 0 ] 2>/dev/null; then
+        echo "==> No se pudo medir el espacio libre en $DOCKER_DIR; se continúa sin comprobarlo."
+        LIBRE_MB=""
+    else
+        echo "==> Espacio libre en $DOCKER_DIR: ${LIBRE_MB} MB"
+    fi
+
+    if [ -n "$LIBRE_MB" ] && [ "$LIBRE_MB" -lt "$MINIMO_MB" ]; then
+        echo "::error::Solo quedan ${LIBRE_MB} MB libres y el build necesita al menos ${MINIMO_MB} MB."
+        echo ""
+        echo "   Para recuperar espacio, de lo más seguro a lo más agresivo:"
+        echo "     docker builder prune -af      # caché de builds, no afecta nada corriendo"
+        echo "     docker image prune -f         # imágenes sin tag"
+        echo "     docker image prune -af        # también las viejas (pierdes el rollback rápido)"
+        echo ""
+        echo "   Se aborta ANTES de tocar la base o las cachés: el stack sigue como estaba."
+        exit 1
+    fi
+
     echo "==> Construyendo imagen app/worker/scheduler..."
     $COMPOSE build app worker scheduler
 fi
@@ -247,6 +297,12 @@ if changed '^docker/nginx/'; then
     echo "==> Recreando nginx (cambió su configuración)..."
     $COMPOSE up -d --no-deps --force-recreate nginx
 fi
+
+# ---- Marca de exito ---------------------------------------------------------
+# Lo ultimo que pasa. Si algo de arriba fallo, `set -e` ya aborto y este
+# archivo sigue apuntando al deploy anterior, asi que la corrida siguiente
+# vuelve a hacer todo en vez de creer que no hay nada que hacer.
+echo "$POST_HEAD" > "$STATE_FILE"
 
 echo ""
 echo "✅ Deploy completado: $(date -Is)"

@@ -36,3 +36,4 @@ _ide_helper_models.php
 # Sesion de gcloud aislada que usan los respaldos (tiene el token activo).
 /.gcloud-respaldos
 /clave-respaldos.json
+.deploy-last-success
