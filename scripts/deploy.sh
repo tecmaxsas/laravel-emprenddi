@@ -176,6 +176,20 @@ if [ "$NEEDS_SEEDERS" = true ]; then
     $COMPOSE exec -T app php artisan db:seed --class=DianCatalogsSeeder --force
     $COMPOSE exec -T app php artisan db:seed --class=DefaultPaymentMethodsSeeder --force
     $COMPOSE exec -T app php artisan db:seed --class=DefaultCurrenciesSeeder --force
+
+    # Los roles son por empresa: cada una tiene su copia de la plantilla, y
+    # `RolesSeeder` solo mantiene la plantilla. Sin este comando, un permiso
+    # nuevo existe como fila pero no lo tiene nadie, y el módulo que lo
+    # necesita "no funciona" en todas las empresas que ya existían —ni para el
+    # administrador—. Que es el momento exacto en que uno se pone a buscar el
+    # error en el código.
+    #
+    # Corre en cada deploy que toque seeders o el catálogo, y es seguro porque
+    # solo reparte permisos que nacieron DESPUÉS del rol: si el permiso es más
+    # viejo y el rol no lo tiene, alguien se lo quitó a propósito y no se
+    # toca. El detalle está en SyncRolePermissions.
+    echo "==> Repartiendo a los roles existentes los permisos nuevos..."
+    $COMPOSE exec -T app php artisan roles:sync-catalog
 fi
 
 # ---- Caches (siempre, son <10s) ---------------------------------------------

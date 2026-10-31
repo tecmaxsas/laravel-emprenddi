@@ -12,7 +12,12 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Un deploy de solo PHP/Blade tarda menos de un minuto, pero cuando cambia
+    # composer.lock o el Dockerfile hay que reconstruir la imagen, y eso en la
+    # VM se va a cerca de media hora. Con 15 minutos ese deploy se cortaba
+    # SIEMPRE, y lo peor es como se ve: la imagen a medio construir y el stack
+    # en un estado del que no avisa nadie.
+    timeout-minutes: 45
     steps:
       - name: Decode and validate SSH key
         id: ssh
@@ -61,6 +66,9 @@ jobs:
           key: ${{ steps.ssh.outputs.key }}
           port: 22
           script_stop: true
+          # Por defecto la accion corta el comando a los 10 minutos, que es
+          # menos de lo que tarda un deploy con reconstruccion de imagen.
+          command_timeout: 40m
           script: |
             cd /opt/emprenddi
             bash scripts/deploy.sh
