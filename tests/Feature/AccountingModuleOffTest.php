@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Filament\App\Resources\ExpenseResource\Pages\CreateExpense;
+use App\Filament\App\Resources\ThirdPartyResource\Pages\CreateThirdParty;
 use App\Models\Account;
 use App\Models\CashRegisterSession;
 use App\Models\Company;
@@ -245,6 +246,45 @@ class AccountingModuleOffTest extends TestCase
 
         $this->assertTrue(ModuleGate::active(ModuleGate::ACCOUNTING),
             'El contador tiene que poder imputar cada gasto a su cuenta.');
+    }
+
+    /**
+     * El cupo de crédito y el saldo de apertura NO son contabilidad.
+     *
+     * Estaban en la misma pestaña que las cuentas del PUC, detrás de la misma
+     * compuerta. El resultado era que una empresa sin contabilidad no podía
+     * ponerle cupo a un cliente, aunque el control de cupo funciona igual —no
+     * depende de llevar libros— ni cargarle lo que ya debía al migrar, aunque
+     * eso alimenta el estado de cuenta y la cartera por edades.
+     *
+     * Se descubrió al agregar el saldo de apertura al formulario: el campo se
+     * guardaba como cero sin avisar, porque la pestaña entera no existía.
+     */
+    public function test_sin_contabilidad_siguen_el_cupo_y_el_saldo_de_apertura(): void
+    {
+        $this->apagarContabilidad();
+
+        Livewire::test(CreateThirdParty::class)
+            ->assertFormFieldExists('credit_limit')
+            ->assertFormFieldExists('credit_days')
+            ->assertFormFieldExists('payment_terms_days')
+            ->assertFormFieldExists('opening_balance')
+            ->assertFormFieldExists('opening_balance_date')
+            // Las cuentas del PUC sí dependen del módulo: ahí la pregunta no
+            // significa nada para quien no lleva libros.
+            ->assertFormFieldDoesNotExist('default_receivable_account_id')
+            ->assertFormFieldDoesNotExist('default_payable_account_id');
+    }
+
+    /** Con contabilidad encendida aparecen además las cuentas. */
+    public function test_con_contabilidad_aparecen_tambien_las_cuentas_del_tercero(): void
+    {
+        $this->encenderContabilidad();
+
+        Livewire::test(CreateThirdParty::class)
+            ->assertFormFieldExists('default_receivable_account_id')
+            ->assertFormFieldExists('default_payable_account_id')
+            ->assertFormFieldExists('opening_balance');
     }
 
     // --------------------------------------------------------- auxiliares

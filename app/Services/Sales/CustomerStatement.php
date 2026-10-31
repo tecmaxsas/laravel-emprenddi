@@ -83,7 +83,7 @@ class CustomerStatement
         // El saldo de apertura es lo que el cliente ya debía cuando la empresa
         // empezó a usar Emprenddi. Va siempre primero, aunque haya filtro de
         // fechas: sin él el saldo corrido no significa nada.
-        if (abs((float) $customer->opening_balance) > 0.01) {
+        if ($customer->tieneSaldoDeApertura()) {
             $movimientos->push([
                 'date' => $customer->opening_balance_date?->toDateString() ?? '',
                 'type' => self::OPENING,

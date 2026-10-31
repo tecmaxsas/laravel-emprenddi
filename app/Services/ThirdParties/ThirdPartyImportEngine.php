@@ -30,7 +30,7 @@ class ThirdPartyImportEngine
     {
         $this->accountCache = [];
 
-        $reader = new Reader();
+        $reader = new Reader;
         $reader->open($filePath);
 
         $rows = [];
@@ -40,7 +40,9 @@ class ThirdPartyImportEngine
 
         foreach ($reader->getSheetIterator() as $sheet) {
             $name = trim($sheet->getName());
-            if (! preg_match('/^terceros/i', $name)) continue;
+            if (! preg_match('/^terceros/i', $name)) {
+                continue;
+            }
             $sheetFound = true;
 
             foreach ($sheet->getRowIterator() as $row) {
@@ -54,11 +56,14 @@ class ThirdPartyImportEngine
 
                 if ($rowNum === 1) {
                     $headers = array_map(fn ($h) => strtolower(trim((string) $h)), $cells);
+
                     continue;
                 }
 
                 $allEmpty = ! array_filter($cells, fn ($v) => $v !== null && $v !== '');
-                if ($allEmpty) continue;
+                if ($allEmpty) {
+                    continue;
+                }
 
                 $data = $this->rowToAssoc($headers, $cells);
                 $rows[] = $this->validateRow($data, $rowNum, $companyId);
@@ -89,6 +94,7 @@ class ThirdPartyImportEngine
         }
 
         $summary = $this->summarize($rows, $companyId);
+
         return [
             'rows' => $rows,
             'summary' => $summary,
@@ -138,9 +144,11 @@ class ThirdPartyImportEngine
 
         if ($existing) {
             $existing->update($payload);
+
             return true;
         }
         ThirdParty::create(array_merge(['company_id' => $companyId], $payload));
+
         return false;
     }
 
@@ -254,7 +262,7 @@ class ThirdPartyImportEngine
 
         // NIT con DV
         if ($docType === 'nit' && ! empty($data['dv']) && ! is_numeric($data['dv'])) {
-            $errors[] = "dv debe ser numérico (1-9)";
+            $errors[] = 'dv debe ser numérico (1-9)';
         }
 
         // Email
@@ -293,8 +301,7 @@ class ThirdPartyImportEngine
         }
 
         $saldo = $this->parseMoney($data['opening_balance'] ?? null);
-        if ($saldo !== null && $saldo != 0.0
-            && empty($data['opening_balance_date'])) {
+        if (ThirdParty::esSaldoDeApertura($saldo) && empty($data['opening_balance_date'])) {
             $errors[] = 'opening_balance_date es obligatoria cuando hay saldo de apertura';
         }
 
@@ -324,6 +331,7 @@ class ThirdPartyImportEngine
         foreach ($rows as $r) {
             if (! empty($r['errors'])) {
                 $errors++;
+
                 continue;
             }
             in_array($r['data']['document_number'] ?? null, $existingDocs, true)
@@ -450,33 +458,50 @@ class ThirdPartyImportEngine
         }
         // Strings triminados
         foreach ($out as $k => $v) {
-            if (is_string($v)) $out[$k] = trim($v);
+            if (is_string($v)) {
+                $out[$k] = trim($v);
+            }
         }
+
         return $out;
     }
 
     protected function coerceBool(mixed $v, bool $default): bool
     {
-        if ($v === null || $v === '') return $default;
-        if (is_bool($v)) return $v;
-        if (is_numeric($v)) return (bool) (int) $v;
+        if ($v === null || $v === '') {
+            return $default;
+        }
+        if (is_bool($v)) {
+            return $v;
+        }
+        if (is_numeric($v)) {
+            return (bool) (int) $v;
+        }
         $s = strtolower(trim((string) $v));
+
         return in_array($s, ['si', 'sí', 'yes', 'true', '1', 'x'], true);
     }
 
     protected function resolveAccountId(?string $code, int $companyId): ?int
     {
-        if (! $code) return null;
+        if (! $code) {
+            return null;
+        }
         $code = trim($code);
-        if ($code === '') return null;
+        if ($code === '') {
+            return null;
+        }
         $key = strtolower($code);
-        if (array_key_exists($key, $this->accountCache)) return $this->accountCache[$key];
+        if (array_key_exists($key, $this->accountCache)) {
+            return $this->accountCache[$key];
+        }
         $id = Account::query()
             ->where('company_id', $companyId)
             ->where('accepts_movements', true)
             ->where('active', true)
             ->where('code', $code)
             ->value('id');
+
         return $this->accountCache[$key] = $id ? (int) $id : null;
     }
 }

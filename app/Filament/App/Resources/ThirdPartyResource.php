@@ -6,9 +6,12 @@ use App\Filament\App\Resources\ThirdPartyResource\Pages;
 use App\Filament\App\Resources\ThirdPartyResource\RelationManagers;
 use App\Filament\Concerns\ChecksPermission;
 use App\Models\Account;
-use App\Models\ThirdParty;
+use App\Models\Dian\Municipality;
 use App\Models\Tax;
+use App\Models\ThirdParty;
+use App\Services\Sales\CustomerCreditGuard;
 use App\Support\DianDvCalculator;
+use App\Support\ModuleGate;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -20,8 +23,15 @@ class ThirdPartyResource extends Resource
 {
     use ChecksPermission;
 
-    protected static function viewPermission(): string { return 'third_parties.view'; }
-    protected static function managePermission(): string { return 'third_parties.manage'; }
+    protected static function viewPermission(): string
+    {
+        return 'third_parties.view';
+    }
+
+    protected static function managePermission(): string
+    {
+        return 'third_parties.manage';
+    }
 
     protected static ?string $model = ThirdParty::class;
 
@@ -143,14 +153,14 @@ class ThirdPartyResource extends Resource
                                 ->label('Municipio DIAN')
                                 ->helperText('Necesario para facturación electrónica.')
                                 ->searchable()
-                                ->getSearchResultsUsing(fn (string $search) => \App\Models\Dian\Municipality::query()
+                                ->getSearchResultsUsing(fn (string $search) => Municipality::query()
                                     ->where('name', 'ilike', "%{$search}%")
                                     ->orderBy('name')
                                     ->limit(50)
                                     ->get()
-                                    ->mapWithKeys(fn (\App\Models\Dian\Municipality $m) => [$m->id => $m->fullName()])
+                                    ->mapWithKeys(fn (Municipality $m) => [$m->id => $m->fullName()])
                                     ->all())
-                                ->getOptionLabelUsing(fn ($value) => \App\Models\Dian\Municipality::find($value)?->fullName())
+                                ->getOptionLabelUsing(fn ($value) => Municipality::find($value)?->fullName())
                                 ->columnSpan(2),
                             Forms\Components\TextInput::make('country')->label('País')->default('CO')->maxLength(2),
                             Forms\Components\TextInput::make('postal_code')->label('Código postal'),
@@ -215,8 +225,16 @@ class ThirdPartyResource extends Resource
                             ]),
                     ]),
 
-                Forms\Components\Tabs\Tab::make('Cuentas y términos')
-                    ->visible(fn () => \App\Support\ModuleGate::active(\App\Support\ModuleGate::ACCOUNTING))
+                // Solo las cuentas del PUC van detrás del módulo de
+                // contabilidad. Antes esta pestaña llevaba también el cupo de
+                // crédito, los días de crédito y los términos de pago, y eso
+                // dejaba a una empresa sin contabilidad SIN poder ponerle cupo
+                // a un cliente —aunque el control de cupo funciona igual, no
+                // depende de llevar libros—. Lo mismo iba a pasar con el saldo
+                // de apertura, que alimenta el estado de cuenta y la cartera
+                // por edades, ninguno de los dos detrás de esa compuerta.
+                Forms\Components\Tabs\Tab::make('Cuentas contables')
+                    ->visible(fn () => ModuleGate::active(ModuleGate::ACCOUNTING))
                     ->icon('heroicon-o-banknotes')
                     ->schema([
                         Forms\Components\Group::make()->columns(2)->schema([
@@ -249,7 +267,13 @@ class ThirdPartyResource extends Resource
                                 ->searchable(['code', 'name'])
                                 ->preload()
                                 ->placeholder('— sin cuenta default —'),
+                        ]),
+                    ]),
 
+                Forms\Components\Tabs\Tab::make('Condiciones comerciales')
+                    ->icon('heroicon-o-credit-card')
+                    ->schema([
+                        Forms\Components\Group::make()->columns(2)->schema([
                             Forms\Components\Select::make('default_seller_user_id')
                                 ->label('Vendedor asignado')
                                 ->relationship('defaultSeller', 'name', fn (Builder $query) => $query
@@ -274,6 +298,37 @@ class ThirdPartyResource extends Resource
                                 ->minValue(0)
                                 ->default(0)
                                 ->helperText('Aplicable a proveedores.'),
+
+                            // Hasta ahora esto solo entraba por la importación
+                            // masiva: para cargar un cliente que ya debía había
+                            // que armar un Excel de una fila.
+                            //
+                            // Se muestra siempre, también a un proveedor, y no
+                            // oculto según el toggle «Cliente» a propósito: un
+                            // campo que desaparece es un campo cuyo valor nadie
+                            // vuelve a ver, y el saldo seguiría contando en la
+                            // cartera por edades sin que nada lo muestre.
+                            Forms\Components\TextInput::make('opening_balance')
+                                ->label('Saldo de apertura (cartera)')
+                                ->helperText('Lo que este cliente ya debía cuando empezaste a usar Emprenddi. '
+                                    .'Abre su estado de cuenta y cuenta para el cupo de crédito.')
+                                ->numeric()
+                                ->prefix('$')
+                                ->default(0)
+                                // Para que la fecha se vuelva obligatoria sin
+                                // esperar al guardado.
+                                ->live(onBlur: true),
+
+                            Forms\Components\DatePicker::make('opening_balance_date')
+                                ->label('Fecha del saldo de apertura')
+                                ->helperText('Desde cuándo debe. La cartera por edades la usa para ubicarlo en '
+                                    .'su tramo de vencimiento.')
+                                ->maxDate(now())
+                                // Misma regla que exige el importador, y con el
+                                // mismo motivo: sin fecha, la cartera por edades
+                                // trata la deuda como si fuera de hoy y un saldo
+                                // de hace dos años aparece al día.
+                                ->required(fn (Forms\Get $get) => ThirdParty::esSaldoDeApertura($get('opening_balance'))),
                         ]),
                     ]),
 
@@ -353,13 +408,26 @@ class ThirdPartyResource extends Resource
                             return null;
                         }
 
-                        $disponible = app(\App\Services\Sales\CustomerCreditGuard::class)
+                        $disponible = app(CustomerCreditGuard::class)
                             ->availableCredit($record);
 
                         return $disponible === null
                             ? null
                             : 'Disponible $'.number_format($disponible, 0, ',', '.');
                     })
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                // Oculta por defecto porque solo importa durante la migración
+                // desde el sistema anterior, pero ordenable: "a quién le
+                // cargamos saldo de apertura" era una pregunta que antes solo
+                // se podía contestar mirando la base.
+                Tables\Columns\TextColumn::make('opening_balance')
+                    ->label('Saldo de apertura')
+                    ->money('COP')
+                    ->description(fn (ThirdParty $record) => $record->tieneSaldoDeApertura()
+                        ? ($record->opening_balance_date?->format('Y-m-d') ?? 'sin fecha')
+                        : null)
+                    ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\IconColumn::make('active')

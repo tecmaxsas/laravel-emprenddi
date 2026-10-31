@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\OrderTaking\PriceList;
 use App\Support\DianDvCalculator;
 use App\Traits\BelongsToCompany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -13,7 +14,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class ThirdParty extends Model
 {
-    use HasFactory, BelongsToCompany, SoftDeletes;
+    use BelongsToCompany, HasFactory, SoftDeletes;
 
     public const PERSON_TYPES = [
         'natural' => 'Persona Natural',
@@ -125,9 +126,35 @@ class ThirdParty extends Model
         ];
     }
 
+    /**
+     * ¿Este monto cuenta como saldo de apertura?
+     *
+     * La pregunta parece de más hasta que se responde en tres sitios con tres
+     * umbrales distintos. Ya pasaba: el importador exigía fecha con `!= 0` y
+     * el estado de cuenta pintaba la línea de apertura con `> 0.01`. Entre
+     * esos dos hay un hueco de un centavo donde el importador obliga a poner
+     * una fecha para un saldo que después el estado de cuenta no muestra.
+     *
+     * El formulario del tercero iba a ser el tercer sitio, así que la regla
+     * vive aquí y los tres preguntan lo mismo.
+     */
+    public static function esSaldoDeApertura(float|int|string|null $monto): bool
+    {
+        if ($monto === null || $monto === '') {
+            return false;
+        }
+
+        return abs((float) $monto) > 0.009;
+    }
+
+    public function tieneSaldoDeApertura(): bool
+    {
+        return self::esSaldoDeApertura($this->opening_balance);
+    }
+
     public function defaultPriceList(): BelongsTo
     {
-        return $this->belongsTo(\App\Models\OrderTaking\PriceList::class, 'default_price_list_id');
+        return $this->belongsTo(PriceList::class, 'default_price_list_id');
     }
 
     public function defaultReceivableAccount(): BelongsTo
@@ -192,10 +219,18 @@ class ThirdParty extends Model
     public function rolesLabel(): string
     {
         $roles = [];
-        if ($this->is_customer) $roles[] = 'Cliente';
-        if ($this->is_supplier) $roles[] = 'Proveedor';
-        if ($this->is_employee) $roles[] = 'Empleado';
-        if ($this->is_other) $roles[] = 'Otro';
+        if ($this->is_customer) {
+            $roles[] = 'Cliente';
+        }
+        if ($this->is_supplier) {
+            $roles[] = 'Proveedor';
+        }
+        if ($this->is_employee) {
+            $roles[] = 'Empleado';
+        }
+        if ($this->is_other) {
+            $roles[] = 'Otro';
+        }
 
         return implode(', ', $roles) ?: '—';
     }
