@@ -150,7 +150,14 @@ if [ "$NEEDS_BUILD" = true ]; then
     DOCKER_DIR=/var/lib/docker
     [ -d "$DOCKER_DIR" ] || DOCKER_DIR=/
     LIBRE_MB=$(df -BM "$DOCKER_DIR" 2>/dev/null | awk 'NR==2 {gsub(/M/, "", $4); print $4}')
-    MINIMO_MB=4096
+
+    # 4 GB es una ESTIMACION, no una medicion: el build compila las extensiones
+    # de PHP y nunca se midio cuanto necesita de verdad. Por eso se puede
+    # bajar sin editar el script —`DEPLOY_MIN_MB=2500 bash scripts/deploy.sh`—:
+    # un numero que puse a ojo no deberia ser el motivo de que no se pueda
+    # desplegar. Si el build no cabe, falla ANTES de las migraciones y el stack
+    # se queda como estaba, asi que intentarlo es barato.
+    MINIMO_MB="${DEPLOY_MIN_MB:-4096}"
 
     # Si `df` no contesta algo numerico, no se bloquea el deploy por eso: se
     # avisa y se sigue. El guardia esta para ahorrar un diagnostico, no para
@@ -165,11 +172,20 @@ if [ "$NEEDS_BUILD" = true ]; then
     if [ -n "$LIBRE_MB" ] && [ "$LIBRE_MB" -lt "$MINIMO_MB" ]; then
         echo "::error::Solo quedan ${LIBRE_MB} MB libres y el build necesita al menos ${MINIMO_MB} MB."
         echo ""
-        echo "   Para recuperar espacio, de lo más seguro a lo más agresivo:"
+        echo "   Mira PRIMERO en qué se fue el disco; puede que Docker no sea el culpable:"
+        echo "     du -xh --max-depth=1 / | sort -rh | head -12"
+        echo "     du -sh $PROJECT_DIR/storage/backups $PROJECT_DIR/storage/logs"
+        echo ""
+        echo "   Los respaldos locales se conservan BACKUP_RETENCION días (30 por defecto)"
+        echo "   en $PROJECT_DIR/storage/backups. En un disco pequeño eso solo cabe si"
+        echo "   están subiéndose al bucket: revisa estado.json antes de borrar ninguno."
+        echo ""
+        echo "   Y si lo que sobra es de Docker, de lo más seguro a lo más agresivo:"
         echo "     docker builder prune -af      # caché de builds, no afecta nada corriendo"
         echo "     docker image prune -f         # imágenes sin tag"
         echo "     docker image prune -af        # también las viejas (pierdes el rollback rápido)"
         echo ""
+        echo "   El mínimo es una estimación: puedes bajarlo con DEPLOY_MIN_MB=2500."
         echo "   Se aborta ANTES de tocar la base o las cachés: el stack sigue como estaba."
         exit 1
     fi
