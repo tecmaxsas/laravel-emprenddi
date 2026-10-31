@@ -249,6 +249,23 @@ class ProductImportEngine
         $namesInFile = collect($productRows)->pluck('data.name')->filter()
             ->map(fn ($n) => strtolower(trim((string) $n)))->all();
 
+        // Precio de compra que trae la hoja Productos, por code y por name.
+        // Cuando el producto es nuevo todavia no esta en la base al validar,
+        // y buscarlo solo ahi dejaba la apertura a costo 0 sin avisar.
+        $comprasEnArchivo = [];
+        foreach ($productRows as $pr) {
+            $precio = $pr['data']['purchase_price'] ?? null;
+            if (! is_numeric($precio) || (float) $precio <= 0) {
+                continue;
+            }
+            foreach ([$pr['data']['code'] ?? null, $pr['data']['name'] ?? null] as $ref) {
+                $ref = strtolower(trim((string) $ref));
+                if ($ref !== '') {
+                    $comprasEnArchivo[$ref] = (float) $precio;
+                }
+            }
+        }
+
         $lines = [];
         $rowNum = 0;
         $headers = null;
@@ -318,8 +335,12 @@ class ProductImportEngine
             // posterior calcule un costo de ventas de 0, inflando la utilidad.
             // Pero pedir otro archivo cuando el precio de compra ya esta
             // cargado es hacerle dar vueltas al usuario.
+            //
+            // Manda el del archivo sobre el de la base: es el que va a quedar
+            // grabado en el producto al importar.
             if ($vacio($data['unit_cost']) || (float) $data['unit_cost'] == 0.0) {
-                $costoProducto = $this->precioDeCompraDe($data['product_code'], $companyId);
+                $costoProducto = $comprasEnArchivo[strtolower($data['product_code'])]
+                    ?? $this->precioDeCompraDe($data['product_code'], $companyId);
 
                 if ($costoProducto > 0) {
                     $data['unit_cost'] = $costoProducto;
