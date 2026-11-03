@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Dian\Resolution;
 use App\Traits\BelongsToCompany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,10 +12,45 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class CreditDebitNote extends Model
 {
-    use HasFactory, BelongsToCompany, SoftDeletes;
+    use BelongsToCompany, HasFactory, SoftDeletes;
 
     public const TYPE_CREDIT = 'credit';
+
     public const TYPE_DEBIT = 'debit';
+
+    /**
+     * Electronica o POS.
+     *
+     * La nota credito electronica es para la factura electronica: lleva
+     * resolucion de la DIAN y se transmite. El tiquete POS no se transmite, y
+     * una devolucion sobre el tampoco: es un documento interno con su propio
+     * consecutivo.
+     *
+     * Null se trata como electronica, igual que en `SaleInvoice`, para no
+     * reescribir las notas que ya existen.
+     */
+    public const KIND_ELECTRONIC = 'electronic';
+
+    public const KIND_POS = 'pos';
+
+    public const KINDS = [
+        self::KIND_ELECTRONIC => 'Nota electrónica',
+        self::KIND_POS => 'Devolución POS',
+    ];
+
+    /**
+     * Como se le devuelve la plata al cliente.
+     *
+     * Esto —y no el tipo de documento— es lo que de verdad cambia entre una
+     * devolucion de una venta a credito y una de contado. A credito se rebaja
+     * lo que debe; de contado hay que sacarle la plata al cajon, porque ya
+     * pago.
+     */
+    public const REFUND_BALANCE = 'balance';
+
+    public const REFUND_METHODS = [
+        self::REFUND_BALANCE => 'Rebajar el saldo de la factura',
+    ];
 
     public const TYPES = [
         self::TYPE_CREDIT => 'Nota Crédito',
@@ -22,7 +58,9 @@ class CreditDebitNote extends Model
     ];
 
     public const STATUS_DRAFT = 'draft';
+
     public const STATUS_POSTED = 'posted';
+
     public const STATUS_CANCELLED = 'cancelled';
 
     public const STATUSES = [
@@ -32,8 +70,11 @@ class CreditDebitNote extends Model
     ];
 
     public const DIAN_PENDING = 'pending';
+
     public const DIAN_SENT = 'sent';
+
     public const DIAN_ACCEPTED = 'accepted';
+
     public const DIAN_REJECTED = 'rejected';
 
     public const DIAN_STATUSES = [
@@ -77,6 +118,10 @@ class CreditDebitNote extends Model
         'reason_code',
         'reason_description',
         'affects_inventory',
+        'kind',
+        'refund_method',
+        'refund_amount',
+        'cash_register_session_id',
         'currency',
         'exchange_rate',
         'subtotal',
@@ -114,6 +159,7 @@ class CreditDebitNote extends Model
             'reason_code' => 'integer',
             'number' => 'integer',
             'affects_inventory' => 'boolean',
+            'refund_amount' => 'decimal:2',
             'dian_response' => 'array',
         ];
     }
@@ -155,7 +201,7 @@ class CreditDebitNote extends Model
 
     public function dianResolution(): BelongsTo
     {
-        return $this->belongsTo(\App\Models\Dian\Resolution::class, 'dian_resolution_id');
+        return $this->belongsTo(Resolution::class, 'dian_resolution_id');
     }
 
     /**
@@ -168,12 +214,33 @@ class CreditDebitNote extends Model
         return $this->prefix.$this->number;
     }
 
-    public function isCredit(): bool { return $this->type === self::TYPE_CREDIT; }
-    public function isDebit(): bool { return $this->type === self::TYPE_DEBIT; }
-    public function isDraft(): bool { return $this->status === self::STATUS_DRAFT; }
-    public function isPosted(): bool { return $this->status === self::STATUS_POSTED; }
-    public function isDianAccepted(): bool { return $this->dian_status === self::DIAN_ACCEPTED; }
-    public function canResendToDian(): bool {
+    public function isCredit(): bool
+    {
+        return $this->type === self::TYPE_CREDIT;
+    }
+
+    public function isDebit(): bool
+    {
+        return $this->type === self::TYPE_DEBIT;
+    }
+
+    public function isDraft(): bool
+    {
+        return $this->status === self::STATUS_DRAFT;
+    }
+
+    public function isPosted(): bool
+    {
+        return $this->status === self::STATUS_POSTED;
+    }
+
+    public function isDianAccepted(): bool
+    {
+        return $this->dian_status === self::DIAN_ACCEPTED;
+    }
+
+    public function canResendToDian(): bool
+    {
         return $this->isPosted() && $this->dian_status !== self::DIAN_ACCEPTED;
     }
 
@@ -185,6 +252,7 @@ class CreditDebitNote extends Model
     public function reasonLabel(): string
     {
         $list = $this->isCredit() ? self::CREDIT_REASONS : self::DEBIT_REASONS;
+
         return $list[$this->reason_code] ?? "Código {$this->reason_code}";
     }
 
@@ -194,5 +262,29 @@ class CreditDebitNote extends Model
     public function dianTypeDocumentId(): int
     {
         return $this->isCredit() ? 4 : 5;
+    }
+
+    public function esPos(): bool
+    {
+        return $this->kind === self::KIND_POS;
+    }
+
+    /** Las notas POS no viajan a la DIAN; las electronicas si. */
+    public function viajaALaDian(): bool
+    {
+        return ! $this->esPos();
+    }
+
+    /** Se le devolvio plata en efectivo o por otro medio de pago. */
+    public function devuelvePlata(): bool
+    {
+        return $this->refund_method !== null
+            && $this->refund_method !== self::REFUND_BALANCE
+            && (float) $this->refund_amount > 0.009;
+    }
+
+    public function session(): BelongsTo
+    {
+        return $this->belongsTo(CashRegisterSession::class, 'cash_register_session_id');
     }
 }

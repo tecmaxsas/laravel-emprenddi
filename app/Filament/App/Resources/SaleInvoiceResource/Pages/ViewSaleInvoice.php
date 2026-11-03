@@ -4,6 +4,7 @@ namespace App\Filament\App\Resources\SaleInvoiceResource\Pages;
 
 use App\Filament\App\Resources\CreditDebitNoteResource;
 use App\Filament\App\Resources\SaleInvoiceResource;
+use App\Models\CashRegisterSession;
 use App\Models\Company;
 use App\Models\CreditDebitNote;
 use App\Models\SaleInvoice;
@@ -16,6 +17,7 @@ use App\Support\ErrorDeAccion;
 use App\Support\PosSettings;
 use Filament\Actions;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\Toggle;
 use Filament\Infolists;
 use Filament\Infolists\Infolist;
 use Filament\Notifications\Notification;
@@ -109,7 +111,7 @@ class ViewSaleInvoice extends ViewRecord
                 // emisión que no coincide con la firma (FAD09e).
                 ->form(fn (SaleInvoice $record) => $record->date?->isBefore(today())
                     ? [
-                        \Filament\Forms\Components\Toggle::make('fecha_hoy')
+                        Toggle::make('fecha_hoy')
                             ->label('Enviar con la fecha y hora de hoy')
                             ->default(true)
                             ->helperText('La factura es del '.$record->date->format('d/m/Y').'. La DIAN rechaza '
@@ -256,19 +258,27 @@ class ViewSaleInvoice extends ViewRecord
                     }
                 }),
 
+            // En una factura POS el documento no es una nota crédito: el
+            // tiquete no se transmite y la devolución tampoco. Es el mismo
+            // flujo con otro nombre, porque para el cajero es otra cosa.
             Actions\Action::make('createCreditNote')
-                ->label('Crear Nota Crédito')
+                ->label(fn (SaleInvoice $record) => $record->isPosInvoice()
+                    ? 'Registrar devolución'
+                    : 'Crear Nota Crédito')
                 ->icon('heroicon-o-arrow-uturn-left')
                 ->color('warning')
                 ->visible(fn (SaleInvoice $record) => $record->isPosted()
                     && auth()->user()?->can('credit_debit_notes.create'))
                 ->action(fn (SaleInvoice $record) => $this->createNoteFromInvoice($record, 'credit')),
 
+            // La nota débito es un documento electrónico: le cobra más al
+            // cliente y viaja a la DIAN. Sobre un tiquete POS no existe.
             Actions\Action::make('createDebitNote')
                 ->label('Crear Nota Débito')
                 ->icon('heroicon-o-arrow-uturn-right')
                 ->color('info')
                 ->visible(fn (SaleInvoice $record) => $record->isPosted()
+                    && ! $record->isPosInvoice()
                     && auth()->user()?->can('credit_debit_notes.create'))
                 ->action(fn (SaleInvoice $record) => $this->createNoteFromInvoice($record, 'debit')),
         ];
@@ -284,8 +294,26 @@ class ViewSaleInvoice extends ViewRecord
         $invoice->loadMissing('lines');
 
         $company = Company::find($invoice->company_id);
-        $prefix = $type === 'credit' ? 'NC' : 'ND';
-        $defaultReason = $type === 'credit' ? 1 : 1;
+        $esDevolucionPos = $type === 'credit' && $invoice->isPosInvoice();
+        $prefix = $type === 'credit' ? ($esDevolucionPos ? 'DEV' : 'NC') : 'ND';
+        $defaultReason = 1;
+
+        // Lo que ya pagó el cliente hay que devolvérselo; lo que debía, se le
+        // rebaja. Una venta POS está pagada por definición, así que la plata
+        // sale del cajón y el turno abierto es el que responde por ella.
+        $yaPago = (float) $invoice->paid_amount > 0.009;
+        $turno = $esDevolucionPos || $yaPago
+            ? CashRegisterSession::query()
+                ->where('company_id', $invoice->company_id)
+                ->where('status', CashRegisterSession::STATUS_OPEN)
+                ->latest('opened_at')
+                ->first()
+            : null;
+
+        $metodoDevolucion = null;
+        if ($type === 'credit' && $yaPago && $turno) {
+            $metodoDevolucion = $invoice->payments()->latest('id')->value('payment_method') ?: 'cash';
+        }
 
         $note = CreditDebitNote::create([
             'company_id' => $invoice->company_id,
@@ -297,6 +325,18 @@ class ViewSaleInvoice extends ViewRecord
             'number' => app(CreditDebitNoteNumberer::class)->next($company, $type, $prefix),
             'date' => now()->toDateString(),
             'reason_code' => $defaultReason,
+            'kind' => $invoice->isPosInvoice()
+                ? CreditDebitNote::KIND_POS
+                : CreditDebitNote::KIND_ELECTRONIC,
+            // La acción nace de una factura con motivo «devolución de bienes»:
+            // lo normal es que la mercancía vuelva. Antes esto quedaba en
+            // falso y la devolución no reingresaba un solo producto sin que
+            // nada lo advirtiera. Para una rebaja o un ajuste de precio se
+            // apaga, y ahí el error se ve de una en el inventario.
+            'affects_inventory' => $type === 'credit',
+            'refund_method' => $metodoDevolucion ?? ($type === 'credit' ? CreditDebitNote::REFUND_BALANCE : null),
+            'refund_amount' => $metodoDevolucion ? $invoice->total : 0,
+            'cash_register_session_id' => $metodoDevolucion ? $turno?->id : null,
             'currency' => $invoice->currency,
             'exchange_rate' => $invoice->exchange_rate,
             'subtotal' => $invoice->subtotal,

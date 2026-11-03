@@ -3,12 +3,17 @@
 namespace App\Services\Sales;
 
 use App\Models\Account;
+use App\Models\CashRegisterSession;
 use App\Models\Company;
 use App\Models\CreditDebitNote;
 use App\Models\JournalEntry;
 use App\Models\JournalEntryLine;
+use App\Models\SaleInvoice;
 use App\Services\Accounting\JournalEntryNumberer;
+use App\Services\Cash\CashSessionSummary;
 use App\Services\Inventory\InventoryEngine;
+use App\Support\PaymentAccountResolver;
+use App\Support\PaymentMethodOptions;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -35,6 +40,7 @@ class CreditDebitNoteEngine
         protected InventoryEngine $inventory,
         protected JournalEntryNumberer $numberer,
         protected DocumentNumberer $documentNumberer,
+        protected CashSessionSummary $caja,
     ) {}
 
     public function post(CreditDebitNote $note): CreditDebitNote
@@ -48,6 +54,9 @@ class CreditDebitNoteEngine
         if ($note->lines->isEmpty()) {
             throw new RuntimeException('La nota no tiene líneas.');
         }
+
+        $this->exigirQueQuepaEnLaFactura($note);
+        $this->exigirQueLaPlataAlcance($note);
 
         return DB::transaction(function () use ($note) {
             $this->recalculateTotals($note);
@@ -108,11 +117,123 @@ class CreditDebitNoteEngine
                 'posted_at' => now(),
                 'posted_by_user_id' => Auth::id(),
                 'journal_entry_id' => $journalEntry->id,
-                'dian_status' => $note->dian_status ?: CreditDebitNote::DIAN_PENDING,
+                'dian_status' => $note->viajaALaDian()
+                    ? ($note->dian_status ?: CreditDebitNote::DIAN_PENDING)
+                    : null,
             ]);
+
+            // 5. La factura tiene que enterarse. Sin esto el asiento acredita
+            //    la CxC pero el saldo sigue completo, y el cliente que
+            //    devolvio la mercancia sigue apareciendo debiendola.
+            $this->refrescarAcreditadoDe($note->saleInvoice);
 
             return $note->fresh();
         });
+    }
+
+    /**
+     * Si se le devuelve plata al cliente, el cajon tiene que tenerla.
+     *
+     * Un cajero no puede entregar $80.000 de un cajon con $50.000, y el
+     * sistema tampoco deberia dejarlo registrar: lo que queda despues no es un
+     * error de digitacion, es un arqueo que nunca pudo ser cierto. Pregunta lo
+     * mismo que el arqueo —`CashSessionSummary`— para que el POS y el cierre
+     * no puedan contradecirse.
+     */
+    protected function exigirQueLaPlataAlcance(CreditDebitNote $note): void
+    {
+        if (! $note->devuelvePlata()) {
+            return;
+        }
+
+        if (! PaymentMethodOptions::esEfectivo((string) $note->refund_method, (int) $note->company_id)) {
+            // Una devolucion por transferencia o tarjeta no sale del cajon.
+            return;
+        }
+
+        $sesion = $note->session;
+
+        if (! $sesion || $sesion->status !== CashRegisterSession::STATUS_OPEN) {
+            throw new RuntimeException(
+                'Para devolver efectivo tiene que haber un turno de caja abierto: esa plata sale '
+                .'del cajon y tiene que quedar en el arqueo de alguien.'
+            );
+        }
+
+        $disponible = (float) $this->caja->compute($sesion)['expected_cash'];
+        $monto = round((float) $note->refund_amount, 2);
+
+        if ($monto > $disponible + 0.01) {
+            throw new RuntimeException(sprintf(
+                'En la caja hay $%s y la devolucion es de $%s. Registra primero la entrada que '
+                .'falta, o devuelve por otro medio.',
+                number_format(max(0, $disponible), 0, ',', '.'),
+                number_format($monto, 0, ',', '.'),
+            ));
+        }
+    }
+
+    /**
+     * Recalcula cuanto se le ha acreditado a una factura.
+     *
+     * Se suma desde las notas en vez de ir acumulando, para que recalcular dos
+     * veces de el mismo resultado: un acumulador que se incrementa es un
+     * acumulador que algun dia se incrementa dos veces.
+     */
+    public function refrescarAcreditadoDe(?SaleInvoice $invoice): void
+    {
+        if (! $invoice) {
+            return;
+        }
+
+        $acreditado = (float) CreditDebitNote::withoutGlobalScopes()
+            ->where('sale_invoice_id', $invoice->id)
+            ->where('type', CreditDebitNote::TYPE_CREDIT)
+            ->where('status', CreditDebitNote::STATUS_POSTED)
+            // Lo que se devolvio en efectivo ya salio del cajon: no rebaja
+            // ademas el saldo, o la devolucion contaria dos veces.
+            ->where(fn ($q) => $q->whereNull('refund_method')
+                ->orWhere('refund_method', CreditDebitNote::REFUND_BALANCE))
+            ->sum('total');
+
+        $invoice->forceFill(['credited_amount' => round($acreditado, 2)])->save();
+    }
+
+    /**
+     * Una nota no puede acreditar mas de lo que la factura todavia debe.
+     *
+     * Sin esto se podia devolver tres veces la misma venta: cada nota pasaba
+     * sola porque nadie miraba las anteriores. Y ahora que la nota rebaja el
+     * saldo, acreditar de mas dejaria la factura en negativo, que la cartera
+     * leeria como un saldo a favor que nadie le dio al cliente.
+     *
+     * Solo aplica a notas credito atadas a una factura. Una nota suelta no
+     * tiene contra que compararse.
+     */
+    protected function exigirQueQuepaEnLaFactura(CreditDebitNote $note): void
+    {
+        if (! $note->isCredit() || ! $note->sale_invoice_id) {
+            return;
+        }
+
+        $invoice = $note->saleInvoice;
+
+        if (! $invoice) {
+            return;
+        }
+
+        $disponible = $invoice->creditableRemaining();
+        $total = round((float) $note->total, 2);
+
+        if ($total > $disponible + 0.01) {
+            throw new RuntimeException(sprintf(
+                'Esta nota acredita $%s pero a la factura %s solo le quedan $%s por acreditar. '
+                .'Revisa las cantidades, o si ya hay otra nota sobre la misma factura.',
+                number_format($total, 0, ',', '.'),
+                $invoice->fullNumber(),
+                number_format($disponible, 0, ',', '.'),
+            ));
+        }
     }
 
     /**
@@ -333,6 +454,14 @@ class CreditDebitNoteEngine
      */
     protected function reserveDianNumberIfApplicable(CreditDebitNote $note): void
     {
+        // Una devolución POS no se transmite: no gasta consecutivo de la
+        // resolución de notas ni queda en la cola de envío. Quemarle un número
+        // a la resolución sería peor que inútil —ese consecutivo quedaría con
+        // un hueco que la DIAN pregunta después.
+        if ($note->esPos()) {
+            return;
+        }
+
         // El mismo código DIAN con el que la nota se transmite. Tenerlo en un
         // solo sitio es lo que impide que la resolución quede registrada bajo un
         // tipo y el documento se envíe declarando otro.
@@ -453,13 +582,21 @@ class CreditDebitNoteEngine
                 ]);
             }
 
-            // CR CxC (cliente debe menos)
+            // CR la contrapartida: la CxC si se le rebaja lo que debe, o la
+            // caja si se le devolvió la plata. Una venta de contado ya se
+            // cobró: ahí no hay cartera que bajar, hay efectivo que sale.
+            $devuelvePlata = $note->devuelvePlata();
+
             JournalEntryLine::create([
                 'journal_entry_id' => $entry->id,
                 'line_number' => $line,
-                'account_id' => $receivableAccountId,
+                'account_id' => $devuelvePlata
+                    ? PaymentAccountResolver::forMethod($note->refund_method)
+                    : $receivableAccountId,
                 'third_party_id' => $note->third_party_id,
-                'description' => "Reversa CxC {$note->customer->name}",
+                'description' => $devuelvePlata
+                    ? "Devolución de dinero a {$note->customer->name}"
+                    : "Reversa CxC {$note->customer->name}",
                 'debit' => 0,
                 'credit' => $note->total,
             ]);

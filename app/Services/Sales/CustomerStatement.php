@@ -2,6 +2,7 @@
 
 namespace App\Services\Sales;
 
+use App\Models\CreditDebitNote;
 use App\Models\CustomerAdvance;
 use App\Models\Payment;
 use App\Models\SaleInvoice;
@@ -27,6 +28,16 @@ class CustomerStatement
     public const PAYMENT = 'abono';
 
     public const ADVANCE = 'anticipo';
+
+    /**
+     * Devoluciones: nota credito electronica o devolucion POS.
+     *
+     * Faltaban en el estado de cuenta, y era grave: el cliente devolvia la
+     * mercancia, los libros lo reconocian, y el documento que se le muestra al
+     * cliente seguia cobrandole todo. La conversacion que sale de eso no se
+     * arregla con una explicacion.
+     */
+    public const NOTE = 'nota';
 
     public function __construct(
         protected CustomerAdvanceService $advances,
@@ -123,6 +134,22 @@ class CustomerStatement
             ]);
         }
 
+        foreach ($this->notas($customer, $desde, $hasta) as $note) {
+            $movimientos->push([
+                'date' => $note->date?->toDateString() ?? '',
+                'type' => self::NOTE,
+                'reference' => $note->fullNumber(),
+                'description' => $note->esPos()
+                    ? 'Devolución POS'
+                    : 'Nota crédito'.($note->reason_description ? ' — '.$note->reason_description : ''),
+                'debit' => 0.0,
+                // Lo que se devolvio en efectivo no baja la cartera: esa plata
+                // ya salio del cajon. Aparece igual, porque el cliente tiene
+                // que ver que se le reconocio la devolucion.
+                'credit' => $note->devuelvePlata() ? 0.0 : round((float) $note->total, 2),
+            ]);
+        }
+
         foreach ($this->anticipos($customer, $desde, $hasta) as $advance) {
             $movimientos->push([
                 'date' => $advance->date?->toDateString() ?? '',
@@ -184,6 +211,24 @@ class CustomerStatement
      *
      * @return Collection<int, CustomerAdvance>
      */
+    /**
+     * Las devoluciones contabilizadas del cliente.
+     *
+     * @return Collection<int, CreditDebitNote>
+     */
+    protected function notas(ThirdParty $customer, ?string $desde, ?string $hasta): Collection
+    {
+        return CreditDebitNote::query()
+            ->where('company_id', $customer->company_id)
+            ->where('third_party_id', $customer->id)
+            ->where('type', CreditDebitNote::TYPE_CREDIT)
+            ->where('status', CreditDebitNote::STATUS_POSTED)
+            ->when($desde, fn ($q, $v) => $q->whereDate('date', '>=', $v))
+            ->when($hasta, fn ($q, $v) => $q->whereDate('date', '<=', $v))
+            ->orderBy('date')
+            ->get();
+    }
+
     protected function anticipos(ThirdParty $customer, ?string $desde, ?string $hasta): Collection
     {
         return CustomerAdvance::query()

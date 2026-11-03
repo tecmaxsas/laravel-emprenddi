@@ -84,6 +84,7 @@ class SaleInvoice extends Model
         'net_payable',
         'tip_amount',
         'paid_amount',
+        'credited_amount',
         'payment_status',
         'status',
         'journal_entry_id',
@@ -120,6 +121,7 @@ class SaleInvoice extends Model
             'tip_amount' => 'decimal:2',
             'net_payable' => 'decimal:2',
             'paid_amount' => 'decimal:2',
+            'credited_amount' => 'decimal:2',
             'exchange_rate' => 'decimal:6',
             'payment_terms_days' => 'integer',
             'number' => 'integer',
@@ -265,7 +267,26 @@ class SaleInvoice extends Model
     {
         $netPayable = (float) ($this->net_payable ?: $this->total);
 
-        return $netPayable - (float) $this->paid_amount;
+        // Las notas credito contabilizadas contra esta factura descuentan
+        // igual que un abono. Antes no lo hacian: el asiento acreditaba la
+        // CxC pero el saldo seguia completo, asi que el cliente devolvia la
+        // mercancia y la cartera seguia cobrandosela. Los libros decian una
+        // cosa y el reporte de cobro otra, y el que manda al cobrador es el
+        // reporte.
+        return $netPayable - (float) $this->paid_amount - (float) $this->credited_amount;
+    }
+
+    /** Lo que todavia se le puede acreditar a esta factura. */
+    public function creditableRemaining(): float
+    {
+        $netPayable = (float) ($this->net_payable ?: $this->total);
+
+        return round(max(0, $netPayable - (float) $this->credited_amount), 2);
+    }
+
+    public function creditNotes(): HasMany
+    {
+        return $this->hasMany(CreditDebitNote::class, 'sale_invoice_id');
     }
 
     public function isDraft(): bool

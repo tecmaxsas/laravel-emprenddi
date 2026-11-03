@@ -4,6 +4,7 @@ namespace App\Services\Cash;
 
 use App\Models\CashMovement;
 use App\Models\CashRegisterSession;
+use App\Models\CreditDebitNote;
 use App\Models\CustomerAdvance;
 use App\Models\Expense;
 use App\Models\Payment;
@@ -32,6 +33,7 @@ class CashSessionSummary
      *   purchases: array{count:int, total:float, by_method:array<string,float>, cash:float},
      *   expenses: array{count:int, total:float, by_method:array<string,float>, cash:float},
      *   movements: array{count:int, in:float, out:float, neto:float, por_motivo:array<string,float>},
+     *   refunds: array{count:int, total:float, by_method:array<string,float>, cash:float},
      *   net_cash: float,
      *   expected_cash: float,
      *   payment_breakdown: array<string,float>,
@@ -43,8 +45,10 @@ class CashSessionSummary
         $purchases = $this->summarizePurchasePayments($session);
         $expenses = $this->summarizeExpenses($session);
         $movements = $this->summarizeCashMovements($session);
+        $refunds = $this->summarizeRefunds($session);
 
-        $netCash = $sales['cash'] - $purchases['cash'] - $expenses['cash'] + $movements['neto'];
+        $netCash = $sales['cash'] - $purchases['cash'] - $expenses['cash']
+            + $movements['neto'] - $refunds['cash'];
         $expectedCash = (float) $session->opening_amount + $netCash;
 
         // Breakdown global por método: suma ventas (positivo) menos compras
@@ -60,6 +64,9 @@ class CashSessionSummary
         foreach ($expenses['by_method'] as $method => $amount) {
             $breakdown[$method] = ($breakdown[$method] ?? 0) - $amount;
         }
+        foreach ($refunds['by_method'] as $method => $amount) {
+            $breakdown[$method] = ($breakdown[$method] ?? 0) - $amount;
+        }
 
         // Los movimientos directos son efectivo por definición, así que van
         // todos al mismo renglón del desglose —con su signo— en vez de
@@ -73,6 +80,7 @@ class CashSessionSummary
             'purchases' => $purchases,
             'expenses' => $expenses,
             'movements' => $movements,
+            'refunds' => $refunds,
             'net_cash' => round($netCash, 2),
             'expected_cash' => round($expectedCash, 2),
             'payment_breakdown' => $breakdown,
@@ -145,6 +153,51 @@ class CashSessionSummary
      * comían el desglose entero, mientras el efectivo real del anticipo no
      * entraba en «Esperado en caja» por ningún lado.
      */
+    /**
+     * Devoluciones de venta pagadas en este turno.
+     *
+     * Una devolución POS le saca la plata al cajón: el cliente ya había
+     * pagado. Si el arqueo no la descuenta, al cerrar aparece un faltante por
+     * el valor de lo devuelto, y el cajero responde por una plata que entregó
+     * delante de todo el mundo con un documento de respaldo.
+     *
+     * Solo las que devuelven dinero. Una nota crédito que rebaja el saldo de
+     * la factura no mueve efectivo y no tiene nada que hacer en el arqueo.
+     *
+     * @return array{count:int, total:float, by_method:array<string,float>, cash:float}
+     */
+    protected function summarizeRefunds(CashRegisterSession $session): array
+    {
+        $notas = CreditDebitNote::withoutGlobalScopes()
+            ->where('cash_register_session_id', $session->id)
+            ->where('type', CreditDebitNote::TYPE_CREDIT)
+            ->where('status', CreditDebitNote::STATUS_POSTED)
+            ->whereNotNull('refund_method')
+            ->where('refund_method', '!=', CreditDebitNote::REFUND_BALANCE)
+            ->get(['refund_method', 'refund_amount']);
+
+        $porMetodo = [];
+        $efectivo = 0.0;
+
+        foreach ($notas as $nota) {
+            $metodo = (string) $nota->refund_method;
+            $monto = round((float) $nota->refund_amount, 2);
+
+            $porMetodo[$metodo] = round(($porMetodo[$metodo] ?? 0) + $monto, 2);
+
+            if (PaymentMethodOptions::esEfectivo($metodo, $session->company_id)) {
+                $efectivo = round($efectivo + $monto, 2);
+            }
+        }
+
+        return [
+            'count' => $notas->count(),
+            'total' => round(array_sum($porMetodo), 2),
+            'by_method' => $porMetodo,
+            'cash' => $efectivo,
+        ];
+    }
+
     protected function summarizeSalePayments(CashRegisterSession $session): array
     {
         $payments = Payment::query()

@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\SaleInvoice;
 use App\Models\Tax;
 use App\Models\ThirdParty;
+use App\Support\PaymentMethodOptions;
 use App\Support\ProductOptions;
 use App\Support\TaxOptions;
 use Filament\Forms;
@@ -163,6 +164,30 @@ class CreditDebitNoteResource extends Resource
                         ->helperText('Solo aplica a Notas Crédito. Si está activo, los productos vuelven al inventario al postear.')
                         ->visible(fn (Forms\Get $get) => $get('type') === 'credit')
                         ->columnSpan(2),
+
+                    // Lo que de verdad distingue una devolución de contado de
+                    // una a crédito: a quien ya pagó hay que devolverle la
+                    // plata; a quien debía se le rebaja. Antes solo existía lo
+                    // segundo, y ni siquiera eso funcionaba.
+                    Forms\Components\Select::make('refund_method')
+                        ->label('¿Cómo se le devuelve al cliente?')
+                        ->options(fn () => [CreditDebitNote::REFUND_BALANCE => 'Rebajar el saldo de la factura']
+                            + PaymentMethodOptions::para())
+                        ->default(CreditDebitNote::REFUND_BALANCE)
+                        ->native(false)
+                        ->live()
+                        ->visible(fn (Forms\Get $get) => $get('type') === 'credit')
+                        ->helperText('Si ya te había pagado, la plata sale de la caja del turno abierto.'),
+
+                    Forms\Components\TextInput::make('refund_amount')
+                        ->label('Valor devuelto')
+                        ->numeric()
+                        ->prefix('$')
+                        ->default(0)
+                        ->visible(fn (Forms\Get $get) => $get('type') === 'credit'
+                            && $get('refund_method')
+                            && $get('refund_method') !== CreditDebitNote::REFUND_BALANCE)
+                        ->helperText('Tiene que haber un turno de caja abierto con ese efectivo.'),
                 ]),
 
             Forms\Components\Section::make('Líneas')
