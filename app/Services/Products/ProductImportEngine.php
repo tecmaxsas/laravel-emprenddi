@@ -188,7 +188,13 @@ class ProductImportEngine
         $summary['stock_locations'] = count($stockLocations);
         $summary['stock_errors'] = $stockErrors;
 
-        $valid = $summary['errors'] === 0 && $stockErrors === 0 && $summary['total'] > 0;
+        // Basta con que haya algo que importar: productos o inventario. Antes
+        // exigia productos, y para cargar solo el inventario de una sede habia
+        // que repetir filas de productos que ya existen — y una fila de
+        // producto existente REEMPLAZA todos sus campos (lo vacio queda en 0 o
+        // null), asi que eso borraba precios, impuestos y categoria.
+        $valid = $summary['errors'] === 0 && $stockErrors === 0
+            && ($summary['total'] > 0 || $summary['stock_lines'] > 0);
 
         return [
             'rows' => $rows,
@@ -304,6 +310,20 @@ class ProductImportEngine
             $data['product_code'] = trim((string) ($data['product_code'] ?? ''));
             $data['location_code'] = trim((string) ($data['location_code'] ?? ''));
 
+            // Un codigo que no esta ni en el archivo ni en la base puede ser el
+            // codigo de barras: se traduce aqui al code del producto y todo lo
+            // que sigue (costo, existencias, apertura) trabaja con el code.
+            $errorDeReferencia = null;
+            if ($data['product_code'] !== ''
+                && ! in_array(strtolower($data['product_code']), $codesInFile, true)
+                && ! in_array(strtolower($data['product_code']), $namesInFile, true)) {
+                [$codeResuelto, $errorDeReferencia] = $this->resolverReferenciaDeStock($data['product_code'], $companyId);
+                if ($codeResuelto !== null && $codeResuelto !== $data['product_code']) {
+                    $data['product_ref_original'] = $data['product_code'];
+                    $data['product_code'] = $codeResuelto;
+                }
+            }
+
             $vacio = fn (mixed $v) => $v === null || trim((string) $v) === '';
 
             // Fila que solo trae el codigo del producto: es un producto de la
@@ -373,7 +393,9 @@ class ProductImportEngine
 
             // Validar referencia: primero en el archivo (code o name),
             // luego en DB (code o name).
-            if ($data['product_code']) {
+            if ($errorDeReferencia !== null) {
+                $errors[] = $errorDeReferencia;
+            } elseif ($data['product_code']) {
                 $refLower = strtolower($data['product_code']);
                 $inFile = in_array($refLower, $codesInFile, true)
                        || in_array($refLower, $namesInFile, true);
@@ -846,6 +868,63 @@ class ProductImportEngine
      * Existencias actuales del producto en esa sede. 0 si no se puede
      * resolver: en ese caso ya hay un error de validacion que lo explica.
      */
+    /** @var array{codes: array<string,true>, names: array<string,true>, barras: array<string,list<string>>, codesSinCeros: array<string,list<string>>}|null */
+    protected ?array $indiceDeProductos = null;
+
+    /**
+     * Traduce la referencia de una fila de stock al code del producto.
+     *
+     * El cliente arma la hoja de inventario desde su sistema anterior, que la
+     * exporta con el codigo de barras, y el importador solo buscaba por code o
+     * por name: 7.422 de 7.625 lineas de PERFUMERIA L&F IMPERIO salian como
+     * «no existe» (2026-11-03). Ademas Excel se come los ceros a la izquierda
+     * del codigo de barras en un lado o en el otro, asi que se compara sin
+     * ellos.
+     *
+     * @return array{0: ?string, 1: ?string} [code resuelto, error]
+     */
+    protected function resolverReferenciaDeStock(string $ref, int $companyId): array
+    {
+        if ($this->indiceDeProductos === null) {
+            $indice = ['codes' => [], 'names' => [], 'barras' => [], 'codesSinCeros' => []];
+            foreach (Product::query()->where('company_id', $companyId)->get(['code', 'name', 'barcode']) as $p) {
+                if ($p->code === null || $p->code === '') {
+                    continue;
+                }
+                $indice['codes'][$p->code] = true;
+                $indice['names'][(string) $p->name] = true;
+                $indice['codesSinCeros'][ltrim($p->code, '0')][] = $p->code;
+                if ($p->barcode !== null && trim($p->barcode) !== '') {
+                    $indice['barras'][ltrim(trim($p->barcode), '0')][] = $p->code;
+                }
+            }
+            $this->indiceDeProductos = $indice;
+        }
+        $i = $this->indiceDeProductos;
+
+        if (isset($i['codes'][$ref]) || isset($i['names'][$ref])) {
+            return [$ref, null];
+        }
+
+        $sinCeros = ltrim($ref, '0');
+        if ($sinCeros === '') {
+            return [null, null]; // «0000»: que lo reporte la validacion normal
+        }
+
+        foreach (['codesSinCeros' => 'code', 'barras' => 'código de barras'] as $mapa => $que) {
+            $candidatos = array_values(array_unique($i[$mapa][$sinCeros] ?? []));
+            if (count($candidatos) === 1) {
+                return [$candidatos[0], null];
+            }
+            if (count($candidatos) > 1) {
+                return [null, "el {$que} '{$ref}' corresponde a ".count($candidatos).' productos ('
+                    .implode(', ', array_slice($candidatos, 0, 5)).'): usa el code del que corresponde'];
+            }
+        }
+
+        return [null, null];
+    }
+
     /** Precio de compra del producto, para valorizar la apertura. */
     protected function precioDeCompraDe(string $productRef, int $companyId): float
     {
@@ -1142,6 +1221,7 @@ class ProductImportEngine
         $this->taxCache = [];
         $this->accountCache = [];
         $this->locationCache = [];
+        $this->indiceDeProductos = null;
     }
 
     protected function rowToAssoc(array $headers, array $cells): array
