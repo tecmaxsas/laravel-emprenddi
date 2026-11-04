@@ -138,9 +138,18 @@
 
     {{-- Resultado --}}
     @if ($result)
-        <div style="margin-top:14px; background:#f0fdf4; border:2px solid #16a34a; border-radius:10px; padding:14px 16px;">
-            <div style="font-weight:800; color:#166534; font-size:14px; margin-bottom:6px;">✓ Importación completada</div>
-            <div style="font-size:13px; color:#166534;">
+        @php
+            $conError = count($result['errors'] ?? []);
+            $grabados = $result['created'] + $result['updated'];
+            [$fondo, $borde, $texto, $titulo] = match (true) {
+                $conError === 0 => ['#f0fdf4', '#16a34a', '#166534', '✓ Importación completada'],
+                $grabados === 0 => ['#fef2f2', '#dc2626', '#991b1b', '✗ No se importó ningún tercero'],
+                default => ['#fffbeb', '#d97706', '#92400e', '⚠ Importación con errores'],
+            };
+        @endphp
+        <div style="margin-top:14px; background:{{ $fondo }}; border:2px solid {{ $borde }}; border-radius:10px; padding:14px 16px;">
+            <div style="font-weight:800; color:{{ $texto }}; font-size:14px; margin-bottom:6px;">{{ $titulo }}</div>
+            <div style="font-size:13px; color:{{ $texto }};">
                 <strong>{{ $result['created'] }}</strong> creados ·
                 <strong>{{ $result['updated'] }}</strong> actualizados
                 @if (! empty($result['errors']))

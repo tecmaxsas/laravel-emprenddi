@@ -3,7 +3,7 @@
 namespace App\Filament\App\Pages;
 
 use App\Filament\Concerns\ResolvesUploadedFile;
-use App\Services\ThirdParties\ThirdPartyImportEngine;
+use App\Services\ThirdParties\ThirdPartyImportEngineConAislamiento as ThirdPartyImportEngine;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
@@ -105,13 +105,23 @@ class ThirdPartyImport extends Page implements HasForms
             );
 
             $parts = ["Creados: {$this->result['created']}", "Actualizados: {$this->result['updated']}"];
-            if (! empty($this->result['errors'])) {
-                $parts[] = 'Errores: '.count($this->result['errors']);
+            $conError = count($this->result['errors']);
+            if ($conError > 0) {
+                $parts[] = "Errores: {$conError}";
             }
-            Notification::make()
-                ->title('Importación completada')
-                ->body(implode(' · ', $parts))
-                ->success()->duration(5000)->send();
+
+            // Con errores no se puede decir «completada» en verde: el 2026-11-03
+            // salió así con 0 creados y 1.171 errores, y el usuario lo dio por hecho.
+            $grabados = $this->result['created'] + $this->result['updated'];
+            $aviso = Notification::make()->body(implode(' · ', $parts));
+            if ($conError === 0) {
+                $aviso->title('Importación completada')->success()->duration(5000);
+            } elseif ($grabados === 0) {
+                $aviso->title('No se importó ningún tercero')->danger()->persistent();
+            } else {
+                $aviso->title('Importación con errores: revisa las filas que no entraron')->warning()->persistent();
+            }
+            $aviso->send();
 
             $this->preview = null;
             $this->data['file'] = null;
