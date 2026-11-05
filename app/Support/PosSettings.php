@@ -35,4 +35,32 @@ class PosSettings
 
         return (bool) data_get($company?->settings ?? [], 'pos.allow_negative_stock', false);
     }
+
+    /**
+     * Si se le muestra al cliente lo que debe.
+     *
+     * Util para el negocio que fia: el cliente se entera de su saldo cada vez
+     * que compra, sin que nadie tenga que sacarle el tema.
+     *
+     * Apagado por defecto, y no por prudencia tecnica: en un mostrador con
+     * gente detras, imprimir lo que alguien debe lo deja a la vista de quien
+     * este mirando. Que se encienda es una decision del negocio, no algo que
+     * se le imponga a todos.
+     */
+    public static function showsCustomerBalance(?int $companyId = null): bool
+    {
+        return (bool) data_get(self::empresa($companyId)?->settings ?? [], 'pos.show_customer_balance', false);
+    }
+
+    private static function empresa(?int $companyId = null): ?Company
+    {
+        if ($companyId) {
+            return Company::withoutGlobalScopes()->find($companyId);
+        }
+
+        return app(CurrentCompany::class)->get()
+            ?? (auth()->user()?->company_id
+                ? Company::withoutGlobalScopes()->find(auth()->user()->company_id)
+                : null);
+    }
 }

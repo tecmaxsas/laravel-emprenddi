@@ -2,7 +2,6 @@
 
 namespace App\Services\Inventory;
 
-use App\Models\Account;
 use App\Models\Company;
 use App\Models\InventoryMovement;
 use App\Models\JournalEntry;
@@ -10,6 +9,8 @@ use App\Models\JournalEntryLine;
 use App\Models\Location;
 use App\Models\Product;
 use App\Services\Accounting\JournalEntryNumberer;
+use App\Support\CurrentCompany;
+use App\Support\DefaultAccounts;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -32,9 +33,8 @@ class InventoryEngine
      * Añade un movimiento de inventario.
      *
      * @param  array  $opts  ['type', 'quantity' (siempre positivo), 'unit_cost',
-     *                        'date', 'reference_type', 'reference_id', 'reference_number',
-     *                        'third_party_id', 'description']
-     * @return InventoryMovement
+     *                       'date', 'reference_type', 'reference_id', 'reference_number',
+     *                       'third_party_id', 'description']
      */
     public function addMovement(Product $product, Location $location, array $opts): InventoryMovement
     {
@@ -124,7 +124,7 @@ class InventoryEngine
         // explicitamente porque los args son ints crudos y podrian venir de
         // input del cliente (POS, forms Livewire). Un product/location
         // crafteado no debe leak el saldo o costo promedio de otra empresa.
-        $companyId = app(\App\Support\CurrentCompany::class)->id()
+        $companyId = app(CurrentCompany::class)->id()
             ?? auth()->user()?->company_id;
 
         return InventoryMovement::withoutGlobalScopes()
@@ -139,6 +139,61 @@ class InventoryEngine
     public function currentStock(int $productId, int $locationId): float
     {
         return (float) ($this->lastMovement($productId, $locationId)?->balance_quantity_after ?? 0);
+    }
+
+    /**
+     * El stock de varios productos de una sede, en una sola consulta.
+     *
+     * `currentStock()` sirve para uno; la grilla del POS muestra sesenta, y
+     * preguntarlo producto por producto son sesenta consultas por cada letra
+     * que el cajero teclea en el buscador.
+     *
+     * Usa el mismo criterio que `lastMovement()` —ultimo por fecha y luego por
+     * id— porque el saldo tiene que ser el mismo que ve el resto del sistema:
+     * una grilla que diga 3 cuando el motor dice 0 es peor que no mostrar nada.
+     *
+     * @param  list<int>  $productIds
+     * @return array<int, float> product_id => existencia
+     */
+    public function stockForProducts(array $productIds, int $locationId): array
+    {
+        if ($productIds === []) {
+            return [];
+        }
+
+        $companyId = app(CurrentCompany::class)->id()
+            ?? auth()->user()?->company_id;
+
+        if (! $companyId) {
+            return [];
+        }
+
+        // DISTINCT ON de Postgres: una fila por producto, la primera segun el
+        // ORDER BY. Es la version en bloque de «el ultimo movimiento».
+        $filas = DB::table('inventory_movements')
+            ->selectRaw('DISTINCT ON (product_id) product_id, balance_quantity_after')
+            ->where('company_id', $companyId)
+            ->where('location_id', $locationId)
+            ->whereIn('product_id', $productIds)
+            ->orderBy('product_id')
+            ->orderBy('date', 'desc')
+            ->orderBy('id', 'desc')
+            ->get();
+
+        $stock = [];
+
+        foreach ($filas as $fila) {
+            $stock[(int) $fila->product_id] = (float) $fila->balance_quantity_after;
+        }
+
+        // Un producto sin movimientos en la sede no tiene existencia, y eso es
+        // un dato: sin la clave, quien consulte no distingue «cero» de «no
+        // pregunte».
+        foreach ($productIds as $id) {
+            $stock[(int) $id] ??= 0.0;
+        }
+
+        return $stock;
     }
 
     public function currentAvgCost(int $productId, int $locationId): float
@@ -188,15 +243,9 @@ class InventoryEngine
             return null;
         }
 
-        $inventoryAccountId = $product->effectiveInventoryAccountId() ?? Account::withoutGlobalScopes()
-            ->where('company_id', $product->company_id)
-            ->where('code', '1435')
-            ->value('id');
+        $inventoryAccountId = $product->effectiveInventoryAccountId() ?? DefaultAccounts::porCodigo('1435', (int) $product->company_id);
 
-        $counterAccountId = Account::withoutGlobalScopes()
-            ->where('company_id', $product->company_id)
-            ->where('code', '3705')
-            ->value('id');
+        $counterAccountId = DefaultAccounts::porCodigo('3705', (int) $product->company_id);
 
         if (! $inventoryAccountId || ! $counterAccountId) {
             // Sin cuentas configuradas, no podemos generar el asiento. Saltar silenciosamente.

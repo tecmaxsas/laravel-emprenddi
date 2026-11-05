@@ -237,6 +237,29 @@
             </div>
         @endif
 
+        {{-- SALDO PENDIENTE DEL CLIENTE
+             Para el negocio que fia: el cliente se entera de lo que debe cada
+             vez que compra, sin que nadie tenga que sacarle el tema.
+
+             Es el saldo DESPUES de esta venta, que es la cifra que le sirve, y
+             no incluye al consumidor final —ese «cliente» es todo el mundo y
+             su saldo no significa nada—. Se enciende en Ajustes. --}}
+        @if (\App\Support\PosSettings::showsCustomerBalance($invoice->company_id)
+            && $invoice->customer
+            && $invoice->customer->document_number !== '222222222')
+            @php
+                $saldoCliente = app(\App\Services\Sales\CustomerCreditGuard::class)
+                    ->currentDebt($invoice->customer);
+            @endphp
+            @if ($saldoCliente > 0.009)
+                <div class="sep"></div>
+                <div class="row bold">
+                    <span>Saldo pendiente</span>
+                    <span>${{ number_format($saldoCliente, 0, ',', '.') }}</span>
+                </div>
+            @endif
+        @endif
+
         {{-- PAGOS --}}
         @if ($invoice->payments->isNotEmpty())
             <div class="sep"></div>

@@ -14,13 +14,21 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\HtmlString;
 
 class InventoryTransferResource extends Resource
 {
     use ChecksPermission;
 
-    protected static function viewPermission(): string { return 'inventory.view'; }
-    protected static function managePermission(): string { return 'inventory.transfer'; }
+    protected static function viewPermission(): string
+    {
+        return 'inventory.view';
+    }
+
+    protected static function managePermission(): string
+    {
+        return 'inventory.transfer';
+    }
 
     protected static ?string $model = InventoryTransfer::class;
 
@@ -108,8 +116,8 @@ class InventoryTransferResource extends Resource
                                     ->where('active', true)
                                     ->where(function ($q) use ($search) {
                                         $q->where('code', 'ilike', "%{$search}%")
-                                          ->orWhere('name', 'ilike', "%{$search}%")
-                                          ->orWhere('barcode', 'ilike', "%{$search}%");
+                                            ->orWhere('name', 'ilike', "%{$search}%")
+                                            ->orWhere('barcode', 'ilike', "%{$search}%");
                                     })
                                     ->orderBy('name')
                                     ->limit(30)
@@ -130,13 +138,38 @@ class InventoryTransferResource extends Resource
                                 ->live(onBlur: true)
                                 ->columnSpan(3),
 
+                            // El stock de origen, y el aviso cuando la
+                            // cantidad se pasa.
+                            //
+                            // La regla NO vive aqui: `InventoryEngine` revienta
+                            // con «Stock insuficiente» al contabilizar, y esa
+                            // sigue siendo la autoridad. Esto solo adelanta la
+                            // noticia, que antes llegaba al guardar —con el
+                            // traslado ya digitado entero— y como una excepcion
+                            // cruda.
                             Forms\Components\Placeholder::make('current_stock')
                                 ->label('Stock disponible (origen)')
                                 ->content(function (Forms\Get $get) {
                                     $productId = $get('product_id');
                                     $fromLocId = $get('../../from_location_id');
-                                    if (! $productId || ! $fromLocId) return '—';
-                                    $stock = app(InventoryEngine::class)->currentStock((int) $productId, (int) $fromLocId);
+
+                                    if (! $productId || ! $fromLocId) {
+                                        return '—';
+                                    }
+
+                                    $stock = app(InventoryEngine::class)
+                                        ->currentStock((int) $productId, (int) $fromLocId);
+
+                                    $pedida = (float) ($get('quantity') ?? 0);
+
+                                    if ($pedida > $stock + 0.0001) {
+                                        return new HtmlString(sprintf(
+                                            '<span style="color:rgb(220,38,38); font-weight:700;">%s — faltan %s</span>',
+                                            number_format($stock, 2),
+                                            number_format($pedida - $stock, 2),
+                                        ));
+                                    }
+
                                     return number_format($stock, 2);
                                 })
                                 ->columnSpan(3),

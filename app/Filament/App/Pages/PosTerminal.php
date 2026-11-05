@@ -18,12 +18,13 @@ use App\Models\SuspendedSale;
 use App\Models\Tax;
 use App\Models\ThirdParty;
 use App\Models\User;
-use App\Services\Cash\CashSessionCloser;
 use App\Services\Cash\CashMovementEngine;
+use App\Services\Cash\CashSessionCloser;
 use App\Services\Cash\CashSessionSummary;
 use App\Services\Dian\PosDianTransmitter;
 use App\Services\GiftCards\GiftCardEngine;
 use App\Services\GiftCards\GiftCardProductProvisioner;
+use App\Services\Inventory\InventoryEngine;
 use App\Services\Promotions\CartContext;
 use App\Services\Promotions\CartLine;
 use App\Services\Promotions\PromotionEngine;
@@ -78,6 +79,24 @@ class PosTerminal extends Page
 
     // Cabecera
     public ?int $location_id = null;
+
+    /**
+     * Quien puede elegir sede al abrir la caja.
+     *
+     * Elegirla decide de que bodega sale el inventario del turno y a que
+     * arqueo van sus ventas. Un cajero que se equivoca descarga stock de otra
+     * sede y le deja el descuadre a alguien mas, en un sitio donde nadie va a
+     * buscar la causa. Al resto se le fija la sede y se le dice a quien
+     * pedirsela.
+     *
+     * Con el turno YA abierto no se cambia, ni siquiera siendo admin: las
+     * ventas cuelgan de la sesion, y moverla a mitad de turno dejaria ventas
+     * de una sede dentro del arqueo de otra.
+     */
+    public function getPuedeElegirSedeProperty(): bool
+    {
+        return (bool) Auth::user()?->hasAnyRole(['admin', 'manager']);
+    }
 
     public ?int $customer_id = null;
 
@@ -276,12 +295,7 @@ class PosTerminal extends Page
             $this->location_id = $session->location_id;
         } else {
             // Sin sesión abierta: pre-llena la sede principal en el form de apertura
-            $this->openingLocationId = Location::query()
-                ->where('company_id', Auth::user()?->company_id)
-                ->where('active', true)
-                ->orderByDesc('is_main')
-                ->orderBy('id')
-                ->value('id');
+            $this->openingLocationId = $this->sedePorDefecto();
         }
 
         $this->customer_id = $this->ensureDefaultCustomer()->id;
@@ -440,6 +454,103 @@ class PosTerminal extends Page
             ->orderBy('name')
             ->limit(60)
             ->get(['id', 'code', 'name', 'barcode', 'image_path', 'default_sale_price', 'default_sale_tax_id', 'sale_price_includes_tax']);
+    }
+
+    /**
+     * La existencia de los productos que se estan viendo.
+     *
+     * El cajero vendia a ciegas: el POS no decia cuanto hay, asi que el
+     * «no me queda» salia cuando el cliente ya estaba en la caja —o peor, la
+     * venta pasaba y el inventario quedaba en negativo sin que nadie se
+     * enterara hasta el conteo—.
+     *
+     * Es un arreglo por product_id para que la grilla no consulte por tarjeta.
+     *
+     * @return array<int, float>
+     */
+    public function getStockDisponibleProperty(): array
+    {
+        if (! $this->location_id) {
+            return [];
+        }
+
+        return app(InventoryEngine::class)->stockForProducts(
+            $this->products->pluck('id')->all(),
+            (int) $this->location_id,
+        );
+    }
+
+    /**
+     * Lo que ya esta en el carrito de cada producto.
+     *
+     * Para avisar hay que comparar contra el carrito, no contra la linea que
+     * se acaba de agregar: dos lineas de tres unidades son seis, y el aviso
+     * tiene que aparecer en la segunda.
+     *
+     * @return array<int, float>
+     */
+    public function getCantidadEnCarritoProperty(): array
+    {
+        $porProducto = [];
+
+        foreach ($this->cart as $linea) {
+            $id = (int) ($linea['product_id'] ?? 0);
+
+            if ($id) {
+                $porProducto[$id] = ($porProducto[$id] ?? 0) + (float) ($linea['quantity'] ?? 0);
+            }
+        }
+
+        return $porProducto;
+    }
+
+    /**
+     * Los productos del carrito que se pasan de la existencia.
+     *
+     * No bloquea la venta: hay negocios que venden sobre pedido y el ajuste
+     * «permitir vender sin stock» existe por eso. Pero vender sin saberlo es
+     * otra cosa, y es lo que pasaba.
+     *
+     * @return array<int, array{nombre:string, pedido:float, hay:float}>
+     */
+    public function getExcesosDeStockProperty(): array
+    {
+        if (! $this->location_id || $this->cart === []) {
+            return [];
+        }
+
+        $ids = array_keys($this->cantidadEnCarrito);
+
+        if ($ids === []) {
+            return [];
+        }
+
+        $stock = app(InventoryEngine::class)->stockForProducts($ids, (int) $this->location_id);
+
+        $rastrea = Product::query()
+            ->whereIn('id', $ids)
+            ->where('track_inventory', true)
+            ->pluck('name', 'id');
+
+        $excesos = [];
+
+        foreach ($this->cantidadEnCarrito as $id => $pedido) {
+            if (! $rastrea->has($id)) {
+                continue;
+            }
+
+            $hay = $stock[$id] ?? 0.0;
+
+            if ($pedido > $hay + 0.0001) {
+                $excesos[$id] = [
+                    'nombre' => $rastrea[$id],
+                    'pedido' => $pedido,
+                    'hay' => $hay,
+                ];
+            }
+        }
+
+        return $excesos;
     }
 
     public function selectCategory(?int $id): void
@@ -2316,6 +2427,23 @@ class PosTerminal extends Page
     // SESIONES DE CAJA
     // ================================================================
 
+    /**
+     * La sede en la que abre caja quien no puede elegirla.
+     *
+     * La principal de la empresa. Es la misma que `mount()` ya pre-llenaba,
+     * extraida aqui para que la pantalla y la validacion no puedan contestar
+     * cosas distintas.
+     */
+    protected function sedePorDefecto(): ?int
+    {
+        return Location::query()
+            ->where('company_id', Auth::user()?->company_id)
+            ->where('active', true)
+            ->orderByDesc('is_main')
+            ->orderBy('id')
+            ->value('id');
+    }
+
     public function openCashSession(): void
     {
         if ($this->openSession()) {
@@ -2328,6 +2456,13 @@ class PosTerminal extends Page
             Notification::make()->title('Selecciona la sede')->danger()->send();
 
             return;
+        }
+
+        // Ocultar el selector en la pantalla no alcanza: una propiedad de
+        // Livewire se puede escribir desde el navegador. Al que no puede
+        // elegir se le impone la sede por defecto aunque haya mandado otra.
+        if (! $this->puedeElegirSede) {
+            $this->openingLocationId = $this->sedePorDefecto();
         }
 
         $opening = max(0, (float) ($this->openingAmount ?? 0));

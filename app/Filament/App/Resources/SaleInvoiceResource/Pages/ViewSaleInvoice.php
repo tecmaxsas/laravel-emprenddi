@@ -10,6 +10,7 @@ use App\Models\CreditDebitNote;
 use App\Models\SaleInvoice;
 use App\Services\Dian\DianInvoiceSender;
 use App\Services\Sales\CreditDebitNoteNumberer;
+use App\Services\Sales\CustomerCreditGuard;
 use App\Services\Sales\SaleInvoiceDeleter;
 use App\Services\Sales\SaleInvoiceEngine;
 use App\Support\Dian\DianInvoiceActions;
@@ -451,6 +452,25 @@ class ViewSaleInvoice extends ViewRecord
             Infolists\Components\Section::make('Pagado / Saldo')
                 ->columns(3)
                 ->schema([
+                    // Lo que el CLIENTE debe en total, no solo esta factura.
+                    //
+                    // Es la cifra que hace falta para decidir si se le sigue
+                    // despachando, y estaba a tres clics: para verla habia que
+                    // irse al estado de cuenta. Se enciende en Ajustes porque
+                    // no todo negocio quiere ese numero en pantalla con el
+                    // cliente al frente.
+                    Infolists\Components\TextEntry::make('saldo_del_cliente')
+                        ->label('Debe el cliente (total)')
+                        ->visible(fn (SaleInvoice $r) => PosSettings::showsCustomerBalance($r->company_id)
+                            && $r->customer !== null
+                            && $r->customer->document_number !== '222222222')
+                        ->state(fn (SaleInvoice $r) => $r->customer
+                            ? app(CustomerCreditGuard::class)->currentDebt($r->customer)
+                            : 0)
+                        ->money('COP')
+                        ->weight('bold')
+                        ->color(fn ($state) => (float) $state > 0 ? 'danger' : 'success'),
+
                     Infolists\Components\TextEntry::make('paid_amount')->label('Pagado')->money('COP')->weight('semibold'),
                     Infolists\Components\TextEntry::make('balance')
                         ->label('Saldo pendiente')

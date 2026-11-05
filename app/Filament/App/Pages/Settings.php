@@ -115,6 +115,7 @@ class Settings extends Page implements HasForms
             'pos_print_after_sale' => (bool) data_get($settings, 'pos.print_after_sale', true),
             'pos_blind_cash_close' => (bool) data_get($settings, 'pos.blind_cash_close', false),
             'pos_allow_negative_stock' => (bool) data_get($settings, 'pos.allow_negative_stock', false),
+            'pos_show_customer_balance' => (bool) data_get($settings, 'pos.show_customer_balance', false),
             'pos_default_tip_percent' => (float) data_get($settings, 'pos.default_tip_percent', 0),
             'pos_discount_supervisor_threshold' => (float) data_get($settings, 'pos.discount_supervisor_threshold', 10),
             'pos_allow_tax_modification' => (bool) data_get($settings, 'pos.allow_tax_modification', true),
@@ -578,6 +579,10 @@ class Settings extends Page implements HasForms
                     Forms\Components\Toggle::make('pos_allow_negative_stock')
                         ->label('Permitir vender sin stock')
                         ->helperText('Si está desactivado, el sistema rechaza ventas que dejarían inventario negativo.'),
+
+                    Forms\Components\Toggle::make('pos_show_customer_balance')
+                        ->label('Mostrar el saldo pendiente del cliente')
+                        ->helperText('Aparece en el tiquete impreso y en la pantalla de la factura. Apagado por defecto: en un mostrador con gente detrás, imprimir lo que alguien debe lo deja a la vista de quien esté mirando.'),
                 ]),
 
             Forms\Components\Section::make('Comportamiento de venta')
@@ -746,6 +751,7 @@ class Settings extends Page implements HasForms
             'print_after_sale' => (bool) ($state['pos_print_after_sale'] ?? true),
             'blind_cash_close' => (bool) ($state['pos_blind_cash_close'] ?? false),
             'allow_negative_stock' => (bool) ($state['pos_allow_negative_stock'] ?? false),
+            'show_customer_balance' => (bool) ($state['pos_show_customer_balance'] ?? false),
             'default_tip_percent' => (float) ($state['pos_default_tip_percent'] ?? 0),
             'discount_supervisor_threshold' => (float) ($state['pos_discount_supervisor_threshold'] ?? 10),
             'allow_tax_modification' => (bool) ($state['pos_allow_tax_modification'] ?? true),

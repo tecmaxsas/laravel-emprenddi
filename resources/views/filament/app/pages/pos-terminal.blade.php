@@ -132,6 +132,27 @@
         .pos-input:focus, .pos-select:focus, .pos-textarea:focus {
             border-color: rgb(99,102,241); box-shadow: 0 0 0 3px rgba(99,102,241,0.2);
         }
+        /* El select compartia la regla del input, que no deja sitio a la flecha
+           nativa. En la columna angosta del modal de cobro la flecha se montaba
+           encima del texto y «Transferencia bancaria» se leia pisado. Se dibuja
+           la flecha aqui y se le reserva el espacio. */
+        .pos-product-stock {
+            font-size: 11px; font-weight: 600; margin-top: 2px;
+        }
+        .pos-select {
+            appearance: none; -webkit-appearance: none; -moz-appearance: none;
+            padding-right: 32px;
+            background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236b7280' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 8px center;
+            background-size: 16px 16px;
+            /* Un nombre largo se corta con puntos suspensivos en vez de
+               desbordarse sobre la flecha. */
+            text-overflow: ellipsis;
+        }
+        :is(.dark) .pos-select {
+            background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%239ca3af' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
+        }
         /* Resultado de la busqueda de clientes en el modal de cliente. */
         .pos-customer-hit {
             display: block; width: 100%; text-align: left; cursor: pointer;
@@ -359,6 +380,8 @@
         $totals = $this->totals();
         $cats = $this->categories;
         $products = $this->products;
+        $stockPorProducto = $this->stockDisponible;
+        $excesosDeStock = $this->excesosDeStock;
         $posSettings = $this->posSettings;
         $hasSession = $this->hasOpenSession;
         $session = $this->currentSession;
@@ -391,11 +414,25 @@
 
                 <form wire:submit.prevent="openCashSession" style="padding:8px 32px 28px;">
 
-                    {{-- SEDE --}}
+                    {{-- SEDE
+                         Elegirla es decidir de qué bodega sale el inventario y
+                         a qué arqueo van las ventas del turno. Un cajero que se
+                         equivoca aquí descarga stock de otra sede y le deja el
+                         descuadre a otro, así que la elección es del
+                         administrador. Al resto se le muestra fija. --}}
                     <div style="margin-bottom:18px;">
                         <label style="display:block; font-size:11px; font-weight:700; color:#374151; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;" class="dark:!text-gray-300">
                             Sede
                         </label>
+                        @if (! $this->puedeElegirSede)
+                            @php
+                                $sedeFija = \App\Models\Location::find($openingLocationId);
+                            @endphp
+                            <div style="width:100%; padding:11px 14px; font-size:14px; font-weight:600; color:#111827; background:#f3f4f6; border:1px solid #e5e7eb; border-radius:10px;"
+                                 class="dark:!bg-gray-800 dark:!text-gray-100 dark:!border-gray-700">
+                                {{ $sedeFija?->fullName() ?? '— sin sede asignada —' }}
+                            </div>
+                        @else
                         <select wire:model.live="openingLocationId" required
                                 style="width:100%; padding:11px 14px; font-size:14px; font-weight:500; color:#111827; background:#ffffff; border:1px solid #d1d5db; border-radius:10px; outline:none; transition:border-color 150ms;"
                                 class="dark:!bg-gray-900 dark:!text-gray-100 dark:!border-gray-700"
@@ -406,8 +443,12 @@
                                 <option value="{{ $loc->id }}">{{ $loc->fullName() }}</option>
                             @endforeach
                         </select>
+                        @endif
                         <p style="font-size:11px; color:#6b7280; margin:6px 0 0; line-height:1.4;" class="dark:!text-gray-400">
                             Determina el inventario y catálogo disponible en este turno.
+                            @if (! $this->puedeElegirSede)
+                                Para abrir en otra sede, pídeselo a un administrador.
+                            @endif
                         </p>
                     </div>
 
@@ -721,6 +762,20 @@
                                         <div class="pos-product-code">{{ $p->code }}</div>
                                         <div class="pos-product-name">{{ $p->name }}</div>
                                         <div class="pos-product-price">${{ number_format($p->default_sale_price, 0, ',', '.') }}</div>
+                                        {{-- EXISTENCIA
+                                             El cajero vendia a ciegas: el «no me
+                                             queda» aparecia con el cliente ya en
+                                             la caja. Se pinta en rojo cuando esta
+                                             en cero porque es la unica cifra que
+                                             hay que ver de lejos. --}}
+                                        @isset($stockPorProducto[$p->id])
+                                            @php
+                                                $hay = $stockPorProducto[$p->id];
+                                            @endphp
+                                            <div class="pos-product-stock" style="color: {{ $hay > 0 ? '#6b7280' : 'rgb(220,38,38)' }};">
+                                                {{ $hay > 0 ? rtrim(rtrim(number_format($hay, 2, ',', '.'), '0'), ',').' disp.' : 'Sin existencia' }}
+                                            </div>
+                                        @endisset
                                     </div>
                                 </button>
                             @endforeach
@@ -759,6 +814,29 @@
                             <div>Selecciona productos del catálogo</div>
                         </div>
                     @else
+                        {{-- AVISO DE EXISTENCIA
+                             No bloquea la venta: hay negocios que venden sobre
+                             pedido, y para eso esta el ajuste «permitir vender
+                             sin stock». Lo que no puede pasar es venderlo sin
+                             saberlo, que era lo que pasaba: el faltante
+                             aparecia en el conteo, semanas despues, cuando ya
+                             nadie sabia en cual venta fue. --}}
+                        @if (! empty($excesosDeStock))
+                            <div style="margin:8px; padding:10px 12px; border-radius:10px; background:#fef3c7; border:1px solid #fde68a; color:#78350f;"
+                                 class="dark:!bg-amber-950 dark:!text-amber-200 dark:!border-amber-900">
+                                <div style="font-size:12px; font-weight:800; margin-bottom:4px;">
+                                    Estás vendiendo más de lo que hay
+                                </div>
+                                @foreach ($excesosDeStock as $exceso)
+                                    <div style="font-size:11px; line-height:1.5;">
+                                        <strong>{{ $exceso['nombre'] }}</strong>:
+                                        pides {{ rtrim(rtrim(number_format($exceso['pedido'], 2, ',', '.'), '0'), ',') }},
+                                        hay {{ rtrim(rtrim(number_format($exceso['hay'], 2, ',', '.'), '0'), ',') }}.
+                                    </div>
+                                @endforeach
+                            </div>
+                        @endif
+
                         <div>
                             @foreach ($cart as $i => $line)
                                 <div class="pos-cart-row" wire:key="cart-{{ $i }}-{{ $line['product_id'] }}"
@@ -1134,7 +1212,7 @@
                         <div style="display:flex; flex-direction:column; gap:8px;">
                             @foreach ($payments as $i => $p)
                                 <div class="pos-modal-card" style="display:flex; flex-direction:column; gap:8px;">
-                                    <div style="display:grid; grid-template-columns: 5fr 6fr 1fr; gap:8px; align-items:center;">
+                                    <div style="display:grid; grid-template-columns: 7fr 5fr 1fr; gap:8px; align-items:center;">
                                         <select wire:model.live="payments.{{ $i }}.payment_method" class="pos-select">
                                             @foreach ($this->paymentMethods as $code => $label)
                                                 <option value="{{ $code }}">{{ $label }}</option>
