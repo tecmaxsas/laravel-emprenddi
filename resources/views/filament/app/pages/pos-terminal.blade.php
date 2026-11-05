@@ -621,6 +621,20 @@
                     </button>
                 @endif
 
+                {{-- DOMICILIO
+                     Entra como una línea más de la factura —paga su IVA y se
+                     contabiliza como cualquier cobro—, no como un recargo
+                     colgado del total. El valor sale del ajuste y el cajero lo
+                     cambia en la línea si la entrega es lejos. --}}
+                @if (\App\Support\PosSettings::deliveryEnabled())
+                    <button type="button" wire:click="toggleDomicilio"
+                            class="px-3 py-1.5 text-xs font-medium rounded-lg transition flex items-center gap-1.5 {{ $this->tieneDomicilio ? 'bg-indigo-500 text-white hover:bg-indigo-600' : 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/20' }}"
+                            title="{{ $this->tieneDomicilio ? 'Quitar el domicilio de esta venta' : 'Cobrar domicilio en esta venta' }}">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1"/></svg>
+                        {{ $this->tieneDomicilio ? 'Con domicilio' : 'Domicilio' }}
+                    </button>
+                @endif
+
                 {{-- Entradas y salidas directas del cajón: el domicilio, la
                      sangría, el cambio. Va junto a los demás botones de caja
                      porque es lo mismo: plata del turno. --}}

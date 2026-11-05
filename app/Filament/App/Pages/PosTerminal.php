@@ -21,6 +21,7 @@ use App\Models\User;
 use App\Services\Cash\CashMovementEngine;
 use App\Services\Cash\CashSessionCloser;
 use App\Services\Cash\CashSessionSummary;
+use App\Services\Delivery\DeliveryProductProvisioner;
 use App\Services\Dian\PosDianTransmitter;
 use App\Services\GiftCards\GiftCardEngine;
 use App\Services\GiftCards\GiftCardProductProvisioner;
@@ -39,6 +40,7 @@ use App\Support\GiftCardsSettings;
 use App\Support\PaymentAccountResolver;
 use App\Support\PaymentMethodOptions;
 use App\Support\PosDestination;
+use App\Support\PosSettings;
 use App\Support\PromotionsSettings;
 use App\Support\RetentionBase;
 use App\Support\SerialsSettings;
@@ -799,6 +801,70 @@ class PosTerminal extends Page
 
         $i = count($this->cart) - 1;
         $this->recalcularCarrito();
+    }
+
+    /**
+     * Agrega —o quita— el domicilio de la venta.
+     *
+     * Es una linea mas de la factura, no un recargo colgado del total: asi
+     * paga su IVA, viaja a la DIAN y se contabiliza contra la cuenta de
+     * transporte sin que nadie tenga que acordarse de sumarla en cada sitio.
+     *
+     * El valor sale del ajuste de la empresa, pero el cajero lo cambia como
+     * cualquier otra linea. Si se obliga a un valor unico, lo que pasa es que
+     * se lo suman a un producto, y eso descuadra el inventario para cuadrar
+     * la plata.
+     */
+    public function toggleDomicilio(): void
+    {
+        if (! PosSettings::deliveryEnabled()) {
+            return;
+        }
+
+        $indice = $this->indiceDeDomicilio();
+
+        if ($indice !== null) {
+            unset($this->cart[$indice]);
+            $this->cart = array_values($this->cart);
+            $this->recalcularCarrito();
+
+            return;
+        }
+
+        $producto = app(DeliveryProductProvisioner::class)
+            ->ensure(Company::findOrFail(auth()->user()->company_id));
+
+        $this->addProductToCart($producto->id);
+
+        $indice = $this->indiceDeDomicilio();
+
+        if ($indice === null) {
+            return;
+        }
+
+        $valor = PosSettings::deliveryFee();
+
+        if ($valor > 0) {
+            $this->cart[$indice]['unit_price'] = $valor;
+            $this->recalcularCarrito();
+        }
+    }
+
+    public function getTieneDomicilioProperty(): bool
+    {
+        return $this->indiceDeDomicilio() !== null;
+    }
+
+    /** Donde esta el domicilio en el carrito, si esta. */
+    protected function indiceDeDomicilio(): ?int
+    {
+        foreach ($this->cart as $i => $linea) {
+            if (($linea['code'] ?? null) === DeliveryProductProvisioner::CODE) {
+                return $i;
+            }
+        }
+
+        return null;
     }
 
     public function incLine(int $i): void

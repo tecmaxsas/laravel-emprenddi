@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Services\Delivery\DeliveryProductProvisioner;
 use App\Services\Hotel\HotelProductProvisioner;
 use App\Services\Parking\ParkingProductProvisioner;
 
@@ -41,6 +42,7 @@ class ProductosInternos
         return [
             ParkingProductProvisioner::CODE,
             HotelProductProvisioner::CODE,
+            DeliveryProductProvisioner::CODE,
         ];
     }
 
