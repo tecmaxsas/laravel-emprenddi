@@ -18,6 +18,7 @@
 @endphp
 
 <x-filament-panels::page>
+    @include('filament.app.partials.estilos-select')
     {{-- ------------------------------------------------------------------
          Turno de caja. Va arriba y en rojo cuando falta porque un check-out
          sin turno abierto falla al final, con el huésped y las maletas en el

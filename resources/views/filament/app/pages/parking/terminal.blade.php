@@ -21,6 +21,7 @@
 @endphp
 
 <x-filament-panels::page>
+    @include('filament.app.partials.estilos-select')
     {{-- Banner del turno --}}
     @if ($cashSession)
         <div style="border:1px solid #16a34a; background:#dcfce7; color:#166534; border-radius:8px; padding:8px 14px; font-size:12.5px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px;">

@@ -1,4 +1,5 @@
 <x-filament-panels::page>
+    @include('filament.app.partials.estilos-select')
     <style>
         body { overflow: hidden; }
         .fi-sidebar, .fi-topbar { display: none !important; }
@@ -132,26 +133,8 @@
         .pos-input:focus, .pos-select:focus, .pos-textarea:focus {
             border-color: rgb(99,102,241); box-shadow: 0 0 0 3px rgba(99,102,241,0.2);
         }
-        /* El select compartia la regla del input, que no deja sitio a la flecha
-           nativa. En la columna angosta del modal de cobro la flecha se montaba
-           encima del texto y «Transferencia bancaria» se leia pisado. Se dibuja
-           la flecha aqui y se le reserva el espacio. */
         .pos-product-stock {
             font-size: 11px; font-weight: 600; margin-top: 2px;
-        }
-        .pos-select {
-            appearance: none; -webkit-appearance: none; -moz-appearance: none;
-            padding-right: 32px;
-            background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236b7280' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
-            background-repeat: no-repeat;
-            background-position: right 8px center;
-            background-size: 16px 16px;
-            /* Un nombre largo se corta con puntos suspensivos en vez de
-               desbordarse sobre la flecha. */
-            text-overflow: ellipsis;
-        }
-        :is(.dark) .pos-select {
-            background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%239ca3af' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
         }
         /* Resultado de la busqueda de clientes en el modal de cliente. */
         .pos-customer-hit {

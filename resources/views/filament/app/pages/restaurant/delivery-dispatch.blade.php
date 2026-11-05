@@ -1,4 +1,5 @@
 <x-filament-panels::page>
+    @include('filament.app.partials.estilos-select')
     @php
         $orders = $this->deliveryOrders;
         $drivers = $this->drivers;

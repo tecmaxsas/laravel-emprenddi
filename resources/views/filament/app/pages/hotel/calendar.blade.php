@@ -16,6 +16,7 @@
 @endphp
 
 <x-filament-panels::page>
+    @include('filament.app.partials.estilos-select')
     <div class="hc-bar">
         <div class="hc-field">
             <label>Hotel</label>

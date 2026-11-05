@@ -1,4 +1,5 @@
 <x-filament-panels::page>
+    @include('filament.app.partials.estilos-select')
     @php
         $fmt = fn ($n) => '$ '.number_format((float) $n, 0, ',', '.');
         // Tarifa sin ceros de relleno: 0.414 -> "0.414", 2.5000 -> "2.5".

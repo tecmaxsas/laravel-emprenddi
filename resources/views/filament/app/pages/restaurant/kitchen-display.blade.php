@@ -1,4 +1,5 @@
 <x-filament-panels::page>
+    @include('filament.app.partials.estilos-select')
     @php
         $printers = $this->printers;
         $received = $this->receivedItems;
