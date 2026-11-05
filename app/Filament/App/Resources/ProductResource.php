@@ -392,7 +392,7 @@ class ProductResource extends Resource
                 ->collapsed()
                 ->visible(fn () => ModuleGate::active(ModuleGate::ACCOUNTING))
                 ->icon('heroicon-o-banknotes')
-                ->badge('Opcional')
+                ->description('Opcional')
                 ->schema([
                     Forms\Components\Placeholder::make('accounts_inheritance_hint')
                         ->label('')
