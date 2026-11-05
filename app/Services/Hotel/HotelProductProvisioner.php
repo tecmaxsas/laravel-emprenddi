@@ -2,10 +2,10 @@
 
 namespace App\Services\Hotel;
 
-use App\Models\Account;
 use App\Models\Company;
 use App\Models\Product;
 use App\Models\Tax;
+use App\Support\DefaultAccounts;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -87,11 +87,6 @@ class HotelProductProvisioner
      */
     protected function cuentaDeIngreso(Company $company): ?int
     {
-        return Account::query()
-            ->where('company_id', $company->id)
-            ->where('code', '4140')
-            ->where('accepts_movements', true)
-            ->where('active', true)
-            ->value('id');
+        return DefaultAccounts::porCodigo('4140', (int) $company->id);
     }
 }

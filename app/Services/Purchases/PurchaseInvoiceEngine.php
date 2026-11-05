@@ -2,7 +2,6 @@
 
 namespace App\Services\Purchases;
 
-use App\Models\Account;
 use App\Models\Company;
 use App\Models\JournalEntry;
 use App\Models\JournalEntryLine;
@@ -13,6 +12,8 @@ use App\Services\Accounting\JournalEntryNumberer;
 use App\Services\Inventory\InventoryEngine;
 use App\Services\Invoicing\GlobalDiscount;
 use App\Support\CashSessionGate;
+use App\Support\DefaultAccounts;
+use App\Support\PaymentMethodOptions;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -131,10 +132,7 @@ class PurchaseInvoiceEngine
         return DB::transaction(function () use ($invoice, $data, $amount, $session) {
             $cashAccountId = $data['account_id'];
             $payableAccountId = $invoice->supplier?->default_payable_account_id
-                ?? Account::withoutGlobalScopes()
-                    ->where('company_id', $invoice->company_id)
-                    ->where('code', '220505')
-                    ->value('id');
+                ?? DefaultAccounts::porCodigo('220505', (int) $invoice->company_id);
 
             if (! $payableAccountId) {
                 throw new RuntimeException('No se encontró la cuenta por pagar (220505 o configurada en el proveedor).');
@@ -256,21 +254,12 @@ class PurchaseInvoiceEngine
      */
     protected function createPurchaseJournalEntry(PurchaseInvoice $invoice): JournalEntry
     {
-        $vatAccountId = Account::withoutGlobalScopes()
-            ->where('company_id', $invoice->company_id)
-            ->where('code', '240810')
-            ->value('id');
+        $vatAccountId = DefaultAccounts::porCodigo('240810', (int) $invoice->company_id);
 
-        $defaultExpenseAccountId = Account::withoutGlobalScopes()
-            ->where('company_id', $invoice->company_id)
-            ->where('code', '6135')
-            ->value('id');
+        $defaultExpenseAccountId = DefaultAccounts::porCodigo('6135', (int) $invoice->company_id);
 
         $payableAccountId = $invoice->supplier?->default_payable_account_id
-            ?? Account::withoutGlobalScopes()
-                ->where('company_id', $invoice->company_id)
-                ->where('code', '220505')
-                ->value('id');
+            ?? DefaultAccounts::porCodigo('220505', (int) $invoice->company_id);
 
         if (! $payableAccountId) {
             throw new RuntimeException('Falta cuenta por pagar (220505 o configurar en el proveedor).');
@@ -394,7 +383,7 @@ class PurchaseInvoiceEngine
         $company = Company::find($invoice->company_id);
         $number = $this->numberer->next($company, 'CE'); // CE = Comprobante de Egreso
 
-        $methodLabel = \App\Support\PaymentMethodOptions::nombre($method, $invoice->company_id);
+        $methodLabel = PaymentMethodOptions::nombre($method, $invoice->company_id);
 
         $entry = JournalEntry::create([
             'company_id' => $invoice->company_id,

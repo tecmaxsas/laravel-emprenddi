@@ -2,13 +2,13 @@
 
 namespace App\Services\Purchases;
 
-use App\Models\Account;
 use App\Models\Company;
 use App\Models\JournalEntry;
 use App\Models\JournalEntryLine;
 use App\Models\PurchaseReturn;
 use App\Services\Accounting\JournalEntryNumberer;
 use App\Services\Inventory\InventoryEngine;
+use App\Support\DefaultAccounts;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -130,16 +130,10 @@ class PurchaseReturnEngine
 
     protected function createJournalEntry(PurchaseReturn $return, array $invByAccount, float $subtotal, float $tax): JournalEntry
     {
-        $vatAccountId = Account::withoutGlobalScopes()
-            ->where('company_id', $return->company_id)
-            ->where('code', '240810')
-            ->value('id');
+        $vatAccountId = DefaultAccounts::porCodigo('240810', (int) $return->company_id);
 
         $payableAccountId = $return->supplier?->default_payable_account_id
-            ?? Account::withoutGlobalScopes()
-                ->where('company_id', $return->company_id)
-                ->where('code', '220505')
-                ->value('id');
+            ?? DefaultAccounts::porCodigo('220505', (int) $return->company_id);
 
         if (! $payableAccountId) {
             throw new RuntimeException('Falta cuenta por pagar (220505 o configurar en el proveedor).');
@@ -227,7 +221,9 @@ class PurchaseReturnEngine
             // Reverso movimientos: la devolución sacó stock, ahora regresa
             // entrada de ajuste para reponer.
             foreach ($return->lines as $line) {
-                if (! $line->product || ! $line->inventory_movement_id) continue;
+                if (! $line->product || ! $line->inventory_movement_id) {
+                    continue;
+                }
 
                 $this->inventory->addMovement(
                     $line->product,
@@ -293,9 +289,6 @@ class PurchaseReturnEngine
 
     protected function defaultInventoryAccountId(int $companyId): ?int
     {
-        return Account::withoutGlobalScopes()
-            ->where('company_id', $companyId)
-            ->where('code', '1435')
-            ->value('id');
+        return DefaultAccounts::porCodigo('1435', (int) $companyId);
     }
 }

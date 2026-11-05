@@ -2,7 +2,6 @@
 
 namespace App\Services\Sales;
 
-use App\Models\Account;
 use App\Models\CashRegisterSession;
 use App\Models\Company;
 use App\Models\CreditDebitNote;
@@ -12,6 +11,7 @@ use App\Models\SaleInvoice;
 use App\Services\Accounting\JournalEntryNumberer;
 use App\Services\Cash\CashSessionSummary;
 use App\Services\Inventory\InventoryEngine;
+use App\Support\DefaultAccounts;
 use App\Support\PaymentAccountResolver;
 use App\Support\PaymentMethodOptions;
 use Illuminate\Support\Facades\Auth;
@@ -493,21 +493,12 @@ class CreditDebitNoteEngine
      */
     protected function createJournalEntry(CreditDebitNote $note): JournalEntry
     {
-        $vatAccountId = Account::withoutGlobalScopes()
-            ->where('company_id', $note->company_id)
-            ->where('code', '240805')
-            ->value('id');
+        $vatAccountId = DefaultAccounts::porCodigo('240805', (int) $note->company_id);
 
-        $defaultIncomeAccountId = Account::withoutGlobalScopes()
-            ->where('company_id', $note->company_id)
-            ->where('code', '4135')
-            ->value('id');
+        $defaultIncomeAccountId = DefaultAccounts::porCodigo('4135', (int) $note->company_id);
 
         $receivableAccountId = $note->customer?->default_receivable_account_id
-            ?? Account::withoutGlobalScopes()
-                ->where('company_id', $note->company_id)
-                ->where('code', '1305')
-                ->value('id');
+            ?? DefaultAccounts::porCodigo('1305', (int) $note->company_id);
 
         if (! $receivableAccountId) {
             throw new RuntimeException('Falta cuenta por cobrar (1305).');
@@ -663,15 +654,9 @@ class CreditDebitNoteEngine
      */
     protected function createCogsReversalEntry(CreditDebitNote $note): ?JournalEntry
     {
-        $defaultCogsAccountId = Account::withoutGlobalScopes()
-            ->where('company_id', $note->company_id)
-            ->where('code', '6135')
-            ->value('id');
+        $defaultCogsAccountId = DefaultAccounts::porCodigo('6135', (int) $note->company_id);
 
-        $defaultInventoryAccountId = Account::withoutGlobalScopes()
-            ->where('company_id', $note->company_id)
-            ->where('code', '1435')
-            ->value('id');
+        $defaultInventoryAccountId = DefaultAccounts::porCodigo('1435', (int) $note->company_id);
 
         // Acumular costo a reversar por par (cogs_account_id, inventory_account_id)
         $pairs = [];

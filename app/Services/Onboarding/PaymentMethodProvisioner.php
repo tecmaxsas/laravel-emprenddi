@@ -5,6 +5,7 @@ namespace App\Services\Onboarding;
 use App\Models\Account;
 use App\Models\Company;
 use App\Models\PaymentMethod;
+use App\Support\DefaultAccounts;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -32,11 +33,7 @@ class PaymentMethodProvisioner
 
         $created = 0;
         DB::transaction(function () use ($company, $defaults, &$created) {
-            $cashAccountId = Account::withoutGlobalScopes()
-                ->where('company_id', $company->id)
-                ->where('code', '110505')
-                ->where('accepts_movements', true)
-                ->value('id');
+            $cashAccountId = DefaultAccounts::porCodigo('110505', (int) $company->id);
 
             $bankAccountId = Account::withoutGlobalScopes()
                 ->where('company_id', $company->id)

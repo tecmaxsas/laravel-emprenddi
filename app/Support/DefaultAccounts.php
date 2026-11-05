@@ -96,28 +96,83 @@ class DefaultAccounts
     }
 
     /**
+     * La cuenta de un codigo del PUC, garantizando que acepte movimientos.
+     *
+     * LO QUE ESTO ARREGLA, Y POR QUE IMPORTA.
+     *
+     * Veintiseis sitios buscaban la cuenta asi:
+     *
+     *     Account::where('company_id', $id)->where('code', '1435')->value('id')
+     *
+     * y le pasaban el resultado a un asiento. En un plan de cuentas donde
+     * `1435` es una hoja, funciona. Pero `1435` es una cuenta MAYOR —tiene
+     * debajo `143505 Inventario general`— y en los planes donde esta sembrada
+     * asi, el asiento se iba contra la mayor.
+     *
+     * Contabilizar contra una cuenta mayor no es un detalle de forma: un
+     * contador lo rechaza, los informes por nivel quedan contando dos veces, y
+     * el propio sistema ya decia que no se podia —`accepts_movements = false`
+     * esta ahi justamente para eso— pero nadie le preguntaba.
+     *
+     * Peor todavia: solo se rompe en los planes donde ese codigo es mayor, asi
+     * que funciona en desarrollo y falla en la empresa que tiene el PUC
+     * completo. Ese es el tipo de error que se descubre en una revision
+     * contable, meses despues.
+     *
+     * Si el codigo exacto no acepta movimientos, se baja a la primera de sus
+     * hijas que si —`1435` → `143505`—, que es lo que un contador haria.
+     */
+    public static function porCodigo(string $codigo, ?int $companyId = null): ?int
+    {
+        $companyId ??= Auth::user()?->company_id;
+
+        if (! $companyId || $codigo === '') {
+            return null;
+        }
+
+        $exacta = Account::query()
+            ->withoutGlobalScopes()
+            ->where('company_id', $companyId)
+            ->where('code', $codigo)
+            ->where('accepts_movements', true)
+            ->where('active', true)
+            ->value('id');
+
+        if ($exacta) {
+            return (int) $exacta;
+        }
+
+        // La hija de menor codigo que si reciba movimientos. Se ordena por
+        // codigo para que la respuesta sea siempre la misma: una cuenta que
+        // cambia entre ejecuciones parte la contabilidad en dos mitades que no
+        // cuadran.
+        $hija = Account::query()
+            ->withoutGlobalScopes()
+            ->where('company_id', $companyId)
+            ->where('code', 'like', $codigo.'%')
+            ->where('code', '!=', $codigo)
+            ->where('accepts_movements', true)
+            ->where('active', true)
+            ->orderBy('code')
+            ->value('id');
+
+        return $hija ? (int) $hija : null;
+    }
+
+    /**
      * @param  list<string>  $codigos  En orden de preferencia.
      */
     private static function primeraQueExista(array $codigos, ?int $companyId = null): ?int
     {
-        $companyId ??= Auth::user()?->company_id;
-
-        if (! $companyId) {
-            return null;
-        }
-
         foreach ($codigos as $codigo) {
-            $id = Account::query()
-                ->where('company_id', $companyId)
-                ->where('code', $codigo)
-                // Solo las de detalle: una cuenta mayor no acepta movimientos y
-                // el asiento seria rechazado al postearse.
-                ->where('accepts_movements', true)
-                ->where('active', true)
-                ->value('id');
+            // Delega en `porCodigo` para que la regla de «solo cuentas que
+            // reciben movimientos» este escrita una vez. Antes se repetia
+            // aqui, y repetida es como empezo el problema que `porCodigo`
+            // viene a arreglar.
+            $id = self::porCodigo($codigo, $companyId);
 
             if ($id) {
-                return (int) $id;
+                return $id;
             }
         }
 

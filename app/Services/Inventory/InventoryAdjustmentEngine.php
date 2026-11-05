@@ -2,12 +2,14 @@
 
 namespace App\Services\Inventory;
 
-use App\Models\Account;
 use App\Models\Company;
 use App\Models\InventoryAdjustment;
+use App\Models\InventoryAdjustmentLine;
 use App\Models\JournalEntry;
 use App\Models\JournalEntryLine;
+use App\Models\ProductSerial;
 use App\Services\Accounting\JournalEntryNumberer;
+use App\Support\DefaultAccounts;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -210,7 +212,9 @@ class InventoryAdjustmentEngine
         return DB::transaction(function () use ($adj, $reason) {
             // Reverso de movimientos de inventario
             foreach ($adj->lines as $line) {
-                if (! $line->product || ! $line->inventory_movement_id) continue;
+                if (! $line->product || ! $line->inventory_movement_id) {
+                    continue;
+                }
 
                 $this->inventory->addMovement(
                     $line->product,
@@ -276,10 +280,7 @@ class InventoryAdjustmentEngine
 
     protected function defaultInventoryAccountId(int $companyId): ?int
     {
-        return Account::withoutGlobalScopes()
-            ->where('company_id', $companyId)
-            ->where('code', '1435')
-            ->value('id');
+        return DefaultAccounts::porCodigo('1435', (int) $companyId);
     }
 
     /**
@@ -288,7 +289,7 @@ class InventoryAdjustmentEngine
      *   - defective  → reason damage
      *   - returned   → cualquier otro reason (loss, count, expiration, other)
      */
-    protected function applySerialsForAdjustmentLine(InventoryAdjustment $adj, \App\Models\InventoryAdjustmentLine $line): void
+    protected function applySerialsForAdjustmentLine(InventoryAdjustment $adj, InventoryAdjustmentLine $line): void
     {
         $raw = $line->serials ?? [];
         $serials = array_values(array_unique(array_filter(array_map(
@@ -309,7 +310,7 @@ class InventoryAdjustmentEngine
 
         if ($adj->isEntry()) {
             // Entrada: crear nuevos in_stock. Choque con existentes → error.
-            $existing = \App\Models\ProductSerial::query()
+            $existing = ProductSerial::query()
                 ->where('company_id', $adj->company_id)
                 ->whereIn('serial_number', $serials)
                 ->pluck('serial_number')
@@ -321,12 +322,12 @@ class InventoryAdjustmentEngine
             }
 
             foreach ($serials as $serial) {
-                \App\Models\ProductSerial::create([
+                ProductSerial::create([
                     'company_id' => $adj->company_id,
                     'product_id' => $line->product_id,
                     'location_id' => $adj->location_id,
                     'serial_number' => $serial,
-                    'status' => \App\Models\ProductSerial::STATUS_IN_STOCK,
+                    'status' => ProductSerial::STATUS_IN_STOCK,
                     'inventory_adjustment_line_id' => $line->id,
                     'received_at' => $adj->date ?? now(),
                 ]);
@@ -337,10 +338,10 @@ class InventoryAdjustmentEngine
 
         // Salida: los seriales digitados deben existir y estar in_stock.
         $newStatus = $adj->reason_code === 'damage'
-            ? \App\Models\ProductSerial::STATUS_DEFECTIVE
-            : \App\Models\ProductSerial::STATUS_RETURNED;
+            ? ProductSerial::STATUS_DEFECTIVE
+            : ProductSerial::STATUS_RETURNED;
 
-        $records = \App\Models\ProductSerial::query()
+        $records = ProductSerial::query()
             ->where('company_id', $adj->company_id)
             ->where('product_id', $line->product_id)
             ->whereIn('serial_number', $serials)
@@ -354,7 +355,7 @@ class InventoryAdjustmentEngine
             );
         }
 
-        $notInStock = $records->where('status', '!=', \App\Models\ProductSerial::STATUS_IN_STOCK)
+        $notInStock = $records->where('status', '!=', ProductSerial::STATUS_IN_STOCK)
             ->pluck('serial_number')->all();
         if (! empty($notInStock)) {
             throw new RuntimeException(

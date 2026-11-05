@@ -2,12 +2,12 @@
 
 namespace App\Services\Inventory;
 
-use App\Models\Account;
 use App\Models\Company;
 use App\Models\InventoryOpening;
 use App\Models\JournalEntry;
 use App\Models\JournalEntryLine;
 use App\Services\Accounting\JournalEntryNumberer;
+use App\Support\DefaultAccounts;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -174,7 +174,9 @@ class InventoryOpeningEngine
         return DB::transaction(function () use ($opening, $reason) {
             // Reverso de movimientos: adjustment_out (no podemos hacer opening_out)
             foreach ($opening->lines as $line) {
-                if (! $line->product || ! $line->inventory_movement_id) continue;
+                if (! $line->product || ! $line->inventory_movement_id) {
+                    continue;
+                }
 
                 $this->inventory->addMovement(
                     $line->product,
@@ -240,9 +242,6 @@ class InventoryOpeningEngine
 
     protected function defaultInventoryAccountId(int $companyId): ?int
     {
-        return Account::withoutGlobalScopes()
-            ->where('company_id', $companyId)
-            ->where('code', '1435')
-            ->value('id');
+        return DefaultAccounts::porCodigo('1435', (int) $companyId);
     }
 }

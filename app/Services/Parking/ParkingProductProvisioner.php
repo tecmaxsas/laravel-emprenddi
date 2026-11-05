@@ -2,10 +2,10 @@
 
 namespace App\Services\Parking;
 
-use App\Models\Account;
 use App\Models\Company;
 use App\Models\Product;
 use App\Models\Tax;
+use App\Support\DefaultAccounts;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -32,16 +32,12 @@ class ParkingProductProvisioner
                 // Backfill de sale_account_id en productos creados antes del
                 // fix (cuando quedaban en null y caia a 4135 mercancias).
                 if (! $product->sale_account_id) {
-                    $accountId = Account::query()
-                        ->where('company_id', $company->id)
-                        ->where('code', '4145')
-                        ->where('accepts_movements', true)
-                        ->where('active', true)
-                        ->value('id');
+                    $accountId = DefaultAccounts::porCodigo('4145', (int) $company->id);
                     if ($accountId) {
                         $product->update(['sale_account_id' => $accountId]);
                     }
                 }
+
                 return $product;
             }
 
@@ -57,12 +53,7 @@ class ParkingProductProvisioner
             // 4145 — Transporte, almacenamiento y comunicaciones (incluye parqueaderos)
             // Si no esta en el PUC de la empresa, deja null y SaleInvoiceEngine
             // caera al fallback 4135 (mercancias) — el admin puede ajustarla.
-            $saleAccountId = Account::query()
-                ->where('company_id', $company->id)
-                ->where('code', '4145')
-                ->where('accepts_movements', true)
-                ->where('active', true)
-                ->value('id');
+            $saleAccountId = DefaultAccounts::porCodigo('4145', (int) $company->id);
 
             return Product::withoutGlobalScopes()->create([
                 'company_id' => $company->id,

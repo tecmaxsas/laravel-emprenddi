@@ -2,7 +2,6 @@
 
 namespace App\Services\Sales;
 
-use App\Models\Account;
 use App\Models\Company;
 use App\Models\JournalEntry;
 use App\Models\JournalEntryLine;
@@ -17,6 +16,7 @@ use App\Services\Inventory\InventoryEngine;
 use App\Services\Invoicing\GlobalDiscount;
 use App\Support\CashSessionGate;
 use App\Support\CommissionsSettings;
+use App\Support\DefaultAccounts;
 use App\Support\PaymentMethodOptions;
 use App\Support\Vuelto;
 use Illuminate\Support\Facades\Auth;
@@ -311,10 +311,7 @@ class SaleInvoiceEngine
         return DB::transaction(function () use ($invoice, $data, $amount) {
             $cashAccountId = $data['account_id'];
             $receivableAccountId = $invoice->customer?->default_receivable_account_id
-                ?? Account::withoutGlobalScopes()
-                    ->where('company_id', $invoice->company_id)
-                    ->where('code', '1305')
-                    ->value('id');
+                ?? DefaultAccounts::porCodigo('1305', (int) $invoice->company_id);
 
             if (! $receivableAccountId) {
                 throw new RuntimeException('No se encontró la cuenta por cobrar (1305 o configurada en el cliente).');
@@ -471,21 +468,12 @@ class SaleInvoiceEngine
      */
     protected function createSaleJournalEntry(SaleInvoice $invoice): JournalEntry
     {
-        $vatAccountId = Account::withoutGlobalScopes()
-            ->where('company_id', $invoice->company_id)
-            ->where('code', '240805')
-            ->value('id');
+        $vatAccountId = DefaultAccounts::porCodigo('240805', (int) $invoice->company_id);
 
-        $defaultIncomeAccountId = Account::withoutGlobalScopes()
-            ->where('company_id', $invoice->company_id)
-            ->where('code', '4135')
-            ->value('id');
+        $defaultIncomeAccountId = DefaultAccounts::porCodigo('4135', (int) $invoice->company_id);
 
         $receivableAccountId = $invoice->customer?->default_receivable_account_id
-            ?? Account::withoutGlobalScopes()
-                ->where('company_id', $invoice->company_id)
-                ->where('code', '1305')
-                ->value('id');
+            ?? DefaultAccounts::porCodigo('1305', (int) $invoice->company_id);
 
         if (! $receivableAccountId) {
             throw new RuntimeException('Falta cuenta por cobrar (1305 o configurar en el cliente).');
@@ -606,15 +594,9 @@ class SaleInvoiceEngine
      */
     protected function createCogsJournalEntry(SaleInvoice $invoice): JournalEntry
     {
-        $defaultCogsAccountId = Account::withoutGlobalScopes()
-            ->where('company_id', $invoice->company_id)
-            ->where('code', '6135')
-            ->value('id');
+        $defaultCogsAccountId = DefaultAccounts::porCodigo('6135', (int) $invoice->company_id);
 
-        $defaultInventoryAccountId = Account::withoutGlobalScopes()
-            ->where('company_id', $invoice->company_id)
-            ->where('code', '1435')
-            ->value('id');
+        $defaultInventoryAccountId = DefaultAccounts::porCodigo('1435', (int) $invoice->company_id);
 
         // Acumular costo por par (cogs_account_id, inventory_account_id)
         $pairs = []; // "cogsId:invId" => ['cogs' => int, 'inv' => int, 'amount' => float]
