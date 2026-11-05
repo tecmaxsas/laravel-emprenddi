@@ -313,8 +313,14 @@ class CustomerAccountTest extends TestCase
 
         $this->limpiar[] = function () use ($cliente) {
             $facturas = SaleInvoice::withoutGlobalScopes()->where('third_party_id', $cliente->id)->pluck('id');
-            Payment::withoutGlobalScopes()->whereIn('paymentable_id', $facturas)->delete();
-            CustomerAdvance::withoutGlobalScopes()->where('third_party_id', $cliente->id)->delete();
+            // forceDelete y no delete: Payment usa SoftDeletes, asi que
+            // `delete()` solo marcaba la fila. Las facturas si se borraban en
+            // duro justo debajo, y cada corrida de la suite dejaba siete pagos
+            // apuntando a facturas que ya no existen. Llevaban acumulandose
+            // desde el 30/10/2026 —72 cuando se midieron— y no los veia nadie,
+            // porque un pago borrado en suave no sale en ninguna pantalla.
+            Payment::withoutGlobalScopes()->whereIn('paymentable_id', $facturas)->forceDelete();
+            CustomerAdvance::withoutGlobalScopes()->where('third_party_id', $cliente->id)->forceDelete();
             DB::table('sale_invoice_lines')->whereIn('sale_invoice_id', $facturas)->delete();
             SaleInvoice::withoutGlobalScopes()->whereIn('id', $facturas)->forceDelete();
             ThirdParty::withoutGlobalScopes()->whereKey($cliente->id)->forceDelete();

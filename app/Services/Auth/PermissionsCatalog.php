@@ -83,6 +83,10 @@ class PermissionsCatalog
                 // Borrar una venta devuelve inventario, asientos, pagos y bonos.
                 // Solo POS, y solo para quien pueda responder por el descuadre.
                 'sales.delete' => 'Borrar facturas POS (devuelve inventario y asientos)',
+                // Corregir una factura ya contabilizada la devuelve a borrador
+                // deshaciendo inventario, asientos Y pagos. Quien lo haga tiene
+                // que poder responder por el arqueo del turno.
+                'sales.edit_posted' => 'Corregir facturas ya contabilizadas',
                 'sales.receive_payment' => 'Recibir pagos de clientes',
                 'sales.send_dian' => 'Enviar facturas a DIAN',
                 'quotations.view' => 'Ver cotizaciones',

@@ -259,6 +259,52 @@ class ViewSaleInvoice extends ViewRecord
                     }
                 }),
 
+            // Corregir una factura ya contabilizada.
+            //
+            // Antes no habia forma: editar solo salia en borrador, y anular
+            // exige que no haya pagos —cosa que una venta POS siempre tiene—.
+            // Lo que se hacia era «arreglarlo» en la siguiente venta.
+            //
+            // El motivo por el que NO se puede, cuando no se puede, sale del
+            // mismo metodo que lo aplica: un boton que se oculta porque si
+            // obliga a adivinar, y dos listas de condiciones se separan.
+            Actions\Action::make('editarFactura')
+                ->label('Corregir factura')
+                ->icon('heroicon-o-pencil-square')
+                ->color('warning')
+                ->visible(fn (SaleInvoice $record) => $record->isPosted()
+                    && auth()->user()?->can('sales.edit_posted'))
+                ->disabled(fn (SaleInvoice $record) => app(SaleInvoiceEngine::class)
+                    ->porQueNoSePuedeEditar($record) !== null)
+                ->tooltip(fn (SaleInvoice $record) => app(SaleInvoiceEngine::class)
+                    ->porQueNoSePuedeEditar($record))
+                ->requiresConfirmation()
+                ->modalHeading('Devolver la factura a borrador para corregirla')
+                ->modalDescription('Se deshacen el inventario, los asientos y LOS PAGOS. Después de '
+                    .'corregirla hay que volver a contabilizarla y a registrar el cobro — así el '
+                    .'cierre de caja refleja la corrección.')
+                ->modalSubmitActionLabel('Devolver a borrador')
+                ->action(function (SaleInvoice $record) {
+                    try {
+                        app(SaleInvoiceEngine::class)->prepararParaEditar($record);
+
+                        Notification::make()
+                            ->success()
+                            ->title('Factura devuelta a borrador')
+                            ->body('Corrige las líneas, contabilízala y vuelve a registrar el pago.')
+                            ->send();
+
+                        $this->redirect(SaleInvoiceResource::getUrl('edit', ['record' => $record]));
+                    } catch (\Throwable $e) {
+                        Notification::make()
+                            ->danger()
+                            ->title('No se puede corregir esta factura')
+                            ->body($e->getMessage())
+                            ->persistent()
+                            ->send();
+                    }
+                }),
+
             // En una factura POS el documento no es una nota crédito: el
             // tiquete no se transmite y la devolución tampoco. Es el mismo
             // flujo con otro nombre, porque para el cajero es otra cosa.

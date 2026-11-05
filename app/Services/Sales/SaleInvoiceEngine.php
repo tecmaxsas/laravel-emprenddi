@@ -2,6 +2,7 @@
 
 namespace App\Services\Sales;
 
+use App\Models\CashRegisterSession;
 use App\Models\Company;
 use App\Models\JournalEntry;
 use App\Models\JournalEntryLine;
@@ -775,102 +776,245 @@ class SaleInvoiceEngine
         $invoice->load(['lines.product', 'customer', 'location', 'journalEntry.lines']);
 
         return DB::transaction(function () use ($invoice) {
-            // 1. Devuelve el inventario (return_from_customer — entra al stock).
-            foreach ($invoice->lines as $line) {
-                if (! $line->product_id) {
-                    continue;
-                }
+            $this->revertirContabilizacion($invoice, 'ANUL', 'Anulación venta');
 
-                // Del combo salieron sus piezas, asi que las piezas son las
-                // que vuelven. Sin esto, anular una venta de combos dejaba el
-                // inventario descargado para siempre.
-                if ($line->product?->isKit()) {
-                    $this->devolverComponentesDelCombo($invoice, $line);
-
-                    continue;
-                }
-
-                if (! $line->product?->track_inventory) {
-                    continue;
-                }
-                if (! $line->inventory_movement_id) {
-                    continue; // No salió inventario al postear.
-                }
-                $this->inventory->addMovement(
-                    $line->product,
-                    $invoice->location,
-                    [
-                        'type' => 'return_from_customer',
-                        'quantity' => (float) $line->quantity,
-                        'unit_cost' => (float) ($line->cost_at_sale ?? 0),
-                        'date' => now(),
-                        'reference_type' => SaleInvoice::class,
-                        'reference_id' => $invoice->id,
-                        'reference_number' => 'ANUL-'.$invoice->fullNumber(),
-                        'third_party_id' => $invoice->third_party_id,
-                        'description' => "Anulación venta {$invoice->fullNumber()}",
-                    ]
-                );
-
-                // Libera seriales vendidos por esta línea: vuelven a in_stock
-                // y se desvinculan de la línea para poder vender de nuevo.
-                if ($line->product->tracks_serials) {
-                    ProductSerial::query()
-                        ->where('sale_invoice_line_id', $line->id)
-                        ->where('status', ProductSerial::STATUS_SOLD)
-                        ->update([
-                            'status' => ProductSerial::STATUS_IN_STOCK,
-                            'sale_invoice_line_id' => null,
-                            'sold_at' => null,
-                        ]);
-                }
-            }
-
-            // 2. Reversa del asiento de venta.
-            $this->createReversalFrom(
-                $invoice,
-                $invoice->journalEntry,
-                'reversal',
-                "Anulación venta {$invoice->fullNumber()} — {$invoice->customer->name}",
-            );
-
-            // 3. Reversa del asiento de COGS si existe (se busca por type+reference).
-            $cogsEntry = JournalEntry::query()
-                ->where('company_id', $invoice->company_id)
-                ->where('type', 'cogs')
-                ->where('reference', $invoice->fullNumber())
-                ->with('lines')
-                ->first();
-            if ($cogsEntry) {
-                $this->createReversalFrom(
-                    $invoice,
-                    $cogsEntry,
-                    'cogs_reversal',
-                    "Reversa COGS de venta {$invoice->fullNumber()}",
-                );
-            }
-
-            // 4. Marca la factura como anulada.
             $invoice->update([
                 'status' => SaleInvoice::STATUS_CANCELLED,
                 'payment_status' => SaleInvoice::PAYMENT_CANCELADA,
             ]);
 
-            // 5. Reversa comisiones pendientes de esta factura (las ya
-            // liquidadas no se tocan — se ajustan en la siguiente liquidación).
-            if (CommissionsSettings::moduleActive()) {
-                try {
-                    app(CommissionEngine::class)->reverseForInvoice($invoice);
-                } catch (\Throwable $e) {
-                    Log::warning('No se pudo reversar comisión al anular factura', [
-                        'invoice_id' => $invoice->id,
-                        'error' => $e->getMessage(),
-                    ]);
-                }
+            return $invoice->fresh();
+        });
+    }
+
+    /**
+     * Deshace TODO lo que hizo contabilizar: inventario, asientos y comisiones.
+     *
+     * Lo usan la anulación y la edición. Estaba escrito dentro de `cancel()`, y
+     * dejarlo ahí habría significado copiarlo para poder editar: dos reversas
+     * que empiezan iguales y se separan a la primera corrección que alguien
+     * haga en una sola. Ya nos pasó con la normalización del WhatsApp y con los
+     * módulos que desvían el POS.
+     *
+     * @param  string  $etiqueta  Prefijo de la referencia del movimiento (ANUL, EDIT).
+     * @param  string  $motivo  Texto legible del asiento de reversa.
+     */
+    protected function revertirContabilizacion(SaleInvoice $invoice, string $etiqueta, string $motivo): void
+    {
+        // 1. Devuelve el inventario (return_from_customer — entra al stock).
+        foreach ($invoice->lines as $line) {
+            if (! $line->product_id) {
+                continue;
             }
+
+            // Del combo salieron sus piezas, asi que las piezas son las
+            // que vuelven. Sin esto, anular una venta de combos dejaba el
+            // inventario descargado para siempre.
+            if ($line->product?->isKit()) {
+                $this->devolverComponentesDelCombo($invoice, $line);
+
+                continue;
+            }
+
+            if (! $line->product?->track_inventory) {
+                continue;
+            }
+            if (! $line->inventory_movement_id) {
+                continue; // No salió inventario al postear.
+            }
+            $this->inventory->addMovement(
+                $line->product,
+                $invoice->location,
+                [
+                    'type' => 'return_from_customer',
+                    'quantity' => (float) $line->quantity,
+                    'unit_cost' => (float) ($line->cost_at_sale ?? 0),
+                    'date' => now(),
+                    'reference_type' => SaleInvoice::class,
+                    'reference_id' => $invoice->id,
+                    'reference_number' => $etiqueta.'-'.$invoice->fullNumber(),
+                    'third_party_id' => $invoice->third_party_id,
+                    'description' => "{$motivo} {$invoice->fullNumber()}",
+                ]
+            );
+
+            // Libera seriales vendidos por esta línea: vuelven a in_stock
+            // y se desvinculan de la línea para poder vender de nuevo.
+            if ($line->product->tracks_serials) {
+                ProductSerial::query()
+                    ->where('sale_invoice_line_id', $line->id)
+                    ->where('status', ProductSerial::STATUS_SOLD)
+                    ->update([
+                        'status' => ProductSerial::STATUS_IN_STOCK,
+                        'sale_invoice_line_id' => null,
+                        'sold_at' => null,
+                    ]);
+            }
+        }
+
+        // 2. Reversa del asiento de venta.
+        $this->createReversalFrom(
+            $invoice,
+            $invoice->journalEntry,
+            'reversal',
+            "{$motivo} {$invoice->fullNumber()} — {$invoice->customer->name}",
+        );
+
+        // 3. Reversa del asiento de COGS si existe (se busca por type+reference).
+        $cogsEntry = JournalEntry::query()
+            ->where('company_id', $invoice->company_id)
+            ->where('type', 'cogs')
+            ->where('reference', $invoice->fullNumber())
+            ->with('lines')
+            ->first();
+        if ($cogsEntry) {
+            $this->createReversalFrom(
+                $invoice,
+                $cogsEntry,
+                'cogs_reversal',
+                "Reversa COGS de venta {$invoice->fullNumber()}",
+            );
+        }
+
+        // 5. Reversa comisiones pendientes de esta factura (las ya
+        // liquidadas no se tocan — se ajustan en la siguiente liquidación).
+        if (CommissionsSettings::moduleActive()) {
+            try {
+                app(CommissionEngine::class)->reverseForInvoice($invoice);
+            } catch (\Throwable $e) {
+                Log::warning('No se pudo reversar comisión al anular factura', [
+                    'invoice_id' => $invoice->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Devuelve una factura contabilizada a borrador para poder corregirla.
+     *
+     * POR QUE EXISTE.
+     *
+     * Hasta ahora una factura contabilizada no se tocaba: el botón de editar
+     * solo salía en borrador. Para corregir una cantidad mal digitada había
+     * que anular y rehacer, y anular exige que no haya pagos — cosa que una
+     * venta POS siempre tiene—. Así que en la práctica no había forma, y lo
+     * que se hacía era «arreglarlo» en la siguiente venta.
+     *
+     * QUE DESHACE.
+     *
+     * Todo: inventario, asiento de venta, COGS, comisiones y los PAGOS. Los
+     * pagos se borran a propósito y no se conservan: si el total cambia y el
+     * pago se queda como estaba, el arqueo del turno sigue mostrando la cifra
+     * vieja. Volver a cobrarla en el mismo turno es lo que hace que el cierre
+     * de caja refleje la corrección, porque el arqueo suma los pagos de la
+     * sesión.
+     *
+     * CUANDO NO SE PUEDE, y por qué:
+     *
+     *  - Si la factura electrónica ya viajó a la DIAN. Ese documento existe
+     *    fuera de aquí; corregirlo por dentro deja los dos sistemas hablando
+     *    de cosas distintas. Lo que corresponde es una nota crédito.
+     *  - Si algún pago está en un turno YA CERRADO. Ese arqueo lo firmó
+     *    alguien, y cambiarlo por detrás lo convierte en un documento que no
+     *    significa nada. Ahí también corresponde una nota crédito.
+     */
+    public function prepararParaEditar(SaleInvoice $invoice): SaleInvoice
+    {
+        $impedimento = $this->porQueNoSePuedeEditar($invoice);
+
+        if ($impedimento !== null) {
+            throw new RuntimeException($impedimento);
+        }
+
+        $invoice->load(['lines.product', 'customer', 'location', 'journalEntry.lines', 'payments']);
+
+        return DB::transaction(function () use ($invoice) {
+            $this->revertirContabilizacion($invoice, 'EDIT', 'Edición de venta');
+            $this->revertirPagos($invoice);
+
+            $invoice->update([
+                'status' => SaleInvoice::STATUS_DRAFT,
+                'payment_status' => SaleInvoice::PAYMENT_PENDIENTE,
+                'paid_amount' => 0,
+                'posted_at' => null,
+                'posted_by_user_id' => null,
+                'journal_entry_id' => null,
+                'dian_status' => null,
+            ]);
 
             return $invoice->fresh();
         });
+    }
+
+    /**
+     * El motivo por el que esta factura no se puede editar, o null si se puede.
+     *
+     * Devuelve el texto en vez de un booleano para que la pantalla muestre
+     * exactamente la misma razón que aplica el motor. Un botón que se oculta
+     * «porque sí» obliga a adivinar; y dos listas de condiciones —una para
+     * ocultar y otra para validar— se separan.
+     */
+    public function porQueNoSePuedeEditar(SaleInvoice $invoice): ?string
+    {
+        if ($invoice->status === SaleInvoice::STATUS_DRAFT) {
+            return null;
+        }
+
+        if ($invoice->status !== SaleInvoice::STATUS_POSTED) {
+            return 'Solo se puede editar una factura en borrador o contabilizada.';
+        }
+
+        if (! $invoice->isPosInvoice()) {
+            if ($invoice->dian_status === SaleInvoice::DIAN_ACCEPTED || ! empty($invoice->cufe)) {
+                return 'Esta factura electrónica ya fue aceptada por la DIAN: ese documento existe '
+                    .'fuera de aquí y no se puede cambiar. Lo que corresponde es una nota crédito.';
+            }
+
+            if ($invoice->dian_status === SaleInvoice::DIAN_SENT) {
+                return 'Esta factura fue enviada a la DIAN y está esperando respuesta. No se puede '
+                    .'editar hasta saber el resultado.';
+            }
+        }
+
+        $turnoCerrado = $invoice->payments()
+            ->whereNotNull('cash_register_session_id')
+            ->whereHas('cashSession', fn ($q) => $q->where('status', '!=', CashRegisterSession::STATUS_OPEN))
+            ->exists();
+
+        if ($turnoCerrado) {
+            return 'Los pagos de esta factura están en un turno de caja ya cerrado. Ese arqueo lo '
+                .'firmó alguien, y cambiarlo por detrás lo volvería un documento que no significa '
+                .'nada. Para corregirla, emite una nota crédito o una devolución.';
+        }
+
+        return null;
+    }
+
+    /**
+     * Borra los pagos de la factura reversando sus asientos.
+     *
+     * No se conservan: con el total cambiado, un pago viejo deja el arqueo
+     * mostrando una cifra que ya no corresponde a nada.
+     */
+    protected function revertirPagos(SaleInvoice $invoice): void
+    {
+        foreach ($invoice->payments as $payment) {
+            if ($payment->journal_entry_id) {
+                $asiento = JournalEntry::with('lines')->find($payment->journal_entry_id);
+
+                if ($asiento) {
+                    $this->createReversalFrom(
+                        $invoice,
+                        $asiento,
+                        'reversal',
+                        "Reversa de pago por edición de {$invoice->fullNumber()}",
+                    );
+                }
+            }
+
+            $payment->delete();
+        }
     }
 
     /**
