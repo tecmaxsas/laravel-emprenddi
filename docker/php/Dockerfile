@@ -30,6 +30,7 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
         pcntl
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+COPY docker/php/fpm-timeout.conf /usr/local/etc/php-fpm.d/zz-timeout.conf
 
 WORKDIR /var/www
 

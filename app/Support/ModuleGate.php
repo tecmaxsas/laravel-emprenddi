@@ -50,6 +50,32 @@ class ModuleGate
             return false;
         }
 
-        return Company::find($companyId)?->hasModule($module) ?? false;
+        return static::company($companyId)?->hasModule($module) ?? false;
     }
+
+    /**
+     * La empresa se consulta una sola vez por request. Antes cada active()
+     * hacia su propio Company::find, y como Filament llama canAccess() de
+     * cada recurso para armar el menu, una pagina cualquiera disparaba unas
+     * 130 consultas a companies (~1 s). Ese segundo extra por pagina fue
+     * parte de la caida del 2026-11-05.
+     *
+     * El memo vive en un binding scoped: Laravel lo descarta al terminar
+     * cada request y antes de cada job de la cola, asi que un worker de
+     * larga vida no se queda con los modulos viejos.
+     */
+    protected static function company(int $companyId): ?Company
+    {
+        $memo = app(self::MEMO);
+
+        return $memo[$companyId] ??= Company::find($companyId);
+    }
+
+    /** Olvida lo memorizado; se llama cuando se guarda una empresa. */
+    public static function flush(): void
+    {
+        app()->forgetInstance(self::MEMO);
+    }
+
+    public const MEMO = 'module-gate.companies';
 }

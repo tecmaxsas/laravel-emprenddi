@@ -3,12 +3,14 @@
 namespace App\Providers;
 
 use App\Models\AuditLog;
+use App\Models\Company;
 use App\Models\User;
 use App\Observers\AuditObserver;
 use App\Services\Audit\AuditRecorder;
 use App\Services\Audit\AuditRegistry;
 use App\Services\Restaurant\BrowserPrintQueue;
 use App\Support\CurrentCompany;
+use App\Support\ModuleGate;
 use Illuminate\Auth\Events\Failed;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Logout;
@@ -26,10 +28,15 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(BrowserPrintQueue::class);
         // Acumula entradas de auditoría durante la transacción en curso.
         $this->app->singleton(AuditRecorder::class);
+        // Empresas ya consultadas por ModuleGate en este request / job.
+        $this->app->scoped(ModuleGate::MEMO, fn () => new \ArrayObject);
     }
 
     public function boot(): void
     {
+        // Un cambio de modulos tiene que verse en el mismo request.
+        Company::saved(fn () => ModuleGate::flush());
+
         if ($this->app->environment('production')) {
             URL::forceScheme('https');
         }
