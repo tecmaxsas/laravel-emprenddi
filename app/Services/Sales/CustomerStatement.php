@@ -30,6 +30,18 @@ class CustomerStatement
     public const ADVANCE = 'anticipo';
 
     /**
+     * Aplicacion de un anticipo a una deuda.
+     *
+     * Existe para que el anticipo se pueda mostrar por su valor COMPLETO. Antes
+     * se mostraba solo la parte sin usar: un anticipo de $2.000.000 del que se
+     * habian aplicado $1.500.000 aparecia como «$500.000», y el cliente no
+     * encontraba por ningun lado los dos millones que entrego. Ahora entra
+     * entero como credito y cada aplicacion sale como el debito que lo
+     * consume, que es como se lee una cuenta: el movimiento y su contrapartida.
+     */
+    public const APPLICATION = 'aplicacion';
+
+    /**
      * Devoluciones: nota credito electronica o devolucion POS.
      *
      * Faltaban en el estado de cuenta, y era grave: el cliente devolvia la
@@ -95,6 +107,9 @@ class CustomerStatement
         // empezó a usar Emprenddi. Va siempre primero, aunque haya filtro de
         // fechas: sin él el saldo corrido no significa nada.
         if ($customer->tieneSaldoDeApertura()) {
+            // Por su valor ORIGINAL: es lo que el cliente debía el día de la
+            // migración, y es el movimiento que abre la hoja. Lo que se le
+            // haya abonado después sale como su propio crédito, debajo.
             $movimientos->push([
                 'date' => $customer->opening_balance_date?->toDateString() ?? '',
                 'type' => self::OPENING,
@@ -103,6 +118,19 @@ class CustomerStatement
                 'debit' => round((float) $customer->opening_balance, 2),
                 'credit' => 0.0,
             ]);
+
+            $abonado = round((float) $customer->opening_balance_applied, 2);
+
+            if ($abonado > 0.009) {
+                $movimientos->push([
+                    'date' => $customer->opening_balance_date?->toDateString() ?? '',
+                    'type' => self::APPLICATION,
+                    'reference' => 'Abono a saldo de apertura',
+                    'description' => 'Anticipo aplicado a la deuda anterior',
+                    'debit' => 0.0,
+                    'credit' => $abonado,
+                ]);
+            }
         }
 
         foreach ($this->facturas($customer, $desde, $hasta) as $invoice) {
@@ -131,6 +159,9 @@ class CustomerStatement
                     : 'Abono'.($payment->payment_method ? ' — '.$payment->payment_method : ''),
                 'debit' => 0.0,
                 'credit' => round((float) $payment->amount, 2),
+                // Para que el estado de cuenta pueda ofrecer corregir o borrar
+                // el cobro sin obligar a ir a buscar la factura.
+                'payment_id' => $payment->id,
             ]);
         }
 
@@ -151,17 +182,37 @@ class CustomerStatement
         }
 
         foreach ($this->anticipos($customer, $desde, $hasta) as $advance) {
+            // El anticipo ENTERO, no solo lo que queda sin usar.
+            //
+            // Antes se mostraba `available`: un anticipo de $2.000.000 con
+            // $1.500.000 ya aplicados aparecía como «$500.000» y el cliente no
+            // encontraba sus dos millones por ningún lado. El saldo corrido
+            // salía bien, pero el documento no explicaba nada.
             $movimientos->push([
                 'date' => $advance->date?->toDateString() ?? '',
                 'type' => self::ADVANCE,
                 'reference' => 'Anticipo #'.$advance->id,
                 'description' => 'Pago anticipado'.($advance->reference ? ' — '.$advance->reference : ''),
                 'debit' => 0.0,
-                // Solo lo que queda sin aplicar. La parte ya aplicada aparece
-                // como el pago que genero contra la factura, y contarla aqui
-                // tambien restaria dos veces del saldo.
-                'credit' => $advance->available,
+                'credit' => round((float) $advance->amount, 2),
             ]);
+
+            // Y su contrapartida: lo aplicado sale como débito, que es lo que
+            // consume el anticipo. El par suma cero, así que el saldo corrido
+            // no cambia — lo que cambia es que ahora se puede seguir la pista
+            // de cada peso.
+            $aplicado = round((float) $advance->applied_amount, 2);
+
+            if ($aplicado > 0.009) {
+                $movimientos->push([
+                    'date' => $advance->date?->toDateString() ?? '',
+                    'type' => self::APPLICATION,
+                    'reference' => 'Aplicación anticipo #'.$advance->id,
+                    'description' => 'Aplicado a la deuda del cliente',
+                    'debit' => $aplicado,
+                    'credit' => 0.0,
+                ]);
+            }
         }
 
         // El saldo de apertura primero; el resto por fecha, y a igual fecha la
@@ -234,7 +285,9 @@ class CustomerStatement
         return CustomerAdvance::query()
             ->where('company_id', $customer->company_id)
             ->where('third_party_id', $customer->id)
-            ->whereColumn('applied_amount', '<', 'amount')
+            // TODOS, no solo los que tienen saldo sin usar: un anticipo
+            // aplicado por completo tambien es un movimiento de la cuenta y
+            // tiene que poder verse.
             ->when($desde, fn ($q, $v) => $q->whereDate('date', '>=', $v))
             ->when($hasta, fn ($q, $v) => $q->whereDate('date', '<=', $v))
             ->orderBy('date')

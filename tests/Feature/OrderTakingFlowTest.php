@@ -717,8 +717,18 @@ class OrderTakingFlowTest extends TestCase
 
         $factura = $engine->convertToInvoice($order->fresh(), 'pos', allowNegativeStock: true);
 
-        $this->limpiar[] = fn () => SaleInvoice::withoutGlobalScopes()
-            ->whereKey($factura->id)->forceDelete();
+        // Los cobros ANTES que la factura: borrarla sola deja el pago
+        // apuntando a una factura que ya no existe, y eso no lo nota nadie
+        // porque un pago huerfano no sale en ninguna pantalla. Se acumulaba
+        // uno por cada corrida de la suite.
+        $this->limpiar[] = function () use ($factura) {
+            DB::table('payments')
+                ->where('paymentable_type', SaleInvoice::class)
+                ->where('paymentable_id', $factura->id)
+                ->delete();
+
+            SaleInvoice::withoutGlobalScopes()->whereKey($factura->id)->forceDelete();
+        };
 
         // La factura recoge lo despachado, con su IVA y su retencion.
         $this->assertSame('1000000.00', $factura->subtotal);
@@ -787,8 +797,18 @@ class OrderTakingFlowTest extends TestCase
         );
 
         $factura = $engine->convertToInvoice($order->fresh(), 'pos', allowNegativeStock: true);
-        $this->limpiar[] = fn () => SaleInvoice::withoutGlobalScopes()
-            ->whereKey($factura->id)->forceDelete();
+        // Los cobros ANTES que la factura: borrarla sola deja el pago
+        // apuntando a una factura que ya no existe, y eso no lo nota nadie
+        // porque un pago huerfano no sale en ninguna pantalla. Se acumulaba
+        // uno por cada corrida de la suite.
+        $this->limpiar[] = function () use ($factura) {
+            DB::table('payments')
+                ->where('paymentable_type', SaleInvoice::class)
+                ->where('paymentable_id', $factura->id)
+                ->delete();
+
+            SaleInvoice::withoutGlobalScopes()->whereKey($factura->id)->forceDelete();
+        };
 
         $this->expectExceptionMessageMatches('/ya se facturó/i');
         $engine->convertToInvoice($order->fresh(), 'pos', allowNegativeStock: true);

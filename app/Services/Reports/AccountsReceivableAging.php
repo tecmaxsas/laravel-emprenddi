@@ -174,7 +174,7 @@ class AccountsReceivableAging
             ->where('opening_balance', '>', 0)
             ->when($thirdPartyId, fn ($q) => $q->where('id', $thirdPartyId))
             ->get(['id', 'name', 'document_number', 'phone', 'email',
-                'opening_balance', 'opening_balance_date']);
+                'opening_balance', 'opening_balance_date', 'opening_balance_applied']);
 
         foreach ($clientes as $cliente) {
             // Un saldo con fecha posterior al corte todavía no existía.
@@ -183,7 +183,10 @@ class AccountsReceivableAging
                 continue;
             }
 
-            $saldo = round((float) $cliente->opening_balance, 2);
+            // Lo PENDIENTE, no el valor original: una apertura ya abonada
+            // seguia saliendo completa en el reporte y alguien la cobraba dos
+            // veces.
+            $saldo = $cliente->saldoDeAperturaPendiente();
 
             if ($saldo <= 0.009) {
                 continue;

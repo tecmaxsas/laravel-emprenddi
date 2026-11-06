@@ -89,6 +89,16 @@ class CustomerAdvanceService
             return 0.0;
         }
 
+        // PRIMERO el saldo de apertura, DESPUES las facturas.
+        //
+        // Es la deuda mas vieja que tiene el cliente —lo que ya debia cuando
+        // la empresa empezo a usar Emprenddi— y hasta ahora los abonos la
+        // saltaban por completo: se aplicaban solo a las facturas del sistema.
+        // Un cliente podia abonar durante meses y el renglon mas antiguo de su
+        // estado de cuenta seguia intacto, que es justo el que lleva mas
+        // tiempo sin cobrarse y el que uno quiere cerrar primero.
+        $aplicado = $this->aplicarAlSaldoDeApertura($customer, $disponibles);
+
         $pendientes = SaleInvoice::query()
             ->where('company_id', $customer->company_id)
             ->where('third_party_id', $customer->id)
@@ -101,8 +111,6 @@ class CustomerAdvanceService
             ->orderBy('id')
             ->get()
             ->filter(fn (SaleInvoice $i) => $i->isPosted() && (float) $i->balance > 0.01);
-
-        $aplicado = 0.0;
 
         foreach ($pendientes as $invoice) {
             foreach ($disponibles as $advance) {
@@ -122,6 +130,55 @@ class CustomerAdvanceService
                 $this->applyAdvanceToInvoice($advance, $invoice, $monto);
                 $aplicado += $monto;
             }
+        }
+
+        return round($aplicado, 2);
+    }
+
+    /**
+     * Abona el saldo a favor contra el saldo de apertura del cliente.
+     *
+     * Ni el anticipo ni el saldo de apertura generan asiento contable en este
+     * sistema —el anticipo se contabiliza cuando se aplica a una factura, y la
+     * apertura la registra el contador aparte al migrar—, asi que aplicar uno
+     * contra el otro tampoco lo genera. No es un descuido: es lo unico
+     * coherente con como ya viven los dos.
+     *
+     * @param  Collection<int, CustomerAdvance>  $disponibles
+     * @return float Cuanto se alcanzo a aplicar.
+     */
+    protected function aplicarAlSaldoDeApertura(ThirdParty $customer, $disponibles): float
+    {
+        $aplicado = 0.0;
+
+        foreach ($disponibles as $advance) {
+            $pendiente = $customer->fresh()->saldoDeAperturaPendiente();
+
+            if ($pendiente <= 0.01) {
+                break;
+            }
+
+            $disponible = $advance->fresh()->available;
+
+            if ($disponible <= 0.01) {
+                continue;
+            }
+
+            $monto = round(min($pendiente, $disponible), 2);
+
+            DB::transaction(function () use ($customer, $advance, $monto) {
+                $customer->forceFill([
+                    'opening_balance_applied' => round(
+                        (float) $customer->fresh()->opening_balance_applied + $monto, 2
+                    ),
+                ])->save();
+
+                $advance->forceFill([
+                    'applied_amount' => round((float) $advance->fresh()->applied_amount + $monto, 2),
+                ])->save();
+            });
+
+            $aplicado += $monto;
         }
 
         return round($aplicado, 2);

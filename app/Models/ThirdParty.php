@@ -96,6 +96,7 @@ class ThirdParty extends Model
         'credit_limit',
         'opening_balance',
         'opening_balance_date',
+        'opening_balance_applied',
         'credit_days',
         'payment_terms_days',
         'birth_date',
@@ -118,6 +119,7 @@ class ThirdParty extends Model
             'credit_limit' => 'decimal:2',
             'opening_balance' => 'decimal:2',
             'opening_balance_date' => 'date',
+            'opening_balance_applied' => 'decimal:2',
             'credit_days' => 'integer',
             'payment_terms_days' => 'integer',
             'retention_percent' => 'decimal:4',
@@ -145,6 +147,18 @@ class ThirdParty extends Model
         }
 
         return abs((float) $monto) > 0.009;
+    }
+
+    /**
+     * Lo que queda por cobrar del saldo de apertura.
+     *
+     * El valor original se conserva —es lo que el cliente debia el dia de la
+     * migracion, y el estado de cuenta lo muestra como el movimiento que abre
+     * la hoja—, asi que lo abonado se acumula aparte y se resta aqui.
+     */
+    public function saldoDeAperturaPendiente(): float
+    {
+        return round(max(0, (float) $this->opening_balance - (float) $this->opening_balance_applied), 2);
     }
 
     public function tieneSaldoDeApertura(): bool

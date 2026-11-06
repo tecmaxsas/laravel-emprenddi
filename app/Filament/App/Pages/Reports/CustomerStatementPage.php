@@ -5,10 +5,15 @@ namespace App\Filament\App\Pages\Reports;
 use App\Mail\CustomerStatementMail;
 use App\Models\CustomerStatementShare;
 use App\Models\Payment;
+use App\Models\SaleInvoice;
 use App\Models\ThirdParty;
 use App\Services\Sales\CustomerAdvanceService;
 use App\Services\Sales\CustomerStatement;
+use App\Services\Sales\PaymentDeleter;
+use App\Services\Sales\SaleInvoiceEngine;
+use App\Support\PaymentAccountResolver;
 use App\Support\PaymentMethodOptions;
+use App\Support\WhatsappNumero;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
@@ -19,6 +24,8 @@ use Filament\Forms\Contracts\HasForms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -291,7 +298,7 @@ class CustomerStatementPage extends Page implements HasActions, HasForms
      */
     protected function normalizarWhatsapp(string $telefono): ?string
     {
-        return \App\Support\WhatsappNumero::para($telefono);
+        return WhatsappNumero::para($telefono);
     }
 
     /**
@@ -300,6 +307,228 @@ class CustomerStatementPage extends Page implements HasActions, HasForms
      * Vive aqui porque es donde se mira la cuenta del cliente: se ve el saldo,
      * se recibe el abono y se ve el efecto de una vez.
      */
+    /**
+     * Borrar un cobro sin salir del estado de cuenta.
+     *
+     * La hoja del cliente es donde se descubre el error —«este abono no es
+     * mío», «esto está dos veces»—, y hasta ahora desde ahí no se podía hacer
+     * nada: tocaba anotar el número de factura, irse a buscarla y entrar a sus
+     * pagos. Con el cliente al teléfono, eso no pasa: se deja para después y
+     * se queda así.
+     *
+     * Las reglas NO se escriben aquí: las aplica `PaymentDeleter`, el mismo
+     * que usan las pantallas de factura de venta y de compra. Lo único propio
+     * es desde dónde se invoca. Entre ellas, la que importa: un cobro de un
+     * turno ya cerrado no se borra, porque dejaría ese arqueo descuadrado para
+     * siempre.
+     */
+    public function deletePaymentAction(): Action
+    {
+        return Action::make('deletePayment')
+            ->label('Borrar cobro')
+            ->icon('heroicon-o-trash')
+            ->color('danger')
+            ->requiresConfirmation()
+            ->modalHeading('Borrar este cobro')
+            ->modalDescription(function (array $arguments) {
+                $pago = $this->pagoDe($arguments);
+
+                if (! $pago) {
+                    return 'El cobro ya no existe.';
+                }
+
+                $razon = app(PaymentDeleter::class)->motivoParaNoBorrar($pago);
+
+                if ($razon) {
+                    return $razon;
+                }
+
+                // Qué arrastra: un cobro no se borra solo. Quien confirma
+                // tiene derecho a saberlo antes, no después.
+                return implode(' ', app(PaymentDeleter::class)->consecuencias($pago));
+            })
+            ->form([
+                Forms\Components\TextInput::make('motivo')
+                    ->label('Motivo')
+                    ->helperText('Queda escrito en el cobro borrado. Es lo único que va a explicar '
+                        .'esto cuando alguien lo revise dentro de tres meses.')
+                    ->maxLength(200),
+            ])
+            ->action(function (array $arguments, array $data) {
+                $pago = $this->pagoDe($arguments);
+
+                if (! $pago) {
+                    Notification::make()->warning()->title('El cobro ya no existe')->send();
+
+                    return;
+                }
+
+                try {
+                    app(PaymentDeleter::class)->delete($pago, $data['motivo'] ?? null);
+                    $this->generate();
+
+                    Notification::make()->success()->title('Cobro borrado')->send();
+                } catch (\Throwable $e) {
+                    Notification::make()
+                        ->danger()
+                        ->title('No se pudo borrar el cobro')
+                        ->body($e->getMessage())
+                        ->persistent()
+                        ->send();
+                }
+            });
+    }
+
+    /**
+     * Corregir un cobro: se borra y se vuelve a registrar.
+     *
+     * No se edita la fila en sitio a propósito. Un cobro arrastra un asiento
+     * contable, el estado de pago de su factura y a veces el saldo a favor del
+     * cliente; cambiarle el valor por debajo dejaría las tres cosas apuntando
+     * a una cifra que ya no existe. Borrar y volver a crear pasa por las
+     * mismas reglas que cualquier cobro nuevo, incluida la que impide tocar un
+     * turno cerrado.
+     */
+    public function editPaymentAction(): Action
+    {
+        return Action::make('editPayment')
+            ->label('Corregir cobro')
+            ->icon('heroicon-o-pencil-square')
+            ->color('warning')
+            ->modalHeading('Corregir este cobro')
+            ->modalDescription('El cobro se reemplaza: se borra el actual y se registra uno nuevo '
+                .'con estos datos. Así el asiento, la factura y el arqueo quedan coherentes.')
+            ->fillForm(function (array $arguments) {
+                $pago = $this->pagoDe($arguments);
+
+                return [
+                    'amount' => $pago ? (float) $pago->amount : 0,
+                    'date' => $pago?->date?->toDateString() ?? now()->toDateString(),
+                    'payment_method' => $pago?->payment_method ?? 'cash',
+                    'reference' => $pago?->reference,
+                ];
+            })
+            ->form([
+                Forms\Components\TextInput::make('amount')
+                    ->label('Valor')
+                    ->numeric()
+                    ->minValue(1)
+                    ->prefix('$')
+                    ->required(),
+                Forms\Components\DatePicker::make('date')
+                    ->label('Fecha')
+                    ->required(),
+                Forms\Components\Select::make('payment_method')
+                    ->label('Forma de pago')
+                    ->options(fn () => PaymentMethodOptions::para())
+                    ->native(false)
+                    ->required(),
+                Forms\Components\TextInput::make('reference')
+                    ->label('Referencia')
+                    ->helperText('Número de consignación, recibo, etc.'),
+            ])
+            ->action(function (array $arguments, array $data) {
+                $pago = $this->pagoDe($arguments);
+
+                if (! $pago) {
+                    Notification::make()->warning()->title('El cobro ya no existe')->send();
+
+                    return;
+                }
+
+                $factura = $pago->paymentable;
+
+                if (! $factura instanceof SaleInvoice) {
+                    Notification::make()->danger()
+                        ->title('Este cobro no es de una factura de venta')
+                        ->send();
+
+                    return;
+                }
+
+                try {
+                    DB::transaction(function () use ($pago, $factura, $data) {
+                        app(PaymentDeleter::class)->delete($pago, 'Reemplazado por una corrección');
+
+                        app(SaleInvoiceEngine::class)->addPayment($factura->fresh(), [
+                            'amount' => round((float) $data['amount'], 2),
+                            'date' => $data['date'],
+                            'payment_method' => $data['payment_method'],
+                            'reference' => $data['reference'] ?? null,
+                            'account_id' => PaymentAccountResolver::forMethod($data['payment_method']),
+                        ]);
+                    });
+
+                    $this->generate();
+
+                    Notification::make()->success()->title('Cobro corregido')->send();
+                } catch (\Throwable $e) {
+                    Notification::make()
+                        ->danger()
+                        ->title('No se pudo corregir el cobro')
+                        ->body($e->getMessage())
+                        ->persistent()
+                        ->send();
+                }
+            });
+    }
+
+    /**
+     * La pestaña en la que se está: movimientos o ventas.
+     *
+     * El estado de cuenta responde «cuánto debe»; las ventas responden «qué le
+     * hemos vendido». Son dos preguntas distintas sobre el mismo cliente y
+     * hasta ahora la segunda obligaba a irse al listado de facturas y filtrar.
+     */
+    public string $pestana = 'movimientos';
+
+    public function verPestana(string $cual): void
+    {
+        $this->pestana = in_array($cual, ['movimientos', 'ventas'], true) ? $cual : 'movimientos';
+    }
+
+    /**
+     * Las facturas del cliente, de la más reciente a la más antigua.
+     *
+     * Con lo pagado y el saldo de cada una, que es lo que convierte un listado
+     * en algo útil: ver de un vistazo cuáles quedaron a medio cobrar.
+     *
+     * @return Collection<int, SaleInvoice>
+     */
+    public function getVentasDelClienteProperty()
+    {
+        $cliente = $this->customer();
+
+        if (! $cliente) {
+            return collect();
+        }
+
+        return SaleInvoice::query()
+            ->where('company_id', $cliente->company_id)
+            ->where('third_party_id', $cliente->id)
+            ->where('status', '!=', SaleInvoice::STATUS_DRAFT)
+            ->when($this->filters['from'] ?? null, fn ($q, $v) => $q->whereDate('date', '>=', $v))
+            ->when($this->filters['to'] ?? null, fn ($q, $v) => $q->whereDate('date', '<=', $v))
+            ->orderByDesc('date')
+            ->orderByDesc('id')
+            ->limit(500)
+            ->get();
+    }
+
+    /** El cobro que la fila del estado de cuenta esta señalando. */
+    protected function pagoDe(array $arguments): ?Payment
+    {
+        $id = (int) ($arguments['payment'] ?? 0);
+
+        if (! $id) {
+            return null;
+        }
+
+        return Payment::query()
+            ->where('company_id', auth()->user()?->company_id)
+            ->find($id);
+    }
+
     public function registerAdvanceAction(): Action
     {
         return Action::make('registerAdvance')

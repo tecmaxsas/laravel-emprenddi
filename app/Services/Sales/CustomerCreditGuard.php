@@ -157,7 +157,9 @@ class CustomerCreditGuard
             ->filter(fn (SaleInvoice $i) => $i->isPosted())
             ->sum(fn (SaleInvoice $i) => (float) $i->balance);
 
-        $deuda = (float) $customer->opening_balance
+        // Lo PENDIENTE de la apertura, no el valor original: lo que ya se
+        // abono contra esa deuda vieja no puede seguir consumiendo cupo.
+        $deuda = $customer->saldoDeAperturaPendiente()
             + $pendiente
             - $this->advances->availableBalance($customer);
 
