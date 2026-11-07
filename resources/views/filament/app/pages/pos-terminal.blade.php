@@ -1640,16 +1640,11 @@
         </div>
     @endif
 
-    {{-- ================================================================ --}}
-    {{-- MODAL — MOVIMIENTOS DIRECTOS DE CAJA                              --}}
-    {{--                                                                   --}}
-    {{-- Entrada o salida de efectivo del cajón que no es una venta: el    --}}
-    {{-- domicilio, la sangría a la caja fuerte, el cambio que hay que     --}}
-    {{-- meter. Afecta el arqueo y genera asiento contable.                --}}
-    {{-- ================================================================ --}}
     {{-- ============ VENTAS RECIENTES ============ --}}
     @if ($showRecentSalesModal && $session)
-        <div class="pos-modal-backdrop" wire:click.self="closeRecentSalesModal">
+        <div class="fixed inset-0 flex items-center justify-center p-4 pos-modal-overlay"
+             style="z-index: 100;"
+             wire:click.self="closeRecentSalesModal">
             <div class="pos-modal-content" style="max-width:620px;">
                 <div class="pos-modal-header">
                     <div>
@@ -1706,6 +1701,13 @@
         </div>
     @endif
 
+    {{-- ================================================================ --}}
+    {{-- MODAL — MOVIMIENTOS DIRECTOS DE CAJA                              --}}
+    {{--                                                                   --}}
+    {{-- Entrada o salida de efectivo del cajón que no es una venta: el    --}}
+    {{-- domicilio, la sangría a la caja fuerte, el cambio que hay que     --}}
+    {{-- meter. Afecta el arqueo y genera asiento contable.                --}}
+    {{-- ================================================================ --}}
     @if ($showCashMovementModal && $session)
         @php
             $esEntrada = ($cashMovementForm['direction'] ?? 'out') === 'in';
