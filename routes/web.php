@@ -12,6 +12,7 @@ use App\Http\Controllers\App\ParkingTicketController;
 use App\Http\Controllers\App\ProductImportController;
 use App\Http\Controllers\App\ReportExportController;
 use App\Http\Controllers\App\ThirdPartyImportController;
+use App\Http\Controllers\CashSessionPrintController;
 use App\Http\Controllers\DeliveryTrackController;
 use App\Http\Controllers\DianDocumentDownloadController;
 use App\Http\Controllers\KitchenTicketPrintController;
@@ -34,6 +35,10 @@ Route::redirect('/', '/app');
 Route::middleware(['web', 'auth', SetActiveCompany::class])->group(function () {
     Route::get('/app/pos/print/{invoice}', [PosPrintController::class, 'show'])
         ->name('pos.print');
+
+    // El arqueo de caja, para imprimir y firmar.
+    Route::get('/app/caja/arqueo/{session}', [CashSessionPrintController::class, 'show'])
+        ->name('cash.session.print');
 
     // Comanda de cocina imprimible por navegador: se usa cuando ninguna
     // impresora activa enruta los productos de la orden.

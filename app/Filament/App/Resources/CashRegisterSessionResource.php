@@ -77,6 +77,18 @@ class CashRegisterSessionResource extends Resource
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
+
+                // El arqueo en papel: el cierre se cuadra con el cajero
+                // delante y termina en una cifra que alguien firma. Copiarla a
+                // mano a un cuaderno es lo que hace que despues nadie la pueda
+                // verificar.
+                Tables\Actions\Action::make('imprimirArqueo')
+                    ->label('Imprimir arqueo')
+                    ->icon('heroicon-o-printer')
+                    ->color('gray')
+                    ->visible(fn () => auth()->user()?->can('pos.cash_close'))
+                    ->url(fn (CashRegisterSession $record) => route('cash.session.print', ['session' => $record->id]))
+                    ->openUrlInNewTab(),
             ]);
     }
 

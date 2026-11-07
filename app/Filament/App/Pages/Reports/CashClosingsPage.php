@@ -5,6 +5,7 @@ namespace App\Filament\App\Pages\Reports;
 use App\Models\CashRegisterSession;
 use App\Models\Location;
 use App\Models\User;
+use App\Support\AccountantContext;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
@@ -34,7 +35,10 @@ class CashClosingsPage extends Page implements HasForms, HasTable
 
     public static function canAccess(): bool
     {
-        if (! \App\Support\AccountantContext::ready()) return false;
+        if (! AccountantContext::ready()) {
+            return false;
+        }
+
         return (bool) auth()->user()?->can('reports.cash_closings');
     }
 
@@ -155,6 +159,19 @@ class CashClosingsPage extends Page implements HasForms, HasTable
                     ->wrap()
                     ->limit(60)
                     ->toggleable(isToggledHiddenByDefault: true),
+            ])
+            ->actions([
+                // El arqueo en papel: el cierre se cuadra con el cajero
+                // delante y termina en una cifra que alguien firma. Copiarla a
+                // mano a un cuaderno es lo que hace que despues nadie la pueda
+                // verificar.
+                Tables\Actions\Action::make('imprimirArqueo')
+                    ->label('Imprimir arqueo')
+                    ->icon('heroicon-o-printer')
+                    ->color('gray')
+                    ->visible(fn () => auth()->user()?->can('pos.cash_close'))
+                    ->url(fn (CashRegisterSession $record) => route('cash.session.print', ['session' => $record->id]))
+                    ->openUrlInNewTab(),
             ]);
     }
 }
