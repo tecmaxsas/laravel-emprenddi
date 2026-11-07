@@ -17,6 +17,7 @@ use App\Support\DefaultAccounts;
 use App\Support\ExpensesByCategory;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
+use Tests\Concerns\FuerzaContabilidad;
 use Tests\TestCase;
 
 /**
@@ -31,6 +32,8 @@ use Tests\TestCase;
  */
 class ExpenseCategoriesTest extends TestCase
 {
+    use FuerzaContabilidad;
+
     private Company $company;
 
     private User $user;
@@ -51,6 +54,13 @@ class ExpenseCategoriesTest extends TestCase
 
         $this->sede = Location::withoutGlobalScopes()
             ->where('company_id', $this->company->id)->orderBy('id')->firstOrFail();
+
+        // Esta prueba va de CATEGORÍAS de gasto, no de contabilidad. Con el
+        // módulo encendido el formulario exige la cuenta del PUC y la prueba
+        // fallaba con «expense_account_id es obligatorio», que no tiene nada
+        // que ver con lo que está probando. Se fija el estado del que depende
+        // en vez de heredarlo de como quedó la base.
+        $this->apagaContabilidad($this->company, $this->limpiar);
     }
 
     protected function tearDown(): void

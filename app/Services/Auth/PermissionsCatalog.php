@@ -135,6 +135,11 @@ class PermissionsCatalog
                 'payroll.settlements.manage' => 'Liquidar y pagar prestaciones sociales',
             ],
             'Reportes' => [
+                // Las cifras del negocio en la pantalla de inicio: ventas del mes,
+                // cartera, lo que se le debe a proveedores. Separado de `sales.view`
+                // porque un cajero necesita consultar una factura sin que el total
+                // de la empresa quede a la vista del mostrador.
+                'dashboard.financials' => 'Ver las cifras del negocio en el escritorio',
                 'reports.journal_book' => 'Ver Libro Diario',
                 'reports.general_ledger' => 'Ver Libro Mayor',
                 'reports.trial_balance' => 'Ver Balance de Comprobación',
@@ -246,6 +251,7 @@ class PermissionsCatalog
                 'pos.settings',
             ]),
             'accountant' => [
+                'dashboard.financials',
                 'accounts.view', 'accounts.manage', 'taxes.view', 'taxes.manage',
                 'payment_methods.view', 'payment_methods.manage',
                 'third_parties.view', 'third_parties.manage',

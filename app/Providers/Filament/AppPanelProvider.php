@@ -75,7 +75,10 @@ class AppPanelProvider extends PanelProvider
                 'Configuración',
             ])
             ->pages([
-                Pages\Dashboard::class,
+                // El escritorio propio: igual al de Filament, salvo que a quien
+                // no tiene ninguna seccion disponible lo manda a su POS en vez
+                // de dejarlo en una pantalla vacia.
+                \App\Filament\App\Pages\Escritorio::class,
             ])
             ->widgets([
                 DashboardOverviewWidget::class,

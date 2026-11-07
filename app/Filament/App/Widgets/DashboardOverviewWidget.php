@@ -46,6 +46,19 @@ class DashboardOverviewWidget extends Widget
 
         $can = fn (string $permission) => (bool) $user?->can($permission);
 
+        // Las cifras del negocio —ventas del mes, cartera, lo que se le debe a
+        // proveedores— piden su propio permiso.
+        //
+        // Un cajero necesita `sales.view` para buscar una factura, pero con ese
+        // mismo permiso el escritorio le mostraba el total del negocio, a la
+        // vista de cualquiera que pase por el mostrador. Son dos cosas
+        // distintas: consultar un documento y ver cuanto vende la empresa.
+        //
+        // Se filtra aqui ADEMAS de en `DashboardSections` porque las tarjetas
+        // KPI no se arman por secciones: se arman con estos datos. Gatear solo
+        // las secciones dejaria las cifras igual de visibles arriba.
+        $verCifras = $can('dashboard.financials');
+
         $data = [
             'userName' => $user?->name ?? 'Usuario',
             'roleLabel' => $this->roleLabel($user),
@@ -70,14 +83,14 @@ class DashboardOverviewWidget extends Widget
             return $data;
         }
 
-        if ($data['canSales']) {
+        if ($data['canSales'] && $verCifras) {
             $data['sales'] = $this->salesData($companyId);
             $data['salesSeries'] = $this->salesSeries($companyId);
         }
         if ($data['canInventory']) {
             $data['inventory'] = ['low_stock' => $this->lowStockCount($companyId)];
         }
-        if ($data['canPurchases']) {
+        if ($data['canPurchases'] && $verCifras) {
             $data['purchases'] = $this->purchasesData($companyId);
         }
         if ($data['canPayroll']) {
@@ -89,7 +102,7 @@ class DashboardOverviewWidget extends Widget
         if ($data['canAppointments']) {
             $data['appointments'] = $this->appointmentsData($companyId);
         }
-        if ($data['canSales'] || $data['canPurchases']) {
+        if ($verCifras && ($data['canSales'] || $data['canPurchases'])) {
             $data['activity'] = $this->recentActivity($companyId, $data['canSales'], $data['canPurchases']);
             $data['dueInvoices'] = $this->dueInvoicesData($companyId, $data['canSales'], $data['canPurchases']);
         }

@@ -26,12 +26,14 @@ class DashboardSections
      */
     public const SECTIONS = [
         'kpis' => [
+            'cifras' => true,
             'label' => 'Indicadores principales (KPIs)',
             'description' => 'Ventas de hoy y del mes, cartera por cobrar, comparativo vs. ayer.',
             'default_order' => 1,
             'permission' => ['sales.view', 'purchases.view'],
         ],
         'sales_chart' => [
+            'cifras' => true,
             'label' => 'Gráfica de ventas (14 días)',
             'description' => 'Barras con las ventas diarias de las últimas dos semanas.',
             'default_order' => 2,
@@ -50,12 +52,14 @@ class DashboardSections
             'permission' => 'appointments_module',
         ],
         'payroll' => [
+            'cifras' => true,
             'label' => 'Resumen de nómina',
             'description' => 'Empleados activos, última nómina liquidada y prestaciones pendientes.',
             'default_order' => 4,
             'permission' => ['payroll.employees.view', 'payroll.periods.view'],
         ],
         'due_invoices' => [
+            'cifras' => true,
             'label' => 'Facturas vencidas y por vencer',
             'description' => 'Facturas de venta y de compra con saldo, con cuántos días llevan vencidas '
                 .'o cuántos les faltan.',
@@ -63,6 +67,7 @@ class DashboardSections
             'permission' => ['sales.view', 'purchases.view'],
         ],
         'activity' => [
+            'cifras' => true,
             'label' => 'Actividad reciente',
             'description' => 'Últimas ventas y compras registradas.',
             'default_order' => 6,
@@ -78,6 +83,21 @@ class DashboardSections
         if (! isset(self::SECTIONS[$key]) || ! $user) {
             return false;
         }
+        // LAS CIFRAS DEL NEGOCIO PIDEN SU PROPIO PERMISO.
+        //
+        // Un cajero necesita `sales.view` para buscar una factura y
+        // `inventory.view` para mirar existencias: sin eso no puede trabajar.
+        // Pero con esos mismos permisos el escritorio le mostraba las ventas
+        // del mes, la cartera por cobrar y lo que la empresa le debe a sus
+        // proveedores — cifras que no son suyas y que quedan a la vista de
+        // cualquiera que pase por el mostrador.
+        //
+        // Son dos cosas distintas: consultar un documento y ver el total del
+        // negocio. Por eso van en permisos distintos.
+        if ((self::SECTIONS[$key]['cifras'] ?? false) && ! $user->can('dashboard.financials')) {
+            return false;
+        }
+
         $permission = self::SECTIONS[$key]['permission'];
 
         if ($permission === 'restaurant_module') {
