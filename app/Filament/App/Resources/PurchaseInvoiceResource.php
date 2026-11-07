@@ -552,6 +552,43 @@ class PurchaseInvoiceResource extends Resource
 
             ...self::globalDiscountSection(),
 
+            // EL SOPORTE: la foto o el PDF que mandó el proveedor.
+            //
+            // Es lo que resuelve la discusión cuando el contador pregunta por
+            // un IVA o el proveedor dice que cobró otra cosa. Antes vivía en
+            // una carpeta, en un cajón o en el celular de alguien.
+            //
+            // Se puede adjuntar TAMBIÉN con la factura ya contabilizada, y eso
+            // es deliberado: el caso corriente es registrarla hoy porque hay
+            // que pagarla, y que el papel llegue con el pedido tres días
+            // después. Si solo se pudiera en borrador, justo el caso corriente
+            // quedaría sin soporte.
+            Forms\Components\Section::make('Soporte de la factura')
+                ->description('La foto o el PDF que mandó el proveedor. Se puede agregar después, '
+                    .'cuando llegue el papel.')
+                ->collapsible()
+                ->schema([
+                    Forms\Components\FileUpload::make('attachment_paths')
+                        ->label('')
+                        ->multiple()
+                        ->reorderable()
+                        ->openable()
+                        ->downloadable()
+                        // Imágenes Y PDF: la factura llega como foto del
+                        // celular o como adjunto de correo, y las dos son
+                        // igual de válidas como soporte.
+                        ->acceptedFileTypes(['image/*', 'application/pdf'])
+                        ->disk('public')
+                        // Por año y mes: una empresa con años de compras deja
+                        // decenas de miles de archivos, y un solo directorio
+                        // con todos dentro es lento de listar y de respaldar.
+                        ->directory('compras/soportes/'.now()->format('Y/m'))
+                        ->maxSize(10240)
+                        ->panelLayout('grid')
+                        ->helperText('Hasta 10 MB por archivo. Varias hojas, varios archivos.')
+                        ->columnSpanFull(),
+                ]),
+
             Forms\Components\Section::make('Totales')
                 ->columns(3)
                 ->schema([

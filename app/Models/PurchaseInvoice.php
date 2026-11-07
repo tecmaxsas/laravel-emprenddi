@@ -102,6 +102,7 @@ class PurchaseInvoice extends Model
         'posted_at',
         'description',
         'notes',
+        'attachment_paths',
         'dian_status',
         'dian_status_code',
         'dian_sent_at',
@@ -114,6 +115,7 @@ class PurchaseInvoice extends Model
     protected function casts(): array
     {
         return [
+            'attachment_paths' => 'array',
             'date' => 'date',
             'due_date' => 'date',
             'posted_at' => 'datetime',

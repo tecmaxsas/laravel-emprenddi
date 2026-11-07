@@ -5,6 +5,7 @@ namespace App\Filament\App\Resources\PurchaseInvoiceResource\Pages;
 use App\Filament\App\Resources\PurchaseInvoiceResource;
 use App\Models\PurchaseInvoice;
 use App\Services\Purchases\PurchaseInvoiceEngine;
+use App\Support\LabelsSettings;
 use Filament\Actions;
 use Filament\Forms;
 use Filament\Infolists;
@@ -24,6 +25,8 @@ class ViewPurchaseInvoice extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            $this->adjuntarSoporteAction(),
+
             Actions\EditAction::make()
                 ->visible(fn (PurchaseInvoice $record) => $record->status === 'draft'),
 
@@ -64,7 +67,7 @@ class ViewPurchaseInvoice extends ViewRecord
                 ->label('Imprimir etiquetas')
                 ->icon('heroicon-o-qr-code')
                 ->color('info')
-                ->visible(fn (PurchaseInvoice $record) => \App\Support\LabelsSettings::enabled()
+                ->visible(fn (PurchaseInvoice $record) => LabelsSettings::enabled()
                     && $record->status === 'posted')
                 ->modalHeading('Imprimir etiquetas de los productos comprados')
                 ->modalDescription('Se generará una etiqueta por cada unidad recibida (usando la cantidad de cada línea). Puedes ajustar el multiplicador si necesitas más o menos.')
@@ -83,8 +86,9 @@ class ViewPurchaseInvoice extends ViewRecord
                         ->map(fn ($l) => $l->product_id.':'.max(1, (int) round((float) $l->quantity) * $mult))
                         ->implode(',');
                     if (! $spec) {
-                        \Filament\Notifications\Notification::make()
+                        Notification::make()
                             ->title('Sin productos con SKU en esta factura')->warning()->send();
+
                         return;
                     }
                     $url = route('labels.print', ['products' => $spec]);
@@ -110,7 +114,7 @@ class ViewPurchaseInvoice extends ViewRecord
                         Notification::make()
                             ->success()
                             ->title('Factura anulada')
-                            ->body("Se reversaron inventario y asiento contable.")
+                            ->body('Se reversaron inventario y asiento contable.')
                             ->send();
                         $this->refreshFormData(['status', 'payment_status']);
                     } catch (\Throwable $e) {
@@ -123,6 +127,63 @@ class ViewPurchaseInvoice extends ViewRecord
                     }
                 }),
         ];
+    }
+
+    /**
+     * Adjuntar la foto o el PDF del proveedor, contabilizada o no.
+     *
+     * Tiene accion propia en vez de ser un campo mas del formulario porque el
+     * formulario se cierra al contabilizar —y con razon: ahi ya no se tocan
+     * cantidades ni impuestos—. Pero el soporte NO es dato contable: es la
+     * prueba de lo que se digito.
+     *
+     * Y el caso corriente es justamente ese: la factura se registra hoy
+     * porque hay que pagarla, y el papel llega con el pedido tres dias
+     * despues. Si solo se pudiera adjuntar en borrador, el caso corriente
+     * quedaria sin soporte para siempre.
+     */
+    protected function adjuntarSoporteAction(): Actions\Action
+    {
+        return Actions\Action::make('adjuntarSoporte')
+            ->label(fn (PurchaseInvoice $record) => empty($record->attachment_paths)
+                ? 'Adjuntar soporte'
+                : 'Soportes ('.count($record->attachment_paths).')')
+            ->icon('heroicon-o-paper-clip')
+            ->color('gray')
+            ->modalHeading('Soporte de la factura del proveedor')
+            ->modalDescription('La foto o el PDF que mandó el proveedor. Varias hojas, varios archivos.')
+            ->modalSubmitActionLabel('Guardar')
+            ->fillForm(fn (PurchaseInvoice $record) => [
+                'attachment_paths' => $record->attachment_paths ?? [],
+            ])
+            ->form([
+                Forms\Components\FileUpload::make('attachment_paths')
+                    ->label('')
+                    ->multiple()
+                    ->reorderable()
+                    ->openable()
+                    ->downloadable()
+                    ->acceptedFileTypes(['image/*', 'application/pdf'])
+                    ->disk('public')
+                    ->directory('compras/soportes/'.now()->format('Y/m'))
+                    ->maxSize(10240)
+                    ->panelLayout('grid')
+                    ->helperText('Hasta 10 MB por archivo.')
+                    ->columnSpanFull(),
+            ])
+            ->action(function (PurchaseInvoice $record, array $data) {
+                // forceFill: `attachment_paths` es lo unico que se toca, y asi
+                // no pasa por la validacion que cierra la factura al
+                // contabilizarla —que existe para las cifras, no para esto—.
+                $record->forceFill([
+                    'attachment_paths' => $data['attachment_paths'] ?? [],
+                ])->save();
+
+                Notification::make()
+                    ->success()
+                    ->title('Soporte guardado')
+                    ->send();
+            });
     }
 
     public function infolist(Infolist $infolist): Infolist
@@ -203,6 +264,18 @@ class ViewPurchaseInvoice extends ViewRecord
                         ->url(fn (PurchaseInvoice $r) => $r->journalEntry
                             ? route('filament.app.resources.journal-entries.view', $r->journalEntry)
                             : null),
+                ]),
+
+            Infolists\Components\Section::make('Soporte del proveedor')
+                ->visible(fn (PurchaseInvoice $record) => ! empty($record->attachment_paths))
+                ->schema([
+                    Infolists\Components\ImageEntry::make('attachment_paths')
+                        ->label('')
+                        ->disk('public')
+                        ->height(140)
+                        ->stacked()
+                        ->limit(8)
+                        ->columnSpanFull(),
                 ]),
 
             Infolists\Components\Section::make('Notas')
