@@ -7,6 +7,7 @@ use App\Models\ThirdParty;
 use App\Services\Sales\CustomerAdvanceService;
 use App\Support\CurrentCompany;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Reaplica el saldo a favor de los clientes con la regla corregida.
@@ -73,46 +74,53 @@ class AplicarAbonosPendientes extends Command
         $filas = [];
         $totalAplicado = 0.0;
 
-        foreach ($clientes as $cliente) {
-            $aFavor = $anticipos->availableBalance($cliente);
+        // LA SIMULACION EJECUTA DE VERDAD Y DESHACE.
+        //
+        // La primera version calculaba aparte cuanto iria al saldo de
+        // apertura, y mentia: la ejecucion real aplica ADEMAS el resto a las
+        // facturas pendientes, asi que la columna «queda a favor» salia
+        // inflada. Alguien iba a decidir mirando una tabla que no describia lo
+        // que estaba a punto de pasar.
+        //
+        // Reescribir el calculo aqui seria la misma regla en dos sitios, que
+        // es como empezo el problema. Se corre el motor de verdad dentro de
+        // una transaccion y se deshace: lo que muestra la simulacion ES lo que
+        // va a pasar, porque es lo que paso.
+        if ($simulacion) {
+            DB::beginTransaction();
+        }
 
-            if ($aFavor <= 0.01) {
-                continue;
-            }
+        try {
+            foreach ($clientes as $cliente) {
+                $aFavor = $anticipos->availableBalance($cliente);
 
-            $aperturaAntes = $cliente->saldoDeAperturaPendiente();
+                if ($aFavor <= 0.01) {
+                    continue;
+                }
 
-            if ($simulacion) {
-                // Sin escribir: se calcula cuánto iría a la apertura y cuánto
-                // quedaría para las facturas.
-                $aLaApertura = round(min($aFavor, $aperturaAntes), 2);
-                $resto = round($aFavor - $aLaApertura, 2);
+                $aperturaAntes = $cliente->saldoDeAperturaPendiente();
+
+                $anticipos->applyToPendingInvoices($cliente);
+
+                $fresco = $cliente->fresh();
+                $alaApertura = round($aperturaAntes - $fresco->saldoDeAperturaPendiente(), 2);
+                $queda = $anticipos->availableBalance($fresco);
 
                 $filas[] = [
                     $cliente->name,
                     $this->plata($aFavor),
                     $this->plata($aperturaAntes),
-                    $this->plata($aLaApertura),
-                    $this->plata($resto),
+                    $this->plata($alaApertura),
+                    $this->plata(round($aFavor - $alaApertura - $queda, 2)),
+                    $this->plata($queda),
                 ];
 
-                $totalAplicado += $aLaApertura;
-
-                continue;
+                $totalAplicado += round($aFavor - $queda, 2);
             }
-
-            $aplicado = $anticipos->applyToPendingInvoices($cliente);
-            $fresco = $cliente->fresh();
-
-            $filas[] = [
-                $cliente->name,
-                $this->plata($aFavor),
-                $this->plata($aperturaAntes),
-                $this->plata($aperturaAntes - $fresco->saldoDeAperturaPendiente()),
-                $this->plata($anticipos->availableBalance($fresco)),
-            ];
-
-            $totalAplicado += $aplicado;
+        } finally {
+            if ($simulacion) {
+                DB::rollBack();
+            }
         }
 
         if ($filas === []) {
@@ -122,7 +130,7 @@ class AplicarAbonosPendientes extends Command
         }
 
         $this->table(
-            ['Cliente', 'Tenía a favor', 'Apertura pendiente', 'Se aplica a apertura', 'Queda a favor'],
+            ['Cliente', 'Tenía a favor', 'Apertura pendiente', 'A la apertura', 'A facturas', 'Queda a favor'],
             $filas,
         );
 

@@ -7,6 +7,7 @@ use App\Models\ThirdParty;
 use App\Models\User;
 use App\Services\Sales\CustomerAdvanceService;
 use App\Support\CurrentCompany;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
@@ -98,6 +99,35 @@ class AplicarAbonosPendientesTest extends TestCase
             'En simulación no se puede haber movido nada.');
     }
 
+    /**
+     * La simulación dice exactamente lo que va a pasar.
+     *
+     * La primera versión calculaba aparte cuánto iría al saldo de apertura y
+     * mentía: la ejecución real aplica ADEMÁS el resto a las facturas, así que
+     * la columna «queda a favor» salía inflada. Alguien iba a decidir mirando
+     * una tabla que no describía lo que estaba a punto de pasar.
+     *
+     * Ahora la simulación ejecuta de verdad y deshace, así que lo que muestra
+     * ES lo que pasa.
+     */
+    public function test_la_simulacion_dice_lo_mismo_que_la_ejecucion(): void
+    {
+        $this->conSaldoAFavor(200000);
+
+        $simulado = $this->salidaDe(['--dry-run' => true]);
+
+        $this->assertEqualsWithDelta(0, (float) $this->cliente->fresh()->opening_balance_applied, 0.01,
+            'La simulación no puede dejar rastro.');
+
+        $ejecutado = $this->salidaDe([]);
+
+        $this->assertSame(
+            $this->cifrasDe($simulado),
+            $this->cifrasDe($ejecutado),
+            'Si la simulación y la ejecución no dicen lo mismo, la simulación no sirve.',
+        );
+    }
+
     /** Y sin simulación, aplica contra la deuda vieja. */
     public function test_aplica_el_saldo_a_favor_a_la_apertura(): void
     {
@@ -159,6 +189,25 @@ class AplicarAbonosPendientesTest extends TestCase
         }
 
         $this->artisan('cartera:aplicar-abonos', ['--nombre' => 'a'])->assertFailed();
+    }
+
+    /** @param  array<string, mixed>  $opciones */
+    private function salidaDe(array $opciones): string
+    {
+        Artisan::call('cartera:aplicar-abonos', [
+            'company' => $this->empresa->id,
+            ...$opciones,
+        ]);
+
+        return Artisan::output();
+    }
+
+    /** Las cifras de la fila del cliente, para comparar simulación y ejecución. */
+    private function cifrasDe(string $salida): array
+    {
+        preg_match_all('/\$[\d.]+/', $salida, $m);
+
+        return $m[0];
     }
 
     // --------------------------------------------------------- auxiliares
