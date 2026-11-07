@@ -3,6 +3,7 @@
 namespace App\Filament\App\Pages\Reports;
 
 use App\Mail\CustomerStatementMail;
+use App\Models\CustomerAdvance;
 use App\Models\CustomerStatementShare;
 use App\Models\Payment;
 use App\Models\SaleInvoice;
@@ -19,6 +20,7 @@ use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
 use Filament\Forms;
+use Filament\Forms\Components\Component;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
 use Filament\Forms\Form;
@@ -529,72 +531,124 @@ class CustomerStatementPage extends Page implements HasActions, HasForms
             ->find($id);
     }
 
+    /**
+     * REGISTRAR ABONO: plata contra una deuda que ya existe.
+     *
+     * Se llamaba «Registrar anticipo» y eso era parte del problema. Casi
+     * siempre lo que el cliente trae es un abono —viene a pagar lo que debe—,
+     * y llamarlo anticipo hacia que despues leyera «saldo a favor» por un
+     * dinero con el que lo unico que hizo fue bajar su deuda.
+     */
     public function registerAdvanceAction(): Action
     {
         return Action::make('registerAdvance')
-            ->label('Registrar anticipo')
+            ->label('Registrar abono')
             ->icon('heroicon-o-banknotes')
             ->color('success')
-            ->modalHeading('Registrar un anticipo del cliente')
-            ->modalDescription('Se aplica automáticamente a las facturas pendientes, de la más antigua a la '
-                .'más nueva. Lo que sobre queda como saldo a favor para la próxima venta.')
-            ->modalSubmitActionLabel('Registrar')
+            ->modalHeading('Registrar un abono del cliente')
+            ->modalDescription('Se aplica de una a lo que debe: primero al saldo más antiguo y luego a '
+                .'las facturas, de la más vieja a la más nueva. Si sobra, queda a favor.')
+            ->modalSubmitActionLabel('Registrar abono')
             ->fillForm(fn () => ['date' => now()->toDateString(), 'payment_method' => 'cash'])
-            ->form([
-                Forms\Components\TextInput::make('amount')
-                    ->label('Valor')
-                    ->numeric()
-                    ->minValue(1)
-                    ->prefix('$')
-                    ->required(),
-                Forms\Components\DatePicker::make('date')
-                    ->label('Fecha')
-                    ->required(),
-                Forms\Components\Select::make('payment_method')
-                    ->label('Forma de pago')
-                    // Las de la empresa, no las de fabrica: si el cliente paga
-                    // por Nequi y solo aparece «Otro», el arqueo deja de cuadrar
-                    // contra el extracto.
-                    ->options(fn () => PaymentMethodOptions::para())
-                    ->native(false)
-                    ->required(),
-                Forms\Components\TextInput::make('reference')
-                    ->label('Referencia')
-                    ->helperText('Número de consignación, recibo, etc.'),
-                Forms\Components\Textarea::make('notes')
-                    ->label('Observaciones')
-                    ->rows(2),
-            ])
-            ->action(function (array $data) {
-                $customer = $this->customer();
+            ->form($this->camposDelDinero())
+            ->action(fn (array $data) => $this->registrarDinero($data, CustomerAdvance::ABONO));
+    }
 
-                if (! $customer) {
-                    Notification::make()->warning()->title('Elige un cliente primero')->send();
+    /**
+     * REGISTRAR ANTICIPO: plata por una compra que todavia no existe.
+     *
+     * Enlace aparte y no una casilla dentro del anterior: son dos gestos
+     * distintos del mostrador —«vengo a abonar» y «dejo esto para encargar
+     * algo»— y mezclarlos en una casilla que casi nadie lee es volver al
+     * problema que se esta arreglando.
+     *
+     * Este SI queda a favor, a proposito, hasta que haya una venta que lo
+     * consuma.
+     */
+    public function registerPrepaymentAction(): Action
+    {
+        return Action::make('registerPrepayment')
+            ->label('Registrar anticipo')
+            ->icon('heroicon-o-arrow-trending-up')
+            ->color('info')
+            ->modalHeading('Registrar un anticipo del cliente')
+            ->modalDescription('Para una compra que todavía no existe. NO baja lo que el cliente debe '
+                .'hoy: queda como saldo a favor hasta que se le facture.')
+            ->modalSubmitActionLabel('Registrar anticipo')
+            ->fillForm(fn () => ['date' => now()->toDateString(), 'payment_method' => 'cash'])
+            ->form($this->camposDelDinero())
+            ->action(fn (array $data) => $this->registrarDinero($data, CustomerAdvance::ANTICIPO));
+    }
 
-                    return;
-                }
+    /**
+     * Los campos son los mismos para los dos: lo que cambia es que se hace
+     * con la plata, no que se le pregunta a quien la recibe.
+     *
+     * @return list<Component>
+     */
+    protected function camposDelDinero(): array
+    {
+        return [
+            Forms\Components\TextInput::make('amount')
+                ->label('Valor')
+                ->numeric()
+                ->minValue(1)
+                ->prefix('$')
+                ->required(),
+            Forms\Components\DatePicker::make('date')
+                ->label('Fecha')
+                ->required(),
+            Forms\Components\Select::make('payment_method')
+                ->label('Forma de pago')
+                // Las de la empresa, no las de fabrica: si el cliente paga por
+                // Nequi y solo aparece «Otro», el arqueo deja de cuadrar contra
+                // el extracto.
+                ->options(fn () => PaymentMethodOptions::para())
+                ->native(false)
+                ->required(),
+            Forms\Components\TextInput::make('reference')
+                ->label('Referencia')
+                ->helperText('Número de consignación, recibo, etc.'),
+            Forms\Components\Textarea::make('notes')
+                ->label('Observaciones')
+                ->rows(2),
+        ];
+    }
 
-                try {
-                    $servicio = app(CustomerAdvanceService::class);
-                    $servicio->register($customer, $data);
-                    $this->generate();
+    /** @param  array<string, mixed>  $data */
+    protected function registrarDinero(array $data, string $tipo): void
+    {
+        $customer = $this->customer();
 
-                    $aFavor = $servicio->availableBalance($customer);
+        if (! $customer) {
+            Notification::make()->warning()->title('Elige un cliente primero')->send();
 
-                    Notification::make()->success()
-                        ->title('Anticipo registrado')
-                        ->body($aFavor > 0.01
-                            ? 'Quedó $'.number_format($aFavor, 0, ',', '.').' de saldo a favor.'
-                            : 'Se aplicó completo a las facturas pendientes.')
-                        ->send();
-                } catch (\Throwable $e) {
-                    Notification::make()->danger()
-                        ->title('No se pudo registrar')
-                        ->body($e->getMessage())
-                        ->persistent()
-                        ->send();
-                }
-            });
+            return;
+        }
+
+        try {
+            $servicio = app(CustomerAdvanceService::class);
+            $servicio->register($customer, [...$data, 'kind' => $tipo]);
+            $this->generate();
+
+            $aFavor = $servicio->availableBalance($customer->fresh());
+
+            Notification::make()->success()
+                ->title($tipo === CustomerAdvance::ANTICIPO ? 'Anticipo registrado' : 'Abono registrado')
+                ->body(match (true) {
+                    $tipo === CustomerAdvance::ANTICIPO => 'Queda como saldo a favor hasta que se le facture.',
+                    $aFavor > 0.01 => 'Se aplicó a lo que debía. Sobraron $'
+                        .number_format($aFavor, 0, ',', '.').' a favor.',
+                    default => 'Se aplicó completo a lo que debía.',
+                })
+                ->send();
+        } catch (\Throwable $e) {
+            Notification::make()->danger()
+                ->title('No se pudo registrar')
+                ->body($e->getMessage())
+                ->persistent()
+                ->send();
+        }
     }
 
     public function downloadPdf(): ?StreamedResponse

@@ -22,6 +22,7 @@ class CustomerAdvance extends Model
         'third_party_id',
         'date',
         'amount',
+        'kind',
         'applied_amount',
         'payment_method',
         'account_id',
@@ -31,6 +32,35 @@ class CustomerAdvance extends Model
         'notes',
         'created_by_user_id',
     ];
+
+    /**
+     * Plata contra una deuda que YA existe. Se aplica de inmediato.
+     *
+     * Es el caso corriente —el cliente viene a abonar a lo que debe— y por eso
+     * es el valor por defecto, incluido el de los registros anteriores, que
+     * siempre se aplicaron de una.
+     */
+    public const ABONO = 'abono';
+
+    /**
+     * Plata por una compra que todavia no existe. Queda a favor a proposito.
+     */
+    public const ANTICIPO = 'anticipo';
+
+    public const KINDS = [
+        self::ABONO => 'Abono',
+        self::ANTICIPO => 'Anticipo',
+    ];
+
+    public function esAnticipo(): bool
+    {
+        return $this->kind === self::ANTICIPO;
+    }
+
+    public function etiquetaDelTipo(): string
+    {
+        return self::KINDS[$this->kind ?? self::ABONO] ?? 'Abono';
+    }
 
     protected function casts(): array
     {

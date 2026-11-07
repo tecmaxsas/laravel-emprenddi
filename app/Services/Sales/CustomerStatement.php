@@ -191,8 +191,16 @@ class CustomerStatement
             $movimientos->push([
                 'date' => $advance->date?->toDateString() ?? '',
                 'type' => self::ADVANCE,
-                'reference' => 'Anticipo #'.$advance->id,
-                'description' => 'Pago anticipado'.($advance->reference ? ' — '.$advance->reference : ''),
+                'reference' => $advance->etiquetaDelTipo().' #'.$advance->id,
+                // Un abono baja lo que el cliente debe; un anticipo es para
+                // una compra que todavia no existe. Llamarlos igual fue lo que
+                // hizo que un cliente leyera «$950.000 a favor» cuando lo que
+                // habia hecho era bajar su deuda a $730.000.
+                'description' => ($advance->esAnticipo()
+                    ? 'Para una compra futura'
+                    : 'Abono a la deuda')
+                    .($advance->reference ? ' — '.$advance->reference : ''),
+                'advance_kind' => $advance->kind ?? CustomerAdvance::ABONO,
                 'debit' => 0.0,
                 'credit' => round((float) $advance->amount, 2),
             ]);

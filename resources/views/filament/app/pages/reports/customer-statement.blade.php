@@ -30,10 +30,23 @@
         </div>
 
         @if ($s['advance_balance'] > 0.01 && $s['due'] > 0.01)
+            {{-- Tener saldo a favor y deuda a la vez ya NO es siempre un error:
+                 un anticipo —plata por una compra que todavía no existe— queda
+                 a favor a propósito. Lo que sí sigue siendo raro es que eso
+                 pase sin ningún anticipo de por medio, y ahí el aviso dice qué
+                 revisar en vez de alarmar. --}}
+            @php($hayAnticipo = $s['movements']->contains(
+                fn ($m) => ($m['advance_kind'] ?? null) === \App\Models\CustomerAdvance::ANTICIPO
+            ))
             <div class="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
-                Este cliente tiene saldo a favor <strong>y</strong> saldo adeudado al mismo tiempo. No debería
-                pasar: el anticipo se aplica solo a las facturas pendientes. Revisa si alguna factura quedó
-                sin contabilizar, porque un anticipo no se aplica sobre borradores.
+                @if ($hayAnticipo)
+                    El saldo a favor viene de un <strong>anticipo</strong>: es plata para una compra que
+                    todavía no se ha facturado, así que no baja lo que el cliente debe hoy. Se descontará
+                    sola cuando se le facture.
+                @else
+                    Este cliente tiene saldo a favor <strong>y</strong> saldo adeudado al mismo tiempo.
+                    Revisa si alguna factura quedó sin contabilizar: un abono no se aplica sobre borradores.
+                @endif
             </div>
         @endif
 
@@ -47,6 +60,7 @@
             {{ $this->shareWhatsappAction }}
 
             {{ $this->registerAdvanceAction }}
+            {{ $this->registerPrepaymentAction }}
         </div>
 
         {{-- PESTAÑAS

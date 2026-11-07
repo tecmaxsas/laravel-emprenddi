@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Company;
+use App\Models\CustomerAdvance;
 use App\Models\JournalEntry;
 use App\Models\Location;
 use App\Models\Product;
@@ -262,6 +263,92 @@ class EstadoDeCuentaAbonosTest extends TestCase
         $this->assertArrayHasKey('payment_id', $cobro,
             'Sin el id, la hoja no puede ofrecer corregir ni borrar el cobro.');
         $this->assertNotNull($cobro['payment_id']);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /*  Abono y anticipo no son lo mismo */
+    /* ------------------------------------------------------------------ */
+
+    /**
+     * El ABONO baja lo que el cliente debe, y no queda a favor.
+     *
+     * Era la queja concreta: la hoja mostraba «$950.000 a favor» y «$730.000
+     * adeudado» al mismo tiempo, y el cliente leía que tenía casi un millón
+     * guardado aparte de su deuda. No lo tenía: ese dinero ya había bajado la
+     * deuda.
+     */
+    public function test_el_abono_baja_la_deuda_y_no_queda_a_favor(): void
+    {
+        $this->conSaldoDeApertura(1000000);
+
+        app(CustomerAdvanceService::class)->register($this->cliente, [
+            'amount' => 400000,
+            'date' => now()->toDateString(),
+            'payment_method' => 'cash',
+            'kind' => CustomerAdvance::ABONO,
+        ]);
+
+        $estado = app(CustomerStatement::class)->build($this->cliente->fresh());
+
+        $this->assertEqualsWithDelta(600000, (float) $estado['due'], 0.01);
+        $this->assertEqualsWithDelta(0, (float) $estado['advance_balance'], 0.01,
+            'El abono bajó la deuda: no puede aparecer además como saldo a favor.');
+    }
+
+    /**
+     * El ANTICIPO sí queda a favor, y no toca la deuda de hoy.
+     *
+     * Es plata por una compra que todavía no existe.
+     */
+    public function test_el_anticipo_queda_a_favor_y_no_toca_la_deuda(): void
+    {
+        $this->conSaldoDeApertura(1000000);
+
+        app(CustomerAdvanceService::class)->register($this->cliente, [
+            'amount' => 400000,
+            'date' => now()->toDateString(),
+            'payment_method' => 'cash',
+            'kind' => CustomerAdvance::ANTICIPO,
+        ]);
+
+        $fresco = $this->cliente->fresh();
+
+        $this->assertEqualsWithDelta(0, (float) $fresco->opening_balance_applied, 0.01,
+            'Un anticipo no paga una deuda que ya existía.');
+        $this->assertEqualsWithDelta(400000,
+            app(CustomerAdvanceService::class)->availableBalance($fresco), 0.01);
+    }
+
+    /** Sin decir el tipo, se comporta como abono: es el caso corriente. */
+    public function test_sin_tipo_se_comporta_como_abono(): void
+    {
+        $this->conSaldoDeApertura(500000);
+
+        app(CustomerAdvanceService::class)->register($this->cliente, [
+            'amount' => 200000,
+            'date' => now()->toDateString(),
+            'payment_method' => 'cash',
+        ]);
+
+        $this->assertEqualsWithDelta(200000, (float) $this->cliente->fresh()->opening_balance_applied, 0.01,
+            'Los registros anteriores siempre se aplicaron: cambiarles el significado sería reescribir el pasado.');
+    }
+
+    /** La hoja los nombra distinto, que es de donde venía la confusión. */
+    public function test_la_hoja_los_nombra_distinto(): void
+    {
+        app(CustomerAdvanceService::class)->register($this->cliente, [
+            'amount' => 100000,
+            'date' => now()->toDateString(),
+            'payment_method' => 'cash',
+            'kind' => CustomerAdvance::ANTICIPO,
+        ]);
+
+        $estado = app(CustomerStatement::class)->build($this->cliente->fresh());
+        $movimiento = $estado['movements']->firstWhere('type', CustomerStatement::ADVANCE);
+
+        $this->assertStringContainsString('Anticipo', $movimiento['reference']);
+        $this->assertSame(CustomerAdvance::ANTICIPO, $movimiento['advance_kind']);
     }
 
     // --------------------------------------------------------- auxiliares

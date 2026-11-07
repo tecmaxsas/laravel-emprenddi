@@ -48,6 +48,9 @@ class CustomerAdvanceService
                 'third_party_id' => $customer->id,
                 'date' => $data['date'] ?? now()->toDateString(),
                 'amount' => $amount,
+                'kind' => ($data['kind'] ?? CustomerAdvance::ABONO) === CustomerAdvance::ANTICIPO
+                    ? CustomerAdvance::ANTICIPO
+                    : CustomerAdvance::ABONO,
                 'applied_amount' => 0,
                 'payment_method' => $data['payment_method'] ?? null,
                 'account_id' => $data['account_id'] ?? null,
@@ -64,9 +67,20 @@ class CustomerAdvanceService
                 'created_by_user_id' => auth()->id(),
             ]);
 
-            // Puede haber facturas pendientes de antes: el anticipo se va
-            // contra ellas de una vez, en vez de quedar suelto.
-            $this->applyToPendingInvoices($customer);
+            // UN ABONO SE APLICA; UN ANTICIPO NO.
+            //
+            // El abono es plata contra una deuda que ya existe: dejarlo suelto
+            // haria que el cliente viera «saldo a favor» por un dinero con el
+            // que lo que hizo fue bajar lo que debe. Esa fue la queja: la hoja
+            // mostraba $950.000 a favor y $730.000 adeudado al mismo tiempo, y
+            // el cliente leia que tenia casi un millon guardado aparte.
+            //
+            // El anticipo es por una compra que todavia no existe, asi que
+            // queda a favor a proposito, hasta que haya una venta que lo
+            // consuma —eso pasa solo al contabilizarla—.
+            if ($advance->kind !== CustomerAdvance::ANTICIPO) {
+                $this->applyToPendingInvoices($customer);
+            }
 
             return $advance->fresh();
         });
