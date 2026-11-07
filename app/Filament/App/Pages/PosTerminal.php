@@ -2,6 +2,7 @@
 
 namespace App\Filament\App\Pages;
 
+use App\Filament\App\Resources\SaleInvoiceResource;
 use App\Models\Appointment;
 use App\Models\CashMovement;
 use App\Models\CashRegisterSession;
@@ -130,6 +131,8 @@ class PosTerminal extends Page
     /* ------------------------------------------------------------------ */
     /*  Movimientos directos de caja */
     /* ------------------------------------------------------------------ */
+
+    public bool $showRecentSalesModal = false;
 
     public bool $showCashMovementModal = false;
 
@@ -2601,6 +2604,136 @@ class PosTerminal extends Page
     /* ------------------------------------------------------------------ */
     /*  Entradas y salidas directas de caja */
     /* ------------------------------------------------------------------ */
+
+    /**
+     * Las ventas recientes de este turno.
+     *
+     * POR QUE HACE FALTA. Al cajero se le pide reimprimir un tiquete varias
+     * veces al dia —el cliente lo boto, la impresora se trabo, lo pide para
+     * la empresa— y hasta ahora eso significaba salir del POS, irse al
+     * listado de facturas y buscarla por numero. Con el cliente en el
+     * mostrador, eso no pasa: se deja para despues y despues nadie lo hace.
+     *
+     * Son las del TURNO, no las del dia: lo que el cajero necesita corregir o
+     * reimprimir es lo que el mismo acaba de vender. Las de otro turno se
+     * buscan en el listado de facturas, que es donde corresponde.
+     *
+     * @return Collection<int, SaleInvoice>
+     */
+    public function getVentasRecientesProperty()
+    {
+        if (! $this->session_id) {
+            return collect();
+        }
+
+        return SaleInvoice::query()
+            ->where('company_id', auth()->user()?->company_id)
+            ->where('cash_register_session_id', $this->session_id)
+            ->where('status', '!=', SaleInvoice::STATUS_DRAFT)
+            ->with('customer:id,name')
+            ->orderByDesc('id')
+            ->limit(30)
+            ->get();
+    }
+
+    public function openRecentSalesModal(): void
+    {
+        if (! $this->session_id) {
+            Notification::make()
+                ->title('No hay turno abierto')
+                ->body('Las ventas recientes son las de este turno.')
+                ->warning()->send();
+
+            return;
+        }
+
+        $this->showRecentSalesModal = true;
+    }
+
+    public function closeRecentSalesModal(): void
+    {
+        $this->showRecentSalesModal = false;
+    }
+
+    /**
+     * Vuelve a imprimir el tiquete de una venta.
+     *
+     * Usa el mismo puente que imprime al cobrar, asi que sale exactamente el
+     * mismo papel. Reimprimir con otro camino seria la forma de que un dia el
+     * duplicado no se parezca al original.
+     */
+    public function reimprimirVenta(int $invoiceId): void
+    {
+        $factura = $this->facturaDelTurno($invoiceId);
+
+        if (! $factura) {
+            Notification::make()->title('Esa venta no es de este turno')->danger()->send();
+
+            return;
+        }
+
+        $this->dispatch('pos-print-ticket', invoiceId: $factura->id);
+    }
+
+    /**
+     * Devuelve la venta a borrador y lleva a corregirla.
+     *
+     * El POS no edita lineas —no es su pantalla— asi que lo que hace es
+     * preparar la factura y mandar al formulario. Las reglas de cuando se
+     * puede las aplica `SaleInvoiceEngine`, el mismo metodo que usa la ficha
+     * de la factura: entre ellas, que no se toque un arqueo ya cerrado.
+     */
+    public function corregirVenta(int $invoiceId): void
+    {
+        if (! auth()->user()?->can('sales.edit_posted')) {
+            Notification::make()->title('Sin permiso para corregir ventas')->danger()->send();
+
+            return;
+        }
+
+        $factura = $this->facturaDelTurno($invoiceId);
+
+        if (! $factura) {
+            Notification::make()->title('Esa venta no es de este turno')->danger()->send();
+
+            return;
+        }
+
+        $motivo = app(SaleInvoiceEngine::class)->porQueNoSePuedeEditar($factura);
+
+        if ($motivo !== null) {
+            Notification::make()
+                ->title('No se puede corregir esta venta')
+                ->body($motivo)
+                ->danger()->persistent()->send();
+
+            return;
+        }
+
+        try {
+            app(SaleInvoiceEngine::class)->prepararParaEditar($factura);
+
+            $this->redirect(SaleInvoiceResource::getUrl('edit', ['record' => $factura]));
+        } catch (\Throwable $e) {
+            Notification::make()
+                ->title('No se pudo preparar la correccion')
+                ->body($e->getMessage())
+                ->danger()->persistent()->send();
+        }
+    }
+
+    /** Solo facturas de ESTE turno: es lo que el cajero puede tocar. */
+    protected function facturaDelTurno(int $invoiceId): ?SaleInvoice
+    {
+        if (! $this->session_id) {
+            return null;
+        }
+
+        return SaleInvoice::query()
+            ->where('company_id', auth()->user()?->company_id)
+            ->where('cash_register_session_id', $this->session_id)
+            ->find($invoiceId);
+    }
 
     /**
      * Abre el registro de un movimiento directo del cajón.

@@ -604,6 +604,18 @@
                     </button>
                 @endif
 
+                {{-- VENTAS RECIENTES
+                     Al cajero se le pide reimprimir un tiquete varias veces al
+                     día. Sin esto había que salir del POS, irse al listado de
+                     facturas y buscarla por número — con el cliente en el
+                     mostrador, eso no pasa. --}}
+                <button type="button" wire:click="openRecentSalesModal"
+                        class="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-500/10 text-slate-700 dark:text-slate-300 hover:bg-slate-500/20 transition flex items-center gap-1.5"
+                        title="Ventas de este turno: reimprimir o corregir">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Recientes
+                </button>
+
                 {{-- DOMICILIO
                      Entra como una línea más de la factura —paga su IVA y se
                      contabiliza como cualquier cobro—, no como un recargo
@@ -1635,6 +1647,65 @@
     {{-- domicilio, la sangría a la caja fuerte, el cambio que hay que     --}}
     {{-- meter. Afecta el arqueo y genera asiento contable.                --}}
     {{-- ================================================================ --}}
+    {{-- ============ VENTAS RECIENTES ============ --}}
+    @if ($showRecentSalesModal && $session)
+        <div class="pos-modal-backdrop" wire:click.self="closeRecentSalesModal">
+            <div class="pos-modal-content" style="max-width:620px;">
+                <div class="pos-modal-header">
+                    <div>
+                        <h2 class="text-base font-semibold">Ventas de este turno</h2>
+                        <p style="font-size:11px; color:#6b7280; margin-top:2px;">
+                            Las que tú registraste en este turno. Las de otros turnos están en Facturas de venta.
+                        </p>
+                    </div>
+                    <button type="button" wire:click="closeRecentSalesModal" class="pos-modal-close">×</button>
+                </div>
+
+                <div class="pos-modal-body" style="display:flex; flex-direction:column; gap:8px; max-height:60vh; overflow-y:auto;">
+                    @forelse ($this->ventasRecientes as $v)
+                        <div class="pos-modal-card" style="padding:10px 12px;">
+                            <div style="display:flex; justify-content:space-between; gap:10px; align-items:baseline;">
+                                <div style="flex:1; min-width:0;">
+                                    <div style="font-size:13px; font-weight:700;">
+                                        {{ $v->fullNumber() }}
+                                        @if ($v->status === \App\Models\SaleInvoice::STATUS_CANCELLED)
+                                            <span style="font-size:10px; color:rgb(220,38,38);">ANULADA</span>
+                                        @endif
+                                    </div>
+                                    <div style="font-size:11px; color:#6b7280;">
+                                        {{ $v->customer?->name ?? 'Consumidor Final' }} ·
+                                        {{ $v->created_at?->format(\App\Support\ClockFormat::time()) }}
+                                    </div>
+                                </div>
+                                <div style="font-size:15px; font-weight:800; white-space:nowrap;">
+                                    ${{ number_format((float) $v->total, 0, ',', '.') }}
+                                </div>
+                            </div>
+
+                            <div style="display:flex; gap:6px; margin-top:8px;">
+                                <button type="button" wire:click="reimprimirVenta({{ $v->id }})"
+                                        class="pos-btn" style="flex:1; background:#e5e7eb; color:#374151;">
+                                    Reimprimir
+                                </button>
+                                @if (auth()->user()->can('sales.edit_posted'))
+                                    <button type="button" wire:click="corregirVenta({{ $v->id }})"
+                                            wire:confirm="Esto devuelve la venta a borrador: se deshacen el inventario, los asientos y el cobro. ¿Seguir?"
+                                            class="pos-btn" style="flex:1; background:rgb(245,158,11); color:#fff;">
+                                        Corregir
+                                    </button>
+                                @endif
+                            </div>
+                        </div>
+                    @empty
+                        <div style="padding:24px; text-align:center; color:#6b7280; font-size:13px;">
+                            Todavía no has registrado ventas en este turno.
+                        </div>
+                    @endforelse
+                </div>
+            </div>
+        </div>
+    @endif
+
     @if ($showCashMovementModal && $session)
         @php
             $esEntrada = ($cashMovementForm['direction'] ?? 'out') === 'in';
