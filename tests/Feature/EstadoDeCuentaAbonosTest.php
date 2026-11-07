@@ -177,8 +177,19 @@ class EstadoDeCuentaAbonosTest extends TestCase
             'Tiene que verse lo que el cliente entregó, no el resto.');
     }
 
-    /** Y la parte aplicada sale como su débito. */
-    public function test_lo_aplicado_sale_como_debito(): void
+    /**
+     * Cada peso entra UNA sola vez en la hoja.
+     *
+     * El primer intento mostraba el anticipo entero como crédito y su
+     * aplicación como débito que lo cancelaba. La suma quedaba bien, pero la
+     * hoja era ilegible: el mismo $1.500.000 aparecía tres veces, dos como
+     * crédito y una como débito que parecía que se lo volvieran a cobrar al
+     * cliente.
+     *
+     * Un estado de cuenta no es un libro contable: es una columna de saldo
+     * corrido que lee alguien que no lleva contabilidad.
+     */
+    public function test_cada_peso_aparece_una_sola_vez(): void
     {
         $this->facturaPendiente(1500000);
 
@@ -190,10 +201,14 @@ class EstadoDeCuentaAbonosTest extends TestCase
 
         $estado = app(CustomerStatement::class)->build($this->cliente->fresh());
 
-        $aplicacion = $estado['movements']->firstWhere('type', CustomerStatement::APPLICATION);
+        $this->assertCount(0, $estado['movements']->where('type', CustomerStatement::APPLICATION),
+            'La aplicación ya no se muestra: el anticipo aparece entero.');
 
-        $this->assertNotNull($aplicacion, 'Sin la contrapartida, el anticipo completo descuadraría la hoja.');
-        $this->assertEqualsWithDelta(1500000, (float) $aplicacion['debit'], 0.01);
+        $this->assertCount(1, $estado['movements']->where('type', CustomerStatement::ADVANCE),
+            'El anticipo, una sola vez.');
+
+        $this->assertCount(0, $estado['movements']->where('type', CustomerStatement::PAYMENT),
+            'El cobro que nació del anticipo contaría la misma plata dos veces.');
     }
 
     /**
@@ -218,8 +233,8 @@ class EstadoDeCuentaAbonosTest extends TestCase
             'Pagó $2.000.000 por $1.500.000: le quedan $500.000 a favor.');
     }
 
-    /** El abono a la apertura también se ve, no solo se aplica. */
-    public function test_el_abono_a_la_apertura_se_ve_en_la_hoja(): void
+    /** El abono contra la apertura deja la hoja en cero, sin renglones de más. */
+    public function test_el_abono_a_la_apertura_cuadra_la_hoja(): void
     {
         $this->conSaldoDeApertura(300000);
 
@@ -232,14 +247,11 @@ class EstadoDeCuentaAbonosTest extends TestCase
         $estado = app(CustomerStatement::class)->build($this->cliente->fresh());
 
         $apertura = $estado['movements']->firstWhere('type', CustomerStatement::OPENING);
-        $abono = $estado['movements']->first(
-            fn ($m) => $m['type'] === CustomerStatement::APPLICATION && $m['credit'] > 0
-        );
 
         $this->assertEqualsWithDelta(300000, (float) $apertura['debit'], 0.01,
             'La apertura conserva su valor original: es lo que debía al migrar.');
-        $this->assertNotNull($abono, 'Y el abono contra ella tiene que verse.');
-        $this->assertEqualsWithDelta(300000, (float) $abono['credit'], 0.01);
+        $this->assertCount(2, $estado['movements'],
+            'La apertura y el abono. Nada más: lo demás era ruido que parecía un recobro.');
         $this->assertEqualsWithDelta(0, (float) $estado['due'], 0.01);
     }
 
