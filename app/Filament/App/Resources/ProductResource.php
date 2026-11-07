@@ -259,6 +259,15 @@ class ProductResource extends Resource
                                 ->label('Se vende')
                                 ->default(true),
 
+                            // En un mostrador el grueso de las ventas sale de
+                            // veinte productos. Marcarlos aqui los pone a un
+                            // clic en el POS, en vez de buscarlos entre
+                            // cientos con el cliente esperando.
+                            Forms\Components\Toggle::make('is_favorite')
+                                ->label('Favorito en el POS')
+                                ->helperText('Aparece en el filtro «Favoritos» del POS.')
+                                ->default(false),
+
                             Forms\Components\Toggle::make('active')
                                 ->label('Activo')
                                 ->default(true),
@@ -708,6 +717,7 @@ class ProductResource extends Resource
                     ->searchable(),
                 Tables\Filters\SelectFilter::make('type')->label('Tipo')->options(Product::TYPES),
                 Tables\Filters\TernaryFilter::make('is_sellable')->label('Se vende'),
+                Tables\Filters\TernaryFilter::make('is_favorite')->label('Favorito en el POS'),
                 Tables\Filters\TernaryFilter::make('is_purchasable')->label('Se compra'),
                 Tables\Filters\TernaryFilter::make('track_inventory')->label('Controla inventario'),
                 Tables\Filters\TernaryFilter::make('active')->label('Activo')->default(true),

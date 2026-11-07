@@ -145,6 +145,15 @@ class PosTerminal extends Page
     // Filtro de productos
     public ?int $selectedCategoryId = null;
 
+    /**
+     * Mostrar solo los favoritos.
+     *
+     * Aparte de la categoria y no como una categoria mas: un producto esta en
+     * UNA categoria pero puede ser favorito ademas, y meterlo en la misma
+     * variable obligaria a elegir entre «ver favoritos» y «ver bebidas».
+     */
+    public bool $soloFavoritos = false;
+
     public string $productSearch = '';
 
     // Carrito
@@ -442,6 +451,10 @@ class PosTerminal extends Page
             ->where('is_sellable', true)
             ->where('type', '!=', 'variable');
 
+        if ($this->soloFavoritos) {
+            $query->where('is_favorite', true);
+        }
+
         if ($this->selectedCategoryId) {
             $query->where('category_id', $this->selectedCategoryId);
         }
@@ -458,7 +471,7 @@ class PosTerminal extends Page
         return $query
             ->orderBy('name')
             ->limit(60)
-            ->get(['id', 'code', 'name', 'barcode', 'image_path', 'default_sale_price', 'default_sale_tax_id', 'sale_price_includes_tax']);
+            ->get(['id', 'code', 'name', 'barcode', 'image_path', 'default_sale_price', 'default_sale_tax_id', 'sale_price_includes_tax', 'is_favorite']);
     }
 
     /**
@@ -561,7 +574,61 @@ class PosTerminal extends Page
     public function selectCategory(?int $id): void
     {
         $this->selectedCategoryId = $id;
+        $this->soloFavoritos = false;
         $this->productSearch = '';
+    }
+
+    /**
+     * Ver solo los favoritos, o volver a verlo todo.
+     *
+     * Limpia la categoria y la busqueda: quien pulsa «Favoritos» quiere la
+     * lista corta completa, no los favoritos de la categoria en la que quedo
+     * la pantalla.
+     */
+    public function toggleSoloFavoritos(): void
+    {
+        $this->soloFavoritos = ! $this->soloFavoritos;
+        $this->selectedCategoryId = null;
+        $this->productSearch = '';
+    }
+
+    /**
+     * Marca o desmarca un producto como favorito desde el POS.
+     *
+     * Existe aqui porque nadie arma su lista de favoritos editando cincuenta
+     * fichas de producto: se arma vendiendo, cuando uno se da cuenta de que
+     * lleva el dia entero buscando el mismo articulo.
+     *
+     * Pide `products.manage`: cambia el catalogo de la empresa, no una
+     * preferencia personal de quien esta en la caja.
+     */
+    public function toggleFavorito(int $productId): void
+    {
+        if (! auth()->user()?->can('products.manage')) {
+            Notification::make()->title('Sin permiso para cambiar el catálogo')->danger()->send();
+
+            return;
+        }
+
+        $producto = Product::query()
+            ->where('company_id', auth()->user()?->company_id)
+            ->find($productId);
+
+        if (! $producto) {
+            return;
+        }
+
+        $producto->forceFill(['is_favorite' => ! $producto->is_favorite])->save();
+    }
+
+    public function getCuantosFavoritosProperty(): int
+    {
+        return Product::query()
+            ->where('company_id', auth()->user()?->company_id)
+            ->where('active', true)
+            ->where('is_sellable', true)
+            ->where('is_favorite', true)
+            ->count();
     }
 
     /**

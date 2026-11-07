@@ -669,10 +669,33 @@
                     <div class="text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400">Categorías</div>
                 </div>
                 <div class="p-2 space-y-1">
+                    {{-- FAVORITOS
+                         En un mostrador el grueso de las ventas sale de veinte
+                         productos. Esto los pone a un clic, en vez de buscarlos
+                         entre cientos con el cliente esperando.
+
+                         Va ARRIBA y separado de las categorías porque no es una
+                         categoría: un producto está en una sola categoría pero
+                         puede ser favorito además. --}}
+                    @if ($this->cuantosFavoritos > 0)
+                        <button type="button" wire:click="toggleSoloFavoritos"
+                                class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition
+                                       {{ $soloFavoritos
+                                          ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500/50 shadow-sm'
+                                          : 'hover:bg-gray-100 dark:hover:bg-gray-800/70' }}">
+                            <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center text-white text-sm font-bold shrink-0 shadow-sm">★</div>
+                            <span class="flex-1 text-left truncate font-medium">Favoritos</span>
+                            <span class="text-[10px] px-1.5 py-0.5 rounded-md bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-200 font-mono shrink-0">
+                                {{ $this->cuantosFavoritos }}
+                            </span>
+                        </button>
+                        <div class="h-px bg-gray-200 dark:bg-gray-800 my-1"></div>
+                    @endif
+
                     @foreach ($cats as $idx => $cat)
                         @php
                             $g = $catGradients[$idx % count($catGradients)];
-                            $isActive = $selectedCategoryId === $cat->id;
+                            $isActive = ! $soloFavoritos && $selectedCategoryId === $cat->id;
                         @endphp
                         <button type="button"
                                 wire:click="selectCategory({{ $cat->id ?? 'null' }})"
@@ -756,6 +779,17 @@
                              tarjetas mínimo 150px que se acomodan automáticamente al ancho. --}}
                         <div class="pos-products-grid">
                             @foreach ($products as $p)
+                                <div class="pos-product-wrap" style="position:relative;">
+                                @if (auth()->user()->can('products.manage'))
+                                    {{-- La lista de favoritos no se arma editando cincuenta fichas:
+                                         se arma vendiendo, cuando uno se da cuenta de que lleva el
+                                         día entero buscando el mismo artículo. --}}
+                                    <button type="button" wire:click.stop="toggleFavorito({{ $p->id }})"
+                                            title="{{ $p->is_favorite ? 'Quitar de favoritos' : 'Marcar como favorito' }}"
+                                            style="position:absolute; top:4px; right:4px; z-index:5; width:26px; height:26px; border:0; border-radius:50%; cursor:pointer; line-height:1; font-size:14px; background:{{ $p->is_favorite ? 'rgb(245,158,11)' : 'rgba(0,0,0,.35)' }}; color:#fff;">
+                                        ★
+                                    </button>
+                                @endif
                                 <button type="button"
                                         wire:click="addProductToCart({{ $p->id }})"
                                         class="pos-product-card">
@@ -787,6 +821,7 @@
                                         @endisset
                                     </div>
                                 </button>
+                                </div>
                             @endforeach
                         </div>
                     @endif
