@@ -83,7 +83,15 @@ class ViewSaleInvoice extends ViewRecord
                             ->title('Factura contabilizada')
                             ->body("Asiento {$invoice->journalEntry?->fullNumber()} creado. Número final: {$invoice->fullNumber()}.")
                             ->send();
-                        $this->refreshFormData(['status', 'payment_status', 'journal_entry_id', 'prefix', 'number']);
+
+                        // Al listado, no de vuelta a la misma ficha.
+                        //
+                        // Contabilizar es el final del trabajo con ESTA
+                        // factura: despues no se edita, y si es electronica el
+                        // envio a la DIAN ya quedo encolado solo. Quedarse
+                        // obligaba a volver al listado a mano cada vez, y
+                        // facturar es algo que se hace en tanda.
+                        $this->redirect(SaleInvoiceResource::getUrl('index'));
                     } catch (\Throwable $e) {
                         ErrorDeAccion::reportar($e, 'contabilizar la factura', [
                             'factura_id' => $record->id,
