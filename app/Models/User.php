@@ -20,6 +20,7 @@ class User extends Authenticatable implements FilamentUser
 
     protected $fillable = [
         'company_id',
+        'pos_location_id',
         'name',
         'last_name',
         'email',
@@ -54,6 +55,14 @@ class User extends Authenticatable implements FilamentUser
     public function fullName(): string
     {
         return trim($this->name.' '.$this->last_name);
+    }
+
+    /**
+     * Sede en la que abre caja en el POS (nula = la principal de la empresa).
+     */
+    public function posLocation(): BelongsTo
+    {
+        return $this->belongsTo(Location::class, 'pos_location_id');
     }
 
     public function company(): BelongsTo

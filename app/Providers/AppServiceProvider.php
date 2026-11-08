@@ -11,6 +11,7 @@ use App\Services\Audit\AuditRegistry;
 use App\Services\Restaurant\BrowserPrintQueue;
 use App\Support\CurrentCompany;
 use App\Support\ModuleGate;
+use App\Support\SedeDelCajero;
 use Illuminate\Auth\Events\Failed;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Logout;
@@ -42,6 +43,9 @@ class AppServiceProvider extends ServiceProvider
         }
 
         $this->registrarAuditoria();
+
+        // Cada cajero abre caja en su sede (users.pos_location_id).
+        SedeDelCajero::registrar();
     }
 
     /**

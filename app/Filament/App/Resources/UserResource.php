@@ -140,6 +140,20 @@ class UserResource extends Resource
             Forms\Components\Section::make('Roles y permisos')
                 ->description('Los permisos se otorgan por los roles asignados. Para editar qué permisos tiene cada rol, ve a Roles.')
                 ->schema([
+                    // Quien no es admin/manager no elige sede al abrir caja:
+                    // abre en esta. Vacia = la sede principal.
+                    Forms\Components\Select::make('pos_location_id')
+                        ->label('Sede del POS')
+                        ->helperText('Sede en la que este usuario abre caja si no es administrador. Vacío = la sede principal.')
+                        ->options(fn () => \App\Models\Location::query()
+                            ->where('company_id', auth()->user()?->company_id)
+                            ->where('active', true)
+                            ->orderBy('name')
+                            ->pluck('name', 'id')
+                            ->all())
+                        ->searchable()
+                        ->nullable(),
+
                     Forms\Components\Select::make('roles')
                         ->label('Roles asignados')
                         // Por ID y no por nombre. Con roles por empresa el
