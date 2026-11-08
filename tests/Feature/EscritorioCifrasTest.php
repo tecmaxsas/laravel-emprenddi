@@ -156,6 +156,26 @@ class EscritorioCifrasTest extends TestCase
     }
 
     /**
+     * Pero SOLO LA PRIMERA VEZ.
+     *
+     * La primera versión desviaba en cada carga del escritorio, y eso dejó a
+     * los cajeros encerrados en el POS: no podían volver al menú ni por el
+     * botón ni escribiendo la ruta, porque el escritorio los devolvía al
+     * instante. Se quería ahorrarles un clic, no quitarles una pantalla.
+     */
+    public function test_si_vuelve_al_escritorio_a_proposito_se_queda(): void
+    {
+        $usuario = $this->usuarioConPermisos(['pos.use']);
+
+        $this->actingAs($usuario);
+
+        Livewire::test(Escritorio::class)->assertRedirect(PosDestination::url());
+
+        Livewire::test(Escritorio::class)
+            ->assertNoRedirect();
+    }
+
+    /**
      * Pero quien sí tiene algo que ver se queda.
      *
      * La condición se mide por PERMISOS, no por el nombre del rol: un rol

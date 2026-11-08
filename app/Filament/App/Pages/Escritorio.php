@@ -34,13 +34,37 @@ class Escritorio extends BaseDashboard
 
     protected static ?string $title = 'Escritorio';
 
+    /**
+     * La marca de que a este usuario ya se le ofrecio su POS en esta sesion.
+     */
+    private const YA_LO_MANDE = 'escritorio.ya_mande_al_pos';
+
     public function mount(): void
     {
         $destino = $this->aDondeMandarlo();
 
-        if ($destino) {
-            $this->redirect($destino);
+        if (! $destino) {
+            return;
         }
+
+        // UNA SOLA VEZ POR SESION.
+        //
+        // La primera version desviaba en CADA carga del escritorio, y eso
+        // dejo a los cajeros encerrados en el POS: no podian volver al menu
+        // ni por el boton ni escribiendo la ruta, porque el escritorio los
+        // devolvia al instante.
+        //
+        // Lo que se queria era ahorrarles un clic al entrar, no quitarles una
+        // pantalla. Con la marca, el desvio ocurre al llegar despues de
+        // iniciar sesion; si el usuario vuelve al escritorio a proposito, se
+        // queda.
+        if (session()->get(self::YA_LO_MANDE) === auth()->id()) {
+            return;
+        }
+
+        session()->put(self::YA_LO_MANDE, auth()->id());
+
+        $this->redirect($destino);
     }
 
     /**

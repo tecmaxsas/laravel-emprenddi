@@ -166,6 +166,22 @@
         $visibleSections = $visibleSections ?? ['kpis','sales_chart','restaurant','appointments','payroll','due_invoices','activity'];
     @endphp
 
+    {{-- SIN NADA QUE VER, UN CAMINO A LO QUE SI PUEDE HACER.
+         Al separar las cifras del negocio en su propio permiso, el cajero
+         quedo entrando a una pantalla con solo el saludo. Dejarla asi convierte
+         el escritorio en un sitio del que uno sale sin saber a donde ir. --}}
+    @if (empty($visibleSections) && \App\Support\PosDestination::url())
+        <a href="{{ \App\Support\PosDestination::url() }}"
+           style="display:flex; align-items:center; gap:14px; padding:20px 22px; border-radius:14px;
+                  background:linear-gradient(135deg,#4f46e5,#7c3aed); color:#fff; text-decoration:none;">
+            <span style="font-size:30px; line-height:1;">🧾</span>
+            <span>
+                <span style="display:block; font-size:17px; font-weight:800;">Abrir el POS</span>
+                <span style="display:block; font-size:13px; opacity:.9;">Es donde registras las ventas del turno.</span>
+            </span>
+        </a>
+    @endif
+
     @foreach ($visibleSections as $section)
         @switch($section)
 
