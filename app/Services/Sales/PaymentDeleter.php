@@ -253,8 +253,14 @@ class PaymentDeleter
         }
     }
 
-    /** La factura a la que se le aplicó el cobro. */
-    private function documento(Payment $pago): SaleInvoice|PurchaseInvoice|null
+    /**
+     * La factura a la que se le aplicó el cobro.
+     *
+     * Publica porque PaymentEditor la necesita para saber a que motor pedirle
+     * el cobro nuevo. Resolverlo alla otra vez seria tener dos versiones de la
+     * misma pregunta.
+     */
+    public function documento(Payment $pago): SaleInvoice|PurchaseInvoice|null
     {
         if ($pago->paymentable_type === SaleInvoice::class) {
             return SaleInvoice::withoutGlobalScopes()->find($pago->paymentable_id);

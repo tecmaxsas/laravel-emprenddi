@@ -2,11 +2,11 @@
 
 namespace App\Filament\App\Resources\PurchaseInvoiceResource\RelationManagers;
 
+use App\Filament\Concerns\AccionesDePago;
 use App\Models\Account;
 use App\Models\Payment;
 use App\Models\PaymentMethod;
 use App\Services\Purchases\PurchaseInvoiceEngine;
-use App\Services\Sales\PaymentDeleter;
 use App\Support\CashSessionGate;
 use App\Support\PaymentMethodOptions;
 use Filament\Forms;
@@ -17,10 +17,11 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\HtmlString;
 
 class PaymentsRelationManager extends RelationManager
 {
+    use AccionesDePago;
+
     protected static string $relationship = 'payments';
 
     protected static ?string $title = 'Pagos';
@@ -44,7 +45,7 @@ class PaymentsRelationManager extends RelationManager
      * Schema del form de pago — usado tanto en el form de detalle del pago
      * como en el modal del action 'Registrar pago'.
      */
-    protected function paymentFormSchema(): array
+    protected function paymentFormSchema(?Payment $corrigiendo = null): array
     {
         return [
             Forms\Components\DatePicker::make('date')
@@ -58,8 +59,11 @@ class PaymentsRelationManager extends RelationManager
                 ->numeric()
                 ->minValue(0.01)
                 ->prefix('$')
-                ->default(fn () => $this->getOwnerRecord()->balance)
-                ->helperText(fn () => 'Saldo pendiente: $'.number_format($this->getOwnerRecord()->balance, 2)),
+                ->default(fn () => $this->topeDelPago($corrigiendo))
+                ->helperText(fn () => $corrigiendo
+                    ? 'Máximo $'.number_format($this->topeDelPago($corrigiendo), 2)
+                        .' — el saldo pendiente más este mismo cobro, que vuelve a la factura al reemplazarlo.'
+                    : 'Saldo pendiente: $'.number_format($this->topeDelPago(), 2)),
 
             Forms\Components\Select::make('payment_method')
                 ->label('Método de pago')
@@ -184,56 +188,8 @@ class PaymentsRelationManager extends RelationManager
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
-
-                // Un cobro mal digitado —el monto equivocado, el metodo
-                // equivocado, o dos veces el mismo— solo se podia deshacer
-                // borrando la factura entera.
-                Tables\Actions\Action::make('deletePayment')
-                    ->label('Borrar')
-                    ->icon('heroicon-o-trash')
-                    ->color('danger')
-                    ->visible(fn () => auth()->user()?->can('purchases.pay'))
-                    ->disabled(fn (Payment $record) => app(PaymentDeleter::class)
-                        ->motivoParaNoBorrar($record) !== null)
-                    // El motivo va en el tooltip: un boton gris sin explicacion
-                    // deja al usuario adivinando por que no puede.
-                    ->tooltip(fn (Payment $record) => app(PaymentDeleter::class)
-                        ->motivoParaNoBorrar($record))
-                    ->requiresConfirmation()
-                    ->modalHeading('Borrar este cobro')
-                    ->modalDescription(fn (Payment $record) => new HtmlString(
-                        '<div style="font-size:13px;line-height:1.6;">'
-                        .'<p style="margin-bottom:8px;">Esto es lo que va a pasar:</p><ul style="margin-left:18px;list-style:disc;">'
-                        .implode('', array_map(
-                            fn (string $c) => '<li>'.e($c).'</li>',
-                            app(PaymentDeleter::class)->consecuencias($record),
-                        ))
-                        .'</ul></div>'
-                    ))
-                    ->modalSubmitActionLabel('Sí, borrar el cobro')
-                    ->form([
-                        Forms\Components\TextInput::make('motivo')
-                            ->label('Motivo')
-                            ->placeholder('Ej. Se registró dos veces')
-                            ->helperText('Queda guardado en el pago para que después se sepa por qué se borró.')
-                            ->maxLength(200),
-                    ])
-                    ->action(function (Payment $record, array $data) {
-                        try {
-                            app(PaymentDeleter::class)->delete($record, $data['motivo'] ?? null);
-
-                            Notification::make()->success()
-                                ->title('Cobro borrado')
-                                ->body('El saldo de la factura y la caja se actualizaron.')
-                                ->send();
-                        } catch (\Throwable $e) {
-                            Notification::make()->danger()
-                                ->title('No se pudo borrar el cobro')
-                                ->body($e->getMessage())
-                                ->persistent()
-                                ->send();
-                        }
-                    }),
+                $this->accionCorregirPago('purchases.pay'),
+                $this->accionBorrarPago('purchases.pay'),
             ]);
     }
 }

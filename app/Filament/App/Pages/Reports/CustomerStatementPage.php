@@ -11,8 +11,7 @@ use App\Models\ThirdParty;
 use App\Services\Sales\CustomerAdvanceService;
 use App\Services\Sales\CustomerStatement;
 use App\Services\Sales\PaymentDeleter;
-use App\Services\Sales\SaleInvoiceEngine;
-use App\Support\PaymentAccountResolver;
+use App\Services\Sales\PaymentEditor;
 use App\Support\PaymentMethodOptions;
 use App\Support\WhatsappNumero;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -27,7 +26,6 @@ use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -382,14 +380,11 @@ class CustomerStatementPage extends Page implements HasActions, HasForms
     }
 
     /**
-     * Corregir un cobro: se borra y se vuelve a registrar.
+     * Corregir un cobro.
      *
-     * No se edita la fila en sitio a propósito. Un cobro arrastra un asiento
-     * contable, el estado de pago de su factura y a veces el saldo a favor del
-     * cliente; cambiarle el valor por debajo dejaría las tres cosas apuntando
-     * a una cifra que ya no existe. Borrar y volver a crear pasa por las
-     * mismas reglas que cualquier cobro nuevo, incluida la que impide tocar un
-     * turno cerrado.
+     * La regla —que no se edita en sitio sino que se reemplaza, y por que—
+     * vive en PaymentEditor, porque las pantallas de pagos de ventas y de
+     * compras necesitan exactamente la misma y ya se habia escrito dos veces.
      */
     public function editPaymentAction(): Action
     {
@@ -398,8 +393,9 @@ class CustomerStatementPage extends Page implements HasActions, HasForms
             ->icon('heroicon-o-pencil-square')
             ->color('warning')
             ->modalHeading('Corregir este cobro')
-            ->modalDescription('El cobro se reemplaza: se borra el actual y se registra uno nuevo '
-                .'con estos datos. Así el asiento, la factura y el arqueo quedan coherentes.')
+            ->modalDescription('El cobro se reemplaza: se borra el actual, se reversa su asiento '
+                .'y se registra uno nuevo con estos datos. Así el asiento, la factura y el arqueo '
+                .'quedan coherentes.')
             ->fillForm(function (array $arguments) {
                 $pago = $this->pagoDe($arguments);
 
@@ -438,29 +434,8 @@ class CustomerStatementPage extends Page implements HasActions, HasForms
                     return;
                 }
 
-                $factura = $pago->paymentable;
-
-                if (! $factura instanceof SaleInvoice) {
-                    Notification::make()->danger()
-                        ->title('Este cobro no es de una factura de venta')
-                        ->send();
-
-                    return;
-                }
-
                 try {
-                    DB::transaction(function () use ($pago, $factura, $data) {
-                        app(PaymentDeleter::class)->delete($pago, 'Reemplazado por una corrección');
-
-                        app(SaleInvoiceEngine::class)->addPayment($factura->fresh(), [
-                            'amount' => round((float) $data['amount'], 2),
-                            'date' => $data['date'],
-                            'payment_method' => $data['payment_method'],
-                            'reference' => $data['reference'] ?? null,
-                            'account_id' => PaymentAccountResolver::forMethod($data['payment_method']),
-                        ]);
-                    });
-
+                    app(PaymentEditor::class)->replace($pago, $data);
                     $this->generate();
 
                     Notification::make()->success()->title('Cobro corregido')->send();
