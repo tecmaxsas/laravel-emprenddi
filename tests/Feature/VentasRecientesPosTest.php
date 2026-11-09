@@ -146,15 +146,29 @@ class VentasRecientesPosTest extends TestCase
             ->assertNotDispatched('pos-print-ticket');
     }
 
-    /** Corregir devuelve la venta a borrador y lleva al formulario. */
-    public function test_corregir_devuelve_la_venta_a_borrador(): void
+    /**
+     * Corregir carga la venta en el carrito, aquí mismo.
+     *
+     * Antes mandaba al formulario completo de facturación y dejaba la venta
+     * en borrador por adelantado. Las dos cosas cambiaron: una venta del
+     * mostrador se corrige en el mostrador, y la factura no se desarma hasta
+     * que el cajero vuelve a cobrar —si deja la corrección a medias, que es
+     * lo normal cuando entra el siguiente cliente, la venta sigue intacta—.
+     *
+     * El recorrido completo vive en CorregirVentaEnElPosTest; aquí solo se
+     * comprueba que el botón de ventas recientes llega hasta ahí.
+     */
+    public function test_corregir_carga_la_venta_en_el_carrito(): void
     {
         $venta = $this->venta(70000);
 
-        Livewire::test(PosTerminal::class)->call('corregirVenta', $venta->id);
+        $pos = Livewire::test(PosTerminal::class)->call('corregirVenta', $venta->id);
 
-        $this->assertTrue($venta->fresh()->isDraft(),
-            'El POS no edita líneas: prepara la factura y manda al formulario.');
+        $this->assertSame($venta->id, $pos->instance()->corrigiendo_factura_id);
+        $this->assertNotSame([], $pos->instance()->cart, 'El carrito queda cargado con sus líneas.');
+        $this->assertTrue($venta->fresh()->isPosted(),
+            'Cargarla no la desarma: si quedara en borrador, una corrección abandonada '
+            .'dejaría la venta fuera del arqueo sin que nadie se entere.');
     }
 
     /**

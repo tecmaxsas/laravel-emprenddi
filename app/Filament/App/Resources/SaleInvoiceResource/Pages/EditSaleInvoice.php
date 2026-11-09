@@ -2,6 +2,7 @@
 
 namespace App\Filament\App\Resources\SaleInvoiceResource\Pages;
 
+use App\Filament\App\Pages\PosTerminal;
 use App\Filament\App\Resources\SaleInvoiceResource;
 use App\Models\SaleInvoice;
 use App\Services\Sales\SaleInvoiceEngine;
@@ -14,6 +15,24 @@ use Illuminate\Validation\ValidationException;
 class EditSaleInvoice extends EditRecord
 {
     protected static string $resource = SaleInvoiceResource::class;
+
+    /**
+     * Una venta del POS no se edita aqui.
+     *
+     * El boton «Corregir» ya manda al POS, pero el enlace directo a esta
+     * pantalla sigue existiendo —un marcador, el historial del navegador, un
+     * enlace pegado en un chat— y por ahi el cajero terminaba en el
+     * formulario completo de facturacion, que es justo lo que se quiso
+     * evitar. La regla vive donde no se puede esquivar.
+     */
+    public function mount(int|string $record): void
+    {
+        parent::mount($record);
+
+        if ($this->getRecord()->naceEnElPos()) {
+            $this->redirect(PosTerminal::getUrl(['corregir' => $this->getRecord()->id]));
+        }
+    }
 
     protected function getHeaderActions(): array
     {

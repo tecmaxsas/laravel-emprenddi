@@ -56,6 +56,7 @@ class QuotationConverter
                 'tax_total' => $quotation->tax_total,
                 'total' => $quotation->total,
                 'net_payable' => $quotation->total,
+                'origin' => SaleInvoice::ORIGIN_QUOTATION,
                 'description' => 'Convertida desde cotización '.$quotation->fullNumber(),
                 'notes' => $quotation->notes,
             ]);

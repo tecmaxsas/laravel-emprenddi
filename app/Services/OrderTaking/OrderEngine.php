@@ -11,10 +11,10 @@ use App\Models\OrderTaking\Payment;
 use App\Models\SaleInvoice;
 use App\Models\Tax;
 use App\Models\ThirdParty;
-use App\Support\RetentionBase;
 use App\Services\Sales\DocumentNumberer;
 use App\Services\Sales\SaleInvoiceEngine;
 use App\Support\PaymentAccountResolver;
+use App\Support\RetentionBase;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -182,7 +182,7 @@ class OrderEngine
      * Registra un despacho parcial o total. Actualiza quantity_delivered en
      * cada order_item y recomputa delivery_status del pedido.
      *
-     * @param array $items array de ['order_item_id' => int, 'quantity' => float]
+     * @param  array  $items  array de ['order_item_id' => int, 'quantity' => float]
      */
     public function registerDelivery(Order $order, array $items, ?string $deliveryNumber = null, ?string $notes = null, ?string $deliveryDate = null): Delivery
     {
@@ -202,7 +202,9 @@ class OrderEngine
 
             foreach ($items as $row) {
                 $qty = (float) ($row['quantity'] ?? 0);
-                if ($qty <= 0) continue;
+                if ($qty <= 0) {
+                    continue;
+                }
 
                 $orderItem = OrderItem::query()
                     ->where('company_id', $order->company_id)
@@ -343,6 +345,7 @@ class OrderEngine
                 'prefix' => $doc['prefix'],
                 'number' => $doc['number'],
                 'invoice_kind' => $doc['kind'],
+                'origin' => SaleInvoice::ORIGIN_ORDER_TAKING,
                 'dian_resolution_id' => $doc['resolution_id'],
                 'date' => now()->toDateString(),
                 'currency' => 'COP',

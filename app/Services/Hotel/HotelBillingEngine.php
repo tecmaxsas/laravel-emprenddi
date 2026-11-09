@@ -13,10 +13,10 @@ use App\Models\Location;
 use App\Models\SaleInvoice;
 use App\Models\ThirdParty;
 use App\Services\Dian\PosDianTransmitter;
+use App\Services\Invoicing\GlobalDiscount;
 use App\Services\Sales\CustomerAdvanceService;
 use App\Services\Sales\DocumentNumberer;
 use App\Services\Sales\SaleInvoiceEngine;
-use App\Services\Invoicing\GlobalDiscount;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -174,6 +174,7 @@ class HotelBillingEngine
                 'prefix' => $doc['prefix'],
                 'number' => $doc['number'],
                 'invoice_kind' => $doc['kind'],
+                'origin' => SaleInvoice::ORIGIN_HOTEL,
                 'dian_resolution_id' => $doc['resolution_id'],
                 'date' => now()->toDateString(),
                 'currency' => 'COP',
@@ -444,6 +445,7 @@ class HotelBillingEngine
                 'prefix' => $doc['prefix'],
                 'number' => $doc['number'],
                 'invoice_kind' => $doc['kind'],
+                'origin' => SaleInvoice::ORIGIN_HOTEL,
                 'dian_resolution_id' => $doc['resolution_id'],
                 'date' => now()->toDateString(),
                 'currency' => 'COP',

@@ -5,6 +5,7 @@ namespace App\Services\Sales;
 use App\Models\Company;
 use App\Models\DeliveryNote;
 use App\Models\SaleInvoice;
+use App\Models\Tax;
 use App\Services\Inventory\InventoryEngine;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -131,6 +132,7 @@ class DeliveryNoteEngine
                 'created_by_user_id' => Auth::id(),
                 'seller_user_id' => $note->seller_user_id ?: Auth::id(),
                 'from_delivery_note_id' => $note->id,
+                'origin' => SaleInvoice::ORIGIN_DELIVERY_NOTE,
                 'description' => 'Facturación de remisión '.$note->fullNumber(),
             ]);
 
@@ -140,7 +142,7 @@ class DeliveryNoteEngine
                 $taxId = $line->product?->default_sale_tax_id;
                 $taxRate = 0;
                 if ($taxId) {
-                    $tax = \App\Models\Tax::query()
+                    $tax = Tax::query()
                         ->where('company_id', $note->company_id)
                         ->find($taxId);
                     $taxRate = (float) ($tax?->rate ?? 0);

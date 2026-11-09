@@ -2,7 +2,6 @@
 
 namespace App\Filament\App\Pages;
 
-use App\Filament\App\Resources\SaleInvoiceResource;
 use App\Models\Appointment;
 use App\Models\CashMovement;
 use App\Models\CashRegisterSession;
@@ -111,6 +110,20 @@ class PosTerminal extends Page
     // cobrar", precarga cliente + servicio y al cerrar la venta marca la
     // cita como completada enlazando la factura.
     public ?int $appointment_id = null;
+
+    /**
+     * La venta que se esta corrigiendo, si se esta corrigiendo alguna.
+     *
+     * Mientras esto tenga un valor, el POS no crea una venta nueva al cobrar:
+     * reescribe esta. El carrito es el de la venta cargada.
+     *
+     * **La factura NO se toca al cargarla.** Se desarma solo cuando el cajero
+     * confirma el cobro corregido. Si se devolviera a borrador al abrirla
+     * —como hace el formulario de facturacion— una correccion abandonada a
+     * medias dejaria la venta sin contabilizar y sin pagos, desaparecida del
+     * arqueo, sin que nadie se entere hasta cuadrar la caja.
+     */
+    public ?int $corrigiendo_factura_id = null;
 
     // Apertura de caja
     public ?int $openingLocationId = null;
@@ -323,6 +336,14 @@ class PosTerminal extends Page
         $appointmentId = (int) request()->query('appointment');
         if ($appointmentId > 0) {
             $this->loadAppointment($appointmentId);
+        }
+
+        // Correccion de una venta del POS: ?corregir=ID. Es por donde entra
+        // quien pulsa «Corregir» desde el listado o la vista de la factura:
+        // una venta hecha en el POS se corrige en el POS.
+        $corregir = (int) request()->query('corregir');
+        if ($corregir > 0) {
+            $this->corregirVenta($corregir);
         }
     }
 
@@ -2119,16 +2140,47 @@ class PosTerminal extends Page
             return;
         }
 
-        // Reservar consecutivo de la resolución (POS o Electrónica) ANTES
-        // de abrir la transacción. Si la sede no tiene resolución del tipo
-        // elegido, esto lanza y abortamos con mensaje claro.
-        try {
-            $doc = app(DocumentNumberer::class)
-                ->reserveForLocation((int) $this->location_id, $this->invoiceKind);
-        } catch (\Throwable $e) {
-            $this->paymentError = $e->getMessage();
+        // Al corregir no se pide consecutivo nuevo: la venta conserva el
+        // suyo. Un numero quemado por cada correccion deja huecos en la
+        // numeracion, y esa es la clase de cosa que la DIAN pregunta.
+        $corrigiendo = $this->facturaQueSeCorrige();
+
+        if ($this->corrigiendo_factura_id && ! $corrigiendo) {
+            $this->paymentError = 'La venta que estabas corrigiendo ya no está disponible.';
 
             return;
+        }
+
+        if ($corrigiendo) {
+            // Se vuelve a preguntar aqui, no solo al cargarla: entre que el
+            // cajero abrio la correccion y pulso cobrar pudo cerrarse el
+            // turno o irse la factura a la DIAN.
+            $impedimento = $this->porQueNoSePuedeCorregirAqui($corrigiendo);
+
+            if ($impedimento !== null) {
+                $this->paymentError = $impedimento;
+
+                return;
+            }
+
+            $doc = [
+                'prefix' => $corrigiendo->prefix,
+                'number' => $corrigiendo->number,
+                'kind' => $corrigiendo->invoice_kind,
+                'resolution_id' => $corrigiendo->dian_resolution_id,
+            ];
+        } else {
+            // Reservar consecutivo de la resolución (POS o Electrónica) ANTES
+            // de abrir la transacción. Si la sede no tiene resolución del tipo
+            // elegido, esto lanza y abortamos con mensaje claro.
+            try {
+                $doc = app(DocumentNumberer::class)
+                    ->reserveForLocation((int) $this->location_id, $this->invoiceKind);
+            } catch (\Throwable $e) {
+                $this->paymentError = $e->getMessage();
+
+                return;
+            }
         }
 
         // Distribuir descuento de promociones entre las lineas del cart.
@@ -2137,26 +2189,50 @@ class PosTerminal extends Page
         $cartForInvoice = $this->distributePromotionsDiscountInLines();
 
         try {
-            $invoice = DB::transaction(function () use ($doc, $cartForInvoice) {
+            $invoice = DB::transaction(function () use ($doc, $cartForInvoice, $corrigiendo) {
                 $companyId = Auth::user()->company_id;
                 $company = Company::find($companyId);
 
-                $invoice = SaleInvoice::create([
-                    'company_id' => $companyId,
-                    'location_id' => $this->location_id,
-                    'third_party_id' => $this->customer_id,
-                    'prefix' => $doc['prefix'],
-                    'number' => $doc['number'],
-                    'invoice_kind' => $doc['kind'],
-                    'dian_resolution_id' => $doc['resolution_id'],
-                    'date' => now()->toDateString(),
-                    'currency' => 'COP',
-                    'status' => 'draft',
-                    'payment_status' => 'pendiente',
-                    'created_by_user_id' => Auth::id(),
-                    'seller_user_id' => $this->seller_user_id ?: Auth::id(),
-                    'cash_register_session_id' => $this->session_id,
-                ]);
+                if ($corrigiendo) {
+                    // Aqui si se desarma la venta: se reversan el asiento, el
+                    // inventario y los pagos. Hasta este punto seguia intacta,
+                    // asi que una correccion abandonada no dejaba nada roto.
+                    app(SaleInvoiceEngine::class)->prepararParaEditar($corrigiendo);
+
+                    $invoice = $corrigiendo->fresh();
+
+                    // El carrito manda: lo que ya no esta en el, ya no esta en
+                    // la factura. Borrar y reescribir evita tener que casar
+                    // linea por linea cual cambio, cual se fue y cual es nueva.
+                    $invoice->lines()->delete();
+                    $invoice->retentions()->delete();
+
+                    $invoice->update([
+                        'third_party_id' => $this->customer_id,
+                        'seller_user_id' => $this->seller_user_id ?: Auth::id(),
+                        'cash_register_session_id' => $this->session_id,
+                    ]);
+
+                    $invoice = $invoice->fresh();
+                } else {
+                    $invoice = SaleInvoice::create([
+                        'company_id' => $companyId,
+                        'location_id' => $this->location_id,
+                        'third_party_id' => $this->customer_id,
+                        'prefix' => $doc['prefix'],
+                        'number' => $doc['number'],
+                        'invoice_kind' => $doc['kind'],
+                        'origin' => SaleInvoice::ORIGIN_POS,
+                        'dian_resolution_id' => $doc['resolution_id'],
+                        'date' => now()->toDateString(),
+                        'currency' => 'COP',
+                        'status' => 'draft',
+                        'payment_status' => 'pendiente',
+                        'created_by_user_id' => Auth::id(),
+                        'seller_user_id' => $this->seller_user_id ?: Auth::id(),
+                        'cash_register_session_id' => $this->session_id,
+                    ]);
+                }
 
                 $lineNum = 1;
                 foreach ($cartForInvoice as $line) {
@@ -2516,6 +2592,7 @@ class PosTerminal extends Page
                     'payment_status' => 'pendiente',
                     'created_by_user_id' => Auth::id(),
                     'seller_user_id' => $this->seller_user_id ?: Auth::id(),
+                    'origin' => SaleInvoice::ORIGIN_POS,
                 ]);
 
                 $lineNum = 1;
@@ -2758,15 +2835,21 @@ class PosTerminal extends Page
             return;
         }
 
-        $factura = $this->facturaDelTurno($invoiceId);
+        // Por empresa y no por turno: aqui tambien entra quien pulso
+        // «Corregir» desde el listado de facturas, que no tiene por que ser
+        // el cajero que la hizo. Lo que decide si puede o no es la guarda de
+        // abajo, que mira el turno de los pagos, no quien abre la pantalla.
+        $factura = SaleInvoice::query()
+            ->where('company_id', auth()->user()?->company_id)
+            ->find($invoiceId);
 
         if (! $factura) {
-            Notification::make()->title('Esa venta no es de este turno')->danger()->send();
+            Notification::make()->title('Esa venta no existe')->danger()->send();
 
             return;
         }
 
-        $motivo = app(SaleInvoiceEngine::class)->porQueNoSePuedeEditar($factura);
+        $motivo = $this->porQueNoSePuedeCorregirAqui($factura);
 
         if ($motivo !== null) {
             Notification::make()
@@ -2777,16 +2860,154 @@ class PosTerminal extends Page
             return;
         }
 
-        try {
-            app(SaleInvoiceEngine::class)->prepararParaEditar($factura);
+        // Se cierra el modal: el carrito que queda debajo ya es el de esta
+        // venta, y dejarlo abierto encima de lo que el cajero tiene que
+        // revisar no ayuda a nadie.
+        $this->showRecentSalesModal = false;
 
-            $this->redirect(SaleInvoiceResource::getUrl('edit', ['record' => $factura]));
-        } catch (\Throwable $e) {
-            Notification::make()
-                ->title('No se pudo preparar la correccion')
-                ->body($e->getMessage())
-                ->danger()->persistent()->send();
+        $this->cargarVentaEnCarrito($factura);
+    }
+
+    /**
+     * Por que esta venta no se puede corregir en el POS, o null si si.
+     *
+     * Suma a las reglas del motor una que solo existe aqui: el turno. Una
+     * venta cuyos pagos estan en un turno ABIERTO de otro cajero no se toca,
+     * porque corregirla mueve esa plata al turno de quien corrige y le deja
+     * al otro un arqueo que ya no cuadra. Si el turno esta cerrado, el motor
+     * ya lo impide por su cuenta.
+     */
+    public function porQueNoSePuedeCorregirAqui(SaleInvoice $factura): ?string
+    {
+        if ($motivo = app(SaleInvoiceEngine::class)->porQueNoSePuedeEditar($factura)) {
+            return $motivo;
         }
+
+        $turno = $factura->cash_register_session_id;
+
+        if ($turno && $turno !== $this->session_id) {
+            $deOtro = CashRegisterSession::query()
+                ->where('company_id', auth()->user()?->company_id)
+                ->where('status', CashRegisterSession::STATUS_OPEN)
+                ->find($turno);
+
+            if ($deOtro) {
+                return 'Esta venta pertenece a un turno de caja que sigue abierto y no es el tuyo. '
+                    .'Corregirla movería esa plata a tu caja y descuadraría la del otro cajero.';
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Pone una venta ya hecha en el carrito para corregirla.
+     *
+     * Antes esto mandaba al formulario completo de facturacion —cliente,
+     * impuestos, retenciones, resolucion— que es justo la pantalla de la que
+     * el POS existe para librar al cajero. Una venta hecha en el mostrador se
+     * corrige en el mostrador.
+     *
+     * No se le hace nada a la factura todavia: sigue contabilizada y pagada
+     * hasta que el cajero confirme el cobro corregido. Asi, si deja la
+     * correccion a medias —lo normal cuando entra el siguiente cliente—, la
+     * venta original sigue intacta.
+     */
+    public function cargarVentaEnCarrito(SaleInvoice $factura): void
+    {
+        $factura->loadMissing(['lines', 'retentions']);
+
+        $this->resetCart();
+
+        $this->corrigiendo_factura_id = $factura->id;
+        $this->customer_id = $factura->third_party_id;
+        $this->seller_user_id = $factura->seller_user_id ?: Auth::id();
+        $this->invoiceKind = $factura->invoice_kind ?: 'pos';
+
+        foreach ($factura->lines as $linea) {
+            $producto = $linea->product;
+
+            $this->cart[] = [
+                'product_id' => $linea->product_id,
+                'code' => $producto?->code,
+                'description' => $linea->description,
+                'image_path' => $producto?->image_path,
+                'quantity' => (float) $linea->quantity,
+                'unit_price' => (float) $linea->unit_price,
+                'discount_percentage' => (float) $linea->discount_percentage,
+                'discount_amount' => (float) $linea->discount_amount,
+                'tax_id' => $linea->tax_id,
+                'tax_rate' => (float) $linea->tax_rate,
+                'tax_amount' => (float) $linea->tax_amount,
+                'subtotal' => (float) $linea->subtotal,
+                'total' => (float) $linea->total,
+            ];
+        }
+
+        // Las retenciones no se reconstruyen desde la pantalla: vienen tal
+        // cual venian, porque dependen del cliente y no del carrito.
+        $this->retentions = $factura->retentions
+            ->map(fn ($r) => [
+                'tax_id' => $r->tax_id,
+                'tax_code' => $r->tax_code,
+                'tax_name' => $r->tax_name,
+                'tax_type' => $r->tax_type,
+                'base_amount' => (float) $r->base_amount,
+                'rate' => (float) $r->rate,
+                'amount' => (float) $r->amount,
+            ])->all();
+
+        $this->recalcularCarrito();
+
+        Notification::make()
+            ->title('Corrigiendo la venta '.$factura->fullNumber())
+            ->body('Ajusta el carrito y vuelve a cobrar. La venta conserva su número; '
+                .'mientras tanto sigue como estaba.')
+            ->warning()
+            ->send();
+    }
+
+    /**
+     * Deja la correccion sin tocar la venta.
+     *
+     * Existe porque sin ella la unica salida era cobrar: un carrito cargado
+     * con una venta ajena, sin forma visible de soltarlo, termina cobrado por
+     * encima de la venta buena.
+     */
+    public function cancelarCorreccion(): void
+    {
+        $this->corrigiendo_factura_id = null;
+        $this->resetCart();
+
+        Notification::make()
+            ->title('Corrección cancelada')
+            ->body('La venta quedó como estaba.')
+            ->success()
+            ->send();
+    }
+
+    /**
+     * La venta que se esta corrigiendo, o null si no hay ninguna.
+     *
+     * Re-consultada por company_id y no guardada en una propiedad: el id vive
+     * en el estado publico de Livewire, que viaja al navegador y vuelve, asi
+     * que no se puede confiar en el sin volver a acotarlo a la empresa.
+     */
+    public function facturaQueSeCorrige(): ?SaleInvoice
+    {
+        if (! $this->corrigiendo_factura_id) {
+            return null;
+        }
+
+        return SaleInvoice::query()
+            ->where('company_id', Auth::user()?->company_id)
+            ->find($this->corrigiendo_factura_id);
+    }
+
+    /** Lo mismo, para la pantalla. */
+    public function getFacturaEnCorreccionProperty(): ?SaleInvoice
+    {
+        return $this->facturaQueSeCorrige();
     }
 
     /** Solo facturas de ESTE turno: es lo que el cajero puede tocar. */
@@ -3078,6 +3299,11 @@ class PosTerminal extends Page
         $this->cartDiscountValue = 0.0;
         $this->cartDiscountPct = 0.0;
         $this->cartDiscountAmount = 0.0;
+
+        // Vaciar el carrito es empezar de cero, y eso incluye soltar la venta
+        // que se estaba corrigiendo. Si se quedara pegada, la siguiente venta
+        // del dia se cobraria encima de una factura vieja.
+        $this->corrigiendo_factura_id = null;
     }
 
     public function closePaymentModal(): void

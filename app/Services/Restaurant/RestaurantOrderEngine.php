@@ -1089,6 +1089,7 @@ class RestaurantOrderEngine
                     'prefix' => $doc['prefix'],
                     'number' => $doc['number'],
                     'invoice_kind' => $doc['kind'],
+                    'origin' => SaleInvoice::ORIGIN_RESTAURANT,
                     'dian_resolution_id' => $doc['resolution_id'],
                     'date' => now()->toDateString(),
                     'currency' => 'COP',

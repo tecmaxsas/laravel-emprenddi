@@ -2,6 +2,7 @@
 
 namespace App\Filament\App\Resources\SaleInvoiceResource\Pages;
 
+use App\Filament\App\Pages\PosTerminal;
 use App\Filament\App\Resources\CreditDebitNoteResource;
 use App\Filament\App\Resources\SaleInvoiceResource;
 use App\Models\CashRegisterSession;
@@ -287,13 +288,30 @@ class ViewSaleInvoice extends ViewRecord
                 ->tooltip(fn (SaleInvoice $record) => app(SaleInvoiceEngine::class)
                     ->porQueNoSePuedeEditar($record))
                 ->requiresConfirmation()
-                ->modalHeading('Devolver la factura a borrador para corregirla')
-                ->modalDescription('Se deshacen el inventario, los asientos y LOS PAGOS. Después de '
-                    .'corregirla hay que volver a contabilizarla y a registrar el cobro — así el '
-                    .'cierre de caja refleja la corrección.')
-                ->modalSubmitActionLabel('Devolver a borrador')
+                // Una venta del POS se corrige en el POS, y ahi no se devuelve
+                // nada a borrador por adelantado: el carrito se carga y la
+                // factura sigue intacta hasta que el cajero vuelva a cobrar.
+                // Por eso la advertencia no puede ser la misma para las dos.
+                ->modalHeading(fn (SaleInvoice $record) => $record->naceEnElPos()
+                    ? 'Corregir esta venta en el POS'
+                    : 'Devolver la factura a borrador para corregirla')
+                ->modalDescription(fn (SaleInvoice $record) => $record->naceEnElPos()
+                    ? 'Esta venta se hizo en el POS, así que se corrige ahí: se abre con el carrito '
+                        .'cargado. Mientras no vuelvas a cobrar, la venta sigue como está.'
+                    : 'Se deshacen el inventario, los asientos y LOS PAGOS. Después de '
+                        .'corregirla hay que volver a contabilizarla y a registrar el cobro — así el '
+                        .'cierre de caja refleja la corrección.')
+                ->modalSubmitActionLabel(fn (SaleInvoice $record) => $record->naceEnElPos()
+                    ? 'Abrir en el POS'
+                    : 'Devolver a borrador')
                 ->action(function (SaleInvoice $record) {
                     try {
+                        if ($record->naceEnElPos()) {
+                            $this->redirect(PosTerminal::getUrl(['corregir' => $record->id]));
+
+                            return;
+                        }
+
                         app(SaleInvoiceEngine::class)->prepararParaEditar($record);
 
                         Notification::make()

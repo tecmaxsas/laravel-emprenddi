@@ -68,6 +68,7 @@ class SaleInvoice extends Model
         'prefix',
         'number',
         'invoice_kind',
+        'origin',
         'date',
         'due_date',
         'payment_terms_days',
@@ -147,6 +148,58 @@ class SaleInvoice extends Model
     public function isPosInvoice(): bool
     {
         return $this->invoice_kind === 'pos';
+    }
+
+    /**
+     * De que pantalla nacio la factura.
+     *
+     * Distinto de `invoice_kind`, que dice que CLASE de documento es. Una
+     * venta del POS puede ser electronica y una del formulario puede ser un
+     * tiquete POS; confundir las dos preguntas manda al usuario a corregir su
+     * venta en una pantalla que no es la suya.
+     */
+    public const ORIGIN_POS = 'pos';
+
+    public const ORIGIN_FORM = 'form';
+
+    public const ORIGIN_RESTAURANT = 'restaurant';
+
+    public const ORIGIN_PARKING = 'parking';
+
+    public const ORIGIN_HOTEL = 'hotel';
+
+    public const ORIGIN_ORDER_TAKING = 'order_taking';
+
+    public const ORIGIN_DELIVERY_NOTE = 'delivery_note';
+
+    public const ORIGIN_QUOTATION = 'quotation';
+
+    public const ORIGINS = [
+        self::ORIGIN_POS => 'POS',
+        self::ORIGIN_FORM => 'Facturación',
+        self::ORIGIN_RESTAURANT => 'Restaurante',
+        self::ORIGIN_PARKING => 'Parqueadero',
+        self::ORIGIN_HOTEL => 'Hotel',
+        self::ORIGIN_ORDER_TAKING => 'Toma de pedidos',
+        self::ORIGIN_DELIVERY_NOTE => 'Remisión',
+        self::ORIGIN_QUOTATION => 'Cotización',
+    ];
+
+    /**
+     * ¿Se corrige en el POS?
+     *
+     * Solo las que nacieron ahi. Las de restaurante, parqueadero y hotel
+     * tienen sus propias pantallas y su propio flujo; mandarlas al POS de
+     * retail seria tan equivocado como mandar una del POS al formulario.
+     */
+    public function naceEnElPos(): bool
+    {
+        return $this->origin === self::ORIGIN_POS;
+    }
+
+    public function etiquetaDelOrigen(): string
+    {
+        return self::ORIGINS[$this->origin] ?? 'Facturación';
     }
 
     public function canResendToDian(): bool

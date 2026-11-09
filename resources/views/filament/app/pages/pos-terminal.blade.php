@@ -830,6 +830,25 @@
 
             {{-- =========== CARRITO =========== --}}
             <aside class="w-[30rem] shrink-0 min-h-0 bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-800 flex flex-col">
+                {{-- Corrigiendo una venta: tiene que verse, y tiene que haber
+                     salida. Un carrito cargado con una venta ajena y sin forma
+                     visible de soltarlo termina cobrado encima de la buena. --}}
+                @if($this->facturaEnCorreccion)
+                    <div class="shrink-0 px-3 py-2 bg-amber-100 dark:bg-amber-900/40 border-b-2 border-amber-400 dark:border-amber-600 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-amber-700 dark:text-amber-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                        <div class="flex-1 min-w-0">
+                            <div class="text-[10px] uppercase tracking-wider text-amber-700 dark:text-amber-400 font-bold">Corrigiendo</div>
+                            <div class="text-sm font-semibold text-amber-900 dark:text-amber-200 truncate">
+                                {{ $this->facturaEnCorreccion->fullNumber() }}
+                            </div>
+                        </div>
+                        <button type="button" wire:click="cancelarCorreccion"
+                                class="shrink-0 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-gray-800 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-gray-700 transition">
+                            Cancelar
+                        </button>
+                    </div>
+                @endif
+
                 {{-- Cliente — shrink-0 para que NO ceda espacio al carrito --}}
                 <div class="shrink-0 p-3 border-b border-gray-200 dark:border-gray-800 flex items-center gap-2">
                     <div class="w-9 h-9 rounded-lg bg-primary-500/15 text-primary-600 dark:text-primary-400 flex items-center justify-center shrink-0">
@@ -1364,7 +1383,7 @@
                 <div class="pos-modal-footer">
                     <button type="button" wire:click="closePaymentModal" class="pos-btn pos-btn-secondary">Cancelar</button>
                     <button type="button" wire:click="processSale" wire:loading.attr="disabled" class="pos-btn pos-btn-success">
-                        <span wire:loading.remove wire:target="processSale">✓ Confirmar venta</span>
+                        <span wire:loading.remove wire:target="processSale">✓ {{ $this->facturaEnCorreccion ? 'Guardar la corrección' : 'Confirmar venta' }}</span>
                         <span wire:loading wire:target="processSale">Procesando…</span>
                     </button>
                 </div>

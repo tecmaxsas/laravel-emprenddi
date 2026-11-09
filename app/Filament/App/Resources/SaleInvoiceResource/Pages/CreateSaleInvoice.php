@@ -4,6 +4,7 @@ namespace App\Filament\App\Resources\SaleInvoiceResource\Pages;
 
 use App\Filament\App\Resources\SaleInvoiceResource;
 use App\Models\Location;
+use App\Models\SaleInvoice;
 use App\Services\Sales\DocumentNumberer;
 use Filament\Actions;
 use Filament\Resources\Pages\CreateRecord;
@@ -105,6 +106,12 @@ class CreateSaleInvoice extends CreateRecord
         // reves se enviaria a la DIAN un consecutivo que no le corresponde.
         $data['invoice_kind'] = $doc['kind'];
         $data['dian_resolution_id'] = $doc['resolution_id'];
+
+        // Nacio aqui, en el formulario. Y es distinto de `invoice_kind`: desde
+        // aqui tambien se emiten documentos tipo POS, y eso no las convierte
+        // en ventas del POS. De esta marca depende a que pantalla se vuelve
+        // cuando haya que corregirla.
+        $data['origin'] = SaleInvoice::ORIGIN_FORM;
 
         // Recompute totals desde las líneas (defensa por si las hidden no se llenaron)
         $subtotal = 0;
