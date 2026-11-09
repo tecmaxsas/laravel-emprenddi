@@ -5,7 +5,10 @@ namespace App\Filament\App\Resources\PurchaseInvoiceResource\Pages;
 use App\Filament\App\Resources\PurchaseInvoiceResource;
 use App\Models\PurchaseInvoice;
 use App\Services\Purchases\PurchaseInvoiceEngine;
+use App\Support\CashSessionGate;
 use App\Support\LabelsSettings;
+use App\Support\PaymentAccountResolver;
+use App\Support\PaymentMethodOptions;
 use Filament\Actions;
 use Filament\Forms;
 use Filament\Infolists;
@@ -44,15 +47,73 @@ class ViewPurchaseInvoice extends ViewRecord
                     number_format((float) $record->total, 2),
                 ))
                 ->modalSubmitActionLabel('Contabilizar')
-                ->action(function (PurchaseInvoice $record) {
+                // EL PAGO, AQUI MISMO.
+                //
+                // Una compra que se paga de contado obligaba a tres pasos:
+                // contabilizar, abrir la pestaña de pagos y registrar. Y el
+                // usuario ya esta en el momento en que sabe si la pago o no:
+                // acaba de recibir la mercancia con la factura en la mano.
+                //
+                // Va como interruptor apagado, no como campos siempre
+                // visibles: la compra a credito es igual de corriente, y a
+                // quien no paga hoy no se le pone un formulario de pago
+                // delante.
+                ->fillForm(fn (PurchaseInvoice $record) => [
+                    'pagar_ahora' => false,
+                    'amount' => (float) ($record->net_payable ?: $record->total),
+                    'date' => now()->toDateString(),
+                    'payment_method' => 'cash',
+                ])
+                ->form([
+                    Forms\Components\Toggle::make('pagar_ahora')
+                        ->label('Registrar el pago ahora')
+                        // Un pago a proveedor exige turno de caja abierto: esa
+                        // plata sale del cajon y tiene que quedar en el arqueo
+                        // de alguien. Se dice AQUI y se bloquea el interruptor,
+                        // en vez de dejar que el usuario lo encienda, llene el
+                        // formulario y se entere despues de contabilizar —con
+                        // la factura ya posteada y el pago no—.
+                        ->disabled(fn () => CashSessionGate::currentOpenSession() === null)
+                        ->helperText(fn () => CashSessionGate::currentOpenSession() === null
+                            ? 'Para registrar el pago hay que tener una caja abierta: ese dinero sale del cajón '
+                                .'y tiene que quedar en el arqueo del turno.'
+                            : 'Si ya le pagaste al proveedor. Si es a crédito, déjalo apagado.')
+                        ->live(),
+
+                    Forms\Components\TextInput::make('amount')
+                        ->label('Valor pagado')
+                        ->numeric()
+                        ->prefix('$')
+                        ->required(fn (Forms\Get $get) => (bool) $get('pagar_ahora'))
+                        ->visible(fn (Forms\Get $get) => (bool) $get('pagar_ahora'))
+                        // Viene con el neto a pagar: el abono parcial existe,
+                        // pero lo corriente es pagar la factura completa y
+                        // volver a teclear la cifra es donde se escribe mal.
+                        ->helperText('Puedes dejarlo en el total o registrar un abono parcial.'),
+
+                    Forms\Components\DatePicker::make('date')
+                        ->label('Fecha del pago')
+                        ->required(fn (Forms\Get $get) => (bool) $get('pagar_ahora'))
+                        ->visible(fn (Forms\Get $get) => (bool) $get('pagar_ahora')),
+
+                    Forms\Components\Select::make('payment_method')
+                        ->label('Forma de pago')
+                        // Las de la empresa, no las de fabrica: si se paga por
+                        // Nequi y solo aparece «Otro», el arqueo deja de
+                        // cuadrar contra el extracto.
+                        ->options(fn () => PaymentMethodOptions::para())
+                        ->native(false)
+                        ->required(fn (Forms\Get $get) => (bool) $get('pagar_ahora'))
+                        ->visible(fn (Forms\Get $get) => (bool) $get('pagar_ahora')),
+
+                    Forms\Components\TextInput::make('reference')
+                        ->label('Referencia')
+                        ->helperText('Número de consignación, cheque, etc.')
+                        ->visible(fn (Forms\Get $get) => (bool) $get('pagar_ahora')),
+                ])
+                ->action(function (PurchaseInvoice $record, array $data) {
                     try {
                         $invoice = app(PurchaseInvoiceEngine::class)->post($record);
-                        Notification::make()
-                            ->success()
-                            ->title('Factura contabilizada')
-                            ->body("Asiento {$invoice->journalEntry?->fullNumber()} creado.")
-                            ->send();
-                        $this->refreshFormData(['status', 'payment_status', 'journal_entry_id']);
                     } catch (\Throwable $e) {
                         Notification::make()
                             ->danger()
@@ -60,7 +121,49 @@ class ViewPurchaseInvoice extends ViewRecord
                             ->body($e->getMessage())
                             ->persistent()
                             ->send();
+
+                        return;
                     }
+
+                    if (! ($data['pagar_ahora'] ?? false)) {
+                        Notification::make()
+                            ->success()
+                            ->title('Factura contabilizada')
+                            ->body("Asiento {$invoice->journalEntry?->fullNumber()} creado.")
+                            ->send();
+
+                        $this->refreshFormData(['status', 'payment_status', 'journal_entry_id']);
+
+                        return;
+                    }
+
+                    try {
+                        app(PurchaseInvoiceEngine::class)->addPayment($invoice->fresh(), [
+                            'amount' => round((float) $data['amount'], 2),
+                            'date' => $data['date'],
+                            'payment_method' => $data['payment_method'],
+                            'reference' => $data['reference'] ?? null,
+                            'account_id' => PaymentAccountResolver::forMethod($data['payment_method']),
+                        ]);
+
+                        Notification::make()
+                            ->success()
+                            ->title('Factura contabilizada y pagada')
+                            ->body("Asiento {$invoice->journalEntry?->fullNumber()} creado.")
+                            ->send();
+                    } catch (\Throwable $e) {
+                        // La factura SI quedo contabilizada: solo fallo el
+                        // pago. Se dice, porque si no el usuario vuelve a
+                        // intentar todo y termina con la compra duplicada.
+                        Notification::make()
+                            ->warning()
+                            ->title('Se contabilizó, pero el pago no se registró')
+                            ->body($e->getMessage().' Regístralo desde la pestaña de pagos.')
+                            ->persistent()
+                            ->send();
+                    }
+
+                    $this->refreshFormData(['status', 'payment_status', 'journal_entry_id', 'paid_amount']);
                 }),
 
             Actions\Action::make('printLabels')
