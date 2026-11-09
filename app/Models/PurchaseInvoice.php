@@ -204,6 +204,17 @@ class PurchaseInvoice extends Model
         return $netPayable - (float) $this->paid_amount;
     }
 
+    /**
+     * Faltaba, mientras `isPosted()` e `isCancelled()` ya estaban —y
+     * `SaleInvoice` si lo tiene—. Una familia de metodos a la que le falta uno
+     * obliga a escribir la comparacion a mano justo en el sitio donde alguien
+     * la va a escribir distinto.
+     */
+    public function isDraft(): bool
+    {
+        return $this->status === self::STATUS_DRAFT;
+    }
+
     public function isPosted(): bool
     {
         return $this->status === self::STATUS_POSTED;

@@ -33,6 +33,51 @@ class ViewPurchaseInvoice extends ViewRecord
             Actions\EditAction::make()
                 ->visible(fn (PurchaseInvoice $record) => $record->status === 'draft'),
 
+            // Corregir una compra ya contabilizada.
+            //
+            // Antes solo habia dos salidas: anularla y rehacerla, o dejarla
+            // mal. Y anular exige que no haya pagos —cosa que una compra de
+            // contado siempre tiene—, asi que en la practica se quedaba mal.
+            //
+            // El motivo por el que NO se puede, cuando no se puede, sale del
+            // mismo metodo que lo aplica.
+            Actions\Action::make('corregirFactura')
+                ->label('Corregir factura')
+                ->icon('heroicon-o-pencil-square')
+                ->color('warning')
+                ->visible(fn (PurchaseInvoice $record) => $record->isPosted()
+                    && auth()->user()?->can('purchases.post'))
+                ->disabled(fn (PurchaseInvoice $record) => app(PurchaseInvoiceEngine::class)
+                    ->porQueNoSePuedeEditar($record) !== null)
+                ->tooltip(fn (PurchaseInvoice $record) => app(PurchaseInvoiceEngine::class)
+                    ->porQueNoSePuedeEditar($record))
+                ->requiresConfirmation()
+                ->modalHeading('Devolver la compra a borrador para corregirla')
+                ->modalDescription('Se deshacen el inventario, los asientos y LOS PAGOS. Después de '
+                    .'corregirla hay que volver a contabilizarla y a registrar el pago — así el cierre '
+                    .'de caja refleja la corrección.')
+                ->modalSubmitActionLabel('Devolver a borrador')
+                ->action(function (PurchaseInvoice $record) {
+                    try {
+                        app(PurchaseInvoiceEngine::class)->prepararParaEditar($record);
+
+                        Notification::make()
+                            ->success()
+                            ->title('Compra devuelta a borrador')
+                            ->body('Corrige las líneas, contabilízala y vuelve a registrar el pago.')
+                            ->send();
+
+                        $this->redirect(PurchaseInvoiceResource::getUrl('edit', ['record' => $record]));
+                    } catch (\Throwable $e) {
+                        Notification::make()
+                            ->danger()
+                            ->title('No se puede corregir esta compra')
+                            ->body($e->getMessage())
+                            ->persistent()
+                            ->send();
+                    }
+                }),
+
             Actions\Action::make('post')
                 ->label('Contabilizar')
                 ->icon('heroicon-o-check-circle')

@@ -2,6 +2,7 @@
 
 namespace App\Services\Purchases;
 
+use App\Models\CashRegisterSession;
 use App\Models\Company;
 use App\Models\JournalEntry;
 use App\Models\JournalEntryLine;
@@ -11,6 +12,7 @@ use App\Models\PurchaseInvoice;
 use App\Services\Accounting\JournalEntryNumberer;
 use App\Services\Inventory\InventoryEngine;
 use App\Services\Invoicing\GlobalDiscount;
+use App\Services\Sales\PaymentDeleter;
 use App\Support\CashSessionGate;
 use App\Support\DefaultAccounts;
 use App\Support\PaymentMethodOptions;
@@ -461,42 +463,8 @@ class PurchaseInvoiceEngine
         }
 
         return DB::transaction(function () use ($invoice) {
-            // 1. Devuelve el inventario (return_to_supplier — salida del stock).
-            foreach ($invoice->lines as $line) {
-                if (! $line->product_id || ! $line->product?->track_inventory) {
-                    continue;
-                }
-                $this->inventory->addMovement(
-                    $line->product,
-                    $invoice->location,
-                    [
-                        'type' => 'return_to_supplier',
-                        'quantity' => (float) $line->quantity,
-                        'unit_cost' => (float) $line->unit_cost,
-                        'date' => now(),
-                        'reference_type' => PurchaseInvoice::class,
-                        'reference_id' => $invoice->id,
-                        'reference_number' => 'ANUL-'.$invoice->fullNumber(),
-                        'third_party_id' => $invoice->third_party_id,
-                        'description' => "Anulación compra {$invoice->fullNumber()}",
-                    ]
-                );
+            $this->revertirContabilizacion($invoice);
 
-                // Soft-delete de los seriales que entraron por esta línea
-                // (todos están in_stock — los vendidos los bloquea el guard
-                // de arriba). Quedan en deleted_at para auditoría.
-                if ($line->product->tracks_serials) {
-                    ProductSerial::query()
-                        ->where('purchase_invoice_line_id', $line->id)
-                        ->where('status', ProductSerial::STATUS_IN_STOCK)
-                        ->delete();
-                }
-            }
-
-            // 2. Asiento de reversa contable.
-            $this->createReversalJournalEntry($invoice);
-
-            // 3. Marca la factura como anulada.
             $invoice->update([
                 'status' => PurchaseInvoice::STATUS_CANCELLED,
                 'payment_status' => PurchaseInvoice::PAYMENT_CANCELADA,
@@ -507,9 +475,166 @@ class PurchaseInvoiceEngine
     }
 
     /**
-     * Crea un asiento de reversa: intercambia débito y crédito del
-     * asiento original para que el efecto contable neto sea cero.
+     * Deshace lo que hizo contabilizar: inventario, seriales y asiento.
+     *
+     * Lo usan la anulacion y la correccion. Estaba escrito dentro de
+     * `cancel()`, y dejarlo ahi habria significado copiarlo para poder
+     * corregir: dos reversas que empiezan iguales y se separan a la primera
+     * correccion que alguien haga en una sola. Es el mismo movimiento que ya
+     * se hizo en `SaleInvoiceEngine`.
      */
+    protected function revertirContabilizacion(PurchaseInvoice $invoice): void
+    {
+        // 1. Devuelve el inventario (return_to_supplier — salida del stock).
+        foreach ($invoice->lines as $line) {
+            if (! $line->product_id || ! $line->product?->track_inventory) {
+                continue;
+            }
+            $this->inventory->addMovement(
+                $line->product,
+                $invoice->location,
+                [
+                    'type' => 'return_to_supplier',
+                    'quantity' => (float) $line->quantity,
+                    'unit_cost' => (float) $line->unit_cost,
+                    'date' => now(),
+                    'reference_type' => PurchaseInvoice::class,
+                    'reference_id' => $invoice->id,
+                    'reference_number' => 'ANUL-'.$invoice->fullNumber(),
+                    'third_party_id' => $invoice->third_party_id,
+                    'description' => "Anulación compra {$invoice->fullNumber()}",
+                ]
+            );
+
+            // Soft-delete de los seriales que entraron por esta línea
+            // (todos están in_stock — los vendidos los bloquea el guard
+            // de arriba). Quedan en deleted_at para auditoría.
+            if ($line->product->tracks_serials) {
+                ProductSerial::query()
+                    ->where('purchase_invoice_line_id', $line->id)
+                    ->where('status', ProductSerial::STATUS_IN_STOCK)
+                    ->delete();
+            }
+        }
+
+        // 2. Asiento de reversa contable.
+        $this->createReversalJournalEntry($invoice);
+    }
+
+    /**
+     * Devuelve una factura de compra contabilizada a borrador para corregirla.
+     *
+     * POR QUE EXISTE. Hasta ahora, una compra contabilizada con un error
+     * —una cantidad mal digitada, un IVA equivocado— solo tenia dos salidas:
+     * anularla y rehacerla, o dejarla mal. Y anular exige que no haya pagos,
+     * cosa que una compra de contado siempre tiene. Asi que en la practica se
+     * quedaba mal.
+     *
+     * QUE DESHACE. Inventario, seriales, asiento contable y LOS PAGOS. Los
+     * pagos se borran a proposito: si el total cambia y el pago se queda como
+     * estaba, el arqueo del turno sigue mostrando la cifra vieja. Volver a
+     * registrarlo en el mismo turno es lo que hace que el cierre refleje la
+     * correccion.
+     *
+     * CUANDO NO SE PUEDE, y por que:
+     *
+     *  - Si es un DOCUMENTO SOPORTE ya aceptado por la DIAN. Ese documento
+     *    existe fuera de aqui; corregirlo por dentro deja los dos sistemas
+     *    hablando de cosas distintas.
+     *  - Si algun serial entrado por esta compra YA SE VENDIO. Devolver el
+     *    inventario dejaria esa venta apuntando a una unidad que, para el
+     *    sistema, nunca entro.
+     *  - Si algun pago esta en un turno de caja YA CERRADO. Ese arqueo lo
+     *    firmo alguien, y cambiarlo por detras lo convierte en un documento
+     *    que no significa nada.
+     */
+    public function prepararParaEditar(PurchaseInvoice $invoice): PurchaseInvoice
+    {
+        $impedimento = $this->porQueNoSePuedeEditar($invoice);
+
+        if ($impedimento !== null) {
+            throw new RuntimeException($impedimento);
+        }
+
+        $invoice->load(['retentions.tax', 'lines.product', 'supplier', 'location', 'journalEntry.lines', 'payments']);
+
+        return DB::transaction(function () use ($invoice) {
+            $this->revertirContabilizacion($invoice);
+            $this->revertirPagos($invoice);
+
+            $invoice->update([
+                'status' => PurchaseInvoice::STATUS_DRAFT,
+                'payment_status' => PurchaseInvoice::PAYMENT_PENDIENTE,
+                'paid_amount' => 0,
+                'posted_at' => null,
+                'posted_by_user_id' => null,
+                'journal_entry_id' => null,
+            ]);
+
+            return $invoice->fresh();
+        });
+    }
+
+    /**
+     * El motivo por el que esta compra no se puede corregir, o null si se puede.
+     *
+     * Devuelve el texto en vez de un booleano para que la pantalla muestre
+     * exactamente la misma razon que aplica el motor: un boton que se oculta
+     * «porque si» obliga a adivinar, y dos listas de condiciones se separan.
+     */
+    public function porQueNoSePuedeEditar(PurchaseInvoice $invoice): ?string
+    {
+        if ($invoice->status === PurchaseInvoice::STATUS_DRAFT) {
+            return null;
+        }
+
+        if (! $invoice->isPosted()) {
+            return 'Solo se puede corregir una factura en borrador o contabilizada.';
+        }
+
+        if ($invoice->isSupportDocument()
+            && ($invoice->dian_status === 'accepted' || ! empty($invoice->cufe))) {
+            return 'Este documento soporte ya fue aceptado por la DIAN: existe fuera de aqui y no se '
+                .'puede cambiar. Lo que corresponde es una nota de ajuste.';
+        }
+
+        $vendidos = ProductSerial::query()
+            ->whereIn('purchase_invoice_line_id', $invoice->lines->pluck('id'))
+            ->where('status', ProductSerial::STATUS_SOLD)
+            ->exists();
+
+        if ($vendidos) {
+            return 'Hay seriales entrados por esta compra que ya se vendieron. Devolver el inventario '
+                .'dejaria esa venta apuntando a una unidad que, para el sistema, nunca entro. Anula '
+                .'primero esas ventas.';
+        }
+
+        $turnoCerrado = $invoice->payments()
+            ->whereNotNull('cash_register_session_id')
+            ->whereHas('cashSession', fn ($q) => $q->where('status', '!=', CashRegisterSession::STATUS_OPEN))
+            ->exists();
+
+        if ($turnoCerrado) {
+            return 'Los pagos de esta compra estan en un turno de caja ya cerrado. Ese arqueo lo firmo '
+                .'alguien, y cambiarlo por detras lo volveria un documento que no significa nada.';
+        }
+
+        return null;
+    }
+
+    /**
+     * Borra los pagos de la compra reversando sus asientos.
+     *
+     * No se conservan: con el total cambiado, un pago viejo deja el arqueo
+     * mostrando una cifra que ya no corresponde a nada.
+     */
+    protected function revertirPagos(PurchaseInvoice $invoice): void
+    {
+        foreach ($invoice->payments as $payment) {
+            app(PaymentDeleter::class)->delete($payment, 'Reversado al corregir la compra');
+        }
+    }
+
     protected function createReversalJournalEntry(PurchaseInvoice $invoice): JournalEntry
     {
         $original = $invoice->journalEntry;
