@@ -124,32 +124,22 @@ class EditSaleInvoice extends EditRecord
             ]);
         }
 
-        $subtotal = 0;
-        $discount = 0;
-        $tax = 0;
-        $total = 0;
-        $lineNum = 1;
-
-        $data['lines'] = collect($data['lines'] ?? [])->map(function ($line) use (&$lineNum, &$subtotal, &$discount, &$tax, &$total) {
-            $line['line_number'] = $lineNum++;
-            $subtotal += (float) ($line['subtotal'] ?? 0);
-            $discount += (float) ($line['discount_amount'] ?? 0);
-            $tax += (float) ($line['tax_amount'] ?? 0);
-            $total += (float) ($line['total'] ?? 0);
-
-            return $line;
-        })->all();
-
-        $retentionTotal = collect($data['retentions'] ?? [])
-            ->sum(fn ($r) => (float) ($r['amount'] ?? 0));
-
-        $data['subtotal'] = $subtotal;
-        $data['discount_total'] = $discount;
-        $data['tax_total'] = $tax;
-        $data['total'] = $total;
-        $data['retention_total'] = $retentionTotal;
-        $data['net_payable'] = $total - $retentionTotal;
+        // Los totales NO se calculan aqui.
+        //
+        // El repetidor de lineas usa ->relationship('lines'), y Filament saca
+        // esos campos del arreglo antes de guardar para persistirlos aparte.
+        // O sea que `$data['lines']` llega VACIO: la suma recorria la nada y
+        // escribia ceros. Editar una factura la dejaba en $0 con sus lineas
+        // intactas —y al volver a contabilizarla, con un asiento de cero—.
+        //
+        // Se recalculan despues, desde las lineas ya guardadas, con el mismo
+        // metodo del motor que usa post(). Una sola version de la suma.
 
         return $data;
+    }
+
+    protected function afterSave(): void
+    {
+        app(SaleInvoiceEngine::class)->recalculateTotals($this->record);
     }
 }

@@ -5,6 +5,7 @@ namespace App\Filament\App\Resources\PurchaseInvoiceResource\Pages;
 use App\Filament\App\Resources\PurchaseInvoiceResource;
 use App\Models\Company;
 use App\Models\PurchaseInvoice;
+use App\Services\Purchases\PurchaseInvoiceEngine;
 use App\Services\Purchases\PurchaseInvoiceNumberer;
 use App\Support\CashSessionGate;
 use Filament\Actions;
@@ -104,28 +105,22 @@ class CreatePurchaseInvoice extends CreateRecord
         $prefix = $data['prefix'] ?? 'FC';
         $data['number'] = app(PurchaseInvoiceNumberer::class)->next($company, $prefix);
 
-        // Recompute totals desde las líneas (defensa por si las hidden no se llenaron)
-        $subtotal = 0;
-        $discount = 0;
-        $tax = 0;
-        $total = 0;
-        $lineNum = 1;
-
-        $data['lines'] = collect($data['lines'] ?? [])->map(function ($line) use (&$lineNum, &$subtotal, &$discount, &$tax, &$total) {
-            $line['line_number'] = $lineNum++;
-            $subtotal += (float) ($line['subtotal'] ?? 0);
-            $discount += (float) ($line['discount_amount'] ?? 0);
-            $tax += (float) ($line['tax_amount'] ?? 0);
-            $total += (float) ($line['total'] ?? 0);
-
-            return $line;
-        })->all();
-
-        $data['subtotal'] = $subtotal;
-        $data['discount_total'] = $discount;
-        $data['tax_total'] = $tax;
-        $data['total'] = $total;
+        // Los totales NO se calculan aqui.
+        //
+        // El repetidor de lineas usa ->relationship('lines'), y Filament saca
+        // esos campos del arreglo antes de guardar para persistirlos aparte.
+        // O sea que `$data['lines']` llega VACIO: la suma recorria la nada y
+        // escribia ceros. La factura quedaba guardada en $0 con sus lineas
+        // intactas, y al contabilizarla generaba un asiento de cero.
+        //
+        // Se recalculan despues, desde las lineas ya guardadas, con el mismo
+        // metodo del motor que usa post(). Una sola version de la suma.
 
         return $data;
+    }
+
+    protected function afterCreate(): void
+    {
+        app(PurchaseInvoiceEngine::class)->recalculateTotals($this->record);
     }
 }

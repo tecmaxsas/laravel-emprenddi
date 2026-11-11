@@ -4,11 +4,14 @@ namespace App\Services\Purchases;
 
 use App\Models\CashRegisterSession;
 use App\Models\Company;
+use App\Models\InventoryMovement;
 use App\Models\JournalEntry;
 use App\Models\JournalEntryLine;
 use App\Models\Payment;
+use App\Models\Product;
 use App\Models\ProductSerial;
 use App\Models\PurchaseInvoice;
+use App\Models\PurchaseInvoiceLine;
 use App\Services\Accounting\JournalEntryNumberer;
 use App\Services\Inventory\InventoryEngine;
 use App\Services\Invoicing\GlobalDiscount;
@@ -53,37 +56,14 @@ class PurchaseInvoiceEngine
         return DB::transaction(function () use ($invoice) {
             $this->recalculateTotals($invoice);
 
-            // 1. Inventory movements por cada línea con producto que controla inventario
+            // 1. Inventario: solo la DIFERENCIA con lo que esta misma factura
+            //    ya tenga puesto. En la primera contabilizacion esa diferencia
+            //    es la cantidad entera; al corregir, es lo que cambio.
+            $this->aplicarInventario($invoice);
+
             foreach ($invoice->lines as $line) {
-                if (! $line->product_id || ! $line->product?->track_inventory) {
-                    continue;
-                }
-
-                // Costo unitario para inventario = unit_cost neto (sin IVA descontable)
-                $movement = $this->inventory->addMovement(
-                    $line->product,
-                    $invoice->location,
-                    [
-                        'type' => 'purchase',
-                        'quantity' => (float) $line->quantity,
-                        'unit_cost' => (float) $line->unit_cost,
-                        'date' => $invoice->date,
-                        'reference_type' => PurchaseInvoice::class,
-                        'reference_id' => $invoice->id,
-                        'reference_number' => $invoice->fullNumber(),
-                        'third_party_id' => $invoice->third_party_id,
-                        'description' => "Compra {$invoice->fullNumber()} — {$invoice->supplier->name}",
-                    ]
-                );
-
-                $line->update(['inventory_movement_id' => $movement->id]);
-
-                // Seriales: si el producto los maneja, crear un ProductSerial
-                // por cada string capturado en la línea. La validación
-                // qty == count(serials) se hace acá (no en el form) para que
-                // también atrape ediciones via API y la UI no pueda saltarla.
-                if ($line->product->tracks_serials) {
-                    $this->createSerialsForPurchaseLine($invoice, $line);
+                if ($line->product_id && $line->product?->track_inventory && $line->product->tracks_serials) {
+                    $this->sincronizarSeriales($invoice, $line);
                 }
             }
 
@@ -432,6 +412,235 @@ class PurchaseInvoiceEngine
      * contable del original. Bloqueada si la factura tiene pagos
      * registrados — los pagos deben reversarse primero.
      */
+    /**
+     * Lleva el inventario a lo que la factura dice AHORA, moviendo solo la
+     * diferencia.
+     *
+     * Antes, corregir una compra deshacia todo el inventario y lo volvia a
+     * aplicar. El resultado final era el mismo, pero el paso intermedio no:
+     * una compra de 6 unidades con 1 ya vendida bajaba a -1 antes de volver a
+     * subir, y el motor de inventario —con razon— se negaba. Asi que una venta
+     * de una sola unidad bloqueaba la correccion de la factura ENTERA, aunque
+     * lo que se fuera a cambiar fuera otra linea que nadie habia tocado.
+     *
+     * Moviendo solo la diferencia, una linea que no cambia no genera ningun
+     * movimiento y por tanto no puede fallar. Solo se topa con el inventario
+     * quien REBAJA una cantidad por debajo de lo que queda en existencia, que
+     * es cuando el problema es de verdad.
+     *
+     * De paso arregla algo que tampoco estaba bien: mientras la compra estaba
+     * en borrador para corregirla, su mercancia desaparecia del stock aunque
+     * siguiera fisicamente en la bodega.
+     */
+    protected function aplicarInventario(PurchaseInvoice $invoice): void
+    {
+        $yaAplicado = $this->inventarioYaAplicado($invoice);
+
+        $ahora = [];
+        $lineasPorProducto = [];
+
+        foreach ($invoice->lines as $linea) {
+            if (! $linea->product_id || ! $linea->product?->track_inventory) {
+                continue;
+            }
+
+            $id = (int) $linea->product_id;
+            // Varias lineas del mismo producto se suman: al inventario le da
+            // igual en cuantos renglones venga.
+            $ahora[$id] = ($ahora[$id] ?? 0) + (float) $linea->quantity;
+            $lineasPorProducto[$id][] = $linea;
+        }
+
+        $productos = array_unique(array_merge(array_keys($ahora), array_keys($yaAplicado)));
+
+        foreach ($productos as $productoId) {
+            $productoId = (int) $productoId;
+            $diferencia = round(($ahora[$productoId] ?? 0) - ($yaAplicado[$productoId] ?? 0), 4);
+
+            if (abs($diferencia) < 0.0001) {
+                continue;
+            }
+
+            $lineas = $lineasPorProducto[$productoId] ?? [];
+            $producto = $lineas[0]->product ?? Product::withoutGlobalScopes()->find($productoId);
+
+            if (! $producto) {
+                continue;
+            }
+
+            $esEntrada = $diferencia > 0;
+            $esCorreccion = array_key_exists($productoId, $yaAplicado);
+
+            if (! $esEntrada) {
+                $this->exigirQueHayaParaRebajar($invoice, $producto, abs($diferencia));
+            }
+
+            $movimiento = $this->inventory->addMovement(
+                $producto,
+                $invoice->location,
+                [
+                    'type' => $esEntrada ? 'purchase' : 'return_to_supplier',
+                    'quantity' => abs($diferencia),
+                    // Costo unitario para inventario = unit_cost neto (sin IVA
+                    // descontable). Si el producto ya no esta en la factura, se
+                    // usa el costo con el que entro.
+                    'unit_cost' => (float) ($lineas[0]->unit_cost
+                        ?? $this->inventory->currentStock($productoId, (int) $invoice->location_id)),
+                    // La entrada original lleva la fecha de la factura, que
+                    // es cuando llego la mercancia. Una CORRECCION lleva la de
+                    // hoy, porque es cuando ocurre.
+                    //
+                    // No es un detalle de redaccion: el saldo sale del ultimo
+                    // movimiento ordenado por fecha, asi que una correccion
+                    // fechada ayer queda ANTES de las ventas de hoy y el saldo
+                    // la ignora. La mercancia entraba y el stock no se movia.
+                    'date' => $esCorreccion ? now() : $invoice->date,
+                    'reference_type' => PurchaseInvoice::class,
+                    'reference_id' => $invoice->id,
+                    'reference_number' => $invoice->fullNumber(),
+                    'third_party_id' => $invoice->third_party_id,
+                    'description' => $esCorreccion
+                        ? "Corrección compra {$invoice->fullNumber()} — {$invoice->supplier->name}"
+                        : "Compra {$invoice->fullNumber()} — {$invoice->supplier->name}",
+                ]
+            );
+
+            foreach ($lineas as $linea) {
+                $linea->update(['inventory_movement_id' => $movimiento->id]);
+            }
+        }
+    }
+
+    /**
+     * Lo que ESTA factura ya tiene puesto en el inventario, por producto.
+     *
+     * Se lee de los propios movimientos y no de una columna aparte: son ellos
+     * los que mandan en el saldo, asi que preguntarles es preguntarle a la
+     * verdad. Una bitacora paralela se desincroniza y nadie se entera.
+     *
+     * `quantity` viene con signo —negativa en las salidas—, de modo que la
+     * suma ya es el neto.
+     *
+     * @return array<int, float>
+     */
+    protected function inventarioYaAplicado(PurchaseInvoice $invoice): array
+    {
+        return InventoryMovement::withoutGlobalScopes()
+            ->where('company_id', $invoice->company_id)
+            ->where('reference_type', PurchaseInvoice::class)
+            ->where('reference_id', $invoice->id)
+            ->groupBy('product_id')
+            ->selectRaw('product_id, SUM(quantity) as neto')
+            ->pluck('neto', 'product_id')
+            ->map(fn ($neto) => (float) $neto)
+            ->all();
+    }
+
+    /** Rebajar una cantidad exige que la mercancia siga ahi. */
+    protected function exigirQueHayaParaRebajar(PurchaseInvoice $invoice, Product $producto, float $cantidad): void
+    {
+        $disponible = $this->inventory->currentStock((int) $producto->id, (int) $invoice->location_id);
+
+        if ($disponible + 0.0001 >= $cantidad) {
+            return;
+        }
+
+        throw new RuntimeException(sprintf(
+            'No se puede bajar la cantidad de «%s»: habría que sacar %s del inventario y en %s '
+            .'solo quedan %s. El resto ya se vendió o se movió. Las demás líneas de esta factura '
+            .'sí se pueden corregir; para ajustar la cantidad de esta usa Compras → Devoluciones.',
+            $producto->name,
+            $this->enCantidad($cantidad),
+            $invoice->location?->name ?? 'la sede',
+            $this->enCantidad($disponible),
+        ));
+    }
+
+    /**
+     * Pone los seriales de la linea a la par de lo capturado.
+     *
+     * Diferencial, por lo mismo que el inventario: los que siguen no se tocan,
+     * se crean los nuevos y se quitan los que sobran. Y si uno de los que
+     * sobran ya se vendio, se dice CUAL, en vez de bloquear la factura entera.
+     */
+    protected function sincronizarSeriales(PurchaseInvoice $invoice, PurchaseInvoiceLine $linea): void
+    {
+        $capturados = array_values(array_unique(array_filter(array_map(
+            fn ($s) => trim((string) $s),
+            is_array($linea->serials ?? []) ? $linea->serials : [],
+        ))));
+
+        $cantidad = (int) round((float) $linea->quantity);
+
+        if (count($capturados) !== $cantidad) {
+            throw new RuntimeException(sprintf(
+                'La línea de "%s" tiene cantidad %d pero capturaste %d seriales. Deben coincidir.',
+                $linea->product?->name ?? 'producto',
+                $cantidad,
+                count($capturados),
+            ));
+        }
+
+        $existentes = ProductSerial::query()
+            ->where('purchase_invoice_line_id', $linea->id)
+            ->get();
+
+        foreach ($existentes as $serial) {
+            if (in_array($serial->serial_number, $capturados, true)) {
+                continue;
+            }
+
+            if ($serial->status !== ProductSerial::STATUS_IN_STOCK) {
+                throw new RuntimeException(sprintf(
+                    'El serial %s de «%s» ya no está en inventario (%s), así que no se puede quitar '
+                    .'de la factura. Las demás líneas sí se pueden corregir.',
+                    $serial->serial_number,
+                    $linea->product?->name ?? 'producto',
+                    $serial->status,
+                ));
+            }
+
+            // Queda en deleted_at para auditoria: desaparece del inventario,
+            // no de la historia.
+            $serial->delete();
+        }
+
+        $yaEstaban = $existentes->pluck('serial_number')->all();
+        $nuevos = array_values(array_diff($capturados, $yaEstaban));
+
+        if ($nuevos === []) {
+            return;
+        }
+
+        // Choque con seriales de otra compra o de otro producto. El unique
+        // (company_id, serial_number) lo atrapa al insert, pero el mensaje de
+        // la base no le dice nada a nadie.
+        $repetidos = ProductSerial::query()
+            ->where('company_id', $invoice->company_id)
+            ->whereIn('serial_number', $nuevos)
+            ->pluck('serial_number')
+            ->all();
+
+        if ($repetidos !== []) {
+            throw new RuntimeException(
+                'Los siguientes seriales ya existen en tu inventario y no pueden duplicarse: '
+                .implode(', ', $repetidos)
+            );
+        }
+
+        foreach ($nuevos as $serial) {
+            ProductSerial::create([
+                'company_id' => $invoice->company_id,
+                'product_id' => $linea->product_id,
+                'location_id' => $invoice->location_id,
+                'serial_number' => $serial,
+                'status' => ProductSerial::STATUS_IN_STOCK,
+                'purchase_invoice_line_id' => $linea->id,
+                'received_at' => $invoice->date ?? now(),
+            ]);
+        }
+    }
+
     public function cancel(PurchaseInvoice $invoice): PurchaseInvoice
     {
         if (! $invoice->isPosted()) {
@@ -462,6 +671,13 @@ class PurchaseInvoiceEngine
             );
         }
 
+        // Anular tambien devuelve el inventario, asi que choca con lo mismo
+        // que corregir cuando la mercancia ya salio. El mensaje y la regla son
+        // los mismos: escribirlos dos veces es como se separan.
+        if ($sinStock = $this->porQueNoSePuedeDevolverElInventario($invoice)) {
+            throw new RuntimeException($sinStock);
+        }
+
         return DB::transaction(function () use ($invoice) {
             $this->revertirContabilizacion($invoice);
 
@@ -485,7 +701,24 @@ class PurchaseInvoiceEngine
      */
     protected function revertirContabilizacion(PurchaseInvoice $invoice): void
     {
-        // 1. Devuelve el inventario (return_to_supplier — salida del stock).
+        $this->revertirInventario($invoice);
+
+        // 2. Asiento de reversa contable.
+        $this->createReversalJournalEntry($invoice);
+    }
+
+    /**
+     * Saca del stock todo lo que esta compra metio.
+     *
+     * Solo la ANULACION hace esto. Corregir ya no: ahi el inventario se lleva
+     * a la cifra nueva moviendo la diferencia (ver `aplicarInventario`), que
+     * es lo que permite corregir una factura aunque parte de su mercancia ya
+     * se haya vendido. Anular es otra cosa: la compra entera deja de existir y
+     * la mercancia tiene que salir completa, asi que aqui el bloqueo por
+     * existencias si es de toda la factura.
+     */
+    protected function revertirInventario(PurchaseInvoice $invoice): void
+    {
         foreach ($invoice->lines as $line) {
             if (! $line->product_id || ! $line->product?->track_inventory) {
                 continue;
@@ -516,9 +749,6 @@ class PurchaseInvoiceEngine
                     ->delete();
             }
         }
-
-        // 2. Asiento de reversa contable.
-        $this->createReversalJournalEntry($invoice);
     }
 
     /**
@@ -530,20 +760,21 @@ class PurchaseInvoiceEngine
      * cosa que una compra de contado siempre tiene. Asi que en la practica se
      * quedaba mal.
      *
-     * QUE DESHACE. Inventario, seriales, asiento contable y LOS PAGOS. Los
-     * pagos se borran a proposito: si el total cambia y el pago se queda como
-     * estaba, el arqueo del turno sigue mostrando la cifra vieja. Volver a
-     * registrarlo en el mismo turno es lo que hace que el cierre refleje la
-     * correccion.
+     * QUE DESHACE. El asiento contable y LOS PAGOS. Los pagos se borran a
+     * proposito: si el total cambia y el pago se queda como estaba, el arqueo
+     * del turno sigue mostrando la cifra vieja. Volver a registrarlo en el
+     * mismo turno es lo que hace que el cierre refleje la correccion.
+     *
+     * QUE NO DESHACE: el inventario. La mercancia sigue en la bodega mientras
+     * se corrige, y al volver a contabilizar solo se mueve la diferencia. Asi
+     * una linea que no cambia no genera ningun movimiento —y por tanto no
+     * puede fallar porque parte de la compra ya se haya vendido—.
      *
      * CUANDO NO SE PUEDE, y por que:
      *
      *  - Si es un DOCUMENTO SOPORTE ya aceptado por la DIAN. Ese documento
      *    existe fuera de aqui; corregirlo por dentro deja los dos sistemas
      *    hablando de cosas distintas.
-     *  - Si algun serial entrado por esta compra YA SE VENDIO. Devolver el
-     *    inventario dejaria esa venta apuntando a una unidad que, para el
-     *    sistema, nunca entro.
      *  - Si algun pago esta en un turno de caja YA CERRADO. Ese arqueo lo
      *    firmo alguien, y cambiarlo por detras lo convierte en un documento
      *    que no significa nada.
@@ -559,7 +790,10 @@ class PurchaseInvoiceEngine
         $invoice->load(['retentions.tax', 'lines.product', 'supplier', 'location', 'journalEntry.lines', 'payments']);
 
         return DB::transaction(function () use ($invoice) {
-            $this->revertirContabilizacion($invoice);
+            // El inventario NO se deshace: la mercancia sigue en la bodega
+            // mientras se corrige, y al volver a contabilizar solo se mueve la
+            // diferencia. Lo unico que se reversa aqui es la contabilidad.
+            $this->createReversalJournalEntry($invoice);
             $this->revertirPagos($invoice);
 
             $invoice->update([
@@ -573,6 +807,78 @@ class PurchaseInvoiceEngine
 
             return $invoice->fresh();
         });
+    }
+
+    /**
+     * Lo que impide devolver el inventario de esta compra, o null si se puede.
+     *
+     * Corregir y anular empiezan por lo mismo: sacar del stock lo que esta
+     * compra metio. Si entre tanto esas unidades se vendieron o se movieron a
+     * otra sede, ya no estan para sacarlas, y el motor de inventario se niega
+     * —con razon— a dejar las existencias en negativo.
+     *
+     * Hasta ahora eso reventaba DESPUES de pulsar el boton, con el mensaje
+     * crudo del motor de inventario y sin decir que hacer. Preguntarlo antes
+     * permite apagar el boton y explicar la salida que si existe.
+     *
+     * Ojo con las lineas repetidas: dos lineas del mismo producto se suman,
+     * porque la reversa saca las dos. Comprobandolas por separado, una compra
+     * de 3+3 con 4 en existencia pasaria el filtro dos veces y fallaria igual.
+     */
+    public function porQueNoSePuedeDevolverElInventario(PurchaseInvoice $invoice): ?string
+    {
+        $invoice->loadMissing(['lines.product', 'location']);
+
+        $deInventario = $invoice->lines
+            ->filter(fn ($linea) => $linea->product_id && $linea->product?->track_inventory);
+
+        if ($deInventario->isEmpty()) {
+            return null;
+        }
+
+        $sede = (int) $invoice->location_id;
+
+        $existencias = $this->inventory->stockForProducts(
+            $deInventario->pluck('product_id')->unique()->map(fn ($id) => (int) $id)->values()->all(),
+            $sede,
+        );
+
+        $aDevolver = [];
+
+        foreach ($deInventario as $linea) {
+            $id = (int) $linea->product_id;
+            $aDevolver[$id] = ($aDevolver[$id] ?? 0) + (float) $linea->quantity;
+        }
+
+        foreach ($aDevolver as $productoId => $cantidad) {
+            $disponible = (float) ($existencias[$productoId] ?? 0);
+
+            if ($disponible + 0.0001 >= $cantidad) {
+                continue;
+            }
+
+            $producto = $deInventario->firstWhere('product_id', $productoId)?->product;
+
+            return sprintf(
+                'Ya salieron unidades que entraron por esta compra. De «%s» entraron %s y en %s '
+                .'quedan %s, así que devolver el inventario dejaría las existencias en negativo: '
+                .'el sistema diría que nunca recibiste algo que sí vendiste. Para corregir la '
+                .'cantidad usa Compras → Devoluciones, que ajusta el saldo con el proveedor sin '
+                .'inventar unidades.',
+                $producto?->name ?? 'un producto',
+                $this->enCantidad($cantidad),
+                $invoice->location?->name ?? 'la sede',
+                $this->enCantidad($disponible),
+            );
+        }
+
+        return null;
+    }
+
+    /** Cantidades sin decimales de relleno: «6», no «6.0000». */
+    protected function enCantidad(float $cantidad): string
+    {
+        return rtrim(rtrim(number_format($cantidad, 2, ',', '.'), '0'), ',');
     }
 
     /**
@@ -598,16 +904,18 @@ class PurchaseInvoiceEngine
                 .'puede cambiar. Lo que corresponde es una nota de ajuste.';
         }
 
-        $vendidos = ProductSerial::query()
-            ->whereIn('purchase_invoice_line_id', $invoice->lines->pluck('id'))
-            ->where('status', ProductSerial::STATUS_SOLD)
-            ->exists();
-
-        if ($vendidos) {
-            return 'Hay seriales entrados por esta compra que ya se vendieron. Devolver el inventario '
-                .'dejaria esa venta apuntando a una unidad que, para el sistema, nunca entro. Anula '
-                .'primero esas ventas.';
-        }
+        // Aqui NO se pregunta por el inventario ni por los seriales.
+        //
+        // Antes si: si algo de esta compra ya se habia vendido, se bloqueaba
+        // la factura ENTERA. Pero corregir ya no deshace el inventario, lo
+        // lleva a la cifra nueva moviendo la diferencia, asi que una linea que
+        // no se toca no mueve nada. Lo unico que puede chocar es rebajar una
+        // cantidad por debajo de lo que queda, y eso se sabe cuando se sabe
+        // QUE cambio: al volver a contabilizar, y por linea.
+        //
+        // Bloquear antes obligaba a adivinar lo que el usuario iba a cambiar,
+        // y adivinaba mal: le impedia corregir el costo de un producto porque
+        // otro distinto se habia vendido.
 
         $turnoCerrado = $invoice->payments()
             ->whereNotNull('cash_register_session_id')
@@ -676,56 +984,5 @@ class PurchaseInvoiceEngine
         }
 
         return $reversal;
-    }
-
-    /**
-     * Crea un ProductSerial in_stock por cada string de la línea. Valida
-     * cantidad y unicidad dentro de la empresa antes de insertar.
-     */
-    protected function createSerialsForPurchaseLine(PurchaseInvoice $invoice, PurchaseInvoiceLine $line): void
-    {
-        $raw = $line->serials ?? [];
-        $serials = array_values(array_unique(array_filter(array_map(
-            fn ($s) => trim((string) $s),
-            is_array($raw) ? $raw : [],
-        ))));
-
-        $qty = (int) round((float) $line->quantity);
-        if (count($serials) !== $qty) {
-            throw new RuntimeException(sprintf(
-                'La línea de "%s" tiene cantidad %d pero capturaste %d seriales. Deben coincidir.',
-                $line->product?->name ?? 'producto',
-                $qty,
-                count($serials),
-            ));
-        }
-
-        // Choque con seriales ya existentes en la empresa (otro producto u otra
-        // compra). El unique (company_id, serial_number) lo atrapa al insert
-        // pero damos un error más útil acá.
-        $existing = ProductSerial::query()
-            ->where('company_id', $invoice->company_id)
-            ->whereIn('serial_number', $serials)
-            ->pluck('serial_number')
-            ->all();
-        if (! empty($existing)) {
-            throw new RuntimeException(
-                'Los siguientes seriales ya existen en tu inventario y no pueden duplicarse: '
-                .implode(', ', $existing)
-            );
-        }
-
-        $now = now();
-        foreach ($serials as $serial) {
-            ProductSerial::create([
-                'company_id' => $invoice->company_id,
-                'product_id' => $line->product_id,
-                'location_id' => $invoice->location_id,
-                'serial_number' => $serial,
-                'status' => ProductSerial::STATUS_IN_STOCK,
-                'purchase_invoice_line_id' => $line->id,
-                'received_at' => $invoice->date ?? $now,
-            ]);
-        }
     }
 }

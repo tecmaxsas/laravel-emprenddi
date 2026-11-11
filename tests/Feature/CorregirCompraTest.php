@@ -94,8 +94,21 @@ class CorregirCompraTest extends TestCase
         $this->assertNull($editable->journal_entry_id);
     }
 
-    /** El inventario sale: lo que no se compró no puede quedar cargado. */
-    public function test_el_inventario_sale(): void
+    /**
+     * El inventario se queda donde está: la mercancía no se ha movido.
+     *
+     * Antes salía del stock al abrir la corrección y volvía a entrar al
+     * contabilizar de nuevo. El resultado final era el mismo, pero el paso
+     * intermedio no: si parte de la compra ya se había vendido, ese bajón
+     * dejaba existencias en negativo y el motor de inventario lo rechazaba
+     * —bloqueando la factura ENTERA por culpa de una línea—. Y si alguien
+     * abandonaba la corrección a medias, la mercancía quedaba desaparecida
+     * del stock aunque siguiera en el estante.
+     *
+     * Ahora el inventario se lleva a la cifra nueva moviendo solo la
+     * diferencia, al volver a contabilizar. Ver CorregirCompraConStockVendidoTest.
+     */
+    public function test_el_inventario_se_queda_mientras_se_corrige(): void
     {
         $factura = $this->compraPagada(500000, conInventario: true);
 
@@ -103,8 +116,8 @@ class CorregirCompraTest extends TestCase
 
         app(PurchaseInvoiceEngine::class)->prepararParaEditar($factura);
 
-        $this->assertEqualsWithDelta($conCompra - 1, $this->stock(), 0.001,
-            'Al corregir, la mercancía que no entró tiene que salir del stock.');
+        $this->assertEqualsWithDelta($conCompra, $this->stock(), 0.001,
+            'La mercancía sigue en la bodega mientras se corrige la factura.');
     }
 
     /**
