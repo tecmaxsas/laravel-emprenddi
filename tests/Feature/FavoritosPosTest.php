@@ -201,10 +201,10 @@ class FavoritosPosTest extends TestCase
     {
         $rol = Role::query()
             ->where('company_id', $this->empresa->id)
-            ->where('name', 'cashier')
+            ->where('name', 'CAJERO')
             ->first();
 
-        $this->assertNotNull($rol, 'La empresa de pruebas necesita un rol cashier propio.');
+        $this->assertNotNull($rol, 'La empresa de pruebas necesita un rol CAJERO propio.');
 
         $cajero = User::withoutGlobalScopes()->create([
             'company_id' => $this->empresa->id,

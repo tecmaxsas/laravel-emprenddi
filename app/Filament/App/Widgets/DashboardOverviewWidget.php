@@ -124,7 +124,7 @@ class DashboardOverviewWidget extends Widget
             'admin' => 'Administrador',
             'manager' => 'Gerente',
             'accountant', 'accountant_external' => 'Contador',
-            'cashier' => 'Cajero',
+            'CAJERO', 'cashier' => 'Cajero',
             'seller' => 'Vendedor',
             default => 'Equipo',
         };

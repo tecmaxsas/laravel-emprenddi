@@ -193,12 +193,12 @@ class CompanyRolesTest extends TestCase
 
         $roles = Role::query()
             ->where('company_id', $empresa->id)
-            ->whereIn('name', ['cashier'])
+            ->whereIn('name', ['CAJERO'])
             ->get();
 
         $usuario->syncRoles($roles);
 
-        $this->assertSame(['cashier'], $usuario->fresh()->roles->pluck('name')->all());
+        $this->assertSame(['CAJERO'], $usuario->fresh()->roles->pluck('name')->all());
         $this->assertSame($empresa->id, (int) $usuario->fresh()->roles->first()->company_id);
     }
 

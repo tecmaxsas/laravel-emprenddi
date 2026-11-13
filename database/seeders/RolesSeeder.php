@@ -20,7 +20,7 @@ class RolesSeeder extends Seeder
         }
 
         // 2. Roles base + asignación de permisos default
-        $roles = ['admin', 'manager', 'accountant', 'cashier', 'seller', 'accountant_external'];
+        $roles = ['admin', 'manager', 'accountant', PermissionsCatalog::CAJERO, 'seller', 'accountant_external'];
 
         foreach ($roles as $name) {
             // company_id NULL: el seeder mantiene las PLANTILLAS. Sin ese

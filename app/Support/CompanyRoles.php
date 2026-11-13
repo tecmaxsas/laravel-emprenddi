@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Models\Company;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\Auth\PermissionsCatalog;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Spatie\Permission\PermissionRegistrar;
@@ -29,6 +30,9 @@ class CompanyRoles
      */
     public static function resolve(int $companyId, string $name, string $guard = 'web'): ?Role
     {
+        // `cashier` es el nombre viejo de CAJERO (ver PermissionsCatalog::CAJERO).
+        $name = PermissionsCatalog::canonicalRole($name);
+
         $rol = Role::query()
             ->where('company_id', $companyId)
             ->where('name', $name)

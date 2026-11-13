@@ -236,10 +236,10 @@ class PosStockYSedeTest extends TestCase
         // no tocarlo.
         $cajeroRol = Role::query()
             ->where('company_id', $this->empresa->id)
-            ->where('name', 'cashier')
+            ->where('name', 'CAJERO')
             ->first();
 
-        $this->assertNotNull($cajeroRol, 'La empresa de pruebas necesita un rol cashier propio.');
+        $this->assertNotNull($cajeroRol, 'La empresa de pruebas necesita un rol CAJERO propio.');
 
         $cajero = User::withoutGlobalScopes()->create([
             'company_id' => $this->empresa->id,

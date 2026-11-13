@@ -13,6 +13,30 @@ namespace App\Services\Auth;
  */
 class PermissionsCatalog
 {
+    /**
+     * Nombre del rol de cajero.
+     *
+     * Hubo dos: la plantilla `cashier` se renombro a «CAJERO» a mano
+     * (2026-07-31) y el seeder, que la buscaba por el nombre viejo, creo
+     * otra `cashier`. Cada empresa nueva recibia las dos; los
+     * administradores asignaban CAJERO, y como el catalogo solo conocia
+     * `cashier`, CAJERO nunca recibia los permisos de los modulos nuevos:
+     * el cajero de un parqueadero entraba y caia en el POS retail.
+     *
+     * Se unificaron en CAJERO, que es el nombre que ven los clientes.
+     * `cashier` queda como alias para el codigo que todavia lo nombra.
+     */
+    public const CAJERO = 'CAJERO';
+
+    /** Nombres viejos que se resuelven al rol de cajero. */
+    public const ALIAS_CAJERO = ['cashier'];
+
+    /** El nombre canonico de un rol: `cashier` → CAJERO; el resto igual. */
+    public static function canonicalRole(string $role): string
+    {
+        return in_array($role, self::ALIAS_CAJERO, true) ? self::CAJERO : $role;
+    }
+
     public static function groups(): array
     {
         return [
@@ -235,14 +259,14 @@ class PermissionsCatalog
      * admin: todo
      * manager: operacional + reportes (no users/roles)
      * accountant: contabilidad + reportes + pagos
-     * cashier: pos + cobrar/pagar
+     * CAJERO (alias cashier): pos + cobrar/pagar
      * seller: productos (view) + sales create + terceros
      */
     public static function defaultForRole(string $role): array
     {
         $all = self::all();
 
-        return match ($role) {
+        return match (self::canonicalRole($role)) {
             'admin' => $all,
             'manager' => array_diff($all, [
                 'users.manage', 'roles.manage', 'roles.view', 'company.settings',
@@ -276,8 +300,14 @@ class PermissionsCatalog
                 'serials.view',
                 'products.view', 'categories.view',
             ],
-            'cashier' => [
+            self::CAJERO => [
                 'pos.use', 'pos.cash_close', 'pos.cash_movements',
+                // Lo que la plantilla CAJERO traia y `cashier` no: el cajero
+                // ve medios de pago, maneja su impresora, paga compras de
+                // caja menor, envia a la DIAN y factura remisiones y
+                // cotizaciones desde el POS.
+                'payment_methods.view', 'printers.manage', 'purchases.pay',
+                'sales.send_dian', 'delivery_notes.bill', 'quotations.convert',
                 'sales.view', 'sales.create', 'sales.receive_payment',
                 'products.view', 'categories.view',
                 'third_parties.view', 'third_parties.manage',

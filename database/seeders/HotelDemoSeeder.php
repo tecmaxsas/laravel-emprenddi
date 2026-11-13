@@ -234,7 +234,7 @@ class HotelDemoSeeder extends Seeder
 
         CompanyRoles::provision($this->company);
         CompanyRoles::assign($this->admin, 'admin');
-        CompanyRoles::assign($this->recepcion, 'cashier');
+        CompanyRoles::assign($this->recepcion, \App\Services\Auth\PermissionsCatalog::CAJERO);
 
         $this->command->line('   · Usuarios: administrador y recepción');
     }
