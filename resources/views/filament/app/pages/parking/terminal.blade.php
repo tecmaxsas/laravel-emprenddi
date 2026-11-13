@@ -78,9 +78,16 @@
             </div>
         </div>
 
-        <button type="button" wire:click="openQuickEntry" class="pt-quick-entry">
-            ➕ Entrada sin espacio
-        </button>
+        <div style="display:flex; flex-direction:column; gap:6px;">
+            <button type="button" wire:click="openQuickEntry" class="pt-quick-entry">
+                ➕ Entrada sin espacio
+            </button>
+            <button type="button" wire:click="openDirectInvoice" class="pt-quick-entry"
+                    style="background:#1d4ed8;"
+                    title="Facturar digitando placa, valor y cliente, sin registrar entrada">
+                🧾 Factura rápida
+            </button>
+        </div>
     </div>
 
     {{-- Mapa --}}
@@ -213,6 +220,8 @@
             $extrasTotal = $this->extrasTotal;
             $grandTotal = $this->grandTotal;
             $isCovered = $parkingAmount === 0.0 && $membership;
+            $cobroParqueo = $this->parkingAmount;
+            $ajustado = ! $isCovered && trim((string) ($exitForm['amount_override'] ?? '')) !== '';
             $searchResults = $this->productSearchResults;
         @endphp
         <div class="pt-overlay" wire:click.self="closeModal">
@@ -238,7 +247,10 @@
                         </div>
                         <div>
                             <div class="pt-summary-label">Parqueo</div>
-                            <div class="pt-summary-val">{{ $fmt($parkingAmount) }}</div>
+                            <div class="pt-summary-val">{{ $fmt($cobroParqueo) }}</div>
+                            @if ($ajustado)
+                                <div style="font-size:11px; color:#b45309;">Calculado {{ $fmt($parkingAmount) }}</div>
+                            @endif
                         </div>
                         <div class="pt-summary-amount">
                             <div class="pt-summary-label">Total a cobrar</div>
@@ -259,6 +271,33 @@
                             </table>
                         </div>
                     @endif
+
+                    {{-- VALOR A COBRAR EDITABLE
+                         El cajero puede cobrar otro valor que el de la
+                         tarifa (descuento, cortesia, tarifa pactada). Vacio
+                         = lo calculado. El ajuste queda en el desglose de la
+                         sesion. Con mensualidad no aplica: el parqueo no se
+                         factura. --}}
+                    @unless ($isCovered)
+                        <div class="pt-field" style="margin-bottom:12px;">
+                            <label>Valor a cobrar por el parqueo</label>
+                            <div style="display:flex; gap:8px; align-items:center;">
+                                <input type="number" step="1" min="0" inputmode="numeric"
+                                       wire:model.live.debounce.400ms="exitForm.amount_override"
+                                       onwheel="this.blur()"
+                                       placeholder="{{ number_format($parkingAmount, 0, '', '') }}"
+                                       style="font-size:18px; font-weight:700; max-width:220px;" />
+                                @if ($ajustado)
+                                    <button type="button" wire:click="$set('exitForm.amount_override', null)"
+                                            class="pt-btn pt-btn-gray" style="padding:6px 10px; font-size:12px;">
+                                        Usar calculado ({{ $fmt($parkingAmount) }})
+                                    </button>
+                                @else
+                                    <span style="font-size:12px; color:#6b7280;">Déjalo vacío para cobrar lo calculado</span>
+                                @endif
+                            </div>
+                        </div>
+                    @endunless
 
                     {{-- Servicios adicionales / productos --}}
                     <div class="pt-extras">
@@ -320,88 +359,7 @@
                                 🎟️ El parqueo está cubierto por mensualidad. La factura solo cobrará los productos adicionales.
                             </div>
                         @endif
-                        <div class="pt-payment">
-                            <div class="pt-payment-head">Datos del cobro</div>
-                            <div class="pt-payment-grid">
-                                <div class="pt-field">
-                                    <label>Medio de pago</label>
-                                    <select wire:model.live="exitForm.payment_method">
-                                        @foreach ($this->paymentMethodOptions as $code => $name)
-                                            <option value="{{ $code }}">{{ $name }}</option>
-                                        @endforeach
-                                    </select>
-                                </div>
-                                {{-- CON CUANTO PAGA / VUELTO
-                                     Solo en efectivo: de una transferencia
-                                     nadie devuelve plata. En un parqueadero
-                                     el cobro casi siempre se paga con billete
-                                     grande, asi que es donde mas se usa. --}}
-                                @if (\App\Support\Vuelto::aplica($this->exitForm['payment_method'] ?? null))
-                                    @php
-                                        $recibido = (float) ($this->exitForm['cash_received'] ?? 0);
-                                        $aPagar = (float) $this->grandTotal;
-                                        $vuelto = \App\Support\Vuelto::calcular($recibido, $aPagar);
-                                        $falta = \App\Support\Vuelto::faltante($recibido, $aPagar);
-                                    @endphp
-                                    <div class="pt-field">
-                                        <label>Con cuánto paga</label>
-                                        <input type="number" step="1" min="0" inputmode="numeric"
-                                               wire:model.live.debounce.300ms="exitForm.cash_received"
-                                               onwheel="this.blur()"
-                                               placeholder="Opcional" />
-                                    </div>
-                                    <div class="pt-field">
-                                        <label>Cambio</label>
-                                        <div style="padding:8px 0; font-size:18px; font-weight:800;">
-                                            @if ($recibido <= 0)
-                                                <span style="color:#9ca3af; font-size:14px; font-weight:500;">—</span>
-                                            @elseif ($falta > 0)
-                                                <span style="color:rgb(220,38,38); font-size:15px;">
-                                                    Faltan ${{ number_format($falta, 0, ',', '.') }}
-                                                </span>
-                                            @else
-                                                <span style="color:rgb(5,150,105);">
-                                                    ${{ number_format($vuelto, 0, ',', '.') }}
-                                                </span>
-                                            @endif
-                                        </div>
-                                    </div>
-                                @endif
-
-                                {{-- La cuenta la decide el metodo de pago. Solo se
-                                     muestra si el negocio lleva contabilidad y
-                                     quiere sobreescribirla en el cobro. --}}
-                                @if (\App\Support\ModuleGate::active(\App\Support\ModuleGate::ACCOUNTING))
-                                    <div class="pt-field">
-                                        <label>Cuenta contable</label>
-                                        <select wire:model="exitForm.account_id">
-                                            @foreach ($this->accountOptions as $id => $name)
-                                                <option value="{{ $id }}">{{ $name }}</option>
-                                            @endforeach
-                                        </select>
-                                    </div>
-                                @endif
-                                <div class="pt-field">
-                                    <label>Cliente</label>
-                                    <button type="button" wire:click="openCustomerModal"
-                                            style="width:100%; text-align:left; padding:8px 10px; border-radius:6px; cursor:pointer; border:1px solid #d1d5db; background:#ffffff; color:#111827;">
-                                        <div style="font-size:13px; font-weight:700;">
-                                            {{ $exitForm['third_party_label'] ?? 'Consumidor Final' }}
-                                        </div>
-                                        <div style="font-size:11px; color:#6b7280;">
-                                            Toca para buscar o crear un cliente
-                                        </div>
-                                    </button>
-                                </div>
-                                <div class="pt-field">
-                                    <label>Tipo de factura</label>
-                                    <select wire:model="exitForm.invoice_kind">
-                                        <option value="pos">POS (no electrónica)</option>
-                                        <option value="electronic">Electrónica DIAN</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
+                        @include('filament.app.pages.parking.partials.cobro', ['totalCobro' => $grandTotal])
                     @endif
 
                     <details class="pt-cancel">
@@ -428,6 +386,68 @@
                     </button>
                     <button type="button" wire:click="processExit" class="pt-btn pt-btn-green">
                         ✓ Cobrar y registrar salida
+                    </button>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    {{-- Modal Factura rapida: placa + valor + cliente, sin entrada --}}
+    @if ($mode === 'direct')
+        @php $totalDirecto = (float) ($directForm['amount'] ?? 0); @endphp
+        <div class="pt-overlay" wire:click.self="closeModal">
+            <div class="pt-modal pt-modal-lg">
+                <div class="pt-modal-head pt-modal-head-blue">
+                    <h2>🧾 Factura rápida @if ($currentLot) · {{ $currentLot->name }} @endif</h2>
+                    <button type="button" wire:click="closeModal" class="pt-modal-close">✕</button>
+                </div>
+                <div class="pt-modal-body">
+                    <div class="pt-info pt-info-amber" style="margin-bottom:12px;">
+                        Factura un parqueo sin registrar entrada. Si el vehículo tiene una entrada abierta, cóbralo desde la salida.
+                    </div>
+                    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px;">
+                        <div class="pt-field">
+                            <label>Placa</label>
+                            <input type="text" wire:model="directForm.plate" autofocus
+                                   placeholder="ABC123" class="pt-input-plate" />
+                        </div>
+                        <div class="pt-field">
+                            <label>Valor a cobrar</label>
+                            <input type="number" step="1" min="0" inputmode="numeric"
+                                   wire:model.live.debounce.400ms="directForm.amount"
+                                   onwheel="this.blur()" placeholder="0"
+                                   style="font-size:22px; font-weight:800;" />
+                        </div>
+                    </div>
+                    @if ($vehicleTypes->count() > 1)
+                        <div class="pt-field">
+                            <label>Tipo de vehículo</label>
+                            <div class="pt-vehicle-grid">
+                                @foreach ($vehicleTypes as $vt)
+                                    <button type="button"
+                                        wire:click="$set('directForm.vehicle_type_id', {{ $vt->id }})"
+                                        class="pt-vehicle-btn @if ((int) ($directForm['vehicle_type_id'] ?? 0) === $vt->id) is-active @endif">
+                                        <span class="pt-vehicle-icon">{{ $vt->icon ?: '🚘' }}</span>
+                                        <span>{{ $vt->name }}</span>
+                                    </button>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endif
+
+                    @include('filament.app.pages.parking.partials.cobro', ['totalCobro' => $totalDirecto])
+
+                    <div class="pt-field">
+                        <label>Observaciones (opcional)</label>
+                        <input type="text" wire:model="directForm.notes" placeholder="Opcional" />
+                    </div>
+                </div>
+                <div class="pt-modal-foot">
+                    <button type="button" wire:click="closeModal" class="pt-btn pt-btn-gray">Cancelar</button>
+                    <button type="button" wire:click="processDirectInvoice"
+                            wire:loading.attr="disabled" wire:target="processDirectInvoice"
+                            class="pt-btn pt-btn-green">
+                        ✓ Facturar {{ $totalDirecto > 0 ? $fmt($totalDirecto) : '' }}
                     </button>
                 </div>
             </div>

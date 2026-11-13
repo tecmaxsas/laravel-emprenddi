@@ -103,8 +103,14 @@ class ParkingSessionEngine
     /**
      * Cierra la sesion calculando el cobro a partir de la tarifa activa al
      * momento de la salida. Si exitAt es null, se usa now().
+     *
+     * $amountOverride: valor que el cajero digito a mano en vez del que
+     * calcula la tarifa (descuento, cortesia, tarifa pactada...). Queda una
+     * linea en el desglose con lo que la tarifa habria cobrado, para que la
+     * diferencia se vea en los reportes. Con valor manual tampoco hace falta
+     * tener tarifa: el cajero ya dijo cuanto se cobra.
      */
-    public function checkOut(ParkingSession $session, ?Carbon $exitAt = null): ParkingSession
+    public function checkOut(ParkingSession $session, ?Carbon $exitAt = null, ?float $amountOverride = null): ParkingSession
     {
         if (! $session->isActive()) {
             throw new RuntimeException('Esta sesión ya fue cerrada o cancelada.');
@@ -148,18 +154,31 @@ class ParkingSessionEngine
             $exitAt,
         );
 
-        if (! $rate) {
+        if (! $rate && $amountOverride === null) {
             throw new RuntimeException(
                 'No hay tarifa activa para este parqueadero y tipo de vehículo. '
                 .'Configura una tarifa antes de cobrar.'
             );
         }
 
-        $calc = $this->rates->calculate($rate, $session->entry_at, $exitAt);
+        if ($rate) {
+            $calc = $this->rates->calculate($rate, $session->entry_at, $exitAt);
+        } else {
+            $minutes = max(0, (int) $session->entry_at->diffInMinutes($exitAt));
+            $calc = [
+                'minutes' => $minutes,
+                'free_minutes' => 0,
+                'charge_minutes' => $minutes,
+                'amount' => 0.0,
+                'cap_applied' => false,
+                'breakdown' => [],
+            ];
+        }
+        $calc = $this->applyOverride($calc, $amountOverride);
 
         DB::transaction(function () use ($session, $rate, $exitAt, $calc) {
             $session->update([
-                'rate_id' => $rate->id,
+                'rate_id' => $rate?->id,
                 'exit_at' => $exitAt,
                 'status' => ParkingSession::STATUS_CLOSED,
                 'total_minutes' => $calc['minutes'],
@@ -181,7 +200,7 @@ class ParkingSessionEngine
      * Cobra ticket perdido. Aplica el monto fijo configurado en la tarifa
      * o, si no hay, una simulacion de 24h.
      */
-    public function lostTicket(ParkingSession $session): ParkingSession
+    public function lostTicket(ParkingSession $session, ?float $amountOverride = null): ParkingSession
     {
         if (! $session->isActive()) {
             throw new RuntimeException('Esta sesión ya fue cerrada o cancelada.');
@@ -193,17 +212,20 @@ class ParkingSessionEngine
             now(),
         );
 
-        if (! $rate) {
+        if (! $rate && $amountOverride === null) {
             throw new RuntimeException(
                 'No hay tarifa activa para aplicar el cobro de ticket perdido.'
             );
         }
 
-        $calc = $this->rates->calculateLostTicket($rate);
+        $calc = $rate
+            ? $this->rates->calculateLostTicket($rate)
+            : ['amount' => 0.0, 'breakdown' => []];
+        $calc = $this->applyOverride($calc, $amountOverride);
 
         DB::transaction(function () use ($session, $rate, $calc) {
             $session->update([
-                'rate_id' => $rate->id,
+                'rate_id' => $rate?->id,
                 'exit_at' => now(),
                 'status' => ParkingSession::STATUS_LOST_TICKET,
                 'amount' => $calc['amount'],
@@ -243,6 +265,111 @@ class ParkingSessionEngine
         });
 
         return $session->fresh();
+    }
+
+    /**
+     * Cobro directo: un vehiculo que se cobra sin haber registrado entrada.
+     *
+     * Pasa en la porteria: el carro ya estaba adentro antes de abrir el
+     * turno, o el cliente paga al llegar una tarifa fija, o el operario no
+     * alcanzo a registrar la entrada. El cajero digita placa y valor y sale
+     * la factura.
+     *
+     * Se guarda igual como una sesion —cerrada, con entrada y salida en el
+     * mismo instante— para que el cobro aparezca en el reporte de sesiones y
+     * en el de recaudo como cualquier otro, y para que la factura quede
+     * enlazada a una placa.
+     *
+     * @param  array  $payload  ['parking_lot_id', 'plate', 'amount', 'vehicle_type_id'?, 'notes'?]
+     */
+    public function directCharge(array $payload): ParkingSession
+    {
+        $lot = ParkingLot::query()
+            ->where('id', $payload['parking_lot_id'] ?? null)
+            ->where('active', true)
+            ->first();
+        if (! $lot) {
+            throw new RuntimeException('Selecciona un parqueadero activo.');
+        }
+
+        $plate = $this->normalizePlate((string) ($payload['plate'] ?? ''));
+        if ($plate === '') {
+            throw new RuntimeException('La placa es obligatoria.');
+        }
+
+        $amount = round((float) ($payload['amount'] ?? 0), 2);
+        if ($amount <= 0) {
+            throw new RuntimeException('Digita el valor a cobrar.');
+        }
+
+        // Si el carro si tiene entrada registrada, lo correcto es cobrarle
+        // la salida: si no, la sesion queda abierta y el espacio ocupado.
+        $activa = ParkingSession::query()
+            ->where('parking_lot_id', $lot->id)
+            ->where('plate', $plate)
+            ->where('status', ParkingSession::STATUS_ACTIVE)
+            ->exists();
+        if ($activa) {
+            throw new RuntimeException(
+                "La placa {$plate} tiene una entrada registrada. Cóbrala desde la salida (digita la placa en el buscador)."
+            );
+        }
+
+        $now = now();
+
+        return ParkingSession::create([
+            'company_id' => $lot->company_id,
+            'parking_lot_id' => $lot->id,
+            'vehicle_type_id' => $payload['vehicle_type_id'] ?? null,
+            'plate' => $plate,
+            'entry_at' => $now,
+            'exit_at' => $now,
+            'status' => ParkingSession::STATUS_CLOSED,
+            'total_minutes' => 0,
+            'free_minutes' => 0,
+            'charge_minutes' => 0,
+            'amount' => $amount,
+            'cap_applied' => false,
+            'breakdown' => [[
+                'label' => self::DIRECT_CHARGE_LABEL,
+                'amount' => $amount,
+            ]],
+            'notes' => $payload['notes'] ?? null,
+            'created_by_user_id' => Auth::id(),
+            'closed_by_user_id' => Auth::id(),
+            'closed_at' => $now,
+        ]);
+    }
+
+    /** Marca en el desglose de las sesiones creadas por directCharge(). */
+    public const DIRECT_CHARGE_LABEL = 'Cobro directo (sin registro de entrada)';
+
+    /**
+     * Reemplaza el monto calculado por el que digito el cajero y deja en el
+     * desglose cuanto era el calculado, para que el ajuste no se pierda.
+     */
+    protected function applyOverride(array $calc, ?float $override): array
+    {
+        if ($override === null) {
+            return $calc;
+        }
+
+        $override = round(max(0, $override), 2);
+        $calculado = round((float) ($calc['amount'] ?? 0), 2);
+
+        if ($override === $calculado) {
+            return $calc;
+        }
+
+        $calc['breakdown'] = array_values($calc['breakdown'] ?? []);
+        $calc['breakdown'][] = [
+            'label' => 'Valor ajustado por el cajero (calculado $'.number_format($calculado, 0, ',', '.').')',
+            'amount' => round($override - $calculado, 2),
+        ];
+        $calc['amount'] = $override;
+        $calc['cap_applied'] = false;
+
+        return $calc;
     }
 
     /**

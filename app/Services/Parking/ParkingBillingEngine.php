@@ -143,13 +143,18 @@ class ParkingBillingEngine
                     invoice: $invoice,
                     lineNumber: $lineNumber++,
                     productId: $product->id,
-                    description: sprintf(
-                        'Parqueo placa %s — %d min — %s a %s',
-                        $session->plate,
-                        (int) ($session->total_minutes ?? 0),
-                        $session->entry_at?->format(ClockFormat::datetime()) ?? '—',
-                        $session->exit_at?->format(ClockFormat::datetime()) ?? '—',
-                    ),
+                    // El cobro directo no tiene tiempo de estadia: entrada y
+                    // salida son el mismo instante, y «0 min — 10:00 a 10:00»
+                    // en la factura solo confunde al cliente.
+                    description: $this->esCobroDirecto($session)
+                        ? sprintf('Parqueo placa %s', $session->plate)
+                        : sprintf(
+                            'Parqueo placa %s — %d min — %s a %s',
+                            $session->plate,
+                            (int) ($session->total_minutes ?? 0),
+                            $session->entry_at?->format(ClockFormat::datetime()) ?? '—',
+                            $session->exit_at?->format(ClockFormat::datetime()) ?? '—',
+                        ),
                     quantity: 1,
                     totalAtPublic: (float) $session->amount,
                     taxId: $product->default_sale_tax_id,
@@ -400,6 +405,11 @@ class ParkingBillingEngine
             ->where('status', CashRegisterSession::STATUS_OPEN)
             ->latest('opened_at')
             ->first();
+    }
+
+    protected function esCobroDirecto(ParkingSession $session): bool
+    {
+        return ($session->breakdown[0]['label'] ?? null) === ParkingSessionEngine::DIRECT_CHARGE_LABEL;
     }
 
     protected function resolveLocation(ParkingSession $session): ?Location

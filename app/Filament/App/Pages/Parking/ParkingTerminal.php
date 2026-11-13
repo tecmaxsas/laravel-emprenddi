@@ -63,8 +63,15 @@ class ParkingTerminal extends Page
 
     public string $scanInput = '';
 
-    /** idle | entry | exit */
+    /** idle | entry | exit | direct */
     public string $mode = 'idle';
+
+    /**
+     * Cobro directo: placa + valor, sin entrada registrada. Los datos del
+     * pago (medio, cliente, tipo de factura) van en $exitForm, igual que en
+     * la salida, para no duplicar el bloque de cobro ni el modal de cliente.
+     */
+    public array $directForm = [];
 
     public ?int $selectedSpaceId = null;
 
@@ -109,6 +116,7 @@ class ParkingTerminal extends Page
             ->value('id');
         $this->resetEntryForm();
         $this->resetExitForm();
+        $this->resetDirectForm();
     }
 
     /* ------------------------------------------------------------------ */
@@ -477,9 +485,34 @@ class ParkingTerminal extends Page
 
     public function getGrandTotalProperty(): float
     {
-        $parking = (float) ($this->quote['amount'] ?? 0);
+        return round($this->parkingAmount + $this->extrasTotal, 2);
+    }
 
-        return round($parking + $this->extrasTotal, 2);
+    /**
+     * Lo que se cobra por el parqueo: el valor que digito el cajero o, si no
+     * digito nada, el que calcula la tarifa.
+     */
+    public function getParkingAmountProperty(): float
+    {
+        return $this->amountOverride() ?? (float) ($this->quote['amount'] ?? 0);
+    }
+
+    /**
+     * El valor digitado a mano en la salida. Null si la casilla esta vacia
+     * (se cobra lo calculado) o si la sesion la cubre una mensualidad: ahi
+     * el parqueo no se factura y un valor escrito no tendria a donde ir.
+     */
+    protected function amountOverride(): ?float
+    {
+        $raw = $this->exitForm['amount_override'] ?? null;
+        if ($raw === null || trim((string) $raw) === '') {
+            return null;
+        }
+        if (! empty($this->quote['membership'])) {
+            return null;
+        }
+
+        return max(0.0, round((float) $raw, 2));
     }
 
     /* ------------------------------------------------------------------ */
@@ -500,6 +533,22 @@ class ParkingTerminal extends Page
             'third_party_id' => null,
             'third_party_label' => null,
             'cancel_reason' => '',
+            // Valor del parqueo digitado a mano. Vacio = el de la tarifa.
+            'amount_override' => null,
+        ];
+    }
+
+    protected function resetDirectForm(): void
+    {
+        $this->directForm = [
+            'plate' => '',
+            'amount' => null,
+            'vehicle_type_id' => VehicleType::query()
+                ->where('company_id', auth()->user()?->company_id)
+                ->where('active', true)
+                ->where('code', VehicleType::CODE_CAR)
+                ->value('id'),
+            'notes' => null,
         ];
     }
 
@@ -699,7 +748,7 @@ class ParkingTerminal extends Page
         }
 
         try {
-            $closed = app(ParkingSessionEngine::class)->checkOut($session);
+            $closed = app(ParkingSessionEngine::class)->checkOut($session, null, $this->amountOverride());
             $invoice = $this->maybeIssueInvoice($closed);
             $charged = $invoice ? (float) $invoice->total : (float) $closed->amount;
 
@@ -731,7 +780,7 @@ class ParkingTerminal extends Page
         }
 
         try {
-            $closed = app(ParkingSessionEngine::class)->lostTicket($session);
+            $closed = app(ParkingSessionEngine::class)->lostTicket($session, $this->amountOverride());
             $invoice = $this->maybeIssueInvoice($closed);
             $charged = $invoice ? (float) $invoice->total : (float) $closed->amount;
 
@@ -751,6 +800,82 @@ class ParkingTerminal extends Page
             }
         } catch (\Throwable $e) {
             $this->notify('danger', 'No se pudo procesar el ticket perdido', $e->getMessage());
+        }
+    }
+
+    /**
+     * Factura rapida: placa, valor y cliente, sin pasar por la entrada.
+     */
+    public function openDirectInvoice(): void
+    {
+        $this->closeModal();
+        $this->resetDirectForm();
+        $this->mode = 'direct';
+    }
+
+    public function processDirectInvoice(): void
+    {
+        if ($this->mode !== 'direct') {
+            return;
+        }
+
+        // Lo que haria fallar la factura se revisa antes de crear la sesion,
+        // para no dejar cobros cerrados sin factura.
+        if (! $this->openCashSession) {
+            $this->notify('warning', 'Sin turno de caja abierto', 'Abre la caja antes de facturar.');
+
+            return;
+        }
+        if ((float) ($this->directForm['amount'] ?? 0) <= 0) {
+            $this->notify('warning', 'Falta el valor', 'Digita cuánto se le cobra al cliente.');
+
+            return;
+        }
+
+        $engine = app(ParkingSessionEngine::class);
+
+        try {
+            $session = $engine->directCharge([
+                'parking_lot_id' => $this->parkingLotId,
+                'plate' => $this->directForm['plate'] ?? '',
+                'amount' => $this->directForm['amount'] ?? 0,
+                'vehicle_type_id' => $this->directForm['vehicle_type_id'] ?? null,
+                'notes' => $this->directForm['notes'] ?? null,
+            ]);
+        } catch (\Throwable $e) {
+            $this->notify('danger', 'No se pudo generar la factura', $e->getMessage());
+
+            return;
+        }
+
+        try {
+            $invoice = $this->maybeIssueInvoice($session);
+        } catch (\Throwable $e) {
+            // La sesion se creo solo para esta factura: sin factura no hubo
+            // cobro, asi que se anula para que no sume en los reportes. Si
+            // la factura alcanzo a quedar (fallo despues, al transmitir), la
+            // sesion se deja: ese cobro si existe.
+            if (! $session->fresh()?->sale_invoice_id) {
+                $session->update([
+                    'status' => ParkingSession::STATUS_CANCELLED,
+                    'cancel_reason' => 'Factura no emitida: '.mb_substr($e->getMessage(), 0, 200),
+                ]);
+            }
+            $this->notify('danger', 'No se pudo generar la factura', $e->getMessage());
+
+            return;
+        }
+
+        $this->closeModal();
+
+        Notification::make()
+            ->title("✓ Factura · {$session->plate}")
+            ->body('Total: $'.number_format((float) ($invoice?->total ?? $session->amount), 0, ',', '.')
+                .($invoice ? ' · '.$invoice->fullNumber() : ''))
+            ->success()->send();
+
+        if ($invoice) {
+            $this->dispatch('parking-invoice-ready', invoiceId: $invoice->id);
         }
     }
 
@@ -821,6 +946,7 @@ class ParkingTerminal extends Page
         $this->extraSearch = '';
         $this->resetEntryForm();
         $this->resetExitForm();
+        $this->resetDirectForm();
     }
 
     public function searchCustomer(string $query): array
