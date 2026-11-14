@@ -236,14 +236,22 @@ class VueltoTest extends TestCase
      */
     public function test_los_tres_pos_tienen_la_casilla(): void
     {
+        // Cada pantalla es su blade MAS los parciales que incluye: el
+        // parqueadero movio su bloque de cobro a partials/cobro.blade.php y
+        // la casilla se seguia pudiendo digitar, pero esta prueba —que leia
+        // un solo archivo— la daba por desaparecida. Lo que importa es que
+        // la pantalla la tenga, no en cual de sus archivos este escrita.
         $pantallas = [
-            'retail' => resource_path('views/filament/app/pages/pos-terminal.blade.php'),
-            'restaurante' => resource_path('views/filament/app/pages/restaurant/pos.blade.php'),
-            'parqueadero' => resource_path('views/filament/app/pages/parking/terminal.blade.php'),
+            'retail' => [resource_path('views/filament/app/pages/pos-terminal.blade.php')],
+            'restaurante' => [resource_path('views/filament/app/pages/restaurant/pos.blade.php')],
+            'parqueadero' => array_merge(
+                [resource_path('views/filament/app/pages/parking/terminal.blade.php')],
+                glob(resource_path('views/filament/app/pages/parking/partials/*.blade.php')) ?: [],
+            ),
         ];
 
-        foreach ($pantallas as $nombre => $ruta) {
-            $vista = file_get_contents($ruta);
+        foreach ($pantallas as $nombre => $rutas) {
+            $vista = implode("\n", array_map('file_get_contents', $rutas));
 
             $this->assertStringContainsString('cash_received', $vista,
                 "El POS de {$nombre} no deja digitar con cuánto paga el cliente.");
