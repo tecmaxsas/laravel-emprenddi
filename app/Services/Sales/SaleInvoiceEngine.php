@@ -89,6 +89,22 @@ class SaleInvoiceEngine
                     continue;
                 }
 
+                // UN PRODUCTO QUE YA NO SE PUEDE LEER PARA LA FACTURA.
+                //
+                // Pasa cuando alguien borra el producto despues de que la
+                // linea lo referencio: `product_id` sigue apuntando a una
+                // fila que, con los scopes normales, ya no existe. Sin esto
+                // reventaba en la linea de abajo con «Call to a member
+                // function isKit() on null», que no le dice nada a nadie y
+                // deja al cajero sin saber que hacer.
+                if (! $line->product) {
+                    throw new RuntimeException(sprintf(
+                        'La línea «%s» apunta a un producto que ya no existe o fue eliminado. '
+                        .'Restáuralo desde Productos (o quita la línea) y vuelve a contabilizar.',
+                        $line->description ?: ('#'.$line->line_number),
+                    ));
+                }
+
                 // UN COMBO NO SALE DEL ALMACEN: SALEN SUS PIEZAS.
                 //
                 // El kit no lleva inventario propio —se arma en el momento de

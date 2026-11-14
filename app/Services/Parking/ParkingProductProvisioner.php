@@ -29,6 +29,23 @@ class ParkingProductProvisioner
                 ->where('code', self::CODE)
                 ->first();
             if ($product) {
+                // `withoutGlobalScopes()` tambien apaga el filtro de
+                // borrados, asi que aqui puede llegar un producto en la
+                // papelera. Devolverlo tal cual era el error: la factura
+                // guardaba su id y al releerla con los scopes normales el
+                // producto salia null —«Call to a member function isKit() on
+                // null» en mitad de un cobro—. Si alguien lo borro de la
+                // lista, se restaura: sin el no se puede facturar el parqueo.
+                if ($product->trashed()) {
+                    $product->restore();
+                }
+
+                // Y tiene que poder venderse. Desactivado no reventaba, pero
+                // desaparecia de las busquedas y confundia igual.
+                if (! $product->active || ! $product->is_sellable) {
+                    $product->update(['active' => true, 'is_sellable' => true]);
+                }
+
                 // Backfill de sale_account_id en productos creados antes del
                 // fix (cuando quedaban en null y caia a 4135 mercancias).
                 if (! $product->sale_account_id) {
