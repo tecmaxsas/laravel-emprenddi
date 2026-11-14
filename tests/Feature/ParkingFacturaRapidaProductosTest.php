@@ -229,6 +229,44 @@ class ParkingFacturaRapidaProductosTest extends TestCase
             'La red de seguridad cubre los campos que alguien agregue mañana.');
     }
 
+    /**
+     * Los selectores del modal llevan UNA flecha.
+     *
+     * El navegador dibuja la suya, Filament le pone otra y el parcial
+     * compartido una tercera. Encima, las reglas de esta pantalla usaban la
+     * forma corta `background:#fff`, que resetea también background-image,
+     * -repeat, -position y -size: según qué regla ganara el orden, la flecha
+     * desaparecía o salía repetida sobre el texto.
+     *
+     * Se mira el CSS porque el número de flechas no está en el HTML. No
+     * reemplaza verlo, pero sí atrapa la regresión concreta.
+     */
+    public function test_los_selectores_del_modal_llevan_una_sola_flecha(): void
+    {
+        $css = file_get_contents(
+            resource_path('views/filament/app/pages/parking/terminal.blade.php')
+        );
+
+        $this->assertStringContainsString('.pt-overlay .pt-modal select', $css,
+            'La regla tiene que ganar por especificidad, no por ir después del parcial.');
+
+        $this->assertStringContainsString('appearance:none !important', $css,
+            'Sin apagar la nativa, el navegador dibuja su propia flecha encima.');
+
+        // Solo las reglas que apuntan a campos: un `background` en el div
+        // del modal es legitimo —no tiene flecha que borrar—.
+        preg_match_all('/([^{}]*\b(?:input|select|textarea)\b[^{}]*)\{([^}]*)\}/i', $css, $reglas, PREG_SET_ORDER);
+
+        foreach ($reglas as [$todo, $selector, $cuerpo]) {
+            $this->assertDoesNotMatchRegularExpression(
+                '/(^|[;\s])background:\s*#/i',
+                $cuerpo,
+                'La forma corta `background` borra la imagen de la flecha. '
+                .'Usa background-color en: '.trim($selector),
+            );
+        }
+    }
+
     // --------------------------------------------------------- auxiliares
 
     private function facturaDeLaEmpresa(): ?SaleInvoice

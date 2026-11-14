@@ -470,7 +470,7 @@
         .pt-scan-input {
             width:100%; padding:9px 12px; border:2px solid #6366f1; border-radius:8px;
             font-family:ui-monospace, monospace; font-size:16px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase;
-            background:#eef2ff !important; color:#0f172a !important;
+            background-color:#eef2ff !important; color:#0f172a !important;
         }
         .pt-scan-input::placeholder { color:#94a3b8 !important; }
         .pt-scan-hint { position:absolute; right:8px; bottom:8px; font-size:10px; color:#6366f1; background:#fff; padding:1px 6px; border-radius:4px; opacity:.7; }
@@ -544,17 +544,42 @@
            que nadie recuerda al escribirlo. */
         .pt-field input, .pt-field textarea, .pt-field select {
             width:100%; padding:9px 11px; border:1px solid #cbd5e1; border-radius:7px; font-size:14px; font-family:inherit;
-            background:#fff !important; color:#0f172a !important;
+            /* `background-color` y no `background`: la forma corta resetea
+               TAMBIEN background-image, -repeat, -position y -size. Como el
+               parcial de flechas pinta la del select con background-image,
+               usar la forma corta aqui la borraba o la dejaba repitiendose
+               segun que regla ganara el orden — de ahi las tres flechas. */
+            background-color:#fff !important; color:#0f172a !important;
         }
         .pt-field input::placeholder, .pt-field textarea::placeholder { color:#94a3b8 !important; }
         .pt-field input:focus, .pt-field textarea:focus, .pt-field select:focus { outline:none; border-color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,.15); }
+
+        /* UNA flecha, y una sola.
+           El navegador dibuja la suya, Filament le pone otra y el parcial
+           compartido una tercera. Aqui se apaga la nativa y se declara la
+           imagen entera —con repeticion, posicion y tamaño explicitos— para
+           que ninguna regla a medias pueda dejar media flecha de otro sitio.
+           El selector lleva dos clases a proposito: `.pt-modal select` a
+           secas EMPATA en especificidad con `.fi-page select` del parcial y
+           ganaria solo por ir despues en el documento, que es la clase de
+           cosa que se rompe el dia que alguien mueve un bloque. */
+        .pt-overlay .pt-modal select {
+            appearance:none !important; -webkit-appearance:none !important; -moz-appearance:none !important;
+            background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236b7280' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E") !important;
+            background-repeat:no-repeat !important;
+            background-position:right 10px center !important;
+            background-size:16px 16px !important;
+            /* Reserva el sitio de la flecha: sin esto el texto se le mete debajo. */
+            padding-right:34px !important;
+            text-overflow:ellipsis;
+        }
         /* Red de seguridad. Los estilos de esta pantalla son claros y escritos
            a mano uno por uno; sin esto, que un campo se vea depende de que
            quien lo escriba se acuerde de darle fondo y color, y en modo
            oscuro el tema le pone el texto blanco al que se olvide. Sin
            !important para que las reglas de arriba y los estilos en linea
            sigan mandando. */
-        .pt-modal input, .pt-modal textarea, .pt-modal select { background:#fff; color:#0f172a; }
+        .pt-modal input, .pt-modal textarea, .pt-modal select { background-color:#fff; color:#0f172a; }
         .pt-modal input::placeholder, .pt-modal textarea::placeholder { color:#94a3b8; }
 
         .pt-input-plate { font-family:ui-monospace, monospace !important; font-size:24px !important; font-weight:800 !important; letter-spacing:3px; text-transform:uppercase; text-align:center; color:#0f172a !important; }
@@ -609,7 +634,7 @@
         .pt-extras-search { position:relative; }
         .pt-extras-search input {
             width:100%; padding:8px 11px; border:1px solid #cbd5e1; border-radius:7px; font-size:13px; font-family:inherit;
-            background:#fff !important; color:#0f172a !important;
+            background-color:#fff !important; color:#0f172a !important;
         }
         .pt-extras-search input::placeholder { color:#94a3b8 !important; }
         .pt-extras-search input:focus { outline:none; border-color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,.15); }
@@ -647,7 +672,7 @@
 
         .pt-cancel summary { cursor:pointer; font-size:12px; color:#6b7280; font-weight:600; margin-bottom:6px; }
         .pt-cancel-body { display:flex; gap:7px; margin-top:6px; }
-        .pt-cancel-body input { flex:1; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; background:#fff !important; color:#0f172a !important; }
+        .pt-cancel-body input { flex:1; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; background-color:#fff !important; color:#0f172a !important; }
         .pt-cancel-body input::placeholder { color:#94a3b8 !important; }
 
         @media (max-width:900px) {
