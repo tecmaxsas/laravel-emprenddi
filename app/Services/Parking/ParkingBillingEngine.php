@@ -5,6 +5,7 @@ namespace App\Services\Parking;
 use App\Models\CashRegisterSession;
 use App\Models\Company;
 use App\Models\Location;
+use App\Models\Parking\ParkingLot;
 use App\Models\Parking\ParkingMembership;
 use App\Models\Parking\ParkingSession;
 use App\Models\SaleInvoice;
@@ -215,6 +216,144 @@ class ParkingBillingEngine
     }
 
     /**
+     * Factura solo productos, sin vehiculo de por medio.
+     *
+     * El parqueadero vende mas cosas que parqueo —tintos, gaseosas, lavadas,
+     * un repuesto— y hasta ahora la unica forma de cobrarlas era colgarlas de
+     * la salida de un carro. Si el cliente no venia en carro, o ya se habia
+     * ido, no habia donde registrarlas: se cobraban por fuera del sistema y
+     * no entraban ni al inventario ni al arqueo.
+     *
+     * NO crea sesion de parqueo. Se penso hacerlo —seria menos codigo, porque
+     * `issueForSession` ya sabe facturar extras— pero significaria inventar un
+     * vehiculo con placa vacia y cero minutos por cada gaseosa vendida, y esas
+     * sesiones fantasma ensucian la ocupacion, la rotacion y el promedio de
+     * estadia. Una venta de productos no es un parqueo.
+     *
+     * @param  array  $payload  ['invoice_kind', 'payment_method', 'account_id',
+     *                          'paid_amount'?, 'third_party_id'?, 'cash_received'?,
+     *                          'extras', 'notes'?]
+     */
+    public function issueForProducts(ParkingLot $lot, array $payload): SaleInvoice
+    {
+        $extras = array_values(array_filter(
+            $payload['extras'] ?? [],
+            fn ($e) => (int) ($e['quantity'] ?? 0) > 0 && (float) ($e['unit_price'] ?? 0) > 0,
+        ));
+
+        if ($extras === []) {
+            throw new RuntimeException('Agrega al menos un producto para facturar.');
+        }
+
+        $invoiceKind = in_array($payload['invoice_kind'] ?? 'pos', ['pos', 'electronic'], true)
+            ? $payload['invoice_kind']
+            : 'pos';
+        $paymentMethod = (string) ($payload['payment_method'] ?? 'cash');
+        $accountId = (int) ($payload['account_id'] ?? 0);
+
+        if ($accountId <= 0) {
+            throw new RuntimeException('Falta seleccionar la cuenta contable del cobro.');
+        }
+
+        $company = Company::find($lot->company_id);
+
+        if (! $company) {
+            throw new RuntimeException('Sin empresa asociada al parqueadero.');
+        }
+
+        $location = $this->resolveLocationForLot($lot, (int) $company->id);
+
+        if (! $location) {
+            throw new RuntimeException(
+                'El parqueadero no tiene sede asignada para facturar. '
+                .'Configura "Sede de facturación" en la edición del parqueadero.'
+            );
+        }
+
+        $customer = $this->resolveCustomer($company, $payload['third_party_id'] ?? null);
+
+        $cashSession = $this->resolveOpenCashSession();
+
+        if (! $cashSession) {
+            throw new RuntimeException(
+                'No tienes un turno de caja abierto. Abre tu caja en POS → Apertura de caja '
+                .'antes de cobrar.'
+            );
+        }
+
+        $total = round(array_sum(array_map(
+            fn ($e) => (int) $e['quantity'] * (float) $e['unit_price'],
+            $extras,
+        )), 2);
+
+        $paidAmount = (float) ($payload['paid_amount'] ?? $total);
+
+        $invoice = DB::transaction(function () use (
+            $company, $location, $customer, $cashSession, $extras,
+            $invoiceKind, $accountId, $paymentMethod, $paidAmount, $payload,
+        ) {
+            $doc = $this->numberer->reserveForLocation((int) $location->id, $invoiceKind);
+
+            $invoice = SaleInvoice::create([
+                'company_id' => $company->id,
+                'location_id' => $location->id,
+                'third_party_id' => $customer->id,
+                'cash_register_session_id' => $cashSession->id,
+                'prefix' => $doc['prefix'],
+                'number' => $doc['number'],
+                'invoice_kind' => $doc['kind'],
+                'origin' => SaleInvoice::ORIGIN_PARKING,
+                'dian_resolution_id' => $doc['resolution_id'],
+                'date' => now()->toDateString(),
+                'currency' => 'COP',
+                'status' => 'draft',
+                'payment_status' => 'pendiente',
+                'created_by_user_id' => Auth::id(),
+                'seller_user_id' => Auth::id(),
+                'description' => trim('Venta de productos'.($payload['notes'] ? ' — '.$payload['notes'] : '')),
+            ]);
+
+            $lineNumber = 1;
+
+            foreach ($extras as $extra) {
+                $cantidad = max(1, (int) $extra['quantity']);
+
+                $this->createInvoiceLine(
+                    invoice: $invoice,
+                    lineNumber: $lineNumber++,
+                    productId: (int) $extra['product_id'],
+                    description: (string) ($extra['product_name'] ?? ''),
+                    quantity: $cantidad,
+                    totalAtPublic: round($cantidad * (float) $extra['unit_price'], 2),
+                    taxId: $extra['tax_id'] ?? null,
+                );
+            }
+
+            $invoice = $this->sales->post($invoice->fresh(['lines']));
+
+            if ($paidAmount > 0) {
+                $this->sales->addPayment($invoice, [
+                    'amount' => min($paidAmount, (float) $invoice->fresh()->balance),
+                    'cash_received' => $payload['cash_received'] ?? null,
+                    'payment_method' => $paymentMethod,
+                    'account_id' => $accountId,
+                    'date' => now()->toDateString(),
+                    'reference' => $payload['reference'] ?? 'Venta parqueadero',
+                    'description' => "Venta productos {$invoice->fullNumber()}",
+                ]);
+            }
+
+            return $invoice->fresh();
+        });
+
+        // Fuera de la transaccion: es una llamada HTTP de varios segundos y
+        // adentro mantendria los locks abiertos.
+        app(PosDianTransmitter::class)->transmit($invoice);
+
+        return $invoice->fresh();
+    }
+
+    /**
      * Emite una factura por una mensualidad o convenio corporativo. El cliente
      * de la factura es el tercero asociado a la membresia (no Consumidor Final),
      * para que la informacion exogena agrupe correctamente por cliente y el
@@ -414,14 +553,29 @@ class ParkingBillingEngine
 
     protected function resolveLocation(ParkingSession $session): ?Location
     {
-        $lot = $session->parkingLot()->with('defaultLocation')->first();
+        return $this->resolveLocationForLot(
+            $session->parkingLot()->with('defaultLocation')->first(),
+            (int) $session->company_id,
+        );
+    }
+
+    /**
+     * La sede que factura por este parqueadero.
+     *
+     * Separada de `resolveLocation()` porque una venta de productos no tiene
+     * sesion de parqueo de la cual sacarla, y la regla —la sede del
+     * parqueadero, y si no la principal de la empresa— tiene que ser la misma
+     * para las dos o un dia facturarian desde sedes distintas.
+     */
+    protected function resolveLocationForLot(?ParkingLot $lot, int $companyId): ?Location
+    {
         if ($lot?->defaultLocation) {
             return $lot->defaultLocation;
         }
 
         // Fallback: sede principal de la empresa
         return Location::query()
-            ->where('company_id', $session->company_id)
+            ->where('company_id', $companyId)
             ->where('active', true)
             ->orderByDesc('is_main')
             ->orderBy('id')

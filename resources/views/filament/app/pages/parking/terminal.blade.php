@@ -299,55 +299,7 @@
                         </div>
                     @endunless
 
-                    {{-- Servicios adicionales / productos --}}
-                    <div class="pt-extras">
-                        <div class="pt-extras-head">
-                            🛍️ Servicios adicionales / productos
-                            @if (count($exitExtras) > 0)
-                                <span class="pt-extras-total">+ {{ $fmt($extrasTotal) }}</span>
-                            @endif
-                        </div>
-
-                        <div class="pt-extras-search">
-                            <input type="text" wire:model.live.debounce.250ms="extraSearch"
-                                placeholder="Buscar producto o servicio (mín. 2 letras)..." />
-                            @if ($searchResults->count() > 0)
-                                <div class="pt-extras-results">
-                                    @foreach ($searchResults as $p)
-                                        <button type="button" wire:click="addExtra({{ $p->id }})" class="pt-extra-result">
-                                            <span class="pt-extra-result-name">
-                                                <strong>{{ $p->name }}</strong>
-                                                <span class="pt-extra-result-code">{{ $p->code }}</span>
-                                            </span>
-                                            <span class="pt-extra-result-price">{{ $fmt($p->default_sale_price) }}</span>
-                                        </button>
-                                    @endforeach
-                                </div>
-                            @elseif (strlen(trim($extraSearch)) >= 2)
-                                <div class="pt-extras-empty">Sin coincidencias para "{{ $extraSearch }}"</div>
-                            @endif
-                        </div>
-
-                        @if (count($exitExtras) > 0)
-                            <div class="pt-extras-list">
-                                @foreach ($exitExtras as $i => $extra)
-                                    <div class="pt-extra-row">
-                                        <div class="pt-extra-info">
-                                            <strong>{{ $extra['product_name'] }}</strong>
-                                            <span class="pt-extra-code">{{ $extra['product_code'] }} · {{ $fmt($extra['unit_price']) }} c/u</span>
-                                        </div>
-                                        <div class="pt-extra-qty">
-                                            <button type="button" wire:click="adjustExtraQty({{ $i }}, -1)">−</button>
-                                            <span>{{ $extra['quantity'] }}</span>
-                                            <button type="button" wire:click="adjustExtraQty({{ $i }}, 1)">+</button>
-                                        </div>
-                                        <div class="pt-extra-subtotal">{{ $fmt($extra['quantity'] * $extra['unit_price']) }}</div>
-                                        <button type="button" wire:click="removeExtra({{ $i }})" class="pt-extra-remove" title="Quitar">×</button>
-                                    </div>
-                                @endforeach
-                            </div>
-                        @endif
-                    </div>
+                    @include('filament.app.pages.parking.partials.extras')
 
                     @if ($isCovered && $grandTotal === 0.0)
                         <div class="pt-info pt-info-green">
@@ -392,9 +344,15 @@
         </div>
     @endif
 
-    {{-- Modal Factura rapida: placa + valor + cliente, sin entrada --}}
+    {{-- Modal Factura rapida: un parqueo suelto, o una venta de productos.
+         El parqueadero vende mas cosas que parqueo —tintos, lavadas, un
+         repuesto— y hasta ahora la unica forma de cobrarlas era colgarlas de
+         la salida de un carro. Sin carro, se cobraban por fuera. --}}
     @if ($mode === 'direct')
-        @php $totalDirecto = (float) ($directForm['amount'] ?? 0); @endphp
+        @php
+            $esProductos = ($directForm['tipo'] ?? 'parqueo') === 'productos';
+            $totalDirecto = $this->directTotal;
+        @endphp
         <div class="pt-overlay" wire:click.self="closeModal">
             <div class="pt-modal pt-modal-lg">
                 <div class="pt-modal-head pt-modal-head-blue">
@@ -402,38 +360,61 @@
                     <button type="button" wire:click="closeModal" class="pt-modal-close">✕</button>
                 </div>
                 <div class="pt-modal-body">
-                    <div class="pt-info pt-info-amber" style="margin-bottom:12px;">
-                        Factura un parqueo sin registrar entrada. Si el vehículo tiene una entrada abierta, cóbralo desde la salida.
+                    <div class="pt-tipo-tabs">
+                        <button type="button" wire:click="cambiarTipoDirecto('parqueo')"
+                                class="pt-tipo-tab @unless ($esProductos) is-active @endunless">
+                            🚗 Parqueo
+                        </button>
+                        <button type="button" wire:click="cambiarTipoDirecto('productos')"
+                                class="pt-tipo-tab @if ($esProductos) is-active @endif">
+                            🛍️ Productos
+                        </button>
                     </div>
-                    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px;">
-                        <div class="pt-field">
-                            <label>Placa</label>
-                            <input type="text" wire:model="directForm.plate" autofocus
-                                   placeholder="ABC123" class="pt-input-plate" />
+
+                    @unless ($esProductos)
+                        <div class="pt-info pt-info-amber" style="margin-bottom:12px;">
+                            Factura un parqueo sin registrar entrada. Si el vehículo tiene una entrada abierta, cóbralo desde la salida.
                         </div>
-                        <div class="pt-field">
-                            <label>Valor a cobrar</label>
-                            <input type="number" step="1" min="0" inputmode="numeric"
-                                   wire:model.live.debounce.400ms="directForm.amount"
-                                   onwheel="this.blur()" placeholder="0"
-                                   style="font-size:22px; font-weight:800;" />
-                        </div>
-                    </div>
-                    @if ($vehicleTypes->count() > 1)
-                        <div class="pt-field">
-                            <label>Tipo de vehículo</label>
-                            <div class="pt-vehicle-grid">
-                                @foreach ($vehicleTypes as $vt)
-                                    <button type="button"
-                                        wire:click="$set('directForm.vehicle_type_id', {{ $vt->id }})"
-                                        class="pt-vehicle-btn @if ((int) ($directForm['vehicle_type_id'] ?? 0) === $vt->id) is-active @endif">
-                                        <span class="pt-vehicle-icon">{{ $vt->icon ?: '🚘' }}</span>
-                                        <span>{{ $vt->name }}</span>
-                                    </button>
-                                @endforeach
+                        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px;">
+                            <div class="pt-field">
+                                <label>Placa</label>
+                                <input type="text" wire:model="directForm.plate" autofocus
+                                       placeholder="ABC123" class="pt-input-plate" />
+                            </div>
+                            <div class="pt-field">
+                                <label>Valor a cobrar</label>
+                                <input type="number" step="1" min="0" inputmode="numeric"
+                                       wire:model.live.debounce.400ms="directForm.amount"
+                                       onwheel="this.blur()" placeholder="0"
+                                       style="font-size:22px; font-weight:800;" />
                             </div>
                         </div>
-                    @endif
+                        @if ($vehicleTypes->count() > 1)
+                            <div class="pt-field">
+                                <label>Tipo de vehículo</label>
+                                <div class="pt-vehicle-grid">
+                                    @foreach ($vehicleTypes as $vt)
+                                        <button type="button"
+                                            wire:click="$set('directForm.vehicle_type_id', {{ $vt->id }})"
+                                            class="pt-vehicle-btn @if ((int) ($directForm['vehicle_type_id'] ?? 0) === $vt->id) is-active @endif">
+                                            <span class="pt-vehicle-icon">{{ $vt->icon ?: '🚘' }}</span>
+                                            <span>{{ $vt->name }}</span>
+                                        </button>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @endif
+                    @else
+                        <div class="pt-info pt-info-amber" style="margin-bottom:12px;">
+                            Vende productos o servicios sin vehículo de por medio. No registra ninguna entrada ni salida del parqueadero.
+                        </div>
+                    @endunless
+
+                    {{-- En los dos modos: al parqueo se le pueden sumar
+                         productos, y una venta de productos son solo ellos. --}}
+                    @include('filament.app.pages.parking.partials.extras', [
+                        'titulo' => $esProductos ? '🛍️ Productos a facturar' : '🛍️ Agregar productos (opcional)',
+                    ])
 
                     @include('filament.app.pages.parking.partials.cobro', ['totalCobro' => $totalDirecto])
 
@@ -554,13 +535,37 @@
         .pt-modal-body { padding:18px; }
         .pt-field { margin-bottom:14px; }
         .pt-field label { display:block; font-size:11px; text-transform:uppercase; color:#6b7280; font-weight:700; margin-bottom:5px; }
-        .pt-field input[type=text], .pt-field textarea, .pt-field select {
+        /* TODOS los inputs, no solo los de texto.
+           La regla decia `input[type=text]`, asi que los campos numericos
+           —«Valor a cobrar», «Con cuanto paga», el valor de los extras— se
+           quedaban sin fondo ni color propios. En modo oscuro el tema les
+           ponia el texto blanco sobre fondo blanco: el cajero digitaba y no
+           veia lo que escribia. Un selector por tipo deja fuera los tipos
+           que nadie recuerda al escribirlo. */
+        .pt-field input, .pt-field textarea, .pt-field select {
             width:100%; padding:9px 11px; border:1px solid #cbd5e1; border-radius:7px; font-size:14px; font-family:inherit;
             background:#fff !important; color:#0f172a !important;
         }
-        .pt-field input[type=text]::placeholder, .pt-field textarea::placeholder { color:#94a3b8 !important; }
-        .pt-field input[type=text]:focus, .pt-field textarea:focus, .pt-field select:focus { outline:none; border-color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,.15); }
+        .pt-field input::placeholder, .pt-field textarea::placeholder { color:#94a3b8 !important; }
+        .pt-field input:focus, .pt-field textarea:focus, .pt-field select:focus { outline:none; border-color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,.15); }
+        /* Red de seguridad. Los estilos de esta pantalla son claros y escritos
+           a mano uno por uno; sin esto, que un campo se vea depende de que
+           quien lo escriba se acuerde de darle fondo y color, y en modo
+           oscuro el tema le pone el texto blanco al que se olvide. Sin
+           !important para que las reglas de arriba y los estilos en linea
+           sigan mandando. */
+        .pt-modal input, .pt-modal textarea, .pt-modal select { background:#fff; color:#0f172a; }
+        .pt-modal input::placeholder, .pt-modal textarea::placeholder { color:#94a3b8; }
+
         .pt-input-plate { font-family:ui-monospace, monospace !important; font-size:24px !important; font-weight:800 !important; letter-spacing:3px; text-transform:uppercase; text-align:center; color:#0f172a !important; }
+
+        .pt-tipo-tabs { display:flex; gap:6px; margin-bottom:14px; }
+        .pt-tipo-tab {
+            flex:1; padding:10px 14px; border-radius:8px; background:#f1f5f9; color:#475569;
+            border:1px solid #e2e8f0; font-weight:700; font-size:14px; cursor:pointer; transition:.15s;
+        }
+        .pt-tipo-tab:hover { background:#e2e8f0; }
+        .pt-tipo-tab.is-active { background:#6366f1; color:#fff; border-color:#6366f1; }
 
         .pt-vehicle-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(110px, 1fr)); gap:7px; }
         .pt-vehicle-btn { padding:10px 8px; background:#f1f5f9; border:2px solid transparent; border-radius:8px; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:3px; font-size:12px; font-weight:600; color:#475569; }

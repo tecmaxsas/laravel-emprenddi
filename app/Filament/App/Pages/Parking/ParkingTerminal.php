@@ -73,6 +73,12 @@ class ParkingTerminal extends Page
      */
     public array $directForm = [];
 
+    /** La factura rapida cobra un parqueo suelto. */
+    public const DIRECTO_PARQUEO = 'parqueo';
+
+    /** O una venta de productos, sin vehiculo de por medio. */
+    public const DIRECTO_PRODUCTOS = 'productos';
+
     public ?int $selectedSpaceId = null;
 
     public ?int $activeSessionId = null;
@@ -541,6 +547,11 @@ class ParkingTerminal extends Page
     protected function resetDirectForm(): void
     {
         $this->directForm = [
+            // De que es la factura: un parqueo suelto o una venta de
+            // productos. El parqueadero vende mas cosas que parqueo, y hasta
+            // ahora la unica forma de cobrarlas era colgarlas de la salida de
+            // un carro; sin carro, se cobraban por fuera del sistema.
+            'tipo' => self::DIRECTO_PARQUEO,
             'plate' => '',
             'amount' => null,
             'vehicle_type_id' => VehicleType::query()
@@ -810,7 +821,44 @@ class ParkingTerminal extends Page
     {
         $this->closeModal();
         $this->resetDirectForm();
+        $this->exitExtras = [];
+        $this->extraSearch = '';
         $this->mode = 'direct';
+    }
+
+    /**
+     * Cambia entre cobrar un parqueo y vender productos.
+     *
+     * Lo que se deja atras se limpia: un valor de parqueo olvidado al pasar a
+     * productos se cobraria sin que nadie lo vea, porque el campo ya no esta
+     * en pantalla.
+     */
+    public function cambiarTipoDirecto(string $tipo): void
+    {
+        $this->directForm['tipo'] = $tipo === self::DIRECTO_PRODUCTOS
+            ? self::DIRECTO_PRODUCTOS
+            : self::DIRECTO_PARQUEO;
+
+        if ($this->directForm['tipo'] === self::DIRECTO_PRODUCTOS) {
+            $this->directForm['plate'] = '';
+            $this->directForm['amount'] = null;
+        } else {
+            $this->exitExtras = [];
+            $this->extraSearch = '';
+        }
+    }
+
+    /** Lo que se va a cobrar en la factura rapida, segun de que sea. */
+    public function getDirectTotalProperty(): float
+    {
+        return $this->esFacturaDeProductos()
+            ? round($this->extrasTotal, 2)
+            : round((float) ($this->directForm['amount'] ?? 0) + $this->extrasTotal, 2);
+    }
+
+    protected function esFacturaDeProductos(): bool
+    {
+        return ($this->directForm['tipo'] ?? self::DIRECTO_PARQUEO) === self::DIRECTO_PRODUCTOS;
     }
 
     public function processDirectInvoice(): void
@@ -826,6 +874,12 @@ class ParkingTerminal extends Page
 
             return;
         }
+        if ($this->esFacturaDeProductos()) {
+            $this->facturarSoloProductos();
+
+            return;
+        }
+
         if ((float) ($this->directForm['amount'] ?? 0) <= 0) {
             $this->notify('warning', 'Falta el valor', 'Digita cuánto se le cobra al cliente.');
 
@@ -934,6 +988,62 @@ class ParkingTerminal extends Page
             'reference' => 'Parqueo '.$closed->plate,
             'extras' => $this->exitExtras,
         ]);
+    }
+
+    /**
+     * Factura una venta de productos sin vehiculo de por medio.
+     *
+     * No pasa por `directCharge()` a proposito: esa crea una sesion de
+     * parqueo, y una gaseosa no es un parqueo. Inventar un vehiculo con placa
+     * vacia por cada venta ensuciaria la ocupacion y el promedio de estadia
+     * del parqueadero.
+     */
+    protected function facturarSoloProductos(): void
+    {
+        if (count($this->exitExtras) === 0) {
+            $this->notify('warning', 'Sin productos', 'Busca y agrega al menos un producto.');
+
+            return;
+        }
+
+        $lot = $this->currentLot;
+
+        if (! $lot) {
+            $this->notify('warning', 'Sin parqueadero', 'Selecciona un parqueadero activo.');
+
+            return;
+        }
+
+        $metodo = $this->exitForm['payment_method'] ?? 'cash';
+        $accountId = (int) ($this->exitForm['account_id'] ?? 0)
+            ?: (int) PaymentAccountResolver::forMethod($metodo);
+
+        try {
+            $invoice = app(ParkingBillingEngine::class)->issueForProducts($lot, [
+                'invoice_kind' => $this->exitForm['invoice_kind'] ?? 'pos',
+                'payment_method' => $metodo,
+                'account_id' => $accountId,
+                'paid_amount' => $this->extrasTotal,
+                'cash_received' => $this->exitForm['cash_received'] ?? null,
+                'third_party_id' => $this->exitForm['third_party_id'] ?? null,
+                'extras' => $this->exitExtras,
+                'notes' => $this->directForm['notes'] ?? null,
+            ]);
+        } catch (\Throwable $e) {
+            $this->notify('danger', 'No se pudo generar la factura', $e->getMessage());
+
+            return;
+        }
+
+        $this->closeModal();
+
+        Notification::make()
+            ->title('✓ Venta facturada')
+            ->body('Total: $'.number_format((float) $invoice->total, 0, ',', '.')
+                .' · '.$invoice->fullNumber())
+            ->success()->send();
+
+        $this->dispatch('parking-invoice-ready', invoiceId: $invoice->id);
     }
 
     public function closeModal(): void
