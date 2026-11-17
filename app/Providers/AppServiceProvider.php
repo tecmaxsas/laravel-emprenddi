@@ -31,12 +31,25 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(AuditRecorder::class);
         // Empresas ya consultadas por ModuleGate en este request / job.
         $this->app->scoped(ModuleGate::MEMO, fn () => new \ArrayObject);
+        // Permisos del usuario ya resueltos en este request / job.
+        $this->app->scoped(\App\Support\PermissionMemo::BINDING, fn () => new \ArrayObject);
     }
 
     public function boot(): void
     {
         // Un cambio de modulos tiene que verse en el mismo request.
         Company::saved(fn () => ModuleGate::flush());
+
+        // Spatie borra su cache al cambiar roles o permisos: el memo de
+        // permisos tambien, para que el cambio se vea en el mismo request.
+        \Illuminate\Support\Facades\Event::listen(
+            \Illuminate\Cache\Events\KeyForgotten::class,
+            function ($event) {
+                if ($event->key === config('permission.cache.key')) {
+                    \App\Support\PermissionMemo::flush();
+                }
+            },
+        );
 
         if ($this->app->environment('production')) {
             URL::forceScheme('https');

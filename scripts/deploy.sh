@@ -265,9 +265,12 @@ $COMPOSE exec -T app php artisan config:cache
 $COMPOSE exec -T app php artisan route:cache
 $COMPOSE exec -T app php artisan view:cache
 $COMPOSE exec -T app php artisan event:cache
-if [ "$NEEDS_FILAMENT_ASSETS" = true ] || [ "$FORCE_ALL" = true ]; then
-    $COMPOSE exec -T app php artisan filament:optimize
-fi
+# SIEMPRE, no solo cuando cambian los assets: `optimize:clear` (arriba) borra
+# también el caché de componentes de Filament, y sin él cada petición vuelve a
+# recorrer app/Filament/** para descubrir recursos y páginas (~20 % de la CPU
+# de cada página). Pasó hasta el 2026-11-17: la carpeta quedaba vacía tras
+# cada deploy. Un recurso o página nueva solo aparece tras re-cachear.
+$COMPOSE exec -T app php artisan filament:optimize
 
 # ---- Permisos, segunda pasada (LA IMPORTANTE) -------------------------------
 # Los artisan de arriba corren como root dentro del contenedor y dejan los

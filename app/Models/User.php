@@ -16,7 +16,10 @@ use Spatie\Permission\Traits\HasRoles;
 class User extends Authenticatable implements FilamentUser
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable, HasRoles, SoftDeletes;
+    use HasFactory, Notifiable, SoftDeletes;
+    use HasRoles {
+        hasPermissionTo as protected spatieHasPermissionTo;
+    }
 
     protected $fillable = [
         'company_id',
@@ -90,6 +93,33 @@ class User extends Authenticatable implements FilamentUser
     public function isAccountantPortal(): bool
     {
         return (bool) $this->is_accountant_portal;
+    }
+
+    /**
+     * Mismo resultado que Spatie, pero resuelto contra los permisos del
+     * usuario memorizados por request (ver App\Support\PermissionMemo): el
+     * camino de Spatie cruza los ~220 roles de cada permiso con los del
+     * usuario en cada can() y era ~40 % de la CPU de cada pagina.
+     *
+     * Solo toma el atajo con un nombre de permiso en el guard por defecto.
+     * Ids, objetos Permission, otros guards o un permiso inexistente (que
+     * debe lanzar PermissionDoesNotExist) siguen por el camino de Spatie.
+     */
+    public function hasPermissionTo($permission, ?string $guardName = null): bool
+    {
+        $name = $permission instanceof \BackedEnum ? $permission->value : $permission;
+        $guard = $guardName ?? $this->getDefaultGuardName();
+
+        if (is_string($name)
+            && $this->getKey() !== null
+            && $guard === $this->getDefaultGuardName()
+            && ! $this->getWildcardClass()
+            && ! \Spatie\Permission\PermissionRegistrar::isUid($name)
+            && \App\Support\PermissionMemo::exists($name, $guard)) {
+            return \App\Support\PermissionMemo::has($this, $name, $guard);
+        }
+
+        return $this->spatieHasPermissionTo($permission, $guardName);
     }
 
     public function canManageCompany(int $companyId): bool
