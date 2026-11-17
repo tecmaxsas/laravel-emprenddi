@@ -102,25 +102,37 @@ class User extends Authenticatable implements FilamentUser
      * usuario en cada can() y era ~40 % de la CPU de cada pagina.
      *
      * Solo toma el atajo con un nombre de permiso en el guard por defecto.
-     * Ids, objetos Permission, otros guards o un permiso inexistente (que
-     * debe lanzar PermissionDoesNotExist) siguen por el camino de Spatie.
+     * Ids, objetos Permission u otros guards siguen por el camino de Spatie.
+     *
+     * Un nombre que no es permiso lanza PermissionDoesNotExist, igual que
+     * Spatie (checkPermissionTo lo convierte en false), pero sin que Spatie
+     * recorra su catalogo para descubrirlo. Pasa mucho: el Gate le pregunta a
+     * Spatie por TODA ability, y la accion «Ver» de Filament pide `view` por
+     * cada fila de cada tabla.
      */
     public function hasPermissionTo($permission, ?string $guardName = null): bool
     {
         $name = $permission instanceof \BackedEnum ? $permission->value : $permission;
-        $guard = $guardName ?? $this->getDefaultGuardName();
+        $defaultGuard = $this->defaultGuardMemo ??= $this->getDefaultGuardName();
+        $guard = $guardName ?? $defaultGuard;
 
         if (is_string($name)
             && $this->getKey() !== null
-            && $guard === $this->getDefaultGuardName()
+            && $guard === $defaultGuard
             && ! $this->getWildcardClass()
-            && ! \Spatie\Permission\PermissionRegistrar::isUid($name)
-            && \App\Support\PermissionMemo::exists($name, $guard)) {
+            && ! \Spatie\Permission\PermissionRegistrar::isUid($name)) {
+            if (! \App\Support\PermissionMemo::exists($name, $guard)) {
+                throw \Spatie\Permission\Exceptions\PermissionDoesNotExist::create($name, $guard);
+            }
+
             return \App\Support\PermissionMemo::has($this, $name, $guard);
         }
 
         return $this->spatieHasPermissionTo($permission, $guardName);
     }
+
+    /** Guard por defecto, resuelto una vez por instancia (no cambia). */
+    protected ?string $defaultGuardMemo = null;
 
     public function canManageCompany(int $companyId): bool
     {
