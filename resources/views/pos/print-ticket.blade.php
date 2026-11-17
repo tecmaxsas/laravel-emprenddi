@@ -287,6 +287,24 @@
             @endif
         @endif
 
+        {{-- OBSERVACIONES
+             Lo que el cajero escribio para que el cliente lo lea: «pago con
+             billete de 50», «se le cobro media hora», «entrega el martes».
+
+             Es `observations` y NO `notes`. La otra columna esta rotulada
+             «Notas internas» y ahi el sistema escribe cosas como el motivo de
+             una anulacion; imprimirla haria que toda factura con una
+             anotacion interna se la mostrara al cliente.
+
+             Va despues de los pagos y antes del pie: es lo ultimo concreto
+             del documento, donde se lee sin estorbar las cifras. --}}
+        @if (filled($invoice->observations))
+            <div class="sep"></div>
+            <div class="small" style="white-space: pre-line;">
+                <span class="bold">Observaciones:</span> {{ $invoice->observations }}
+            </div>
+        @endif
+
         {{-- FOOTER --}}
         <div class="sep"></div>
         <div class="center">

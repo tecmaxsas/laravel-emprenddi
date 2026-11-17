@@ -682,8 +682,18 @@ class SaleInvoiceResource extends Resource
                         )),
                 ]),
 
+            Forms\Components\Textarea::make('observations')
+                ->label('Observaciones')
+                ->helperText('Se IMPRIMEN en la factura: el cliente las va a leer.')
+                ->rows(2)
+                ->columnSpanFull(),
+
+            // El rótulo importa. Esta columna también guarda el motivo de una
+            // anulación, así que lo que se escriba aquí no puede terminar en
+            // el tiquete del cliente; para eso está `observations`.
             Forms\Components\Textarea::make('notes')
                 ->label('Notas internas')
+                ->helperText('Solo para ustedes: no salen en la factura.')
                 ->rows(2)
                 ->columnSpanFull(),
         ]);

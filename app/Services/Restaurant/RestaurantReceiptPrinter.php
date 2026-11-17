@@ -187,6 +187,22 @@ class RestaurantReceiptPrinter
             $b->separator('-');
         }
 
+        // ===== Observaciones =====
+        // El mismo renglon que imprime el tiquete HTML (pos/print-ticket).
+        // Si solo estuviera alla, una observacion se veria o no segun si el
+        // negocio imprime por el navegador o por la impresora termica, que
+        // es justo el tipo de diferencia que nadie descubre hasta que un
+        // cliente reclama por algo que «si estaba escrito».
+        //
+        // Es `observations` y NO `notes`: esa otra columna son notas
+        // internas y guarda cosas como el motivo de una anulacion.
+        if (filled($invoice->observations)) {
+            $b->alignLeft()
+                ->bold(true)->line('OBSERVACIONES:')->bold(false)
+                ->line((string) $invoice->observations)
+                ->separator('-');
+        }
+
         // ===== Footer =====
         $b->alignCenter()
             ->lf()

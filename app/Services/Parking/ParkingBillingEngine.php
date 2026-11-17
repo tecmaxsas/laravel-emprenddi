@@ -134,6 +134,7 @@ class ParkingBillingEngine
                 'created_by_user_id' => Auth::id(),
                 'seller_user_id' => Auth::id(),
                 'description' => "Parqueo placa {$session->plate}".(! empty($extras) ? ' + servicios' : ''),
+                'observations' => $this->observaciones($payload),
             ]);
 
             $lineNumber = 1;
@@ -310,7 +311,8 @@ class ParkingBillingEngine
                 'payment_status' => 'pendiente',
                 'created_by_user_id' => Auth::id(),
                 'seller_user_id' => Auth::id(),
-                'description' => trim('Venta de productos'.($payload['notes'] ? ' — '.$payload['notes'] : '')),
+                'description' => 'Venta de productos',
+                'observations' => $this->observaciones($payload),
             ]);
 
             $lineNumber = 1;
@@ -490,6 +492,28 @@ class ParkingBillingEngine
         app(PosDianTransmitter::class)->transmit($invoice);
 
         return $invoice->fresh();
+    }
+
+    /**
+     * Lo que el cajero escribio en «Observaciones» de la factura rapida.
+     *
+     * Va a `observations` y NO a `notes`: esa otra columna esta rotulada
+     * «Notas internas» y ahi es donde el sistema escribe, entre otras cosas,
+     * el motivo de una anulacion. Lo de aqui lo va a leer el cliente en el
+     * tiquete, asi que son dos campos distintos a proposito.
+     *
+     * Tampoco va pegada a `description`: esa es el concepto del documento
+     * —«Parqueo placa ABC123»— y ya sale como linea del tiquete. Mezclarlas
+     * daria un renglon que dice dos cosas a la vez.
+     *
+     * Se acepta `notes` como nombre viejo de la misma clave porque asi se
+     * llamaba cuando solo la usaba la venta de productos.
+     */
+    protected function observaciones(array $payload): ?string
+    {
+        $texto = trim((string) ($payload['observations'] ?? $payload['notes'] ?? ''));
+
+        return $texto === '' ? null : $texto;
     }
 
     /**

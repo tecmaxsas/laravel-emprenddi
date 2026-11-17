@@ -97,6 +97,7 @@ class SaleInvoice extends Model
         'posted_at',
         'description',
         'notes',
+        'observations',
         // DIAN
         'dian_resolution_id',
         'dian_status',

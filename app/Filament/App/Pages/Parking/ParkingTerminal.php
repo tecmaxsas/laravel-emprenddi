@@ -903,7 +903,7 @@ class ParkingTerminal extends Page
         }
 
         try {
-            $invoice = $this->maybeIssueInvoice($session);
+            $invoice = $this->maybeIssueInvoice($session, $this->directForm['notes'] ?? null);
         } catch (\Throwable $e) {
             // La sesion se creo solo para esta factura: sin factura no hubo
             // cobro, asi que se anula para que no sume en los reportes. Si
@@ -954,7 +954,15 @@ class ParkingTerminal extends Page
         }
     }
 
-    protected function maybeIssueInvoice(ParkingSession $closed): ?SaleInvoice
+    /**
+     * @param  string|null  $observaciones  Lo que el cajero escribio en la
+     *                                      factura rapida. Llega por parametro y no leyendo
+     *                                      `$closed->notes` a proposito: las notas de la
+     *                                      ENTRADA son otra cosa —«rayon en la puerta», «color
+     *                                      rojo»—, escritas para el parqueadero y no para que
+     *                                      el cliente las lea en su tiquete.
+     */
+    protected function maybeIssueInvoice(ParkingSession $closed, ?string $observaciones = null): ?SaleInvoice
     {
         $parkingCharge = $closed->parking_membership_id ? 0 : (float) $closed->amount;
         $extrasTotal = $this->extrasTotal;
@@ -987,6 +995,7 @@ class ParkingTerminal extends Page
             'third_party_id' => $this->exitForm['third_party_id'] ?? null,
             'reference' => 'Parqueo '.$closed->plate,
             'extras' => $this->exitExtras,
+            'observations' => $observaciones,
         ]);
     }
 
@@ -1027,7 +1036,7 @@ class ParkingTerminal extends Page
                 'cash_received' => $this->exitForm['cash_received'] ?? null,
                 'third_party_id' => $this->exitForm['third_party_id'] ?? null,
                 'extras' => $this->exitExtras,
-                'notes' => $this->directForm['notes'] ?? null,
+                'observations' => $this->directForm['notes'] ?? null,
             ]);
         } catch (\Throwable $e) {
             $this->notify('danger', 'No se pudo generar la factura', $e->getMessage());
