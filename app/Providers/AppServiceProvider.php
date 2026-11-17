@@ -40,6 +40,17 @@ class AppServiceProvider extends ServiceProvider
         // Un cambio de modulos tiene que verse en el mismo request.
         Company::saved(fn () => ModuleGate::flush());
 
+        // Sin la opcion «Todos» en la paginacion. Filament la guarda en la
+        // sesion y la reaplica cada vez que el usuario vuelve a la lista: el
+        // 2026-11-17 un usuario de IMPERIO la tenia en productos (6.894) y en
+        // facturas de venta, y cada visita pintaba todo, pasaba de 90 s (504)
+        // y ocupaba un worker de los 5. Un valor guardado que ya no esta en
+        // las opciones Filament lo descarta solo y vuelve a la primera.
+        // Las tablas que definen sus propias opciones conservan las suyas.
+        \Filament\Tables\Table::configureUsing(
+            fn (\Filament\Tables\Table $table) => $table->paginationPageOptions([10, 25, 50, 100]),
+        );
+
         // Spatie borra su cache al cambiar roles o permisos: el memo de
         // permisos tambien, para que el cambio se vea en el mismo request.
         \Illuminate\Support\Facades\Event::listen(
