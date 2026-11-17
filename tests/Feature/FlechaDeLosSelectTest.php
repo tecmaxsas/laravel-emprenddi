@@ -34,6 +34,7 @@ class FlechaDeLosSelectTest extends TestCase
         'restaurant/delivery-dispatch.blade.php',
         'restaurant/kitchen-display.blade.php',
         'parking/terminal.blade.php',
+        'billiards/terminal.blade.php',
         'hotel/front-desk.blade.php',
         'hotel/calendar.blade.php',
         'order-taking/new-order.blade.php',
@@ -87,7 +88,16 @@ class FlechaDeLosSelectTest extends TestCase
             .'así que les salen dos flechas encima del texto: '.implode(', ', $sinParcial));
     }
 
-    /** El estilo está escrito una sola vez. */
+    /**
+     * El estilo está escrito una sola vez.
+     *
+     * Busca una REGLA —el selector seguido de su llave—, no la mención del
+     * selector. La primera versión hacía `str_contains('.fi-page select')` y
+     * marcaba como copia un comentario del terminal de parqueadero que
+     * explicaba por qué su regla necesita dos clases para ganarle a la del
+     * parcial. Castigar a quien deja escrito el porqué es exactamente al
+     * revés de lo que esta prueba quiere conseguir.
+     */
     public function test_el_estilo_no_esta_copiado_en_las_pantallas(): void
     {
         $copias = [];
@@ -95,7 +105,7 @@ class FlechaDeLosSelectTest extends TestCase
         foreach (self::PANTALLAS as $pantalla) {
             $fuente = file_get_contents(base_path('resources/views/filament/app/pages/'.$pantalla));
 
-            if (str_contains($fuente, '.fi-page select')) {
+            if (preg_match('/\.fi-page\s+select\s*\{/', $fuente)) {
                 $copias[] = $pantalla;
             }
         }
@@ -103,5 +113,24 @@ class FlechaDeLosSelectTest extends TestCase
         $this->assertSame([], $copias,
             'El estilo está copiado dentro de estas pantallas en vez de salir del parcial: '
             .implode(', ', $copias));
+    }
+
+    /**
+     * Y el guarda de arriba sigue sirviendo para algo.
+     *
+     * Una expresión regular mal escrita no falla: deja de encontrar nada, y
+     * una prueba que no puede fallar es peor que no tenerla. Esta comprueba
+     * que el patrón sí reconoce una copia de verdad.
+     */
+    public function test_el_guarda_reconoce_una_copia_de_verdad(): void
+    {
+        $copiaReal = '<style> .fi-page select { appearance: none !important; } </style>';
+        $soloUnaMencion = '{{-- empata con `.fi-page select` del parcial --}}';
+
+        $this->assertSame(1, preg_match('/\.fi-page\s+select\s*\{/', $copiaReal),
+            'Si el patrón no reconoce una regla copiada, la prueba no vigila nada.');
+
+        $this->assertSame(0, preg_match('/\.fi-page\s+select\s*\{/', $soloUnaMencion),
+            'Una mención en un comentario no es una copia.');
     }
 }

@@ -209,6 +209,15 @@ class PermissionsCatalog
                 'hotel.housekeeping' => 'Marcar habitaciones aseadas, en mantenimiento o bloqueadas',
                 'hotel.reports' => 'Ver reportes de hotel (ocupación, ingresos, huéspedes)',
             ],
+            'Billares' => [
+                'billiards.use' => 'Operar el salón (abrir mesas, cargar consumos, cobrar)',
+                'billiards.manage' => 'Configurar salas, mesas, tipos y tarifas',
+                // Separados a proposito, misma leccion que el folio del hotel:
+                // cargar un consumo es trabajo del mesero; perdonar plata no.
+                'billiards.adjust' => 'Aplicar cortesías y ajustes a la cuenta de una mesa',
+                'billiards.cancel' => 'Anular la cuenta de una mesa',
+                'billiards.reports' => 'Ver reportes de billares',
+            ],
             'Parqueadero' => [
                 'parking.use' => 'Operar entrada/salida del parqueadero',
                 'parking.manage' => 'Configurar parqueaderos, tipos de vehículo y tarifas',
@@ -326,6 +335,11 @@ class PermissionsCatalog
                 'appointments.view', 'appointments.manage',
                 // Parqueadero: el cajero opera entrada/salida y puede anular
                 'parking.use', 'parking.cancel',
+                // Billares: el mesero abre mesas, carga consumos y cobra. Lo
+                // que NO tiene es con que dejar de cobrar: la cortesia y la
+                // anulacion son plata que el salon no recibe, y eso lo
+                // autoriza un administrador.
+                'billiards.use',
                 // Hotel: el recepcionista aloja, reserva, registra huéspedes y
                 // carga consumos al folio. Lo que NO tiene es con qué dejar de
                 // cobrar: cerrar sin facturar, anular una estadía y rebajar un

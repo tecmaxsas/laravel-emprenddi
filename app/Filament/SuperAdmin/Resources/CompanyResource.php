@@ -167,6 +167,7 @@ class CompanyResource extends Resource
                             'accounting' => 'Contabilidad (plan de cuentas, asientos, libros y estados financieros)',
                             'restaurant' => 'Restaurante (mesas, comandas, cocina, delivery)',
                             'parking' => 'Parqueadero (tarifas, espacios, mensualidades, incidentes)',
+                            'billiards' => 'Billares (mesas, tiempo de juego, consumos, tarifas por franja)',
                             'hotel' => 'Hotel (zonas, habitaciones, reservas, huéspedes, folio)',
                             'order_taking' => 'Toma pedidos B2B (listas de precios, pedidos, despachos, cartera)',
                             'pharmacy' => 'Farmacia (próximamente)',

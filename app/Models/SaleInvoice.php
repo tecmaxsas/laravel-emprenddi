@@ -168,6 +168,8 @@ class SaleInvoice extends Model
 
     public const ORIGIN_HOTEL = 'hotel';
 
+    public const ORIGIN_BILLIARDS = 'billiards';
+
     public const ORIGIN_ORDER_TAKING = 'order_taking';
 
     public const ORIGIN_DELIVERY_NOTE = 'delivery_note';
@@ -180,6 +182,7 @@ class SaleInvoice extends Model
         self::ORIGIN_RESTAURANT => 'Restaurante',
         self::ORIGIN_PARKING => 'Parqueadero',
         self::ORIGIN_HOTEL => 'Hotel',
+        self::ORIGIN_BILLIARDS => 'Billares',
         self::ORIGIN_ORDER_TAKING => 'Toma de pedidos',
         self::ORIGIN_DELIVERY_NOTE => 'Remisión',
         self::ORIGIN_QUOTATION => 'Cotización',
@@ -188,9 +191,10 @@ class SaleInvoice extends Model
     /**
      * ¿Se corrige en el POS?
      *
-     * Solo las que nacieron ahi. Las de restaurante, parqueadero y hotel
-     * tienen sus propias pantallas y su propio flujo; mandarlas al POS de
-     * retail seria tan equivocado como mandar una del POS al formulario.
+     * Solo las que nacieron ahi. Las de restaurante, parqueadero, hotel y
+     * billares tienen sus propias pantallas y su propio flujo; mandarlas al
+     * POS de retail seria tan equivocado como mandar una del POS al
+     * formulario.
      */
     public function naceEnElPos(): bool
     {

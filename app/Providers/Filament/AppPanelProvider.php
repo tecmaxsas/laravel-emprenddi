@@ -61,6 +61,7 @@ class AppPanelProvider extends PanelProvider
                 'Restaurante',
                 'Parqueadero',
                 'Hotel',
+                'Billares',
                 'Ventas',
                 'Toma pedidos',
                 'Servicio',

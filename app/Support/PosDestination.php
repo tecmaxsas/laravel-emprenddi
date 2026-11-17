@@ -13,7 +13,8 @@ use Illuminate\Support\Facades\Auth;
  *   1. Restaurante — si el modulo esta activo y tiene restaurant.use
  *   2. Parqueadero — el Terminal ES su POS, por eso gana sobre el retail
  *   3. Hotel       — la recepcion ES su POS, misma razon
- *   4. POS retail  — si tiene pos.use
+ *   4. Billares    — el salon ES su POS, misma razon
+ *   5. POS retail  — si tiene pos.use
  *
  * Lo usan el boton POS del topbar y la apertura de caja, que hasta ahora
  * dejaba a todo el mundo en el POS retail sin importar su negocio.
@@ -25,6 +26,8 @@ class PosDestination
     public const PARKING = 'parking';
 
     public const HOTEL = 'hotel';
+
+    public const BILLIARDS = 'billiards';
 
     public const RETAIL = 'retail';
 
@@ -47,9 +50,10 @@ class PosDestination
         self::RESTAURANT => 'restaurant.use',
         self::PARKING => 'parking.use',
         self::HOTEL => 'hotel.use',
+        self::BILLIARDS => 'billiards.use',
     ];
 
-    /** @return self::RESTAURANT|self::PARKING|self::HOTEL|self::RETAIL|null */
+    /** @return self::RESTAURANT|self::PARKING|self::HOTEL|self::BILLIARDS|self::RETAIL|null */
     public static function resolve(): ?string
     {
         $user = Auth::user();
@@ -75,6 +79,7 @@ class PosDestination
             self::RESTAURANT => route('filament.app.pages.restaurant-pos'),
             self::PARKING => route('filament.app.pages.parking'),
             self::HOTEL => route('filament.app.pages.hotel'),
+            self::BILLIARDS => route('filament.app.pages.billar'),
             self::RETAIL => route('filament.app.pages.pos'),
             default => null,
         };

@@ -1,0 +1,17 @@
+<?php
+
+namespace App\Filament\App\Resources\Billiards\BilliardHallResource\Pages;
+
+use App\Filament\App\Resources\Billiards\BilliardHallResource;
+use Filament\Actions;
+use Filament\Resources\Pages\ListRecords;
+
+class ListBilliardHalls extends ListRecords
+{
+    protected static string $resource = BilliardHallResource::class;
+
+    protected function getHeaderActions(): array
+    {
+        return [Actions\CreateAction::make()];
+    }
+}
