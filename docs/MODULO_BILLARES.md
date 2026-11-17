@@ -262,7 +262,60 @@ mano en el panel de la empresa:
 
 ---
 
-## 8. Pruebas
+## 8. La cuenta demo
+
+Para mostrarle el módulo a un salón sin tener que configurar nada:
+
+```bash
+docker compose exec app php artisan db:seed --class=BilliardsDemoSeeder
+```
+
+Deja montada **Billares La Esquina S.A.S.** con dos usuarios (contraseña
+`Demo2026!` en los dos):
+
+| Usuario | Para qué sirve en la demostración |
+|---|---|
+| `admin@billareslaesquina.co` | Ve y hace todo, incluidas cortesías y anulaciones |
+| `cajero@billareslaesquina.co` | Opera el salón pero **no** puede perdonar plata |
+
+Son dos a propósito. «¿Y el mesero puede regalar una mesa?» es de lo que más
+se pregunta, y se contesta mucho mejor entrando con el cajero que
+explicándolo de palabra.
+
+Lo que queda cargado:
+
+- **12 mesas en 3 zonas** (salón principal, segundo piso, terraza), una de
+  ellas en mantenimiento para que se vea ese estado.
+- **6 tarifas** que son el muestrario del motor: happy hour de lunes a
+  jueves, tarifa de noche que cruza la medianoche, hora completa empezada,
+  por partida, escalonada con tope y una de torneo con vigencia futura.
+- **8 productos de barra** para cargar a las cuentas.
+- **45 cuentas cerradas** de los últimos 14 días, con su tiempo y sus
+  consumos. **Las liquida el motor de tarifas de verdad**, no están escritas
+  a mano: los números de la demo son los números reales del sistema. En la
+  última corrida, 6 cuentas cayeron en happy hour y 7 en tarifa de noche.
+- **5 mesas abiertas ahora mismo**, una en pausa, para que el mapa tenga un
+  reloj corriendo y una cuenta que mirar al entrar.
+
+**Una diferencia a propósito con el demo de parqueadero:** ese no crea
+resolución DIAN ni turno de caja, así que el prospecto que da clic en
+«cobrar» se topa con un error en mitad de la demostración. Este los crea, y
+el recorrido completo —incluido el cobro de verdad con su factura— funciona
+desde el primer clic.
+
+Es **idempotente**: correrlo otra vez no duplica nada y refresca las fechas
+de las cuentas históricas, así que el reporte del mes siempre tiene datos.
+No está registrado en `DatabaseSeeder` —igual que los demás seeders de
+demo— para que un despliegue no siembre empresas de ejemplo en producción.
+
+> No lleva prueba automática. En este repositorio ningún seeder de demo la
+> tiene, y una que lo corriera dejaría una empresa demo en la base de
+> desarrollo: eso ya rompió pruebas antes. Se verificó corriéndolo dos veces
+> y revisando los datos que deja.
+
+---
+
+## 9. Pruebas
 
 | Archivo | Qué cubre |
 |---|---|
@@ -282,7 +335,7 @@ concreta; no reemplazan abrir el terminal en modo oscuro y mirarlo.
 
 ---
 
-## 9. Lo que NO quedó, y por qué
+## 10. Lo que NO quedó, y por qué
 
 - **Reservas de mesa.** Un billar reserva por teléfono y a veces anota en una
   libreta; el estado `reserved` ya existe en la mesa para bloquearla a mano.
