@@ -368,7 +368,10 @@
         $posSettings = $this->posSettings;
         $hasSession = $this->hasOpenSession;
         $session = $this->currentSession;
-        $sessionTotals = $this->sessionTotals;
+        // El resumen de caja (6 consultas) solo se muestra en los modales de
+        // detalle y de cierre: calcularlo siempre lo repetia en cada tecla
+        // del buscador y en cada producto agregado.
+        $sessionTotals = ($showSessionDetailsModal || $showCloseSessionModal) ? $this->sessionTotals : null;
     @endphp
 
     {{-- ============================================================ --}}
