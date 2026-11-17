@@ -12,6 +12,7 @@ use App\Services\Accounting\TaxesProvisioner;
 use App\Services\Ai\AiCredits;
 use App\Services\Ai\AiMoney;
 use App\Services\Maintenance\CompanyDataReset;
+use App\Services\Maintenance\CompanyEraser;
 use App\Support\ResumenDeEmpresa;
 use Filament\Forms;
 use Filament\Forms\Components\TextInput;
@@ -364,12 +365,129 @@ class CompanyResource extends Resource
                 Tables\Actions\ActionGroup::make([
                     self::resetDataAction(withProducts: false),
                     self::resetDataAction(withProducts: true),
+                    self::eliminarEmpresaAction(),
                 ])
                     ->label('Resetear datos')
                     ->icon('heroicon-o-exclamation-triangle')
                     ->color('danger')
                     ->button(),
             ]);
+    }
+
+    /**
+     * Borrar la empresa entera, sin vuelta atrás.
+     *
+     * Es para la empresa que no debería existir: el registro de prueba que
+     * nadie terminó de montar, la demo vieja, el alta duplicada. Para la
+     * empresa viva que quiere empezar limpia está «Resetear datos», que
+     * conserva la configuración.
+     *
+     * Tres salvaguardas, y la más importante no es la que parece:
+     *
+     *  1. Solo super-admin.
+     *  2. Hay que escribir el NIT exacto. Un «¿está seguro?» se contesta
+     *     que sí sin leerlo; un NIT hay que ir a buscarlo.
+     *  3. **La modal dice qué hay adentro**: cuántas facturas, cuántos
+     *     asientos, cuántos usuarios. Es lo que de verdad frena la mano
+     *     cuando uno se equivocó de fila, porque una empresa de prueba se
+     *     ve vacía y un cliente real no.
+     *
+     * No hay acción masiva a propósito. Borrar ocho empresas son ocho
+     * confirmaciones, y eso es una característica: cada una obliga a mirar
+     * lo que se está destruyendo.
+     */
+    protected static function eliminarEmpresaAction(): Tables\Actions\Action
+    {
+        return Tables\Actions\Action::make('eliminarEmpresa')
+            ->label('ELIMINAR la empresa completa')
+            ->icon('heroicon-o-fire')
+            ->color('danger')
+            ->visible(fn () => (bool) auth()->user()?->is_super_admin)
+            ->modalIcon('heroicon-o-fire')
+            ->modalIconColor('danger')
+            ->modalHeading('Eliminar la empresa y todo lo suyo')
+            ->modalWidth('xl')
+            ->modalDescription(function (Company $record) {
+                $grave = app(CompanyEraser::class)->loGrave($record);
+
+                $msg = sprintf(
+                    'Vas a borrar "%s" (NIT %s) y TODO lo que tiene dentro: usuarios, '
+                    .'contabilidad, facturas, productos, inventario y la configuración. '
+                    ."La empresa deja de existir.\n\n",
+                    $record->name,
+                    $record->nit,
+                );
+
+                if ($grave === []) {
+                    $msg .= 'Esta empresa está vacía: no tiene facturas, ni asientos, ni usuarios.';
+                } else {
+                    $msg .= "Esto es lo que hay adentro ahora mismo:\n";
+
+                    foreach ($grave as $que => $cuantos) {
+                        $msg .= "  · {$que}: ".number_format($cuantos)."\n";
+                    }
+
+                    $msg .= "\nSi esperabas una empresa vacía y ves cifras, estás en la fila equivocada.";
+                }
+
+                $msg .= "\n\nNo se puede deshacer y no hay papelera.";
+
+                return $msg;
+            })
+            ->form([
+                TextInput::make('confirm_nit')
+                    ->label('Escribe el NIT de la empresa para confirmar')
+                    ->placeholder('NIT exacto, sin puntos ni guiones')
+                    ->required()
+                    ->autocomplete('off')
+                    ->helperText('Se valida el NIT para que no se borre la empresa equivocada.'),
+            ])
+            ->modalSubmitActionLabel('Eliminar para siempre')
+            ->action(function (Company $record, array $data) {
+                if (trim((string) ($data['confirm_nit'] ?? '')) !== (string) $record->nit) {
+                    Notification::make()->danger()
+                        ->title('El NIT no coincide')
+                        ->body('No se borró nada.')
+                        ->persistent()->send();
+
+                    return;
+                }
+
+                // Nadie se borra el piso donde está parado: un super-admin
+                // que elimine su propia empresa se queda sin sesión a mitad
+                // de la operación.
+                if ((int) auth()->user()?->company_id === (int) $record->id) {
+                    Notification::make()->danger()
+                        ->title('Esa es tu propia empresa')
+                        ->body('No se puede borrar la empresa a la que perteneces.')
+                        ->persistent()->send();
+
+                    return;
+                }
+
+                $nombre = $record->name;
+
+                try {
+                    $borradas = app(CompanyEraser::class)->borrar($record);
+                } catch (\Throwable $e) {
+                    Notification::make()->danger()
+                        ->title('No se borró nada')
+                        ->body($e->getMessage())
+                        ->persistent()->send();
+
+                    return;
+                }
+
+                Notification::make()->success()
+                    ->title('Empresa eliminada')
+                    ->body(sprintf(
+                        '"%s" ya no existe. Se borraron %s registros de %d tablas.',
+                        $nombre,
+                        number_format(array_sum($borradas)),
+                        count($borradas),
+                    ))
+                    ->persistent()->send();
+            });
     }
 
     /**

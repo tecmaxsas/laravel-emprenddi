@@ -25,6 +25,8 @@ class HiddenCompanyTest extends TestCase
 
     private bool $orig;
 
+    private User $usuarioQueOpera;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -35,7 +37,7 @@ class HiddenCompanyTest extends TestCase
             $this->markTestSkipped('Sin superadmin en dev.');
         }
 
-        $this->company = Company::query()->firstOrFail();
+        $this->company = $this->unaEmpresaQueOpera();
         $this->orig = (bool) $this->company->hidden_from_admin;
         $this->actingAs($this->superAdmin);
 
@@ -90,15 +92,44 @@ class HiddenCompanyTest extends TestCase
     {
         $this->company->update(['hidden_from_admin' => true]);
 
-        $usuario = User::query()
-            ->where('company_id', $this->company->id)
-            ->where('is_super_admin', false)
-            ->first();
+        $this->actingAs($this->usuarioQueOpera)->get('/app')->assertSuccessful();
+    }
 
-        if (! $usuario) {
-            $this->markTestSkipped('La compañía de dev no tiene usuarios propios.');
+    /**
+     * Una empresa de la base de desarrollo que de verdad pueda operar.
+     *
+     * Antes era `Company::query()->firstOrFail()`, y ahí estaba el problema:
+     * Postgres no promete NINGÚN orden sin un ORDER BY, así que «la primera»
+     * es la que el motor tenga más a mano, y eso cambia con cada inserción o
+     * actualización que mueva filas de sitio. La prueba elegía una empresa
+     * distinta según el día y pasaba o fallaba sin que nadie tocara el
+     * código —y un fallo así se investiga como si fuera una regresión—.
+     *
+     * Ahora se elige a propósito: la de menor id que esté activa, con
+     * suscripción vigente y con un usuario que pueda entrar al panel. Si no
+     * hay ninguna, la prueba se salta en vez de fallar: lo que se quiere
+     * comprobar es que OCULTAR no cambia nada, y sin una empresa que ya
+     * opere no hay nada que comprobar.
+     */
+    private function unaEmpresaQueOpera(): Company
+    {
+        $panel = Filament::getPanel('app');
+
+        foreach (Company::query()->where('active', true)->orderBy('id')->get() as $empresa) {
+            $usuario = User::query()
+                ->where('company_id', $empresa->id)
+                ->where('is_super_admin', false)
+                ->where('active', true)
+                ->orderBy('id')
+                ->first();
+
+            if ($usuario && $usuario->canAccessPanel($panel)) {
+                $this->usuarioQueOpera = $usuario;
+
+                return $empresa;
+            }
         }
 
-        $this->actingAs($usuario)->get('/app')->assertSuccessful();
+        $this->markTestSkipped('En dev no hay ninguna empresa activa con un usuario que pueda entrar.');
     }
 }
