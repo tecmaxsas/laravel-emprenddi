@@ -16,6 +16,15 @@ class ViewInventoryTransfer extends ViewRecord
 {
     protected static string $resource = InventoryTransferResource::class;
 
+    public function mount(int | string $record): void
+    {
+        parent::mount($record);
+
+        // Las lineas muestran su producto: sin esto era una consulta por
+        // linea (53 en el traslado mas grande de IMPERIO).
+        $this->record->loadMissing('lines.product');
+    }
+
     public function getTitle(): string
     {
         return 'Transferencia '.$this->record->fullNumber();

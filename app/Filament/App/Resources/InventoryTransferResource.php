@@ -124,9 +124,32 @@ class InventoryTransferResource extends Resource
                                     ->get()
                                     ->mapWithKeys(fn (Product $p) => [$p->id => "{$p->code} — {$p->name}"])
                                     ->all())
-                                ->getOptionLabelUsing(fn ($value) => Product::find($value)
-                                    ? Product::find($value)->code.' — '.Product::find($value)->name
-                                    : null)
+                                // Una consulta para todas las lineas, no una (tres,
+                                // antes) por linea en cada render: un traslado de
+                                // 53 lineas hacia 53+ consultas por cada cambio.
+                                ->getOptionLabelUsing(function ($value, Forms\Get $get) {
+                                    static $etiquetas = [];
+
+                                    if (! array_key_exists($value, $etiquetas)) {
+                                        $ids = collect($get('../../lines') ?? [])
+                                            ->pluck('product_id')
+                                            ->push($value)
+                                            ->filter()
+                                            ->unique()
+                                            ->all();
+
+                                        Product::query()
+                                            ->whereIn('id', $ids)
+                                            ->get(['id', 'code', 'name'])
+                                            ->each(function (Product $p) use (&$etiquetas) {
+                                                $etiquetas[$p->id] = $p->code.' — '.$p->name;
+                                            });
+
+                                        $etiquetas[$value] ??= null;
+                                    }
+
+                                    return $etiquetas[$value];
+                                })
                                 ->columnSpan(6),
 
                             Forms\Components\TextInput::make('quantity')
@@ -150,15 +173,34 @@ class InventoryTransferResource extends Resource
                             Forms\Components\Placeholder::make('current_stock')
                                 ->label('Stock disponible (origen)')
                                 ->content(function (Forms\Get $get) {
-                                    $productId = $get('product_id');
-                                    $fromLocId = $get('../../from_location_id');
+                                    // Stock de todas las lineas en una consulta
+                                    // (stockForProducts, mismo criterio que
+                                    // currentStock), no una por linea en cada
+                                    // cambio del formulario.
+                                    static $stockPorSede = [];
+
+                                    $productId = (int) $get('product_id');
+                                    $fromLocId = (int) $get('../../from_location_id');
 
                                     if (! $productId || ! $fromLocId) {
                                         return '—';
                                     }
 
-                                    $stock = app(InventoryEngine::class)
-                                        ->currentStock((int) $productId, (int) $fromLocId);
+                                    if (! isset($stockPorSede[$fromLocId][$productId])) {
+                                        $ids = collect($get('../../lines') ?? [])
+                                            ->pluck('product_id')
+                                            ->push($productId)
+                                            ->filter()
+                                            ->map(fn ($id) => (int) $id)
+                                            ->unique()
+                                            ->values()
+                                            ->all();
+
+                                        $stockPorSede[$fromLocId] = ($stockPorSede[$fromLocId] ?? [])
+                                            + app(InventoryEngine::class)->stockForProducts($ids, $fromLocId);
+                                    }
+
+                                    $stock = $stockPorSede[$fromLocId][$productId] ?? 0.0;
 
                                     $pedida = (float) ($get('quantity') ?? 0);
 
