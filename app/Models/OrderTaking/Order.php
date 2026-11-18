@@ -119,13 +119,38 @@ class Order extends Model
         return $this->belongsTo(\App\Models\SaleInvoice::class, 'sale_invoice_id');
     }
 
-    /** Ya facturado: un pedido solo puede dar una factura. */
+    /**
+     * Facturado completo con una sola factura, como se hacia antes de que
+     * cada despacho se facturara aparte. Los pedidos nuevos no lo usan: su
+     * factura cuelga de cada despacho.
+     */
     public function isInvoiced(): bool
     {
         return $this->sale_invoice_id !== null;
     }
 
-    /** Todo lo pedido salio de la bodega. Es la condicion para facturar. */
+    /**
+     * Numeros de las facturas del pedido: la del pedido completo (pedidos
+     * viejos) o la de cada despacho facturado.
+     *
+     * @return list<string>
+     */
+    public function invoiceNumbers(): array
+    {
+        if ($this->isInvoiced()) {
+            return array_filter([$this->saleInvoice?->fullNumber()]);
+        }
+
+        return $this->deliveries
+            ->filter(fn (Delivery $d) => $d->isInvoiced())
+            ->sortBy('id')
+            ->map(fn (Delivery $d) => $d->saleInvoice?->fullNumber())
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    /** Todo lo pedido salio de la bodega. */
     public function isFullyDelivered(): bool
     {
         return $this->delivery_status === 'delivered';

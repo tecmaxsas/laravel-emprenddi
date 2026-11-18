@@ -188,51 +188,8 @@ class ViewOrder extends ViewRecord
             // panel "Despachos y abonos" de mas abajo. Primero se despacha,
             // despues se abona contra esa entrega.
 
-            Actions\Action::make('invoice')
-                ->label('Convertir en factura')
-                ->icon('heroicon-o-document-currency-dollar')
-                ->color('success')
-                ->visible(fn (Order $r) => ! $r->isInvoiced()
-                    && $r->status !== Order::STATUS_CANCELLED)
-                ->modalHeading('Convertir el pedido en factura de venta')
-                ->modalDescription('Se emite la factura por todo lo pedido (aunque falte despachar), se descarga el inventario y se contabiliza la venta. Los abonos que ya registraste pasan como pagos de la factura.')
-                ->modalSubmitActionLabel('Emitir factura')
-                ->form([
-                    Forms\Components\Select::make('invoice_kind')
-                        ->label('Tipo de factura')
-                        ->native(false)
-                        ->required()
-                        ->default('pos')
-                        ->options([
-                            'pos' => 'POS (no electrónica)',
-                            'electronic' => 'Electrónica DIAN',
-                        ])
-                        ->helperText('La numeración sale de la resolución configurada en la sede del pedido.'),
-
-                    Forms\Components\Toggle::make('allow_negative_stock')
-                        ->label('Facturar aunque no haya saldo en bodega')
-                        ->helperText('La factura descarga inventario. Actívalo solo si este negocio no lleva existencias; si las lleva, un saldo en cero suele significar que falta registrar la compra.'),
-                ])
-                ->action(function (Order $r, array $data) {
-                    try {
-                        $invoice = app(OrderEngine::class)->convertToInvoice(
-                            $r,
-                            $data['invoice_kind'] ?? 'pos',
-                            (bool) ($data['allow_negative_stock'] ?? false),
-                        );
-
-                        Notification::make()
-                            ->success()
-                            ->title('Factura '.$invoice->fullNumber().' emitida')
-                            ->body('El pedido queda enlazado a la factura.')
-                            ->send();
-
-                        $this->redirect(SaleInvoiceResource::getUrl('view', ['record' => $invoice]));
-                    } catch (\Throwable $e) {
-                        Notification::make()->danger()->title('No se pudo facturar')
-                            ->body($e->getMessage())->persistent()->send();
-                    }
-                }),
+            // La factura ya no sale del pedido completo: cada despacho se
+            // factura aparte desde el panel "Despachos y abonos".
 
             Actions\Action::make('openInvoice')
                 ->label(fn (Order $r) => 'Factura '.$r->saleInvoice?->fullNumber())
@@ -287,9 +244,9 @@ class ViewOrder extends ViewRecord
                     Infolists\Components\TextEntry::make('notes')->label('Notas')->columnSpanFull()->placeholder('—'),
                     Infolists\Components\TextEntry::make('saleInvoice')
                         ->label('Facturado con')
-                        ->state(fn (Order $record) => $record->saleInvoice?->fullNumber())
+                        ->state(fn (Order $record) => $record->invoiceNumbers())
                         ->badge()->color('success')
-                        ->visible(fn (Order $record) => $record->isInvoiced()),
+                        ->visible(fn (Order $record) => $record->invoiceNumbers() !== []),
                 ]),
 
             Infolists\Components\Section::make('Líneas')

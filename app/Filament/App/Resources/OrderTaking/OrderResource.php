@@ -44,6 +44,8 @@ class OrderResource extends Resource
             // puede quedarse sin saber a nombre de quien fue.
             ->modifyQueryUsing(fn (Builder $query) => $query->with([
                 'customer' => fn ($q) => $q->withTrashed()->select('id', 'name'),
+                'saleInvoice',
+                'deliveries.saleInvoice',
             ]))
             ->columns([
                 Tables\Columns\TextColumn::make('prefix')->label('Prefijo')->toggleable(isToggledHiddenByDefault: true),
@@ -97,7 +99,7 @@ class OrderResource extends Resource
 
                 Tables\Columns\TextColumn::make('saleInvoice.number')
                     ->label('Factura')
-                    ->state(fn (Order $record) => $record->saleInvoice?->fullNumber())
+                    ->state(fn (Order $record) => $record->invoiceNumbers())
                     ->fontFamily('mono')->badge()->color('success')->placeholder('—')
                     ->toggleable(),
             ])

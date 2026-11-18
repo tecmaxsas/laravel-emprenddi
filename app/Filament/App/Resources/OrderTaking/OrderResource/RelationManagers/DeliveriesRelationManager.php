@@ -2,6 +2,7 @@
 
 namespace App\Filament\App\Resources\OrderTaking\OrderResource\RelationManagers;
 
+use App\Filament\App\Resources\SaleInvoiceResource;
 use App\Models\Account;
 use App\Models\OrderTaking\Delivery;
 use App\Models\OrderTaking\Order;
@@ -18,6 +19,10 @@ use Illuminate\Support\HtmlString;
 
 /**
  * Despachos del pedido, con sus abonos colgando de cada uno.
+ *
+ * Cada despacho se factura aparte desde aqui, por lo que salio en el. Los
+ * abonos del despacho pasan a su factura; despues de facturar, los pagos se
+ * registran en la factura.
  *
  * El abono se registra desde aqui y no desde la cabecera del pedido: primero
  * se despacha, y el pago queda atado a la entrega que lo origina. Asi se puede
@@ -80,6 +85,14 @@ class DeliveriesRelationManager extends RelationManager
                     ->color(fn (Delivery $record) => $record->paidAmount() + 0.01 >= $record->value() ? 'success' : 'warning')
                     ->weight('bold'),
 
+                Tables\Columns\TextColumn::make('saleInvoice.number')
+                    ->label('Factura')
+                    ->state(fn (Delivery $record) => $record->saleInvoice?->fullNumber())
+                    ->fontFamily('mono')->badge()->color('success')->placeholder('Sin facturar')
+                    ->url(fn (Delivery $record) => $record->isInvoiced()
+                        ? SaleInvoiceResource::getUrl('view', ['record' => $record->sale_invoice_id])
+                        : null),
+
                 Tables\Columns\TextColumn::make('deliveredBy.name')
                     ->label('Despachó')->placeholder('—')->toggleable(),
             ])
@@ -89,10 +102,12 @@ class DeliveriesRelationManager extends RelationManager
                     ->icon('heroicon-o-banknotes')
                     ->color('success')
                     // Ya facturado, el abono se registra en la factura: aqui no
-                    // llegaria a ella porque los abonos se copian al convertir.
-                    ->visible(fn () => $this->pedido()->status !== Order::STATUS_CANCELLED
+                    // llegaria a ella porque los abonos se copian al facturar.
+                    ->visible(fn (Delivery $record) => $this->pedido()->status !== Order::STATUS_CANCELLED
                         && ! $this->pedido()->isInvoiced()
-                        && (float) $this->pedido()->balance > 0)
+                        && ! $record->isInvoiced()
+                        && (float) $this->pedido()->balance > 0
+                        && $record->paidAmount() + 0.01 < $record->value())
                     ->form(fn (Delivery $record) => $this->paymentForm($record))
                     ->action(function (Delivery $record, array $data) {
                         try {
@@ -101,6 +116,55 @@ class DeliveriesRelationManager extends RelationManager
                             $this->dispatch('refreshOrder');
                         } catch (\Throwable $e) {
                             Notification::make()->danger()->title('No se pudo registrar el abono')
+                                ->body($e->getMessage())->persistent()->send();
+                        }
+                    }),
+
+                Tables\Actions\Action::make('invoice')
+                    ->label('Facturar')
+                    ->icon('heroicon-o-document-currency-dollar')
+                    ->color('primary')
+                    ->visible(fn (Delivery $record) => ! $record->isInvoiced()
+                        && ! $this->pedido()->isInvoiced()
+                        && $this->pedido()->status !== Order::STATUS_CANCELLED)
+                    ->modalHeading(fn (Delivery $record) => 'Facturar '.$record->label())
+                    ->modalDescription(fn (Delivery $record) => 'Se emite la factura por lo que salió en este despacho ($'
+                        .number_format($record->value(), 0, ',', '.').'), se descarga el inventario y se contabiliza la venta. '
+                        .'Los abonos de este despacho pasan como pagos de la factura.')
+                    ->modalSubmitActionLabel('Emitir factura')
+                    ->form([
+                        Forms\Components\Select::make('invoice_kind')
+                            ->label('Tipo de factura')
+                            ->native(false)
+                            ->required()
+                            ->default('pos')
+                            ->options([
+                                'pos' => 'POS (no electrónica)',
+                                'electronic' => 'Electrónica DIAN',
+                            ])
+                            ->helperText('La numeración sale de la resolución configurada en la sede del pedido.'),
+
+                        Forms\Components\Toggle::make('allow_negative_stock')
+                            ->label('Facturar aunque no haya saldo en bodega')
+                            ->helperText('La factura descarga inventario. Actívalo solo si este negocio no lleva existencias; si las lleva, un saldo en cero suele significar que falta registrar la compra.'),
+                    ])
+                    ->action(function (Delivery $record, array $data) {
+                        try {
+                            $invoice = app(OrderEngine::class)->invoiceDelivery(
+                                $record,
+                                $data['invoice_kind'] ?? 'pos',
+                                (bool) ($data['allow_negative_stock'] ?? false),
+                            );
+
+                            Notification::make()
+                                ->success()
+                                ->title('Factura '.$invoice->fullNumber().' emitida')
+                                ->body($record->label().' queda enlazado a la factura.')
+                                ->send();
+
+                            $this->redirect(SaleInvoiceResource::getUrl('view', ['record' => $invoice]));
+                        } catch (\Throwable $e) {
+                            Notification::make()->danger()->title('No se pudo facturar')
                                 ->body($e->getMessage())->persistent()->send();
                         }
                     }),
@@ -120,10 +184,11 @@ class DeliveriesRelationManager extends RelationManager
         $saldoPedido = (float) $order->balance;
         $pendienteDespacho = max(0, round($delivery->value() - $delivery->paidAmount(), 2));
 
-        // Se propone lo que falta de ESTE despacho, sin pasarse del saldo del
-        // pedido. El tope duro sigue siendo el saldo, porque es normal que un
-        // solo pago cubra mas de una entrega.
-        $sugerido = min($pendienteDespacho ?: $saldoPedido, $saldoPedido);
+        // Tope: lo que falta de ESTE despacho, sin pasarse del saldo del
+        // pedido. Cada despacho se factura aparte y sus abonos pasan a esa
+        // factura, asi que no puede recibir mas de lo que vale.
+        $tope = min($pendienteDespacho, $saldoPedido);
+        $sugerido = $tope;
 
         return [
             Forms\Components\Placeholder::make('resumen')
@@ -144,9 +209,9 @@ class DeliveriesRelationManager extends RelationManager
 
             Forms\Components\TextInput::make('amount')
                 ->label('Monto')->numeric()->required()->prefix('$')
-                ->minValue(0.01)->maxValue($saldoPedido)
+                ->minValue(0.01)->maxValue($tope)
                 ->default($sugerido)
-                ->helperText('El tope es el saldo del pedido, no el de este despacho: un mismo pago puede cubrir varias entregas.'),
+                ->helperText('El tope es lo pendiente de este despacho. Si un pago cubre varias entregas, registra un abono en cada una.'),
 
             Forms\Components\Select::make('payment_method')
                 ->label('Método')->native(false)->required()

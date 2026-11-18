@@ -245,8 +245,10 @@ class OrderEngine
      *
      * El abono cuelga del despacho, no del pedido: asi se sabe que entrega esta
      * pagando el cliente. El tope sigue siendo el saldo del pedido y no el
-     * valor del despacho, porque es normal que un solo pago cubra mas de una
-     * entrega o que abonen de mas sobre una.
+     * El tope es lo pendiente de ESTE despacho (y nunca mas que el saldo del
+     * pedido): cada despacho se factura aparte y sus abonos pasan a esa
+     * factura, asi que un abono mayor que el despacho no tendria donde caer.
+     * Un pago que cubre varias entregas se registra como un abono en cada una.
      */
     public function registerPayment(Delivery $delivery, array $payload): Payment
     {
@@ -260,9 +262,22 @@ class OrderEngine
         if ($amount <= 0) {
             throw new RuntimeException('El monto del abono debe ser mayor a 0.');
         }
+        if ($delivery->isInvoiced()) {
+            throw new RuntimeException(
+                $delivery->label().' ya se facturó con la '.$delivery->saleInvoice?->fullNumber()
+                .'. Registra el pago en la factura.'
+            );
+        }
         if ($amount > (float) $order->balance + 0.01) {
             throw new RuntimeException(
                 "Monto excede el saldo pendiente (\${$order->balance})."
+            );
+        }
+        $pendienteDespacho = max(0, round($delivery->value() - $delivery->paidAmount(), 2));
+        if ($amount > $pendienteDespacho + 0.01) {
+            throw new RuntimeException(
+                'Monto excede lo pendiente de '.$delivery->label().' ($'.number_format($pendienteDespacho, 2).'). '
+                .'Si el pago cubre varias entregas, registra un abono en cada una.'
             );
         }
 
@@ -287,37 +302,52 @@ class OrderEngine
     }
 
     /**
-     * Convierte un pedido en factura de venta, este o no despachado.
+     * Factura un despacho: lo que salio en esa remision, al precio pactado en
+     * el pedido.
      *
      * El pedido es un documento operativo: no mueve inventario ni genera
      * asientos. La factura es donde todo eso aterriza, asi que aqui se
-     * descarga el inventario y se contabiliza la venta. Se factura lo
-     * PEDIDO aunque el despacho este pendiente o parcial: los despachos
-     * siguen registrandose despues solo como control de entregas.
+     * descarga el inventario y se contabiliza la venta. Un pedido con varios
+     * despachos da una factura por cada uno; lo que no se ha despachado no se
+     * factura.
      *
-     * Los abonos que se registraron contra los despachos se replican como
-     * pagos de la factura: es la primera vez que ese dinero toca la
-     * contabilidad, asi que no hay doble conteo.
+     * Las retenciones del pedido se recalculan sobre la base del despacho con
+     * la tarifa que quedo pactada (ReteIVA sobre el IVA, las demas sobre el
+     * subtotal).
+     *
+     * Los abonos registrados contra el despacho pasan como pagos de la
+     * factura: es la primera vez que ese dinero toca la contabilidad, asi que
+     * no hay doble conteo. Los abonos viejos que quedaron colgando del pedido
+     * sin despacho viajan con la primera factura del pedido.
      *
      * @param  string  $invoiceKind  pos | electronic
      * @param  bool  $allowNegativeStock  facturar aunque no haya saldo en bodega
      */
-    public function convertToInvoice(Order $order, string $invoiceKind = 'pos', bool $allowNegativeStock = false): SaleInvoice
+    public function invoiceDelivery(Delivery $delivery, string $invoiceKind = 'pos', bool $allowNegativeStock = false): SaleInvoice
     {
+        $order = $delivery->order;
+
+        if (! $order) {
+            throw new RuntimeException('El despacho no tiene pedido asociado.');
+        }
+
+        if ($delivery->isInvoiced()) {
+            throw new RuntimeException(
+                $delivery->label().' ya se facturó con la '.$delivery->saleInvoice?->fullNumber().'.'
+            );
+        }
+
+        // Pedidos facturados completos antes de que existiera la factura por
+        // despacho: facturar una remision suya duplicaria la venta.
         if ($order->isInvoiced()) {
             throw new RuntimeException(
-                'Este pedido ya se facturó con la '.$order->saleInvoice?->fullNumber().'.'
+                'Este pedido se facturó completo con la '.$order->saleInvoice?->fullNumber()
+                .'; sus despachos no se facturan aparte.'
             );
         }
 
         if ($order->status === Order::STATUS_CANCELLED) {
             throw new RuntimeException('El pedido está anulado.');
-        }
-
-        $order->load('items', 'retentions');
-
-        if ($order->items->isEmpty()) {
-            throw new RuntimeException('El pedido no tiene líneas.');
         }
 
         if (! $order->location_id) {
@@ -326,7 +356,23 @@ class OrderEngine
             );
         }
 
-        return DB::transaction(function () use ($order, $invoiceKind, $allowNegativeStock) {
+        $delivery->load('items.orderItem');
+        $order->load('retentions');
+
+        return DB::transaction(function () use ($order, $delivery, $invoiceKind, $allowNegativeStock) {
+            // Doble clic: el segundo espera aqui y encuentra el despacho ya
+            // facturado en lugar de emitir otra factura.
+            $bloqueado = Delivery::query()->whereKey($delivery->id)->lockForUpdate()->first();
+            if ($bloqueado?->sale_invoice_id) {
+                throw new RuntimeException($delivery->label().' ya se facturó.');
+            }
+
+            $esLaPrimera = ! Delivery::query()
+                ->where('company_id', $order->company_id)
+                ->where('order_id', $order->id)
+                ->whereNotNull('sale_invoice_id')
+                ->exists();
+
             $doc = app(DocumentNumberer::class)->reserveForLocation($order->location_id, $invoiceKind);
 
             $invoice = SaleInvoice::create([
@@ -347,20 +393,27 @@ class OrderEngine
                 'payment_status' => 'pendiente',
                 'created_by_user_id' => Auth::id(),
                 'seller_user_id' => $order->seller_user_id ?? Auth::id(),
-                'description' => 'Pedido '.$order->fullNumber(),
+                'description' => 'Pedido '.$order->fullNumber().' — '.$delivery->label(),
                 'notes' => $order->notes,
             ]);
 
             $lineNumber = 1;
-            foreach ($order->items as $item) {
-                // Se factura lo pedido: subtotal, IVA, total y retenciones
-                // del pedido estan calculados sobre esa cantidad, y se puede
-                // facturar antes de terminar de despachar.
-                $cantidad = (float) $item->quantity_ordered;
+            $base = 0.0;
+            $iva = 0.0;
+            foreach ($delivery->items as $despachado) {
+                $item = $despachado->orderItem;
+                $cantidad = (float) $despachado->quantity_delivered;
 
-                if ($cantidad <= 0) {
+                if (! $item || $cantidad <= 0) {
                     continue;
                 }
+
+                // El total sale del precio al publico, igual que el valor del
+                // despacho que ve el usuario al abonar; de ahi se separa el IVA.
+                $tarifa = (float) $item->tax_rate;
+                $total = round($cantidad * (float) $item->unit_price_at_public, 2);
+                $subtotal = round($total / (1 + $tarifa / 100), 2);
+                $impuesto = round($total - $subtotal, 2);
 
                 $invoice->lines()->create([
                     'line_number' => $lineNumber++,
@@ -370,48 +423,73 @@ class OrderEngine
                     'unit_price' => (float) $item->unit_price_before_tax,
                     'discount_percentage' => 0,
                     'discount_amount' => 0,
-                    'tax_rate' => (float) $item->tax_rate,
-                    'tax_amount' => (float) $item->tax_amount,
-                    'subtotal' => (float) $item->subtotal,
-                    'total' => (float) $item->total,
+                    'tax_rate' => $tarifa,
+                    'tax_amount' => $impuesto,
+                    'subtotal' => $subtotal,
+                    'total' => $total,
                 ]);
+
+                $base += $subtotal;
+                $iva += $impuesto;
+            }
+
+            if ($lineNumber === 1) {
+                throw new RuntimeException($delivery->label().' no tiene cantidades despachadas.');
             }
 
             // Antes de postear: recalculateTotals las necesita para el
             // net_payable, que es contra lo que se mide el saldo.
             foreach ($order->retentions as $ret) {
+                $baseDelTipo = max(0, RetentionBase::para((string) $ret->tax_type, $base, $iva));
+                $monto = round($baseDelTipo * ((float) $ret->rate / 100), 2);
+                if ($monto <= 0) {
+                    continue;
+                }
+
                 $invoice->retentions()->create([
                     'tax_id' => $ret->tax_id,
                     'tax_code' => $ret->tax_code,
                     'tax_name' => $ret->tax_name,
                     'tax_type' => $ret->tax_type,
-                    'base_amount' => $ret->base_amount,
+                    'base_amount' => round($baseDelTipo, 2),
                     'rate' => $ret->rate,
-                    'amount' => $ret->amount,
+                    'amount' => $monto,
                 ]);
             }
 
             $invoiceEngine = app(SaleInvoiceEngine::class);
             $invoice = $invoiceEngine->post($invoice->fresh(['lines', 'retentions']), $allowNegativeStock);
 
-            $this->replayPayments($order, $invoice, $invoiceEngine);
+            $abonos = Payment::query()
+                ->where('company_id', $order->company_id)
+                ->where('order_id', $order->id)
+                ->where(function ($q) use ($delivery, $esLaPrimera) {
+                    $q->where('delivery_id', $delivery->id);
+                    if ($esLaPrimera) {
+                        $q->orWhereNull('delivery_id');
+                    }
+                })
+                ->orderBy('payment_date')->orderBy('id')
+                ->get();
 
-            $order->update(['sale_invoice_id' => $invoice->id]);
+            $this->replayPayments($order, $invoice, $invoiceEngine, $abonos);
+
+            $delivery->update(['sale_invoice_id' => $invoice->id]);
 
             return $invoice->fresh(['lines', 'retentions', 'payments']);
         });
     }
 
     /**
-     * Lleva los abonos del pedido a la factura recien creada.
+     * Lleva los abonos recibidos a la factura recien creada.
      *
      * Si por redondeos el ultimo abono no cabe en el saldo, se recorta en vez
      * de tumbar la conversion entera: la factura ya esta contabilizada y
      * dejarla a medias seria peor que un centavo de diferencia.
      */
-    protected function replayPayments(Order $order, SaleInvoice $invoice, SaleInvoiceEngine $invoiceEngine): void
+    protected function replayPayments(Order $order, SaleInvoice $invoice, SaleInvoiceEngine $invoiceEngine, iterable $abonos): void
     {
-        foreach ($order->payments()->orderBy('payment_date')->orderBy('id')->get() as $abono) {
+        foreach ($abonos as $abono) {
             $saldo = (float) $invoice->fresh()->balance;
 
             if ($saldo <= 0.01) {

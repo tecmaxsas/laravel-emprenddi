@@ -16,7 +16,7 @@ class Delivery extends Model
 
     protected $fillable = [
         'company_id', 'order_id', 'delivery_number',
-        'delivery_date', 'delivered_by_user_id', 'notes',
+        'delivery_date', 'delivered_by_user_id', 'notes', 'sale_invoice_id',
     ];
 
     protected function casts(): array
@@ -37,6 +37,17 @@ class Delivery extends Model
     public function deliveredBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'delivered_by_user_id');
+    }
+
+    /** Factura con que se cobro este despacho. Cada despacho da la suya. */
+    public function saleInvoice(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\SaleInvoice::class, 'sale_invoice_id');
+    }
+
+    public function isInvoiced(): bool
+    {
+        return $this->sale_invoice_id !== null;
     }
 
     public function payments(): HasMany
