@@ -287,13 +287,13 @@ class OrderEngine
     }
 
     /**
-     * Convierte un pedido despachado por completo en factura de venta.
+     * Convierte un pedido en factura de venta, este o no despachado.
      *
      * El pedido es un documento operativo: no mueve inventario ni genera
      * asientos. La factura es donde todo eso aterriza, asi que aqui se
-     * descarga el inventario y se contabiliza la venta — por eso solo se
-     * permite cuando ya salio TODO de la bodega. Facturar un pedido a medio
-     * despachar descargaria mercancia que todavia esta en el estante.
+     * descarga el inventario y se contabiliza la venta. Se factura lo
+     * PEDIDO aunque el despacho este pendiente o parcial: los despachos
+     * siguen registrandose despues solo como control de entregas.
      *
      * Los abonos que se registraron contra los despachos se replican como
      * pagos de la factura: es la primera vez que ese dinero toca la
@@ -315,12 +315,6 @@ class OrderEngine
         }
 
         $order->load('items', 'retentions');
-
-        if (! $order->isFullyDelivered()) {
-            throw new RuntimeException(
-                'Solo se factura lo que ya salió completo. Despacha lo que falta y vuelve a intentarlo.'
-            );
-        }
 
         if ($order->items->isEmpty()) {
             throw new RuntimeException('El pedido no tiene líneas.');
@@ -359,10 +353,10 @@ class OrderEngine
 
             $lineNumber = 1;
             foreach ($order->items as $item) {
-                // Se factura lo entregado, no lo pedido. A 100% son el mismo
-                // numero, pero dejarlo explicito evita facturar de mas si
-                // manana se admite facturar despachos parciales.
-                $cantidad = (float) $item->quantity_delivered;
+                // Se factura lo pedido: subtotal, IVA, total y retenciones
+                // del pedido estan calculados sobre esa cantidad, y se puede
+                // facturar antes de terminar de despachar.
+                $cantidad = (float) $item->quantity_ordered;
 
                 if ($cantidad <= 0) {
                     continue;

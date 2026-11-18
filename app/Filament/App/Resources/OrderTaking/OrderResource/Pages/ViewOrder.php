@@ -192,11 +192,10 @@ class ViewOrder extends ViewRecord
                 ->label('Convertir en factura')
                 ->icon('heroicon-o-document-currency-dollar')
                 ->color('success')
-                ->visible(fn (Order $r) => $r->isFullyDelivered()
-                    && ! $r->isInvoiced()
+                ->visible(fn (Order $r) => ! $r->isInvoiced()
                     && $r->status !== Order::STATUS_CANCELLED)
                 ->modalHeading('Convertir el pedido en factura de venta')
-                ->modalDescription('Se emite la factura por lo despachado, se descarga el inventario y se contabiliza la venta. Los abonos que ya registraste pasan como pagos de la factura.')
+                ->modalDescription('Se emite la factura por todo lo pedido (aunque falte despachar), se descarga el inventario y se contabiliza la venta. Los abonos que ya registraste pasan como pagos de la factura.')
                 ->modalSubmitActionLabel('Emitir factura')
                 ->form([
                     Forms\Components\Select::make('invoice_kind')

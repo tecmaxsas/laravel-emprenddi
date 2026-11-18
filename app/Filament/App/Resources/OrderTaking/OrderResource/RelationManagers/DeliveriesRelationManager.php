@@ -88,7 +88,10 @@ class DeliveriesRelationManager extends RelationManager
                     ->label('Registrar abono')
                     ->icon('heroicon-o-banknotes')
                     ->color('success')
+                    // Ya facturado, el abono se registra en la factura: aqui no
+                    // llegaria a ella porque los abonos se copian al convertir.
                     ->visible(fn () => $this->pedido()->status !== Order::STATUS_CANCELLED
+                        && ! $this->pedido()->isInvoiced()
                         && (float) $this->pedido()->balance > 0)
                     ->form(fn (Delivery $record) => $this->paymentForm($record))
                     ->action(function (Delivery $record, array $data) {
