@@ -504,7 +504,7 @@ class ViewSaleInvoice extends ViewRecord
                             Infolists\Components\TextEntry::make('tax_code')->label('Código')->fontFamily('mono')->columnSpan(2),
                             Infolists\Components\TextEntry::make('tax_name')->label('Concepto')->columnSpan(5),
                             Infolists\Components\TextEntry::make('base_amount')->label('Base')->money('COP')->columnSpan(2),
-                            Infolists\Components\TextEntry::make('rate')->label('%')->formatStateUsing(fn ($s) => number_format((float) $s, 4).' %')->columnSpan(1),
+                            Infolists\Components\TextEntry::make('rate')->label('%')->formatStateUsing(fn ($state) => number_format((float) $state, 4).' %')->columnSpan(1),
                             Infolists\Components\TextEntry::make('amount')->label('Retenido')->money('COP')->weight('semibold')->columnSpan(2),
                         ])
                         ->columns(12),
