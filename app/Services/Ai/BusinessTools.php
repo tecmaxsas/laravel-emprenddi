@@ -290,7 +290,7 @@ class BusinessTools
         $ultimos = DB::table('inventory_movements')
             ->selectRaw('distinct on (product_id, location_id) product_id, balance_quantity_after')
             ->where('company_id', $this->id())
-            ->orderByRaw('product_id, location_id, date desc, id desc');
+            ->orderByRaw('product_id, location_id, id desc');
 
         $saldos = DB::query()->fromSub($ultimos, 'u')
             ->selectRaw('product_id, sum(balance_quantity_after) as saldo')

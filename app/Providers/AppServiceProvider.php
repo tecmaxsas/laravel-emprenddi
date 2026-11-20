@@ -25,6 +25,10 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(CurrentCompany::class);
+        // Saldo de inventario = ultimo movimiento registrado (id), no el de
+        // fecha mayor. Los originales son de root; ver InventoryEngineOrdenado.
+        $this->app->bind(\App\Services\Inventory\InventoryEngine::class, \App\Services\Inventory\InventoryEngineOrdenado::class);
+        $this->app->bind(\App\Services\Catalog\CatalogProducts::class, \App\Services\Catalog\CatalogProductsOrdenado::class);
         // Cola de impresión browser (QZ Tray) — vive durante el request.
         $this->app->singleton(BrowserPrintQueue::class);
         // Acumula entradas de auditoría durante la transacción en curso.

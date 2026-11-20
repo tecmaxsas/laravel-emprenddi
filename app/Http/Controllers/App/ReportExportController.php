@@ -624,7 +624,6 @@ class ReportExportController extends Controller
             ->where('company_id', $companyId)
             ->orderBy('product_id')
             ->orderBy('location_id')
-            ->orderByDesc('date')
             ->orderByDesc('id')
             ->distinct('product_id', 'location_id')
             ->get();

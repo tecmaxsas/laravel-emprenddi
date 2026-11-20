@@ -131,7 +131,6 @@ class StockByLocationPage extends Page implements HasForms, HasTable
                 ->where('company_id', $companyId)
                 ->orderBy('product_id')
                 ->orderBy('location_id')
-                ->orderByDesc('date')
                 ->orderByDesc('id')
                 ->distinct('product_id', 'location_id')
                 ->get();
