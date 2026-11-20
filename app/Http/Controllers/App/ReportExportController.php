@@ -320,15 +320,11 @@ class ReportExportController extends Controller
         $location = Location::find($locationId);
         abort_if(! $product || ! $location, 404);
 
-        $rows = InventoryMovement::query()
-            ->where('product_id', $productId)
-            ->where('location_id', $locationId)
+        $rows = \App\Support\KardexCronologico::query((int) $product->company_id, $productId, $locationId)
             ->whereDate('date', '>=', $from)
             ->whereDate('date', '<=', $to)
             ->when(! empty($types), fn ($q) => $q->whereIn('type', $types))
             ->with(['thirdParty:id,name', 'journalEntry:id,prefix,number'])
-            ->orderBy('date')
-            ->orderBy('id')
             ->get()
             ->map(fn (InventoryMovement $m) => [
                 $m->date?->format('Y-m-d H:i') ?? '',
@@ -340,8 +336,8 @@ class ReportExportController extends Controller
                 $m->isExit() ? abs((float) $m->quantity) : '',
                 (float) $m->unit_cost,
                 (float) $m->total_cost,
-                (float) $m->balance_quantity_after,
-                (float) $m->balance_value_after,
+                \App\Support\KardexCronologico::saldo($m),
+                \App\Support\KardexCronologico::saldoValor($m),
             ]);
 
         $subtitle = "Producto: {$product->code} · {$product->name} · Sede: {$location->name} · Período: {$from} a {$to}";

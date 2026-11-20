@@ -136,16 +136,11 @@ class KardexPage extends Page implements HasForms, HasTable
                     return InventoryMovement::query()->whereRaw('1 = 0');
                 }
 
-                return InventoryMovement::query()
-                    ->where('company_id', auth()->user()?->company_id)
-                    ->where('product_id', $productId)
-                    ->where('location_id', $locationId)
+                return \App\Support\KardexCronologico::query((int) auth()->user()?->company_id, (int) $productId, (int) $locationId)
                     ->whereDate('date', '>=', $this->filters['from'])
                     ->whereDate('date', '<=', $this->filters['to'])
                     ->when(! empty($this->filters['types']), fn ($q) => $q->whereIn('type', $this->filters['types']))
-                    ->with(['thirdParty', 'journalEntry'])
-                    ->orderBy('date')
-                    ->orderBy('id');
+                    ->with(['thirdParty', 'journalEntry']);
             })
             ->defaultPaginationPageOption(50)
             ->columns([
@@ -216,12 +211,14 @@ class KardexPage extends Page implements HasForms, HasTable
 
                 Tables\Columns\TextColumn::make('balance_quantity_after')
                     ->label('Saldo qty')
+                    ->state(fn (InventoryMovement $r) => \App\Support\KardexCronologico::saldo($r))
                     ->numeric(decimalPlaces: 2)
                     ->alignEnd()
                     ->weight('semibold'),
 
                 Tables\Columns\TextColumn::make('balance_value_after')
                     ->label('Saldo $')
+                    ->state(fn (InventoryMovement $r) => \App\Support\KardexCronologico::saldoValor($r))
                     ->money('COP')
                     ->alignEnd()
                     ->weight('semibold'),
