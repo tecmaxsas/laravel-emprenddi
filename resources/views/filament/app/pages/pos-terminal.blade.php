@@ -372,6 +372,13 @@
         // detalle y de cierre: calcularlo siempre lo repetia en cada tecla
         // del buscador y en cada producto agregado.
         $sessionTotals = ($showSessionDetailsModal || $showCloseSessionModal) ? $this->sessionTotals : null;
+
+        // Corregir una venta no es vender: no entra plata nueva al cajon, se
+        // rehace una que ya se cobro. Por eso la pantalla de «abre tu caja»
+        // no aplica —un administrador no tiene caja y es justo quien tiene
+        // que poder arreglar una factura—. El pago vuelve al turno del
+        // documento; lo decide CashSessionGate.
+        $corrigiendoVenta = (bool) $this->corrigiendo_factura_id;
     @endphp
 
     {{-- ============================================================ --}}
@@ -380,7 +387,7 @@
     {{-- Tailwind (shadow-color/30, focus:ring-*, etc) — usamos CSS    --}}
     {{-- inline puro como hace el POS Restaurante.                     --}}
     {{-- ============================================================ --}}
-    @if (! $hasSession)
+    @if (! $hasSession && ! $corrigiendoVenta)
         <div style="position:fixed; inset:0; width:100vw; height:100vh; padding:24px; overflow-y:auto; display:flex; align-items:center; justify-content:center; background:#f9fafb;"
              class="dark:!bg-gray-950">
 

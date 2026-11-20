@@ -36,6 +36,7 @@ use App\Services\Sales\QuickCustomer;
 use App\Services\Sales\SaleInvoiceEngine;
 use App\Services\Sales\SaleInvoiceNumberer;
 use App\Services\Sales\SaleReceiptPrinter;
+use App\Support\CashSessionGate;
 use App\Support\GiftCardsSettings;
 use App\Support\PaymentAccountResolver;
 use App\Support\PaymentMethodOptions;
@@ -2210,7 +2211,17 @@ class PosTerminal extends Page
                     $invoice->update([
                         'third_party_id' => $this->customer_id,
                         'seller_user_id' => $this->seller_user_id ?: Auth::id(),
-                        'cash_register_session_id' => $this->session_id,
+                        // El turno de la venta corregida lo decide la misma
+                        // regla que el del pago, y por el mismo motivo: si
+                        // quien corrige no tiene caja abierta, la venta se
+                        // queda en la del documento. Escribir `$this->session_id`
+                        // a secas le ponia null a la factura del administrador
+                        // y entonces el pago se quedaba sin turno al que
+                        // volver: la plata desaparecia del arqueo del cajero
+                        // con los billetes todavia en el cajon.
+                        'cash_register_session_id' => CashSessionGate::receivingSessionId(
+                            $corrigiendo->cash_register_session_id,
+                        ),
                     ]);
 
                     $invoice = $invoice->fresh();
@@ -2872,10 +2883,23 @@ class PosTerminal extends Page
      * Por que esta venta no se puede corregir en el POS, o null si si.
      *
      * Suma a las reglas del motor una que solo existe aqui: el turno. Una
-     * venta cuyos pagos estan en un turno ABIERTO de otro cajero no se toca,
-     * porque corregirla mueve esa plata al turno de quien corrige y le deja
-     * al otro un arqueo que ya no cuadra. Si el turno esta cerrado, el motor
-     * ya lo impide por su cuenta.
+     * venta cuyos pagos estan en un turno ABIERTO de otro cajero no se toca
+     * DESDE OTRA CAJA, porque corregirla mueve esa plata al turno de quien
+     * corrige y le deja al otro un arqueo que ya no cuadra. Si el turno esta
+     * cerrado, el motor ya lo impide por su cuenta.
+     *
+     * La condicion es «desde otra caja», no «desde otro usuario», y la
+     * diferencia importa: la primera version miraba solo que el turno fuera
+     * distinto del propio, y como un administrador no tiene caja abierta, su
+     * turno propio es null y SIEMPRE era distinto. Resultado: el
+     * administrador —justo quien tiene que poder arreglar una venta— era el
+     * unico que no podia, y le salia un mensaje sobre cajas ajenas que no
+     * explicaba nada de su situacion. Lo reporto un cliente.
+     *
+     * Sin caja propia no hay nada que proteger: el pago vuelve a nacer en el
+     * turno del documento —lo decide CashSessionGate::receivingSessionId(),
+     * que para eso recibe el turno de la factura como respaldo— asi que la
+     * plata se queda donde esta y el arqueo del cajero no se entera.
      */
     public function porQueNoSePuedeCorregirAqui(SaleInvoice $factura): ?string
     {
@@ -2885,7 +2909,7 @@ class PosTerminal extends Page
 
         $turno = $factura->cash_register_session_id;
 
-        if ($turno && $turno !== $this->session_id) {
+        if ($this->session_id && $turno && $turno !== $this->session_id) {
             $deOtro = CashRegisterSession::query()
                 ->where('company_id', auth()->user()?->company_id)
                 ->where('status', CashRegisterSession::STATUS_OPEN)
@@ -2921,6 +2945,12 @@ class PosTerminal extends Page
 
         $this->corrigiendo_factura_id = $factura->id;
         $this->customer_id = $factura->third_party_id;
+
+        // Sin caja propia no hay sede elegida —la toma del turno al abrir—
+        // y sin sede el cobro se corta con «Faltan sede o cliente». La de la
+        // venta es la que corresponde: una correccion no cambia de sede.
+        $this->location_id = $this->location_id ?: $factura->location_id;
+
         $this->seller_user_id = $factura->seller_user_id ?: Auth::id();
         $this->invoiceKind = $factura->invoice_kind ?: 'pos';
 

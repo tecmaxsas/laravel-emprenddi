@@ -308,6 +308,183 @@ class CorregirVentaEnElPosTest extends TestCase
         $this->assertStringContainsString('otro cajero', $motivo);
     }
 
+    // ------------------------------------------- el administrador sin caja
+
+    /**
+     * Un administrador sin caja SÍ puede corregir. Lo reportó un cliente.
+     *
+     * La primera versión de la guarda miraba solo que el turno de la venta
+     * fuera distinto del propio. Un administrador no tiene caja abierta, así
+     * que su turno propio es null y SIEMPRE era distinto: la regla se
+     * disparaba siempre y justo quien tiene que poder arreglar una factura
+     * era el único que no podía —con un mensaje sobre cajas ajenas que no
+     * describía su situación—.
+     */
+    public function test_un_administrador_sin_caja_puede_corregir(): void
+    {
+        $factura = $this->ventaEnElPos(1);
+        $this->laVentaQuedaEnLaCajaDeOtro($factura);
+
+        $pos = Livewire::test(PosTerminal::class);
+
+        $this->assertNull($pos->instance()->session_id, 'El administrador no tiene caja abierta.');
+        $this->assertNull(
+            $pos->instance()->porQueNoSePuedeCorregirAqui($factura->fresh()),
+            'Sin caja propia no hay plata que mover, así que no hay nada que impedir.',
+        );
+    }
+
+    /**
+     * Y la plata se queda donde está.
+     *
+     * Es la mitad que de verdad importa: corregir borra los pagos y los
+     * vuelve a crear. Si el pago naciera sin turno —o en el del
+     * administrador— el cajero se quedaría con billetes en el cajón que ya
+     * no figuran en su arqueo.
+     */
+    public function test_corregir_sin_caja_deja_la_plata_en_el_turno_del_cajero(): void
+    {
+        $factura = $this->ventaEnElPos(1);
+        $turnoDelCajero = $this->laVentaQuedaEnLaCajaDeOtro($factura);
+
+        $pos = Livewire::test(PosTerminal::class)
+            ->call('corregirVenta', $factura->id);
+
+        $this->assertSame($factura->id, $pos->instance()->corrigiendo_factura_id,
+            'La corrección no se cargó: '.($pos->instance()->paymentError ?? 'sin error'));
+
+        $carrito = $pos->instance()->cart;
+        $carrito[0]['quantity'] = 3;
+        $pos->set('cart', $carrito);
+
+        $total = $pos->instance()->totals()['net_payable'];
+
+        $pos->set('payments', [[
+            'payment_method' => 'cash',
+            'amount' => $total,
+            'account_id' => $this->cuentaDeCaja(),
+            'cash_received' => $total,
+        ]])->call('processSale');
+
+        $this->assertNull($pos->instance()->paymentError,
+            'La corrección del administrador falló: '.($pos->instance()->paymentError ?? ''));
+
+        $corregida = $factura->fresh();
+
+        $this->assertSame($turnoDelCajero, $corregida->cash_register_session_id,
+            'La factura corregida tiene que seguir en el turno del cajero que la cobró.');
+
+        $pago = $corregida->payments()->latest('id')->first();
+
+        $this->assertNotNull($pago, 'La corrección tiene que dejar el pago rehecho.');
+        $this->assertSame($turnoDelCajero, $pago->cash_register_session_id,
+            'El pago rehecho tiene que volver al turno del cajero, no quedarse sin turno: '
+            .'si no, la plata desaparece del arqueo con los billetes todavía en el cajón.');
+    }
+
+    /**
+     * Y con caja propia distinta, se sigue impidiendo.
+     *
+     * La regla original no estaba de más: ahí la plata SÍ se movería de un
+     * cajón al otro. Lo que estaba mal era a quién se le aplicaba.
+     */
+    public function test_con_caja_propia_distinta_se_sigue_impidiendo(): void
+    {
+        $factura = $this->ventaEnElPos(1);
+
+        $otro = CashRegisterSession::withoutGlobalScopes()->create([
+            'company_id' => $this->empresa->id,
+            'location_id' => $this->sede->id,
+            'cashier_user_id' => $this->otroCajero()->id,
+            'status' => CashRegisterSession::STATUS_OPEN,
+            'opened_at' => now(),
+            'opening_amount' => 0,
+        ]);
+        $this->limpiar[] = fn () => DB::table('cash_register_sessions')->where('id', $otro->id)->delete();
+
+        $factura->update(['cash_register_session_id' => $otro->id]);
+
+        // Este usuario SÍ tiene su propia caja abierta (la del setUp).
+        $pos = Livewire::test(PosTerminal::class);
+
+        $this->assertNotNull($pos->instance()->session_id);
+        $this->assertStringContainsString(
+            'otro cajero',
+            (string) $pos->instance()->porQueNoSePuedeCorregirAqui($factura->fresh()),
+        );
+    }
+
+    /**
+     * Sin caja, el POS enseña la corrección y no la pantalla de apertura.
+     *
+     * Corregir no es vender: no entra plata nueva al cajón. Si el POS
+     * siguiera tapándose con «Caja cerrada», el administrador pasaría la
+     * guarda y se quedaría igual de atascado, solo que una pantalla después.
+     */
+    public function test_sin_caja_el_pos_no_tapa_la_correccion_con_la_apertura(): void
+    {
+        $factura = $this->ventaEnElPos(1);
+        $this->laVentaQuedaEnLaCajaDeOtro($factura);
+
+        Livewire::test(PosTerminal::class)
+            ->assertSee('Caja cerrada')
+            ->call('corregirVenta', $factura->id)
+            ->assertDontSee('Caja cerrada');
+    }
+
+    /**
+     * El escenario que reportó el cliente.
+     *
+     * La venta y sus pagos quedan en la caja de OTRO cajero, que sigue
+     * abierta, y quien va a corregir se queda sin caja propia: es el
+     * administrador mirando la factura desde su escritorio mientras Marcela
+     * sigue atendiendo en el mostrador.
+     *
+     * Importante mover también los PAGOS y no solo la factura: la regla del
+     * motor —la que protege un arqueo ya firmado— mira el turno de los
+     * pagos. Si se quedaran en la caja que esta prueba cierra, saltaría esa
+     * otra regla y la prueba no estaría probando lo que dice.
+     *
+     * @return int el turno del otro cajero
+     */
+    private function laVentaQuedaEnLaCajaDeOtro(SaleInvoice $factura): int
+    {
+        $otro = CashRegisterSession::withoutGlobalScopes()->create([
+            'company_id' => $this->empresa->id,
+            'location_id' => $this->sede->id,
+            'cashier_user_id' => $this->otroCajero()->id,
+            'status' => CashRegisterSession::STATUS_OPEN,
+            'opened_at' => now(),
+            'opening_amount' => 0,
+        ]);
+
+        $this->limpiar[] = fn () => DB::table('cash_register_sessions')->where('id', $otro->id)->delete();
+
+        $factura->update(['cash_register_session_id' => $otro->id]);
+
+        DB::table('payments')
+            ->where('paymentable_type', SaleInvoice::class)
+            ->where('paymentable_id', $factura->id)
+            ->update(['cash_register_session_id' => $otro->id]);
+
+        $this->cierraLaCajaPropia();
+
+        return (int) $otro->id;
+    }
+
+    /** Deja al usuario de la prueba sin caja abierta, como un administrador. */
+    private function cierraLaCajaPropia(): void
+    {
+        $abiertos = CashRegisterSession::withoutGlobalScopes()
+            ->where('company_id', $this->empresa->id)
+            ->where('cashier_user_id', $this->usuario->id)
+            ->where('status', CashRegisterSession::STATUS_OPEN)
+            ->pluck('id');
+
+        DB::table('cash_register_sessions')->whereIn('id', $abiertos)
+            ->update(['status' => CashRegisterSession::STATUS_CLOSED, 'closed_at' => now()]);
+    }
+
     // --------------------------------------------------------- auxiliares
 
     /** Una venta de verdad, cobrada por el POS de punta a punta. */
