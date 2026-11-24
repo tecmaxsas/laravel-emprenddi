@@ -190,6 +190,14 @@ class OrderEngine
             throw new RuntimeException('Selecciona al menos una linea a despachar.');
         }
 
+        if ($order->estaFueraDeJuego()) {
+            throw new RuntimeException(
+                $order->estaCerrado()
+                    ? 'Este pedido se cerró con pendientes. Para despachar lo que falta, reábrelo primero.'
+                    : 'El pedido está anulado.'
+            );
+        }
+
         return DB::transaction(function () use ($order, $items, $deliveryNumber, $notes, $deliveryDate) {
             $delivery = Delivery::create([
                 'company_id' => $order->company_id,
@@ -357,9 +365,11 @@ class OrderEngine
         }
 
         $delivery->load('items.orderItem');
-        $order->load('retentions');
+        $order->load(['retentions', 'customer']);
 
-        return DB::transaction(function () use ($order, $delivery, $invoiceKind, $allowNegativeStock) {
+        $plazo = $this->diasDeCredito($order);
+
+        return DB::transaction(function () use ($order, $delivery, $invoiceKind, $allowNegativeStock, $plazo) {
             // Doble clic: el segundo espera aqui y encuentra el despacho ya
             // facturado en lugar de emitir otra factura.
             $bloqueado = Delivery::query()->whereKey($delivery->id)->lockForUpdate()->first();
@@ -391,6 +401,13 @@ class OrderEngine
                 'currency' => 'COP',
                 'status' => 'draft',
                 'payment_status' => 'pendiente',
+                'payment_terms_days' => $plazo,
+                // Sin fecha de vencimiento la factura nunca aparece vencida y
+                // la cartera no sirve para perseguir a nadie: en el informe de
+                // edades todo cae en el tramo «por vencer» para siempre.
+                'due_date' => $plazo > 0
+                    ? now()->copy()->addDays($plazo)->toDateString()
+                    : null,
                 'created_by_user_id' => Auth::id(),
                 'seller_user_id' => $order->seller_user_id ?? Auth::id(),
                 'description' => 'Pedido '.$order->fullNumber().' — '.$delivery->label(),
@@ -517,6 +534,97 @@ class OrderEngine
      *   partial  = algun item con delivered > 0 pero total < ordered
      *   delivered = todos los items delivered >= ordered
      */
+    /**
+     * Los días de crédito pactados con el cliente.
+     *
+     * Es `credit_days` y NO `payment_terms_days`: en la ficha del tercero el
+     * primero está rotulado «Días de crédito» y el segundo «Días de pago —
+     * aplicable a proveedores». Son dos campos distintos y el de proveedores
+     * no tiene nada que ver con lo que este cliente nos debe a nosotros.
+     */
+    public function diasDeCredito(Order $order): int
+    {
+        return max(0, (int) ($order->customer?->credit_days ?? 0));
+    }
+
+    /**
+     * Da el pedido por terminado aunque queden líneas sin despachar.
+     *
+     * Pasa todo el tiempo: de cuarenta referencias quedan dos que no había
+     * en bodega, el cliente ya no las quiere y nadie las va a mandar. Sin
+     * esto el pedido se queda «parcial» para siempre y ensucia la lista de
+     * lo que de verdad está pendiente por despachar.
+     *
+     * LO PENDIENTE SIGUE PENDIENTE. No se tocan las cantidades: cerrar no es
+     * despachar. Lo que falta sigue contando en el informe de no entregas y
+     * en el consolidado mensual, porque es justo la cifra que el negocio
+     * necesita mirar —cuánto se dejó de vender y a quién—.
+     *
+     * Exige motivo: un pedido cerrado con faltantes es una venta que no se
+     * hizo, y la pregunta que viene después —¿por qué?— solo se contesta si
+     * alguien la escribió en el momento.
+     */
+    public function cerrarConPendientes(Order $order, string $motivo): Order
+    {
+        if ($order->status === Order::STATUS_CANCELLED) {
+            throw new RuntimeException('Un pedido anulado no se cierra: ya está fuera de juego.');
+        }
+
+        if ($order->estaCerrado()) {
+            throw new RuntimeException('Este pedido ya estaba cerrado.');
+        }
+
+        if ($order->status === Order::STATUS_DRAFT) {
+            throw new RuntimeException(
+                'Un pedido en borrador no se cierra con pendientes: todavía no se confirmó nada. '
+                .'Si no va a salir, anúlalo.'
+            );
+        }
+
+        $motivo = trim($motivo);
+
+        if ($motivo === '') {
+            throw new RuntimeException(
+                'Cerrar un pedido con faltantes exige un motivo: es lo que explica después '
+                .'por qué esa venta no se hizo.'
+            );
+        }
+
+        $order->update([
+            'status' => Order::STATUS_CLOSED,
+            'closed_at' => now(),
+            'closed_by_user_id' => Auth::id(),
+            'close_reason' => $motivo,
+        ]);
+
+        return $order->fresh();
+    }
+
+    /**
+     * Reabre un pedido cerrado por error, o porque al final sí llegó la
+     * mercancía.
+     *
+     * Vuelve al estado que le corresponde según lo que lleve despachado, que
+     * lo decide `refreshDeliveryStatus`. El motivo del cierre se conserva: es
+     * historia de lo que pasó, no un campo de trabajo.
+     */
+    public function reabrir(Order $order): Order
+    {
+        if (! $order->estaCerrado()) {
+            throw new RuntimeException('Este pedido no está cerrado.');
+        }
+
+        $order->update([
+            'status' => Order::STATUS_CONFIRMED,
+            'closed_at' => null,
+            'closed_by_user_id' => null,
+        ]);
+
+        $this->refreshDeliveryStatus($order->fresh());
+
+        return $order->fresh();
+    }
+
     public function refreshDeliveryStatus(Order $order): void
     {
         // load() y no loadMissing(): se llama justo despues de mover las
@@ -534,11 +642,18 @@ class OrderEngine
             default => 'partial',
         };
 
+        // Un pedido cerrado o anulado conserva su estado: este metodo corre
+        // detras de cada despacho y de cada correccion, y sin esta guarda
+        // volveria a ponerlo «parcial» —reabriendo solo un pedido que alguien
+        // dio por terminado—.
         $newStatus = $order->status;
-        if ($deliveryStatus === 'delivered' && $newStatus !== Order::STATUS_CANCELLED) {
-            $newStatus = Order::STATUS_FULLY_DELIVERED;
-        } elseif ($deliveryStatus === 'partial' && $newStatus !== Order::STATUS_CANCELLED) {
-            $newStatus = Order::STATUS_PARTIAL_DELIVERED;
+
+        if (! $order->estaFueraDeJuego()) {
+            if ($deliveryStatus === 'delivered') {
+                $newStatus = Order::STATUS_FULLY_DELIVERED;
+            } elseif ($deliveryStatus === 'partial') {
+                $newStatus = Order::STATUS_PARTIAL_DELIVERED;
+            }
         }
 
         $order->update([

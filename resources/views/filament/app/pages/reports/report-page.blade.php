@@ -3,12 +3,25 @@
         {{ $this->form }}
     </form>
 
-    @php $exportUrl = method_exists($this, 'getExportUrl') ? $this->getExportUrl() : null; @endphp
-    @if ($exportUrl)
+    @php
+        $exportUrl = method_exists($this, 'getExportUrl') ? $this->getExportUrl() : null;
+        // PDF de verdad, armado en el servidor. Opcional: el informe que no
+        // lo tenga sigue ofreciendo el «imprimir» del navegador, que para una
+        // tabla corta basta y para una de trescientas filas no.
+        $pdfUrl = method_exists($this, 'getPdfUrl') ? $this->getPdfUrl() : null;
+    @endphp
+    @if ($exportUrl || $pdfUrl)
         <div class="rep-toolbar">
-            <a href="{{ $exportUrl }}" class="rep-btn rep-btn-excel" target="_blank" rel="noopener">
-                📊 Descargar Excel
-            </a>
+            @if ($exportUrl)
+                <a href="{{ $exportUrl }}" class="rep-btn rep-btn-excel" target="_blank" rel="noopener">
+                    📊 Descargar Excel
+                </a>
+            @endif
+            @if ($pdfUrl)
+                <a href="{{ $pdfUrl }}" class="rep-btn rep-btn-pdf" target="_blank" rel="noopener">
+                    📄 Descargar PDF
+                </a>
+            @endif
             <button type="button" class="rep-btn rep-btn-print" onclick="window.print()">
                 🖨️ Imprimir / Guardar PDF
             </button>
@@ -24,6 +37,8 @@
         .rep-btn { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:8px; font-weight:700; font-size:13px; text-decoration:none; cursor:pointer; border:0; }
         .rep-btn-excel { background:#16a34a; color:#fff; }
         .rep-btn-excel:hover { background:#15803d; }
+        .rep-btn-pdf { background:#b91c1c; color:#fff; }
+        .rep-btn-pdf:hover { background:#991b1b; }
         .rep-btn-print { background:#475569; color:#fff; }
         .rep-btn-print:hover { background:#334155; }
 

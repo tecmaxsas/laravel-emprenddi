@@ -21,6 +21,17 @@ class Order extends Model
     public const STATUS_CONFIRMED = 'confirmed';
     public const STATUS_PARTIAL_DELIVERED = 'partial_delivered';
     public const STATUS_FULLY_DELIVERED = 'fully_delivered';
+
+    /**
+     * Cerrado dejando líneas sin despachar.
+     *
+     * No es anulado —lo que se entregó se entregó y se facturó— ni
+     * entregado —falta producto que nadie va a mandar—. Es el pedido que
+     * se da por terminado con faltantes, y lo pendiente sigue contando en
+     * los informes de no entregas.
+     */
+    public const STATUS_CLOSED = 'closed';
+
     public const STATUS_CANCELLED = 'cancelled';
 
     public const STATUSES = [
@@ -28,6 +39,7 @@ class Order extends Model
         self::STATUS_CONFIRMED => 'Confirmado',
         self::STATUS_PARTIAL_DELIVERED => 'Entrega parcial',
         self::STATUS_FULLY_DELIVERED => 'Entregado',
+        self::STATUS_CLOSED => 'Cerrado con pendientes',
         self::STATUS_CANCELLED => 'Anulado',
     ];
 
@@ -51,6 +63,7 @@ class Order extends Model
         'status', 'delivery_status', 'payment_status', 'sale_invoice_id',
         'subtotal', 'tax_total', 'retention_total', 'total', 'net_payable',
         'paid_amount', 'balance', 'notes',
+        'closed_at', 'closed_by_user_id', 'close_reason',
     ];
 
     protected function casts(): array
@@ -58,6 +71,7 @@ class Order extends Model
         return [
             'order_date' => 'date',
             'delivery_date_expected' => 'date',
+            'closed_at' => 'datetime',
             'subtotal' => 'decimal:2',
             'tax_total' => 'decimal:2',
             'retention_total' => 'decimal:2',
@@ -184,5 +198,35 @@ class Order extends Model
     public function isEditable(): bool
     {
         return $this->status === self::STATUS_DRAFT;
+    }
+
+    public function closedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'closed_by_user_id');
+    }
+
+    /** Se dio por terminado dejando faltantes. */
+    public function estaCerrado(): bool
+    {
+        return $this->status === self::STATUS_CLOSED;
+    }
+
+    /**
+     * Ya no admite más despachos.
+     *
+     * Un pedido cerrado o anulado está fuera de juego; uno entregado del
+     * todo no tiene qué despachar.
+     */
+    public function estaFueraDeJuego(): bool
+    {
+        return in_array($this->status, [self::STATUS_CLOSED, self::STATUS_CANCELLED], true);
+    }
+
+    /** Unidades pedidas que nunca salieron de la bodega. */
+    public function unidadesPendientes(): float
+    {
+        $this->loadMissing('items');
+
+        return round($this->items->sum(fn (OrderItem $i) => $i->pendingQuantity()), 3);
     }
 }

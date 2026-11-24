@@ -95,8 +95,56 @@ class DeliveriesRelationManager extends RelationManager
 
                 Tables\Columns\TextColumn::make('deliveredBy.name')
                     ->label('Despachó')->placeholder('—')->toggleable(),
+
+                // La guía de transporte vive aquí. Se muestra entera en el
+                // tooltip porque un número de guía cortado no sirve para
+                // rastrear nada.
+                Tables\Columns\TextColumn::make('notes')
+                    ->label('Notas / guía')
+                    ->placeholder('—')
+                    ->limit(28)
+                    ->tooltip(fn (Delivery $record) => $record->notes)
+                    ->wrap(),
             ])
             ->actions([
+                /**
+                 * Editar las notas del despacho, también después de facturar.
+                 *
+                 * Lo pidió un cliente y el motivo es concreto: en las notas
+                 * anotan la guía de transporte, y la guía casi nunca llega el
+                 * mismo día que se despacha. Si las notas solo se pudieran
+                 * escribir al registrar el despacho, el dato tendría que
+                 * vivir en un cuaderno aparte.
+                 *
+                 * Por eso NO se esconde cuando el despacho ya está facturado:
+                 * ese es justo el caso que había que resolver. No toca
+                 * cantidades ni plata, así que no hay nada que proteger —solo
+                 * se exige el permiso de operar el módulo—.
+                 */
+                Tables\Actions\Action::make('editNotes')
+                    ->label('Notas / guía')
+                    ->icon('heroicon-o-pencil-square')
+                    ->color('gray')
+                    ->visible(fn () => (bool) auth()->user()?->can('order_taking.use'))
+                    ->modalHeading(fn (Delivery $record) => 'Notas de '.$record->label())
+                    ->modalDescription('Aquí va la guía de transporte y cualquier observación '
+                        .'del despacho. Se puede editar después, cuando llegue la guía.')
+                    ->fillForm(fn (Delivery $record) => ['notes' => $record->notes])
+                    ->form([
+                        Forms\Components\Textarea::make('notes')
+                            ->label('Notas del despacho')
+                            ->placeholder('Guía 1234567 — Servientrega')
+                            ->rows(3),
+                    ])
+                    ->modalSubmitActionLabel('Guardar')
+                    ->action(function (Delivery $record, array $data) {
+                        $notas = trim((string) ($data['notes'] ?? ''));
+
+                        $record->update(['notes' => $notas !== '' ? $notas : null]);
+
+                        Notification::make()->success()->title('Notas actualizadas')->send();
+                    }),
+
                 Tables\Actions\Action::make('registerPayment')
                     ->label('Registrar abono')
                     ->icon('heroicon-o-banknotes')

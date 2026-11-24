@@ -10,7 +10,9 @@ use App\Models\Billiards\BilliardTableType;
 use App\Models\CashRegisterSession;
 use App\Models\Company;
 use App\Models\Location;
+use App\Models\Plan;
 use App\Models\Product;
+use App\Models\Subscription;
 use App\Models\Tax;
 use App\Models\User;
 use App\Services\Billiards\BilliardAccount;
@@ -101,6 +103,7 @@ class BilliardsDemoSeeder extends Seeder
         app(CurrentCompany::class)->set($this->empresa);
 
         $this->bootstrap();
+        $this->aseguraLaSuscripcion();
         $this->creaLaResolucionPos();
         $this->creaLosTiposDeMesa();
         $this->creaLaSala();
@@ -219,6 +222,55 @@ class BilliardsDemoSeeder extends Seeder
             ->orderByDesc('is_main')
             ->orderBy('id')
             ->firstOrFail();
+    }
+
+    /**
+     * Sin suscripción vigente NADIE puede entrar.
+     *
+     * `User::canAccessPanel()` exige que la empresa tenga una suscripción
+     * activa, así que una demo sin ella se queda en un 403 en la puerta: el
+     * usuario y la contraseña son correctos y aun así no entra. Lo
+     * descubrió una prueba de otro módulo que eligió a este admin al azar,
+     * no yo —la demo se entregó sin comprobar que se pudiera abrir, que era
+     * justo lo único que había que comprobar—.
+     *
+     * Se le pone la prueba gratuita con un año de vigencia: es una demo, no
+     * un cliente que paga, y un año evita que caduque sola en mitad de una
+     * demostración.
+     */
+    protected function aseguraLaSuscripcion(): void
+    {
+        $vigente = Subscription::query()
+            ->where('company_id', $this->empresa->id)
+            ->whereIn('status', Subscription::ACTIVE_STATUSES)
+            ->where('ends_at', '>=', now())
+            ->exists();
+
+        if ($vigente) {
+            return;
+        }
+
+        $plan = Plan::query()->orderBy('id')->first();
+
+        if (! $plan) {
+            $this->command->warn('   · No hay planes en la base: corre PlansSeeder o la demo no podrá entrar.');
+
+            return;
+        }
+
+        Subscription::create([
+            'company_id' => $this->empresa->id,
+            'plan_id' => $plan->id,
+            'status' => Subscription::STATUS_ACTIVE,
+            'starts_at' => now()->startOfDay(),
+            'ends_at' => now()->addYear()->endOfDay(),
+            'billing_cycle' => 'yearly',
+            'price_paid' => 0,
+            'currency' => 'COP',
+            'notes' => 'Cuenta de demostración.',
+        ]);
+
+        $this->command->line('   · Suscripción de demostración creada: la cuenta puede entrar.');
     }
 
     /**

@@ -7,6 +7,7 @@ use App\Http\Controllers\App\OrderTakingCatalogTemplateController;
 use App\Http\Controllers\App\OrderTakingDebugController;
 use App\Http\Controllers\App\OrderTakingImportController;
 use App\Http\Controllers\App\OrderTakingPdfController;
+use App\Http\Controllers\App\OrderTakingPendingExportController;
 use App\Http\Controllers\App\ParkingReportExportController;
 use App\Http\Controllers\App\ParkingTicketController;
 use App\Http\Controllers\App\ProductImportController;
@@ -153,6 +154,22 @@ Route::middleware(['web', 'auth', SetActiveCompany::class])->group(function () {
     Route::get('/app/order-taking/orders/{order}/pdf',
         [OrderTakingPdfController::class, 'show'])
         ->name('order-taking.orders.pdf');
+
+    // Informes de no entregas (modulo Toma pedidos). Las cifras salen de
+    // PendingDeliveries, el mismo servicio que alimenta las pantallas: un
+    // exportador con su propia consulta termina diciendo otra cosa.
+    Route::get('/app/order-taking/reports/pending.xlsx',
+        [OrderTakingPendingExportController::class, 'pendingXlsx'])
+        ->name('order-taking.reports.export.pending');
+    Route::get('/app/order-taking/reports/pending.pdf',
+        [OrderTakingPendingExportController::class, 'pendingPdf'])
+        ->name('order-taking.reports.pdf.pending');
+    Route::get('/app/order-taking/reports/monthly-pending.xlsx',
+        [OrderTakingPendingExportController::class, 'monthlyXlsx'])
+        ->name('order-taking.reports.export.monthly-pending');
+    Route::get('/app/order-taking/reports/monthly-pending.pdf',
+        [OrderTakingPendingExportController::class, 'monthlyPdf'])
+        ->name('order-taking.reports.pdf.monthly-pending');
 
     // Fallback HTTP puro para importar catalogo MAC DULCES (cuando Livewire
     // falla con 'This page has expired').

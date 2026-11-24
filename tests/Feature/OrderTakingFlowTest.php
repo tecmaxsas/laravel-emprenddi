@@ -31,6 +31,7 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
+use Tests\Concerns\MontaPedidos;
 use Tests\TestCase;
 
 /**
@@ -44,9 +45,7 @@ use Tests\TestCase;
  */
 class OrderTakingFlowTest extends TestCase
 {
-    private User $user;
-
-    private int $companyId;
+    use MontaPedidos;
 
     /** @var list<callable> */
     private array $limpiar = [];
@@ -55,8 +54,7 @@ class OrderTakingFlowTest extends TestCase
     {
         parent::setUp();
 
-        $this->user = User::query()->whereNotNull('company_id')->firstOrFail();
-        $this->companyId = (int) $this->user->company_id;
+        $this->tomaElUsuarioDePruebas();
         $this->actingAs($this->user);
     }
 
@@ -69,139 +67,9 @@ class OrderTakingFlowTest extends TestCase
         parent::tearDown();
     }
 
-    private function cliente(): ThirdParty
-    {
-        $cliente = ThirdParty::withoutGlobalScopes()->firstOrCreate(
-            ['company_id' => $this->companyId, 'document_number' => 'ZZ-RET-001'],
-            [
-                'person_type' => 'juridica',
-                'document_type' => 'nit',
-                'name' => 'ZZ Cliente Retenedor',
-                'is_customer' => true,
-                'active' => true,
-            ]
-        );
 
-        $this->limpiar[] = fn () => ThirdParty::withoutGlobalScopes()->whereKey($cliente->id)->forceDelete();
 
-        return $cliente;
-    }
 
-    private function retencion(float $rate = 2.5): Tax
-    {
-        $tax = Tax::withoutGlobalScopes()->firstOrCreate(
-            ['company_id' => $this->companyId, 'code' => 'ZZRF'],
-            [
-                'name' => 'ZZ ReteFuente',
-                'type' => 'income_withholding',
-                'rate' => $rate,
-                'applies_to' => 'sale',
-                'is_active' => true,
-                // Sin cuenta de venta el motor de facturas rechaza la
-                // retencion: es donde se debita el anticipo de impuesto.
-                'sale_account_id' => Account::withoutGlobalScopes()
-                    ->where('company_id', $this->companyId)
-                    ->where('accepts_movements', true)
-                    ->where('code', 'like', '13%')
-                    ->value('id'),
-            ]
-        );
-
-        // firstOrCreate no actualiza lo que ya existe, y la cuenta es
-        // obligatoria para el motor de facturas.
-        $tax->update([
-            'rate' => $rate,
-            'sale_account_id' => Account::withoutGlobalScopes()
-                ->where('company_id', $this->companyId)
-                ->where('accepts_movements', true)
-                ->where('code', 'like', '13%')
-                ->value('id'),
-        ]);
-
-        $this->limpiar[] = fn () => Tax::withoutGlobalScopes()->whereKey($tax->id)->forceDelete();
-
-        return $tax->refresh();
-    }
-
-    private function producto(): Product
-    {
-        $producto = Product::withoutGlobalScopes()->firstOrCreate(
-            ['company_id' => $this->companyId, 'code' => 'ZZ-PROD-1'],
-            ['name' => 'ZZ Producto']
-        );
-
-        $this->limpiar[] = function () use ($producto) {
-            // Facturar deja movimientos de inventario colgando del producto.
-            DB::table('inventory_movements')->where('product_id', $producto->id)->delete();
-            Product::withoutGlobalScopes()->whereKey($producto->id)->forceDelete();
-        };
-
-        return $producto;
-    }
-
-    /** Pedido de $1.000.000 + IVA 19% = $1.190.000. */
-    private function pedidoDe(ThirdParty $cliente): Order
-    {
-        $engine = app(OrderEngine::class);
-
-        // Antes que el pedido: tearDown limpia en orden inverso, asi el pedido
-        // se borra primero y el producto queda sin referencias.
-        $producto = Product::withoutGlobalScopes()->firstOrCreate(
-            ['company_id' => $this->companyId, 'code' => 'ZZ-PROD-1'],
-            ['name' => 'ZZ Producto']
-        );
-
-        $this->limpiar[] = function () use ($producto) {
-            // Facturar deja movimientos de inventario colgando del producto.
-            DB::table('inventory_movements')->where('product_id', $producto->id)->delete();
-            Product::withoutGlobalScopes()->whereKey($producto->id)->forceDelete();
-        };
-
-        $order = Order::create([
-            'company_id' => $this->companyId,
-            'prefix' => 'ZZP',
-            'number' => $engine->reserveNumber($this->companyId, 'ZZP'),
-            'third_party_id' => $cliente->id,
-            'seller_user_id' => $this->user->id,
-            'created_by_user_id' => $this->user->id,
-            'order_date' => now()->toDateString(),
-            'status' => Order::STATUS_CONFIRMED,
-            'delivery_status' => 'pending',
-            'payment_status' => 'pendiente',
-        ]);
-
-        // El borrado del pedido no arrastra a sus hijos, asi que se limpian a mano
-        // y en orden: abonos y despachos antes que las lineas.
-        $this->limpiar[] = function () use ($order) {
-            Payment::withoutGlobalScopes()->where('order_id', $order->id)->forceDelete();
-            DeliveryItem::withoutGlobalScopes()
-                ->whereIn('delivery_id', Delivery::withoutGlobalScopes()->where('order_id', $order->id)->pluck('id'))
-                ->forceDelete();
-            Delivery::withoutGlobalScopes()->where('order_id', $order->id)->forceDelete();
-            OrderRetention::withoutGlobalScopes()->where('order_id', $order->id)->forceDelete();
-            OrderItem::withoutGlobalScopes()->where('order_id', $order->id)->forceDelete();
-            Order::withoutGlobalScopes()->whereKey($order->id)->forceDelete();
-        };
-
-        OrderItem::create([
-            'company_id' => $this->companyId,
-            'order_id' => $order->id,
-            'product_id' => $producto->id,
-            'line_number' => 1,
-            'description' => 'ZZ Producto',
-            'quantity_ordered' => 10,
-            'quantity_delivered' => 0,
-            'unit_price_before_tax' => 100000,
-            'tax_rate' => 19,
-            // IVA de la LINEA (10 × 19.000), igual que subtotal y total.
-            'tax_amount' => 190000,
-            'unit_price_at_public' => 119000,
-            'subtotal' => 1000000,
-            'total' => 1190000,
-        ]);
-
-        return $order->fresh(['items']);
-    }
 
     public function test_la_retencion_del_cliente_se_sugiere_sobre_la_base_gravable(): void
     {
@@ -659,43 +527,15 @@ class OrderTakingFlowTest extends TestCase
             ->assertCanSeeTableRecords([$order]);
     }
 
-    /** Sede con resolucion POS: sin esto no hay numeracion para la factura. */
-    private function sedeConResolucion(): Location
-    {
-        $sede = Location::withoutGlobalScopes()
-            ->where('company_id', $this->companyId)
-            ->firstOrFail();
 
-        $res = Resolution::withoutGlobalScopes()->firstOrCreate(
-            ['company_id' => $this->companyId, 'prefix' => 'ZZF'],
-            [
-                'kind' => Resolution::KIND_POS,
-                'document_type_id' => 1,
-                // Del catálogo del modelo, no a mano: el tipo 1 es «Factura
-                // Electrónica» para la DIAN, y un nombre que no corresponde
-                // al código es lo que `DianDocumentTypeCodesTest` impide.
-                'document_type_name' => Resolution::DOCUMENT_TYPES[1],
-                'resolution_number' => 'ZZ-TEST',
-                'range_from' => 1,
-                'range_to' => 999999,
-                'active' => true,
-            ]
-        );
-
-        $vinculo = LocationResolution::withoutGlobalScopes()->firstOrCreate(
-            ['location_id' => $sede->id, 'dian_resolution_id' => $res->id],
-            ['current_consecutive' => 0, 'active' => true]
-        );
-
-        $this->limpiar[] = fn () => LocationResolution::withoutGlobalScopes()
-            ->whereKey($vinculo->id)->forceDelete();
-        $this->limpiar[] = fn () => Resolution::withoutGlobalScopes()
-            ->whereKey($res->id)->forceDelete();
-
-        return $sede;
-    }
-
-    public function test_un_pedido_despachado_al_100_se_convierte_en_factura(): void
+    /**
+     * Un despacho se factura por lo que salió en él.
+     *
+     * Antes se facturaba el pedido completo de una vez. Desde que cada
+     * despacho da su propia factura, lo que se cobra es la remisión: es lo
+     * que el cliente recibió, y es contra eso que paga.
+     */
+    public function test_un_despacho_se_convierte_en_factura(): void
     {
         $cliente = $this->cliente();
         $tax = $this->retencion(2.5);
@@ -715,12 +555,11 @@ class OrderTakingFlowTest extends TestCase
         );
         $engine->registerPayment($delivery, ['amount' => 400000, 'payment_method' => 'cash']);
 
-        $factura = $engine->convertToInvoice($order->fresh(), 'pos', allowNegativeStock: true);
+        $factura = $engine->invoiceDelivery($delivery->fresh(), 'pos', allowNegativeStock: true);
 
         // Los cobros ANTES que la factura: borrarla sola deja el pago
         // apuntando a una factura que ya no existe, y eso no lo nota nadie
-        // porque un pago huerfano no sale en ninguna pantalla. Se acumulaba
-        // uno por cada corrida de la suite.
+        // porque un pago huerfano no sale en ninguna pantalla.
         $this->limpiar[] = function () use ($factura) {
             DB::table('payments')
                 ->where('paymentable_type', SaleInvoice::class)
@@ -730,41 +569,31 @@ class OrderTakingFlowTest extends TestCase
             SaleInvoice::withoutGlobalScopes()->whereKey($factura->id)->forceDelete();
         };
 
-        // La factura recoge lo despachado, con su IVA y su retencion.
         $this->assertSame('1000000.00', $factura->subtotal);
         $this->assertSame('190000.00', $factura->tax_total);
         $this->assertSame('1190000.00', $factura->total);
         $this->assertSame('25000.00', $factura->retention_total, 'La retencion del pedido pasa a la factura.');
         $this->assertSame('1165000.00', $factura->net_payable);
 
-        // El abono ya registrado no se pierde ni se cobra dos veces.
         $this->assertSame('400000.00', $factura->fresh()->paid_amount,
-            'Los abonos del pedido pasan como pagos de la factura.');
+            'Los abonos del despacho pasan como pagos de la factura.');
 
-        // Y el pedido queda enlazado, que es lo que impide facturarlo de nuevo.
-        $order->refresh();
-        $this->assertSame($factura->id, $order->sale_invoice_id);
-        $this->assertTrue($order->isInvoiced());
-
-        // En pantalla: desaparece "Convertir en factura" y aparece el enlace.
-        $company = Company::find($this->companyId);
-        $modulos = $company->active_modules ?? [];
-        $company->update(['active_modules' => array_values(array_unique([...$modulos, 'order_taking']))]);
-        app(CurrentCompany::class)->set($company->refresh());
-
-        $html = $this->get(
-            OrderResource::getUrl('view', ['record' => $order])
-        )->assertSuccessful()->getContent();
-
-        $company->update(['active_modules' => $modulos]);
-
-        $this->assertStringContainsString('Facturado con', $html);
-        $this->assertStringContainsString($factura->fullNumber(), $html);
-        $this->assertStringNotContainsString('Convertir en factura', $html,
-            'Ya facturado: el boton no puede seguir ahi.');
+        // La factura cuelga del DESPACHO, no del pedido: es lo que impide
+        // facturar dos veces la misma remision.
+        $this->assertSame($factura->id, $delivery->fresh()->sale_invoice_id);
+        $this->assertTrue($delivery->fresh()->isInvoiced());
+        $this->assertNull($order->fresh()->sale_invoice_id,
+            'El pedido completo ya no se factura de una sola vez.');
     }
 
-    public function test_no_se_factura_un_pedido_a_medio_despachar(): void
+    /**
+     * Un despacho parcial SÍ se factura.
+     *
+     * Antes se exigía que el pedido hubiera salido completo, y eso dejaba al
+     * cliente esperando su factura por lo que ya había recibido mientras el
+     * resto seguía en la bodega. Ahora se cobra lo despachado.
+     */
+    public function test_un_despacho_parcial_tambien_se_factura(): void
     {
         $cliente = $this->cliente();
         $sede = $this->sedeConResolucion();
@@ -774,16 +603,30 @@ class OrderTakingFlowTest extends TestCase
         $order->update(['location_id' => $sede->id]);
 
         // Solo 4 de 10: queda mercancia en la bodega.
-        $engine->registerDelivery(
+        $delivery = $engine->registerDelivery(
             $order,
             [['order_item_id' => $order->items->first()->id, 'quantity' => 4]],
         );
 
-        $this->expectExceptionMessageMatches('/salió completo/i');
-        $engine->convertToInvoice($order->fresh(), 'pos', allowNegativeStock: true);
+        $factura = $engine->invoiceDelivery($delivery->fresh(), 'pos', allowNegativeStock: true);
+
+        $this->limpiar[] = function () use ($factura) {
+            DB::table('payments')
+                ->where('paymentable_type', SaleInvoice::class)
+                ->where('paymentable_id', $factura->id)
+                ->delete();
+
+            SaleInvoice::withoutGlobalScopes()->whereKey($factura->id)->forceDelete();
+        };
+
+        $this->assertSame('400000.00', $factura->subtotal,
+            'Se cobra lo que salio: 4 unidades, no las 10 del pedido.');
+        $this->assertSame('partial', $order->fresh()->delivery_status,
+            'El pedido sigue con pendientes aunque ya se haya facturado lo despachado.');
     }
 
-    public function test_un_pedido_no_se_puede_facturar_dos_veces(): void
+    /** La misma remisión no se factura dos veces. */
+    public function test_un_despacho_no_se_puede_facturar_dos_veces(): void
     {
         $cliente = $this->cliente();
         $sede = $this->sedeConResolucion();
@@ -791,16 +634,13 @@ class OrderTakingFlowTest extends TestCase
         $engine = app(OrderEngine::class);
         $order = $engine->recomputeTotals($this->pedidoDe($cliente));
         $order->update(['location_id' => $sede->id]);
-        $engine->registerDelivery(
+        $delivery = $engine->registerDelivery(
             $order,
             [['order_item_id' => $order->items->first()->id, 'quantity' => 10]],
         );
 
-        $factura = $engine->convertToInvoice($order->fresh(), 'pos', allowNegativeStock: true);
-        // Los cobros ANTES que la factura: borrarla sola deja el pago
-        // apuntando a una factura que ya no existe, y eso no lo nota nadie
-        // porque un pago huerfano no sale en ninguna pantalla. Se acumulaba
-        // uno por cada corrida de la suite.
+        $factura = $engine->invoiceDelivery($delivery->fresh(), 'pos', allowNegativeStock: true);
+
         $this->limpiar[] = function () use ($factura) {
             DB::table('payments')
                 ->where('paymentable_type', SaleInvoice::class)
@@ -811,6 +651,6 @@ class OrderTakingFlowTest extends TestCase
         };
 
         $this->expectExceptionMessageMatches('/ya se facturó/i');
-        $engine->convertToInvoice($order->fresh(), 'pos', allowNegativeStock: true);
+        $engine->invoiceDelivery($delivery->fresh(), 'pos', allowNegativeStock: true);
     }
 }

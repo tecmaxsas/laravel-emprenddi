@@ -198,6 +198,79 @@ class ViewOrder extends ViewRecord
                 ->visible(fn (Order $r) => $r->isInvoiced())
                 ->url(fn (Order $r) => SaleInvoiceResource::getUrl('view', ['record' => $r->sale_invoice_id])),
 
+            Actions\Action::make('close')
+                ->label('Cerrar con pendientes')
+                ->icon('heroicon-o-archive-box-arrow-down')
+                ->color('warning')
+                ->visible(fn (Order $r) => in_array($r->status, [
+                    Order::STATUS_CONFIRMED,
+                    Order::STATUS_PARTIAL_DELIVERED,
+                ], true) && auth()->user()?->can('order_taking.manage'))
+                ->modalHeading('Cerrar el pedido dejando lo que falta')
+                ->modalDescription(function (Order $r) {
+                    $pendientes = $r->unidadesPendientes();
+
+                    return $pendientes > 0
+                        ? sprintf(
+                            'Quedan %s unidades sin despachar. El pedido deja de estar en curso, '
+                            .'pero lo pendiente SIGUE contando en el informe de no entregas y en el '
+                            .'consolidado mensual: cerrar no borra el faltante, solo deja de '
+                            .'esperarlo.',
+                            rtrim(rtrim(number_format($pendientes, 2, ',', '.'), '0'), ','),
+                        )
+                        : 'Este pedido no tiene unidades pendientes. Si ya se despachó todo, '
+                            .'no hace falta cerrarlo a mano.';
+                })
+                ->form([
+                    Forms\Components\Textarea::make('close_reason')
+                        ->label('¿Por qué se cierra con faltantes?')
+                        ->placeholder('Sin existencias y el cliente ya no lo quiere')
+                        ->required()
+                        ->rows(2)
+                        ->helperText('Es lo que explica después por qué esa venta no se hizo.'),
+                ])
+                ->modalSubmitActionLabel('Cerrar pedido')
+                ->action(function (Order $r, array $data) {
+                    try {
+                        app(OrderEngine::class)->cerrarConPendientes($r, $data['close_reason'] ?? '');
+                    } catch (\Throwable $e) {
+                        Notification::make()->danger()->title('No se pudo cerrar')
+                            ->body($e->getMessage())->persistent()->send();
+
+                        return;
+                    }
+
+                    Notification::make()->success()
+                        ->title('Pedido cerrado')
+                        ->body('Lo pendiente sigue en el informe de no entregas.')
+                        ->send();
+
+                    $this->refreshFormData(['status', 'delivery_status']);
+                }),
+
+            Actions\Action::make('reopen')
+                ->label('Reabrir pedido')
+                ->icon('heroicon-o-arrow-uturn-left')
+                ->color('gray')
+                ->visible(fn (Order $r) => $r->estaCerrado()
+                    && auth()->user()?->can('order_taking.manage'))
+                ->requiresConfirmation()
+                ->modalDescription('Vuelve a quedar en curso y admite despachos otra vez. '
+                    .'El motivo del cierre se conserva como historia.')
+                ->action(function (Order $r) {
+                    try {
+                        app(OrderEngine::class)->reabrir($r);
+                    } catch (\Throwable $e) {
+                        Notification::make()->danger()->title('No se pudo reabrir')
+                            ->body($e->getMessage())->persistent()->send();
+
+                        return;
+                    }
+
+                    Notification::make()->success()->title('Pedido reabierto')->send();
+                    $this->refreshFormData(['status', 'delivery_status']);
+                }),
+
             Actions\Action::make('cancel')
                 ->label('Anular')
                 ->icon('heroicon-o-x-circle')->color('danger')
